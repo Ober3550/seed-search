@@ -1,5 +1,19 @@
 local se_env = {}
 
+-- Optional Krastorio2 support. When SE_ENABLE_K2=1, the harness mirrors what SE
+-- does with Krastorio2 active: it adds K2's resources + the kr-imersite word
+-- rule, and loads SE's K2 compatibility script so its generation listeners fire
+-- (mineral-water resource override + a guaranteed imersite home-system body,
+-- which consumes the global universe RNG and so changes seeds vs pure SE).
+local SE_K2 = os.getenv('SE_ENABLE_K2') == '1' or os.getenv('SE_ENABLE_K2') == 'true'
+se_env.k2_enabled = SE_K2
+
+-- Impose a deterministic `pairs` order BEFORE any mod code loads. SE 0.7's
+-- generator draws RNG inside string-keyed pairs() loops, and Lua 5.2 randomises
+-- its hash order per process, so without this the harness is not reproducible.
+-- See det_pairs.lua for the important caveat about matching Factorio's order.
+require('det_pairs')
+
 local zip = require('zip')
 local env = require('env')
 
@@ -20,7 +34,11 @@ function table_size(t)
 end
 
 log = function () end
-Log = { debug_log = function () end, trace = function () end }
+-- Factorio 2.0 renamed the mod-global data table from `global` to `storage`.
+-- SE's universe generator reads/writes `storage` throughout; summarize.lua resets
+-- it per seed. `is_debug_mode` gates the mod's debug logging/serpent dumps.
+is_debug_mode = false
+storage = {}
 
 FactorioRNG = { global_seed = nil }
 function FactorioRNG:new(o)
@@ -34,6 +52,7 @@ local rng = require('rng')
 FactorioRNG.__call = rng.call
 
 mod_prefix = "se-"
+mod_prefix_snake_case = "se_"
 game = {}
 game.autoplace_control_prototypes = {
   coal = {
@@ -126,9 +145,48 @@ game.create_random_generator = function (seed)
     end
     return FactorioRNG:new{ x = seed, y = seed, z = seed }
 end
-Event = {}
-Event.addListener = function () end
-Event.trigger = function () end
+game.print = function () end
+
+-- Functional (but minimal) event system. SE registers many listeners at load;
+-- only two custom events are triggered during Universe.build:
+-- "on_resource_setting_load" and "on_homesystem_make". Pure SE has no listeners
+-- for either (so behaviour is unchanged), but the K2 compat script does — hence
+-- we actually dispatch them rather than no-op. Native/entity events never fire
+-- headless: their keys come from the empty `defines.events` (nil) or via the
+-- addOn*Listeners helpers, and are ignored.
+Event = { listeners = {} }
+Event.addListener = function (event_key, callback)
+    if event_key == nil or callback == nil then return end
+    local l = Event.listeners[event_key]
+    if not l then l = {}; Event.listeners[event_key] = l end
+    l[#l + 1] = callback
+end
+Event.removeListener = function (event_key, callback)
+    local l = Event.listeners[event_key]
+    if not l then return end
+    for i = #l, 1, -1 do if l[i] == callback then table.remove(l, i) end end
+end
+Event.trigger = function (event_key, event_data)
+    local l = Event.listeners[event_key]
+    if not l then return end
+    for _, callback in ipairs(l) do callback(event_data) end
+end
+Event.addOnEntityCreatedListeners = function () end
+Event.addOnEntityRemovedListeners = function () end
+setmetatable(Event, { __index = function () return function () end end })
+
+-- Minimal `script` stub. active_mods gates SE's compatibility branches; the rest
+-- are load-time registration hooks the mod calls but that never fire headless.
+script = {
+    active_mods = { ["space-exploration"] = "0.7.57" },
+    mod_name = "space-exploration",
+    on_event = function () end,
+    on_nth_tick = function () end,
+    on_init = function () end,
+    on_load = function () end,
+    on_configuration_changed = function () end,
+}
+if SE_K2 then script.active_mods["Krastorio2"] = "2.0.19" end
 defines = {}
 defines.events = {}
 defines.direction = {}
@@ -137,8 +195,13 @@ game.get_surface = function (surface)
         return {
             map_gen_settings = {
                 autoplace_controls = {
+                    -- Nauvis' radius is derived from this (universe.lua:615):
+                    --   radius = 10000/6 * (6 + log2(1/frequency/6))
+                    -- 1 is the map default and reproduces the in-game Nauvis radius
+                    -- (5691.73). This value feeds no RNG, only the radius of Nauvis
+                    -- and its derived haven moon.
                     ["planet-size"] = {
-                        frequency = 6,
+                        frequency = 1,
                     }
                 },
                 width = 2000000,
@@ -460,6 +523,49 @@ game.entity_prototypes = {
     type = "resource"
   }
 }
+-- Factorio 2.0 exposes prototype data through the global `prototypes` table
+-- instead of game.*_prototypes. SE's resource generation reads it during
+-- Universe.load_resource_data(). We back it with the hardcoded tables above and
+-- implement the two filter helpers the generator actually calls.
+prototypes = {
+  item = game.item_prototypes,
+  entity = game.entity_prototypes,
+  autoplace_control = game.autoplace_control_prototypes,
+  fluid = {},
+  recipe = {},
+  virtual_signal = {},
+  space_location = {},
+  asteroid_chunk = {},
+  quality = {},
+  mod_data = {
+    -- Populated only by space-age / Krastorio2 compatibility at the data stage,
+    -- both of which are inactive in a pure-SE install, so the data table is empty.
+    -- The base resource placement rules live in Universe.resource_word_rules.
+    [mod_prefix .. "universe-resource-word-rules"] = { data = {} },
+  },
+  custom_event = {},
+}
+-- SE calls this only as get_entity_filtered{{filter="type",type="resource"},{mode="and",filter="autoplace"}}
+prototypes.get_entity_filtered = function ()
+  local result = {}
+  for name, proto in pairs(prototypes.entity) do
+    if proto.type == "resource" and proto.autoplace_specification then
+      result[name] = proto
+    end
+  end
+  return result
+end
+prototypes.get_item_filtered = function () return {} end
+-- SE registers custom events and looks them up at module load time. Events never
+-- fire in this headless harness, so hand back a stub prototype for any name.
+setmetatable(prototypes.custom_event, { __index = function () return { event_id = 0 } end })
+
+-- Krastorio2: add its resources + placement rule to the prototype tables so the
+-- resource pipeline enumerates them (see se_k2.lua).
+if SE_K2 then
+    require('se_k2').apply()
+end
+
 CoreMiner = {}
 CoreMiner.update_zone_fragment_resources = function () end
 CoreMiner.generate_core_seam_positions = function () end
@@ -470,7 +576,7 @@ settings.startup = {}
 settings.startup["se-spawn-small-resources"] = { value = false }  -- FIXME
 
 local MOD_NAME = 'space-exploration'
-local MOD_VERSION = '0.6.114'
+local MOD_VERSION = '0.7.57'
 local MOD_TAG = MOD_NAME .. '_' .. MOD_VERSION
 
 local FACTORIO_HOME
@@ -507,10 +613,30 @@ do
     util = load_from_zip('scripts/util.lua')
     Util = util
     Shared = load_from_zip('shared.lua')
+    -- Log used to be stubbed; SE 0.7 calls it heavily during generation so we load
+    -- the real module (its output is disabled via is_debug_mode = false above).
+    Log = load_from_zip('scripts/log.lua')
     UniverseRaw = load_from_zip('scripts/universe-raw.lua')
     Zone = load_from_zip('scripts/zone.lua')
+    Zonelist = load_from_zip('scripts/zonelist.lua')
     Universe = load_from_zip('scripts/universe.lua')
+    -- New in 0.7: guarantees the starting system's resources; called at the end
+    -- of Universe.build and consumes the global universe RNG stream.
+    UniverseHomesystem = load_from_zip('scripts/universe-homesystem.lua')
+    -- make_validate_homesystem iterates guaranteed_special_types with pairs() and
+    -- draws the universe RNG inside the loop, so its order must match the game.
+    -- Factorio iterates in insertion order; register the literal's source order
+    -- (universe-homesystem.lua:3) so det_pairs reproduces it. Runtime additions
+    -- (e.g. K2's kr-imersite) are appended, which matches insertion order.
+    require('det_pairs').set_order(UniverseHomesystem.guaranteed_special_types, {
+        "haven", "vulcanite", "vitamelange", "iridium", "holmium", "cryonite", "beryllium", "methane",
+    })
     Ancient = load_from_zip('scripts/ancient.lua')
+    -- K2 compatibility: registers the on_resource_setting_load and
+    -- on_homesystem_make listeners that adjust generation when K2 is active.
+    if SE_K2 then
+        Krastorio2 = load_from_zip('scripts/compatibility/krastorio2.lua')
+    end
 end
 
 return se_env

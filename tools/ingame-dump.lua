@@ -1,0 +1,57 @@
+-- In-game universe dump for validating the seed finder against a real map.
+--
+-- HOW TO USE (Space Exploration 0.7.x, Factorio 2.0):
+--   1. Create a new game with SE enabled on a KNOWN map seed. Note the seed:
+--      it is shown on the map-generation screen, and afterwards is
+--      game.surfaces[1].map_gen_settings.seed (this dump records it for you).
+--   2. Open the console (`~`) and paste the ONE-LINE command at the bottom of
+--      this file, prefixed with `/c ` (note: `/c` disables achievements).
+--   3. Factorio writes the dump to:
+--        <user data>/script-output/se-universe-dump.json
+--      (Settings > about, "User data directory"; usually
+--       ~/Library/Application Support/factorio/script-output on macOS,
+--       %APPDATA%/Factorio/script-output on Windows.)
+--   4. Copy that file into this repo and run:
+--        bin/lua compare.lua se-universe-dump.json
+--      (on Apple Silicon, run bin/lua through the `seedlua` docker image, see
+--       docs/universe-generation.md).
+--
+-- Dump the universe as early as possible (right after map creation, before
+-- visiting surfaces) so zones carry only their generated values.
+--
+-- The readable version of the command:
+--
+--   local zones = remote.call("space-exploration", "get_zone_index", {})
+--   local parent_of = {}
+--   for _, z in pairs(zones) do
+--     if z.child_indexes then
+--       for _, ci in pairs(z.child_indexes) do parent_of[ci] = z.name end
+--     end
+--   end
+--   local RES = {"coal","stone","iron-ore","copper-ore","crude-oil","uranium-ore",
+--     "se-vulcanite","se-cryonite","se-vitamelange","se-holmium-ore","se-beryllium-ore","se-iridium-ore",
+--     "se-water-ice","se-methane-ice","se-naquium-ore","kr-imersite","kr-rare-metal-ore","kr-mineral-water"}
+--   local out = { map_seed = game.surfaces[1].map_gen_settings.seed, zones = {} }
+--   for _, z in pairs(zones) do
+--     local ctrls = {}
+--     if z.controls then
+--       for _, rn in pairs(RES) do
+--         local c = z.controls[rn]
+--         if type(c) == "table" then ctrls[rn] = {f=c.frequency, r=c.richness, s=c.size} end
+--       end
+--     end
+--     out.zones[#out.zones + 1] = {
+--       name   = z.name,
+--       type   = z.type,
+--       index  = z.index,
+--       radius = z.radius,
+--       seed   = z.seed,
+--       parent = parent_of[z.index],
+--       controls = ctrls,
+--     }
+--   end
+--   helpers.write_file("se-universe-dump.json", helpers.table_to_json(out))
+--
+-- The single-line form to paste after `/c ` (all on one line):
+--
+-- local RES={"coal","stone","iron-ore","copper-ore","crude-oil","uranium-ore","se-vulcanite","se-cryonite","se-vitamelange","se-holmium-ore","se-beryllium-ore","se-iridium-ore","se-water-ice","se-methane-ice","se-naquium-ore","kr-imersite","kr-rare-metal-ore","kr-mineral-water"};local zones=remote.call("space-exploration","get_zone_index",{});local p={};for _,z in pairs(zones) do if z.child_indexes then for _,ci in pairs(z.child_indexes) do p[ci]=z.name end end end;local out={map_seed=game.surfaces[1].map_gen_settings.seed,zones={}};for _,z in pairs(zones) do local ctrls={};if z.controls then for _,rn in pairs(RES) do local c=z.controls[rn];if type(c)=="table" then ctrls[rn]={f=c.frequency,r=c.richness,s=c.size} end end end;out.zones[#out.zones+1]={name=z.name,type=z.type,index=z.index,radius=z.radius,seed=z.seed,parent=p[z.index],controls=ctrls} end;helpers.write_file("se-universe-dump.json",helpers.table_to_json(out))

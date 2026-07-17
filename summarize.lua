@@ -3,9 +3,9 @@ local summarize = {}
 local se_data = require('se_data')
 
 local function summarize_zone(zone)
-    local nauvis = global.zones_by_name['Nauvis']
+    local nauvis = storage.zones_by_name['Nauvis']
     local stars = {}
-    for _, zone in pairs(global.zones_by_name) do
+    for _, zone in pairs(storage.zones_by_name) do
         if zone.type == "star" then
             table.insert(stars, zone)
         end
@@ -78,17 +78,37 @@ local function summarize_zone(zone)
     return summary
 end
 
-function summarize.summarize_seed(seed)
+-- Generate the whole universe for a seed and leave it in the global `storage`
+-- table (mirroring what SE holds in-game after map creation). Shared by
+-- summarize_seed and the comparison harness so both drive generation identically.
+function summarize.build_universe(seed)
     FactorioRNG.global_seed = seed
-    global = {}
-    global.meteor_zones = {}
-    global.forces = {}
-    global.forces.player = {}
+    -- Factorio 2.0 renamed `global` to `storage`. SE 0.7's Universe.build reads
+    -- several of these tables before writing them, so seed them here. storage.seed
+    -- is the map seed used by the per-zone resource generators (see docs).
+    storage = {
+        seed = seed,
+        meteor_zones = {},
+        zones_by_surface = {},
+        spaceships = {},
+        forces = { player = {} },
+        cache_travel_delta_v = {},  -- memoisation table used by Zone.get_travel_delta_v
+    }
+    -- Mirror Ancient.on_init(): the ancient-vault loot generator is a standalone
+    -- generator seeded from the map seed (independent of the universe RNG stream).
+    storage.glyph_vaults = {}
+    storage.glyph_vaults_made_loot = {}
+    storage.vault_loot_rng = game.create_random_generator()
     Universe.build()
+    return storage
+end
+
+function summarize.summarize_seed(seed)
+    summarize.build_universe(seed)
 
     local planets = {}
     local moons = {}
-    for _, planet in pairs(global.zones_by_name['Calidus'].children) do
+    for _, planet in pairs(storage.zones_by_name['Calidus'].children) do
         if planet.type == "planet" then
             if not planet.is_homeworld then
                 local summary = summarize_zone(planet)
@@ -102,7 +122,7 @@ function summarize.summarize_seed(seed)
     end
 
     local fields = {}
-    for _, zone in pairs(global.zones_by_name) do
+    for _, zone in pairs(storage.zones_by_name) do
         if zone.type == "asteroid-field" then
             local summary = summarize_zone(zone)
             table.insert(fields, summary)
@@ -116,7 +136,7 @@ function summarize.summarize_seed(seed)
             table.insert(loot, "P")
         elseif module == "speed-module-9" then
             table.insert(loot, "S")
-        elseif module == "effectivity-module-9" then
+        elseif module == "efficiency-module-9" then  -- renamed from effectivity-module-9 in SE 0.7
             table.insert(loot, "E")
         else
             assert(false)
