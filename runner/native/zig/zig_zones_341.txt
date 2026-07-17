@@ -1,0 +1,1266 @@
+Seed: 341  RNG draws: 3595  Zones: 1265
+1|Foenestra|anomaly|3274128154
+2|Statarius|star|2890671421
+3|Statarius Orbit|orbit|1321352163
+4|Orchid|planet|2549969449
+5|Orchid Orbit|orbit|3523480215
+6|Eris|moon|4291417367
+7|Eris Orbit|orbit|168551023
+8|Loliento|moon|2611121049
+9|Loliento Orbit|orbit|2240065693
+10|Jelt|moon|3379591258
+11|Jelt Orbit|orbit|2328114680
+12|Chronos|moon|2853822627
+13|Chronos Orbit|orbit|196512151
+14|Pandion|planet|3685958955
+15|Pandion Orbit|orbit|3315899637
+16|Xynariz|moon|2903946461
+17|Xynariz Orbit|orbit|1482127807
+18|Limos|moon|3732933173
+19|Limos Orbit|orbit|968310544
+20|Mythulu|moon|2890593061
+21|Mythulu Orbit|orbit|690677846
+22|Oeris|planet|2333918493
+23|Oeris Orbit|orbit|2991043584
+24|Pengwing|moon|3129310207
+25|Pengwing Orbit|orbit|2985053125
+26|Statarius Asteroid Belt 1|asteroid-belt|3483521025
+27|Terebellus|star|480450059
+28|Terebellus Orbit|orbit|1753856988
+29|Razor|planet|2450932363
+30|Razor Orbit|orbit|3126140331
+31|Xiada|moon|262936614
+32|Xiada Orbit|orbit|2619762583
+33|Bernadette|moon|2408843344
+34|Bernadette Orbit|orbit|4039612574
+35|Taishakuten|moon|3454747589
+36|Taishakuten Orbit|orbit|2094052245
+37|Adul|moon|27808003
+38|Adul Orbit|orbit|286541930
+39|Shellabby|moon|2906365667
+40|Shellabby Orbit|orbit|1319223801
+41|Vyse|planet|3810623549
+42|Vyse Orbit|orbit|4116230874
+43|Kamsta|moon|751190507
+44|Kamsta Orbit|orbit|3246137400
+45|Druanga|moon|3114984536
+46|Druanga Orbit|orbit|1543237049
+47|Unilix|moon|2220610564
+48|Unilix Orbit|orbit|2401842232
+49|Aiakos|moon|570236461
+50|Aiakos Orbit|orbit|3150808818
+51|Nikara|planet|580099684
+52|Nikara Orbit|orbit|1792992185
+53|Sandro|moon|3425893557
+54|Sandro Orbit|orbit|3582862462
+55|Sladeshon|moon|538045609
+56|Sladeshon Orbit|orbit|673226786
+57|Konan|moon|3889213990
+58|Konan Orbit|orbit|557337124
+59|Kuyou|moon|445223484
+60|Kuyou Orbit|orbit|3513143632
+61|Empusa|moon|278117862
+62|Empusa Orbit|orbit|760928523
+63|Braenora|planet|226271743
+64|Braenora Orbit|orbit|2700025295
+65|Sapphire|moon|964355521
+66|Sapphire Orbit|orbit|1261887536
+67|Beaumont|moon|2213415502
+68|Beaumont Orbit|orbit|3927489384
+69|Mordred|moon|1964877219
+70|Mordred Orbit|orbit|4088914465
+71|Lilac|moon|1719991299
+72|Lilac Orbit|orbit|2916626740
+73|Constance|planet|3392547181
+74|Constance Orbit|orbit|341598
+75|Goose|moon|435500301
+76|Goose Orbit|orbit|1079173859
+77|Mercurial|moon|2818589060
+78|Mercurial Orbit|orbit|4206874516
+79|Selemaenae|moon|2404289920
+80|Selemaenae Orbit|orbit|1108223205
+81|Terebellus Asteroid Belt 1|asteroid-belt|2739920943
+82|Cordova|star|3511214346
+83|Cordova Orbit|orbit|2775129950
+84|Tinfaya|planet|1372216394
+85|Tinfaya Orbit|orbit|3781622185
+86|Xorius|moon|2230356759
+87|Xorius Orbit|orbit|3672457522
+88|Chimera|moon|3185069381
+89|Chimera Orbit|orbit|3489095618
+90|Rupel|moon|4110540319
+91|Rupel Orbit|orbit|3712651207
+92|Bunkle|planet|2346530973
+93|Bunkle Orbit|orbit|3583102700
+94|Norfair|moon|905801166
+95|Norfair Orbit|orbit|1569169345
+96|Memnon|moon|3455200791
+97|Memnon Orbit|orbit|962813068
+98|Imbrium|moon|2449131726
+99|Imbrium Orbit|orbit|4107485485
+100|Elolis|moon|2515569168
+101|Elolis Orbit|orbit|910460628
+102|Orpheus|moon|2417054231
+103|Orpheus Orbit|orbit|602937854
+104|Gorgon|planet|2886656865
+105|Gorgon Orbit|orbit|1390321739
+106|Yetermoon|moon|187065942
+107|Yetermoon Orbit|orbit|4215464739
+108|Beylix|moon|1150562382
+109|Beylix Orbit|orbit|1061932160
+110|Cordova Asteroid Belt 1|asteroid-belt|4065782850
+111|Cordova Asteroid Belt 2|asteroid-belt|1397879858
+112|Vozanus|star|2230352437
+113|Vozanus Orbit|orbit|1411128459
+114|Bellerophon|planet|2624138828
+115|Bellerophon Orbit|orbit|2134344594
+116|Cootiepuss|moon|2606531644
+117|Cootiepuss Orbit|orbit|2575306158
+118|Thanatos|moon|718109250
+119|Thanatos Orbit|orbit|2743941997
+120|Midas|moon|1294514161
+121|Midas Orbit|orbit|2541670825
+122|Avez|moon|822935878
+123|Avez Orbit|orbit|2811396325
+124|Avorion|moon|1140903056
+125|Avorion Orbit|orbit|2362865703
+126|Chrothurn|moon|3191722422
+127|Chrothurn Orbit|orbit|2525107778
+128|Nostos|planet|454657558
+129|Nostos Orbit|orbit|3790108349
+130|Katalos|moon|834610884
+131|Katalos Orbit|orbit|2900910431
+132|Jiangyin|moon|1946299286
+133|Jiangyin Orbit|orbit|1715313518
+134|Soteria|moon|2951801470
+135|Soteria Orbit|orbit|3871228016
+136|Neevus|moon|4114629591
+137|Neevus Orbit|orbit|4255890468
+138|Nomos|planet|2923343484
+139|Nomos Orbit|orbit|135581753
+140|Vorlon|moon|1721245963
+141|Vorlon Orbit|orbit|250575347
+142|Ariel|moon|1206944161
+143|Ariel Orbit|orbit|3616662289
+144|Manearth|moon|632092052
+145|Manearth Orbit|orbit|3395029845
+146|Sihnon|moon|483031850
+147|Sihnon Orbit|orbit|3760058603
+148|Kaliphos|planet|4188742278
+149|Kaliphos Orbit|orbit|1950797342
+150|Tzelma|moon|3199385576
+151|Tzelma Orbit|orbit|1820944885
+152|Lynx|moon|3169799989
+153|Lynx Orbit|orbit|1193554314
+154|Osiris|moon|569903010
+155|Osiris Orbit|orbit|914648559
+156|Crean|moon|3761310443
+157|Crean Orbit|orbit|2877391850
+158|Mobius|moon|4293061397
+159|Mobius Orbit|orbit|2267724075
+160|Impetus|planet|656577702
+161|Impetus Orbit|orbit|1254086865
+162|Jackneevle|moon|2630554033
+163|Jackneevle Orbit|orbit|2010004579
+164|Alecto|moon|842841887
+165|Alecto Orbit|orbit|311567648
+166|Sworn|moon|3482434939
+167|Sworn Orbit|orbit|3814235637
+168|Warrus|moon|42842620
+169|Warrus Orbit|orbit|714226892
+170|Sturata|moon|2606716828
+171|Sturata Orbit|orbit|857538602
+172|Vozanus Asteroid Belt 1|asteroid-belt|1009269704
+173|Brunnus|star|751713055
+174|Brunnus Orbit|orbit|1079668443
+175|Eleusis|planet|1489660337
+176|Eleusis Orbit|orbit|4097738769
+177|Willownezz|moon|3657355805
+178|Willownezz Orbit|orbit|2112204677
+179|Starfury|moon|3532190999
+180|Starfury Orbit|orbit|3067063191
+181|Demeter|planet|18702302
+182|Demeter Orbit|orbit|3824260143
+183|Untra|moon|2035869191
+184|Untra Orbit|orbit|4298391
+185|Alfrind|moon|2005483781
+186|Alfrind Orbit|orbit|2611916275
+187|Hemera|moon|3528323349
+188|Hemera Orbit|orbit|1134988774
+189|Corus|moon|2278836369
+190|Corus Orbit|orbit|3838518854
+191|Bombato|moon|1172120230
+192|Bombato Orbit|orbit|1349743721
+193|Vobis|planet|3247570028
+194|Vobis Orbit|orbit|2585365539
+195|Seehusen|moon|2573455618
+196|Seehusen Orbit|orbit|1595483642
+197|Minos|moon|215490750
+198|Minos Orbit|orbit|1077556868
+199|Corsol|moon|731560182
+200|Corsol Orbit|orbit|629068612
+201|Rokenharr|moon|669929864
+202|Rokenharr Orbit|orbit|2184731625
+203|Gorgyra|moon|67120416
+204|Gorgyra Orbit|orbit|3147102962
+205|Marmo|planet|1352012569
+206|Marmo Orbit|orbit|1649937609
+207|Exallander|moon|3457883968
+208|Exallander Orbit|orbit|2524705069
+209|Haze|moon|1235134778
+210|Haze Orbit|orbit|3507203536
+211|Zendia|moon|2028255846
+212|Zendia Orbit|orbit|11081744
+213|Tentei|planet|3176357750
+214|Tentei Orbit|orbit|4101862836
+215|Kraine|moon|2375510006
+216|Kraine Orbit|orbit|2920771923
+217|Alban|moon|2964249266
+218|Alban Orbit|orbit|3906759896
+219|Voxnova|moon|2873676386
+220|Voxnova Orbit|orbit|1963879454
+221|Nell|planet|975296064
+222|Nell Orbit|orbit|928154446
+223|Raven|moon|3668201050
+224|Raven Orbit|orbit|198452947
+225|Haka|planet|1044378153
+226|Haka Orbit|orbit|3278898486
+227|Murasaki|moon|2184998144
+228|Murasaki Orbit|orbit|1120899411
+229|Minoa|moon|3856312188
+230|Minoa Orbit|orbit|37281746
+231|Liko|moon|700729944
+232|Liko Orbit|orbit|1203181322
+233|Castor|moon|3792823306
+234|Castor Orbit|orbit|12746028
+235|Brunnus Asteroid Belt 1|asteroid-belt|3438423178
+236|Brunnus Asteroid Belt 2|asteroid-belt|2571463521
+237|Sargus|star|906117327
+238|Sargus Orbit|orbit|1229589821
+239|Tisiphone|planet|3220594908
+240|Tisiphone Orbit|orbit|306473559
+241|Alwego|moon|1158277080
+242|Alwego Orbit|orbit|75234439
+243|Hedone|moon|3216764252
+244|Hedone Orbit|orbit|364423634
+245|Tenou|moon|282241731
+246|Tenou Orbit|orbit|863842870
+247|Algea|moon|1543110486
+248|Algea Orbit|orbit|168508605
+249|Geive|moon|194322072
+250|Geive Orbit|orbit|1866339975
+251|Sparky|planet|2491271012
+252|Sparky Orbit|orbit|895892025
+253|Grishord|moon|822848006
+254|Grishord Orbit|orbit|339236026
+255|Jetnova|moon|3650884871
+256|Jetnova Orbit|orbit|1030286809
+257|Paquin|planet|2974013464
+258|Paquin Orbit|orbit|325500933
+259|Ketobar|moon|2843282398
+260|Ketobar Orbit|orbit|15081543
+261|Riza|moon|3204960489
+262|Riza Orbit|orbit|3262624285
+263|Rubik|moon|3708886399
+264|Rubik Orbit|orbit|627053236
+265|Miturion|moon|1739111390
+266|Miturion Orbit|orbit|2051687742
+267|Sargus Asteroid Belt 1|asteroid-belt|1055069540
+268|Tanius|star|2026679130
+269|Tanius Orbit|orbit|3024472860
+270|Poseidon|planet|1007446985
+271|Poseidon Orbit|orbit|2807598584
+272|Yuraq|moon|253299024
+273|Yuraq Orbit|orbit|536293080
+274|Dafdee|moon|3957520983
+275|Dafdee Orbit|orbit|1754320235
+276|Mina|planet|3993017582
+277|Mina Orbit|orbit|1368338802
+278|Harbistaz|moon|238114048
+279|Harbistaz Orbit|orbit|3366029296
+280|Gapleon|moon|4270454168
+281|Gapleon Orbit|orbit|965256834
+282|Petra|moon|1076548685
+283|Petra Orbit|orbit|460899752
+284|Verbena|moon|2594929274
+285|Verbena Orbit|orbit|2065923897
+286|Infernox|planet|3540590377
+287|Infernox Orbit|orbit|261342774
+288|Lacero|moon|2556254002
+289|Lacero Orbit|orbit|1989805877
+290|Ophion|moon|1140682369
+291|Ophion Orbit|orbit|4165827132
+292|Hestia|moon|1122056514
+293|Hestia Orbit|orbit|1533749927
+294|Alke|moon|3513087758
+295|Alke Orbit|orbit|4266762616
+296|Morpheus|planet|4182015599
+297|Morpheus Orbit|orbit|2781234457
+298|Tarn|moon|2572652295
+299|Tarn Orbit|orbit|1368721537
+300|Mavarix|moon|509210942
+301|Mavarix Orbit|orbit|988696389
+302|Apate|moon|2532285423
+303|Apate Orbit|orbit|667592282
+304|Exavier|moon|3198214009
+305|Exavier Orbit|orbit|592252640
+306|Alessandro|moon|3676911999
+307|Alessandro Orbit|orbit|1333314187
+308|Theoden|moon|2216151216
+309|Theoden Orbit|orbit|3768743917
+310|Cerberus|planet|3486868681
+311|Cerberus Orbit|orbit|2539182356
+312|Thurion|moon|1805098655
+313|Thurion Orbit|orbit|2897060359
+314|Parth|moon|3680916087
+315|Parth Orbit|orbit|1752830941
+316|Hades|planet|856786374
+317|Hades Orbit|orbit|171324973
+318|Lozekam|moon|1332867722
+319|Lozekam Orbit|orbit|2882608025
+320|Tartarus|moon|2667154768
+321|Tartarus Orbit|orbit|2313994994
+322|Tanius Asteroid Belt 1|asteroid-belt|1602889074
+323|Wexovis|star|2813848615
+324|Wexovis Orbit|orbit|1570135873
+325|Tieneo|planet|3703875999
+326|Tieneo Orbit|orbit|1057995248
+327|Marquardt|moon|1537340550
+328|Marquardt Orbit|orbit|2149655611
+329|Rampart|moon|114824675
+330|Rampart Orbit|orbit|3852112164
+331|Horae|moon|2024823507
+332|Horae Orbit|orbit|3162663215
+333|Kokytos|moon|535850645
+334|Kokytos Orbit|orbit|1342070439
+335|Atengam|moon|3214808229
+336|Atengam Orbit|orbit|4101939593
+337|Mormo|planet|1909657792
+338|Mormo Orbit|orbit|4125428098
+339|Irilea|moon|931114766
+340|Irilea Orbit|orbit|868522017
+341|Silverhorn|moon|1772365762
+342|Silverhorn Orbit|orbit|196779148
+343|Kunkri|moon|780227528
+344|Kunkri Orbit|orbit|3271365395
+345|Wexovis Asteroid Belt 1|asteroid-belt|541043759
+346|Sephi|star|2360855128
+347|Sephi Orbit|orbit|1885097750
+348|Sapperious|planet|2502642322
+349|Sapperious Orbit|orbit|386312194
+350|Etreum|moon|1282506846
+351|Etreum Orbit|orbit|4016088180
+352|Ganus|moon|1844989969
+353|Ganus Orbit|orbit|503543486
+354|Joenus|planet|728881279
+355|Joenus Orbit|orbit|125651064
+356|Cetria|moon|231530205
+357|Cetria Orbit|orbit|1010854808
+358|Daryun|moon|1678473901
+359|Daryun Orbit|orbit|3941749350
+360|Mireska|moon|968248911
+361|Mireska Orbit|orbit|3740694400
+362|Elezar|moon|2970458945
+363|Elezar Orbit|orbit|1519657227
+364|Horkos|moon|497794002
+365|Horkos Orbit|orbit|2903315303
+366|Kerel|planet|2783309877
+367|Kerel Orbit|orbit|1378340521
+368|Cinza|moon|4224437042
+369|Cinza Orbit|orbit|4059635469
+370|Pollus|moon|3479925983
+371|Pollus Orbit|orbit|915152848
+372|Deadrim|moon|581319477
+373|Deadrim Orbit|orbit|3189785824
+374|Aberdon|planet|2261448962
+375|Aberdon Orbit|orbit|3467618056
+376|Greger|moon|1854439875
+377|Greger Orbit|orbit|2049663647
+378|Yasha|moon|1442220429
+379|Yasha Orbit|orbit|1465359923
+380|Jeroen|moon|4220862922
+381|Jeroen Orbit|orbit|2351584940
+382|Quillion|moon|2187720084
+383|Quillion Orbit|orbit|1499074062
+384|Abaddon|moon|428660144
+385|Abaddon Orbit|orbit|108714734
+386|Atonoy|planet|4192542353
+387|Atonoy Orbit|orbit|2838260645
+388|Cybros|moon|1942381507
+389|Cybros Orbit|orbit|3663854032
+390|Demios|moon|3344421683
+391|Demios Orbit|orbit|704671128
+392|Orion|moon|495759001
+393|Orion Orbit|orbit|2776500557
+394|Gearofen|moon|3222016014
+395|Gearofen Orbit|orbit|4077803094
+396|Hera|moon|2127693774
+397|Hera Orbit|orbit|2114368183
+398|Sephi Asteroid Belt 1|asteroid-belt|3797391413
+399|Auriel|star|3039727049
+400|Auriel Orbit|orbit|657534797
+401|Arendel|planet|4075475531
+402|Arendel Orbit|orbit|2161760727
+403|Porcyka|moon|2013459826
+404|Porcyka Orbit|orbit|1272078999
+405|Hadrian|moon|1864858145
+406|Hadrian Orbit|orbit|1107550231
+407|Morus|moon|2265918495
+408|Morus Orbit|orbit|2963010472
+409|Theia|moon|2100485026
+410|Theia Orbit|orbit|3691251104
+411|Luxitania|moon|3763565316
+412|Luxitania Orbit|orbit|264991184
+413|Penium|planet|340894787
+414|Penium Orbit|orbit|3968285343
+415|Lizava|moon|3733176073
+416|Lizava Orbit|orbit|2043526497
+417|Juliette|moon|2315685478
+418|Juliette Orbit|orbit|1641225756
+419|Dolentea|moon|654323602
+420|Dolentea Orbit|orbit|460468265
+421|Corrine|planet|3144317495
+422|Corrine Orbit|orbit|4000155083
+423|Arcanis|moon|3223703174
+424|Arcanis Orbit|orbit|2328607877
+425|Naden|moon|3507406005
+426|Naden Orbit|orbit|1160499254
+427|Auriel Asteroid Belt 1|asteroid-belt|3807310719
+428|Calamity|star|1079932794
+429|Calamity Orbit|orbit|2748634558
+430|Wilde|planet|182977300
+431|Wilde Orbit|orbit|48439178
+432|Aurelios|moon|1966862671
+433|Aurelios Orbit|orbit|1346704598
+434|Abyssal|moon|272926274
+435|Abyssal Orbit|orbit|1215889083
+436|Anathema|planet|2784274832
+437|Anathema Orbit|orbit|3471186670
+438|Noveria|moon|2011078848
+439|Noveria Orbit|orbit|4092847066
+440|Tintavis|moon|3287471042
+441|Tintavis Orbit|orbit|3091546955
+442|Matyus|planet|3986848516
+443|Matyus Orbit|orbit|3249498559
+444|Jinxjazz|moon|372871660
+445|Jinxjazz Orbit|orbit|2823376846
+446|Techne|moon|1956154696
+447|Techne Orbit|orbit|2956548117
+448|Lyralei|moon|1684342097
+449|Lyralei Orbit|orbit|3011542145
+450|Calamity Asteroid Belt 1|asteroid-belt|2252104361
+451|Errioni|star|2632344325
+452|Errioni Orbit|orbit|2788307785
+453|Lotuslana|planet|1471359590
+454|Lotuslana Orbit|orbit|3555186933
+455|Hellmouth|moon|57194495
+456|Hellmouth Orbit|orbit|1608967489
+457|Hermes|moon|1626888558
+458|Hermes Orbit|orbit|436041039
+459|Neuranto|moon|2784301317
+460|Neuranto Orbit|orbit|2404124368
+461|Xandra|planet|323100574
+462|Xandra Orbit|orbit|2258168456
+463|Leto|moon|2543804389
+464|Leto Orbit|orbit|585235769
+465|Nissaria|moon|3919960166
+466|Nissaria Orbit|orbit|3889547647
+467|Sofurna|moon|55305806
+468|Sofurna Orbit|orbit|1619036767
+469|Derry|planet|2456054453
+470|Derry Orbit|orbit|1755864487
+471|Husky|moon|1253577440
+472|Husky Orbit|orbit|3315740724
+473|Daedelus|moon|467991891
+474|Daedelus Orbit|orbit|1047546896
+475|Atropos|moon|1582704841
+476|Atropos Orbit|orbit|2151044015
+477|Akkolon|moon|4275334023
+478|Akkolon Orbit|orbit|2614585585
+479|Nike|planet|900854515
+480|Nike Orbit|orbit|3251039218
+481|Coniferous|moon|1815233481
+482|Coniferous Orbit|orbit|1138458167
+483|Errioni Asteroid Belt 1|asteroid-belt|3975933307
+484|Halsian|star|2686387114
+485|Halsian Orbit|orbit|2292939868
+486|Titan|planet|1832780994
+487|Titan Orbit|orbit|2081013815
+488|Jibber|moon|1825062768
+489|Jibber Orbit|orbit|2182165755
+490|Thalassa|moon|54574853
+491|Thalassa Orbit|orbit|4220497193
+492|Heechgata|moon|3219326521
+493|Heechgata Orbit|orbit|1607508857
+494|Grilla|planet|3751766248
+495|Grilla Orbit|orbit|3549086988
+496|Horaerratum|moon|1822738485
+497|Horaerratum Orbit|orbit|3078709604
+498|Esluna|moon|3940491494
+499|Esluna Orbit|orbit|2877101481
+500|Regina|planet|2840251584
+501|Regina Orbit|orbit|2658872542
+502|Drakkett|moon|517607877
+503|Drakkett Orbit|orbit|3914613131
+504|Adikia|moon|3529587076
+505|Adikia Orbit|orbit|1458600663
+506|Indigo|planet|520675570
+507|Indigo Orbit|orbit|1496424195
+508|Auberge|moon|2934807875
+509|Auberge Orbit|orbit|1043496564
+510|Nechrophos|moon|2309457877
+511|Nechrophos Orbit|orbit|1807426732
+512|Ourus|moon|3471062776
+513|Ourus Orbit|orbit|4014488627
+514|Halsian Asteroid Belt 1|asteroid-belt|3784448188
+515|Halsian Asteroid Belt 2|asteroid-belt|655170227
+516|Merlime|star|3881946966
+517|Merlime Orbit|orbit|3171885945
+518|Zegul|planet|195514222
+519|Zegul Orbit|orbit|306280509
+520|Mixin|moon|2553997365
+521|Mixin Orbit|orbit|3460841879
+522|Bluna|moon|941643382
+523|Bluna Orbit|orbit|2689846573
+524|Veden|moon|1576192239
+525|Veden Orbit|orbit|3659225604
+526|Aidos|moon|2458055016
+527|Aidos Orbit|orbit|1350190142
+528|Erinyes|planet|1015249309
+529|Erinyes Orbit|orbit|1695751061
+530|Orsa|moon|2213558915
+531|Orsa Orbit|orbit|2153243659
+532|Tarrasque|moon|843988770
+533|Tarrasque Orbit|orbit|705117943
+534|Heliolyte|moon|4149621446
+535|Heliolyte Orbit|orbit|1421896877
+536|Whinstone|planet|1383690812
+537|Whinstone Orbit|orbit|857097780
+538|Feist|moon|1546237199
+539|Feist Orbit|orbit|3259703853
+540|Palto|moon|3271138673
+541|Palto Orbit|orbit|2443057455
+542|Akasha|moon|4035442203
+543|Akasha Orbit|orbit|3958812431
+544|Lethe|moon|1213489503
+545|Lethe Orbit|orbit|2482680346
+546|Helburn|planet|2859834800
+547|Helburn Orbit|orbit|3899408333
+548|Yggdrasil|moon|1883189291
+549|Yggdrasil Orbit|orbit|444705947
+550|Magmin|moon|3459730254
+551|Magmin Orbit|orbit|796849852
+552|Zed|moon|4263300566
+553|Zed Orbit|orbit|2555726168
+554|Merlime Asteroid Belt 1|asteroid-belt|3304863258
+555|Merlime Asteroid Belt 2|asteroid-belt|3409520259
+556|Capellus|star|4195319360
+557|Capellus Orbit|orbit|1182845123
+558|Rhadaman|planet|3207706908
+559|Rhadaman Orbit|orbit|3304634976
+560|Lendiana|moon|3802779026
+561|Lendiana Orbit|orbit|1122602813
+562|Zakhol|moon|2914949513
+563|Zakhol Orbit|orbit|2524990928
+564|Termina|moon|3938350482
+565|Termina Orbit|orbit|1800566855
+566|Meleager|moon|3254174738
+567|Meleager Orbit|orbit|4232618581
+568|Semiele|planet|3046378575
+569|Semiele Orbit|orbit|929661409
+570|Sylvateu|moon|2067048768
+571|Sylvateu Orbit|orbit|664116406
+572|Weylop|moon|214326650
+573|Weylop Orbit|orbit|2318531237
+574|Talos|moon|2355608409
+575|Talos Orbit|orbit|3781895859
+576|Manta|planet|605183157
+577|Manta Orbit|orbit|3261187186
+578|Boerdig|moon|2816389063
+579|Boerdig Orbit|orbit|631070760
+580|Orphne|moon|208339441
+581|Orphne Orbit|orbit|1525555355
+582|Hexagee|moon|2740946024
+583|Hexagee Orbit|orbit|615925689
+584|Hypnos|moon|2982654158
+585|Hypnos Orbit|orbit|1664564721
+586|Katar|planet|1024015596
+587|Katar Orbit|orbit|1930969573
+588|Sansara|moon|77242571
+589|Sansara Orbit|orbit|2801786046
+590|Aporia|moon|2449031094
+591|Aporia Orbit|orbit|123857662
+592|Balanar|moon|2656706672
+593|Balanar Orbit|orbit|776687932
+594|Furion|planet|2617624857
+595|Furion Orbit|orbit|687982173
+596|Neenuvar|moon|2539191409
+597|Neenuvar Orbit|orbit|3772644684
+598|Elysium|moon|3502103359
+599|Elysium Orbit|orbit|2311258443
+600|Ranolin|moon|1215128515
+601|Ranolin Orbit|orbit|735651511
+602|Capellus Asteroid Belt 1|asteroid-belt|2096094440
+603|Teamagus|star|2056440689
+604|Teamagus Orbit|orbit|3327231642
+605|Warlock|planet|1579952346
+606|Warlock Orbit|orbit|729873291
+607|Irinchik|moon|3453044665
+608|Irinchik Orbit|orbit|3455867048
+609|Indarl|moon|2335616919
+610|Indarl Orbit|orbit|1993848318
+611|Liono|moon|2289736229
+612|Liono Orbit|orbit|3099752144
+613|Spatha|moon|3506969575
+614|Spatha Orbit|orbit|1173589959
+615|Perodome|planet|2874514693
+616|Perodome Orbit|orbit|3699634968
+617|Albion|moon|1529083536
+618|Albion Orbit|orbit|370759489
+619|Sakimi|moon|403979180
+620|Sakimi Orbit|orbit|778142367
+621|Bishamonten|moon|2524028530
+622|Bishamonten Orbit|orbit|3094898556
+623|Nestor|moon|3186598658
+624|Nestor Orbit|orbit|1995447913
+625|Farangis|planet|2415274860
+626|Farangis Orbit|orbit|1584913151
+627|Orbadon|moon|311978923
+628|Orbadon Orbit|orbit|2482270983
+629|Jespur|moon|2527480655
+630|Jespur Orbit|orbit|2659330969
+631|Karik|moon|713765467
+632|Karik Orbit|orbit|1322361409
+633|Prabhava|moon|2899619009
+634|Prabhava Orbit|orbit|774101793
+635|Whittier|moon|2097438179
+636|Whittier Orbit|orbit|2123750019
+637|Anax|planet|4001389696
+638|Anax Orbit|orbit|1672023049
+639|Zirbs|moon|1057946550
+640|Zirbs Orbit|orbit|3830305495
+641|Sage|moon|2838482817
+642|Sage Orbit|orbit|1495394684
+643|Infamani|moon|1251052968
+644|Infamani Orbit|orbit|3224807476
+645|Lothar|planet|2961835070
+646|Lothar Orbit|orbit|866735766
+647|Zomble|moon|236436067
+648|Zomble Orbit|orbit|4017772357
+649|Thoon|moon|936724330
+650|Thoon Orbit|orbit|3504574620
+651|Arkazious|moon|1730267475
+652|Arkazious Orbit|orbit|1444999888
+653|Arturius|moon|2349659679
+654|Arturius Orbit|orbit|2603851628
+655|Slithice|planet|2583351186
+656|Slithice Orbit|orbit|2776642277
+657|Vesper|moon|2333568319
+658|Vesper Orbit|orbit|3896297278
+659|Heinlein|moon|2579402597
+660|Heinlein Orbit|orbit|327945806
+661|Ryuo|moon|3310500521
+662|Ryuo Orbit|orbit|3412287297
+663|Crixalis|planet|453861573
+664|Crixalis Orbit|orbit|2553086472
+665|Greenleaf|moon|1625317533
+666|Greenleaf Orbit|orbit|199200288
+667|Ismene|moon|1004971070
+668|Ismene Orbit|orbit|2637462809
+669|Achilles|moon|1796731300
+670|Achilles Orbit|orbit|122424827
+671|Aion|moon|3589879256
+672|Aion Orbit|orbit|2895617976
+673|Teamagus Asteroid Belt 1|asteroid-belt|278588049
+674|Electra|star|347646982
+675|Electra Orbit|orbit|3690117935
+676|Maelstrom|planet|934409990
+677|Maelstrom Orbit|orbit|2251183162
+678|Faerie|moon|3883042429
+679|Faerie Orbit|orbit|2370848508
+680|Octarine|moon|117458519
+681|Octarine Orbit|orbit|4052189103
+682|Lameuffen|planet|27354822
+683|Lameuffen Orbit|orbit|2172176943
+684|Sange|moon|365215485
+685|Sange Orbit|orbit|742295081
+686|Delune|moon|3350758596
+687|Delune Orbit|orbit|1928675863
+688|Ozwulf|moon|3545631167
+689|Ozwulf Orbit|orbit|3773137873
+690|Kael|moon|2849179194
+691|Kael Orbit|orbit|4264215807
+692|Pelorum|moon|3648248172
+693|Pelorum Orbit|orbit|368550566
+694|Kerkon|planet|3286811268
+695|Kerkon Orbit|orbit|3218785334
+696|Kratos|moon|3488733215
+697|Kratos Orbit|orbit|1627248541
+698|Manelscot|moon|410332485
+699|Manelscot Orbit|orbit|969633960
+700|Dinotress|moon|677673830
+701|Dinotress Orbit|orbit|3830615649
+702|Empha|moon|2295814195
+703|Empha Orbit|orbit|584772147
+704|Melkor|planet|3145774786
+705|Melkor Orbit|orbit|3512262810
+706|Feluna|moon|2138867037
+707|Feluna Orbit|orbit|3313486878
+708|Rutadam|moon|3526987195
+709|Rutadam Orbit|orbit|431898767
+710|Exorrion|moon|1450477169
+711|Exorrion Orbit|orbit|284186101
+712|Electra Asteroid Belt 1|asteroid-belt|3265002490
+713|Electra Asteroid Belt 2|asteroid-belt|3063027028
+714|Basilius|star|2127918224
+715|Basilius Orbit|orbit|945738498
+716|Krobelus|planet|4247264025
+717|Krobelus Orbit|orbit|1827634992
+718|Emiir|moon|2962006356
+719|Emiir Orbit|orbit|808392855
+720|Anson|moon|3572516821
+721|Anson Orbit|orbit|2723736843
+722|Faustus|planet|3815037598
+723|Faustus Orbit|orbit|2539722226
+724|Arkoth|moon|2570136021
+725|Arkoth Orbit|orbit|3957139917
+726|Basilius Asteroid Belt 1|asteroid-belt|3180058025
+727|Basilius Asteroid Belt 2|asteroid-belt|3838756974
+728|Angelus|star|2440997174
+729|Angelus Orbit|orbit|3304027087
+730|Gigei|planet|1148372227
+731|Gigei Orbit|orbit|2532176008
+732|Shiva|moon|1219215863
+733|Shiva Orbit|orbit|3985657090
+734|Shara|moon|4243430448
+735|Shara Orbit|orbit|3271852193
+736|Antsoutwelt|planet|1247287716
+737|Antsoutwelt Orbit|orbit|3659628968
+738|Toxinora|moon|2102911835
+739|Toxinora Orbit|orbit|3150333854
+740|Harmonia|moon|1703238289
+741|Harmonia Orbit|orbit|1232585866
+742|Vestrian|moon|2271660248
+743|Vestrian Orbit|orbit|823866149
+744|Ourea|moon|1550528139
+745|Ourea Orbit|orbit|2068815608
+746|Snezon|planet|2315658754
+747|Snezon Orbit|orbit|825140253
+748|Avakis|moon|2401851401
+749|Avakis Orbit|orbit|527667677
+750|Rumba|moon|4142589528
+751|Rumba Orbit|orbit|3097137744
+752|Krubidium|moon|2025899097
+753|Krubidium Orbit|orbit|1754316592
+754|Tycho|moon|3941922997
+755|Tycho Orbit|orbit|3995988189
+756|Shinzo|moon|2074130958
+757|Shinzo Orbit|orbit|2227155123
+758|Angelus Asteroid Belt 1|asteroid-belt|885226834
+759|Angelus Asteroid Belt 2|asteroid-belt|724054656
+760|Astermore|star|3108367059
+761|Astermore Orbit|orbit|368621988
+762|Raegis|planet|691183687
+763|Raegis Orbit|orbit|1952387473
+764|Sooten|moon|148235804
+765|Sooten Orbit|orbit|1576077002
+766|Rouk|moon|3278669695
+767|Rouk Orbit|orbit|2422393351
+768|Ishmere|moon|934700558
+769|Ishmere Orbit|orbit|4232593678
+770|Spiriso|moon|1039428689
+771|Spiriso Orbit|orbit|2564142758
+772|Tigris|planet|3181957280
+773|Tigris Orbit|orbit|1193705205
+774|Eaglesong|moon|2811936407
+775|Eaglesong Orbit|orbit|588881293
+776|Amebris|moon|3756584622
+777|Amebris Orbit|orbit|1536765138
+778|Katski|planet|4140902492
+779|Katski Orbit|orbit|795881444
+780|Azure|moon|1425269779
+781|Azure Orbit|orbit|960735961
+782|Erebos|moon|3104768058
+783|Erebos Orbit|orbit|2361864198
+784|Enigma|moon|1271387397
+785|Enigma Orbit|orbit|2443296967
+786|Karura|moon|3975762686
+787|Karura Orbit|orbit|2898605392
+788|Lyssa|planet|4024980960
+789|Lyssa Orbit|orbit|2427286214
+790|Ettenor|moon|752752318
+791|Ettenor Orbit|orbit|2608650082
+792|Akerty|moon|3602436185
+793|Akerty Orbit|orbit|491227084
+794|Agon|moon|2819941282
+795|Agon Orbit|orbit|941000359
+796|Hexen|moon|2325618110
+797|Hexen Orbit|orbit|3098387958
+798|Berky|moon|1071878466
+799|Berky Orbit|orbit|2393353618
+800|Budkai|moon|103839114
+801|Budkai Orbit|orbit|803877274
+802|Phanto|planet|2141909902
+803|Phanto Orbit|orbit|2744163085
+804|Eirene|moon|273173400
+805|Eirene Orbit|orbit|3334030047
+806|Moirai|moon|2502424125
+807|Moirai Orbit|orbit|531022809
+808|Galvania|moon|764571482
+809|Galvania Orbit|orbit|4010716532
+810|Eshone|moon|4130249488
+811|Eshone Orbit|orbit|4022334960
+812|Dolos|planet|3743468448
+813|Dolos Orbit|orbit|1238291314
+814|Bloodthorn|moon|3205530469
+815|Bloodthorn Orbit|orbit|2573857840
+816|Ermintrude|moon|96212461
+817|Ermintrude Orbit|orbit|3964784003
+818|Koma|moon|133919120
+819|Koma Orbit|orbit|1197464276
+820|Astermore Asteroid Belt 1|asteroid-belt|2821332193
+821|Astermore Asteroid Belt 2|asteroid-belt|2151737008
+822|Argus|star|3094535064
+823|Argus Orbit|orbit|3313482783
+824|Kendapoa|planet|664404602
+825|Kendapoa Orbit|orbit|2231523033
+826|Styx|moon|164527212
+827|Styx Orbit|orbit|1057572892
+828|Plato|planet|1581872057
+829|Plato Orbit|orbit|1707011311
+830|Dagon|moon|736927126
+831|Dagon Orbit|orbit|95400869
+832|Hyratel|moon|2327508970
+833|Hyratel Orbit|orbit|2197090458
+834|Tolubai|moon|4160726470
+835|Tolubai Orbit|orbit|357624364
+836|Wyvern|moon|1288077524
+837|Wyvern Orbit|orbit|2381140281
+838|Claymore|moon|2026489699
+839|Claymore Orbit|orbit|3776856993
+840|Vares|planet|1944707337
+841|Vares Orbit|orbit|1258736261
+842|Aquila|moon|3243278877
+843|Aquila Orbit|orbit|2400160606
+844|Rovecutio|moon|2537774709
+845|Rovecutio Orbit|orbit|2756890653
+846|Ender|moon|1440382645
+847|Ender Orbit|orbit|547253870
+848|Zafis|moon|2004758477
+849|Zafis Orbit|orbit|3614050438
+850|Ixion|moon|3693896664
+851|Ixion Orbit|orbit|1054667342
+852|Argus Asteroid Belt 1|asteroid-belt|2691160536
+853|Argus Asteroid Belt 2|asteroid-belt|1662216144
+854|Assimius|star|574931838
+855|Assimius Orbit|orbit|3657978683
+856|Aizen|planet|2095520843
+857|Aizen Orbit|orbit|3267858093
+858|Jakiro|moon|2637302658
+859|Jakiro Orbit|orbit|2109384669
+860|Ecludies|moon|3619016436
+861|Ecludies Orbit|orbit|3172358679
+862|Hyperion|moon|3274323915
+863|Hyperion Orbit|orbit|1701212380
+864|Bomore|planet|1975141994
+865|Bomore Orbit|orbit|2028202886
+866|Ganymede|moon|113596254
+867|Ganymede Orbit|orbit|3607667234
+868|Isabella|moon|4122180874
+869|Isabella Orbit|orbit|4179006225
+870|Tresdin|planet|505638364
+871|Tresdin Orbit|orbit|363997060
+872|Butterfly|moon|715054393
+873|Butterfly Orbit|orbit|1635990353
+874|Typhon|planet|1086175245
+875|Typhon Orbit|orbit|382386274
+876|Traxex|moon|4240785645
+877|Traxex Orbit|orbit|2844553438
+878|Taras|moon|3276335382
+879|Taras Orbit|orbit|3458613598
+880|Shashi|moon|2877506972
+881|Shashi Orbit|orbit|990902424
+882|Gelos|moon|4211244520
+883|Gelos Orbit|orbit|2559463578
+884|Assimius Asteroid Belt 1|asteroid-belt|3150824575
+885|Assimius Asteroid Belt 2|asteroid-belt|341772799
+886|Hankorus|star|292609599
+887|Hankorus Orbit|orbit|3118278903
+888|Harmonette|planet|1224557925
+889|Harmonette Orbit|orbit|1488409303
+890|Lich|moon|3824417190
+891|Lich Orbit|orbit|662812691
+892|Perseus|moon|887558335
+893|Perseus Orbit|orbit|473039738
+894|Umbra|planet|4091587350
+895|Umbra Orbit|orbit|1459717995
+896|Hyrean|moon|1091885689
+897|Hyrean Orbit|orbit|1796461415
+898|Karas|moon|351557546
+899|Karas Orbit|orbit|3650267528
+900|Capritos|planet|1220065216
+901|Capritos Orbit|orbit|241600938
+902|Piccard|moon|1352744945
+903|Piccard Orbit|orbit|1684197618
+904|Glasties|moon|400117045
+905|Glasties Orbit|orbit|2044617745
+906|Vietera|moon|3782879482
+907|Vietera Orbit|orbit|489766928
+908|Kaya|moon|3308974828
+909|Kaya Orbit|orbit|2784923809
+910|Vexo|planet|1517620901
+911|Vexo Orbit|orbit|3823557901
+912|Lamplika|moon|923571578
+913|Lamplika Orbit|orbit|2694105449
+914|Dionysus|moon|2105314612
+915|Dionysus Orbit|orbit|3641321418
+916|Hybris|moon|1908700061
+917|Hybris Orbit|orbit|1382246347
+918|Momus|moon|3042748954
+919|Momus Orbit|orbit|3800834258
+920|Hankorus Asteroid Belt 1|asteroid-belt|4094469891
+921|Rigelus|star|2043302997
+922|Rigelus Orbit|orbit|443197104
+923|Charon|planet|4102042876
+924|Charon Orbit|orbit|3693458034
+925|Throix|moon|2159511508
+926|Throix Orbit|orbit|71260497
+927|Bordoli|moon|327800962
+928|Bordoli Orbit|orbit|1061350213
+929|Andragora|planet|4137918810
+930|Andragora Orbit|orbit|1979755516
+931|Zelos|moon|2482730949
+932|Zelos Orbit|orbit|2917431996
+933|Geras|moon|3264648302
+934|Geras Orbit|orbit|679146621
+935|Tetracat|moon|3981895604
+936|Tetracat Orbit|orbit|661874278
+937|Rinoto|planet|1939956500
+938|Rinoto Orbit|orbit|2070867125
+939|Juno|moon|3762690379
+940|Juno Orbit|orbit|2640352985
+941|Zion|moon|4126751298
+942|Zion Orbit|orbit|316373339
+943|Chrodon|moon|4169219542
+944|Chrodon Orbit|orbit|2225494684
+945|Morgana|moon|3895494195
+946|Morgana Orbit|orbit|988981408
+947|Aeolus|moon|3703934162
+948|Aeolus Orbit|orbit|4155621741
+949|Elpis|moon|2458571524
+950|Elpis Orbit|orbit|2896581675
+951|Rigelus Asteroid Belt 1|asteroid-belt|2373346064
+952|Calidus|star|1544806755
+953|Calidus Orbit|orbit|1675029127
+954|Nauvis|planet|931471946
+955|Nauvis Orbit|orbit|3890496358
+956|Trostaurus|moon|270236659
+957|Trostaurus Orbit|orbit|453483522
+958|Snek|planet|4250488519
+959|Snek Orbit|orbit|2507942440
+960|Selene|moon|939955342
+961|Selene Orbit|orbit|3478577118
+962|Kara|moon|2790492836
+963|Kara Orbit|orbit|705915411
+964|Nonagaz|moon|367973553
+965|Nonagaz Orbit|orbit|1887213500
+966|Ezra|planet|2550123310
+967|Ezra Orbit|orbit|4111340148
+968|Rooftrellen|moon|4231377434
+969|Rooftrellen Orbit|orbit|228078179
+970|Swoxter|moon|3829942856
+971|Swoxter Orbit|orbit|1003394022
+972|Caerus|moon|3431982318
+973|Caerus Orbit|orbit|3705642383
+974|Petussia|moon|899264270
+975|Petussia Orbit|orbit|777844911
+976|Jenova|moon|2106924043
+977|Jenova Orbit|orbit|767155475
+978|Calidus Asteroid Belt 1|asteroid-belt|3501272655
+979|Kalmaia|star|2862526752
+980|Kalmaia Orbit|orbit|1029028537
+981|Trelos|planet|1449910921
+982|Trelos Orbit|orbit|3719016822
+983|Persephone|moon|2590889918
+984|Persephone Orbit|orbit|585781439
+985|Acisrind|moon|2665853130
+986|Acisrind Orbit|orbit|2679270382
+987|Zauber|planet|979844623
+988|Zauber Orbit|orbit|2642423361
+989|Kitsune|moon|1133428626
+990|Kitsune Orbit|orbit|4185936616
+991|Muir|moon|878511277
+992|Muir Orbit|orbit|1418124014
+993|Athina|moon|1357852031
+994|Athina Orbit|orbit|867441745
+995|Persophone|moon|881638802
+996|Persophone Orbit|orbit|1070352656
+997|Robbebol|planet|3079929823
+998|Robbebol Orbit|orbit|841361686
+999|Riven|moon|2201360703
+1000|Riven Orbit|orbit|4007625210
+1001|Brion|planet|1054840364
+1002|Brion Orbit|orbit|2897572204
+1003|Reaver|moon|2226382100
+1004|Reaver Orbit|orbit|3650909650
+1005|Argenta|moon|2984779920
+1006|Argenta Orbit|orbit|2962412992
+1007|Kalmaia Asteroid Belt 1|asteroid-belt|1362355712
+1008|Kalmaia Asteroid Belt 2|asteroid-belt|469865258
+1009|Penthus|star|4000519104
+1010|Penthus Orbit|orbit|1546391903
+1011|Crystalys|planet|4128176302
+1012|Crystalys Orbit|orbit|3389030311
+1013|Arislan|moon|3985504734
+1014|Arislan Orbit|orbit|65080109
+1015|Aghanim|moon|3718834759
+1016|Aghanim Orbit|orbit|2536259186
+1017|Ashura|planet|1186084025
+1018|Ashura Orbit|orbit|736418246
+1019|Stijio|moon|293518649
+1020|Stijio Orbit|orbit|2796733438
+1021|Hermione|moon|1396274485
+1022|Hermione Orbit|orbit|765905887
+1023|Tango|planet|2707936272
+1024|Tango Orbit|orbit|1066265709
+1025|Redril|moon|1432647245
+1026|Redril Orbit|orbit|4217207114
+1027|Kujaku|moon|371738956
+1028|Kujaku Orbit|orbit|1018744150
+1029|Rolium|moon|3389132566
+1030|Rolium Orbit|orbit|1910224216
+1031|Tyche|moon|2200161287
+1032|Tyche Orbit|orbit|363557748
+1033|Plenai|moon|551313236
+1034|Plenai Orbit|orbit|665142925
+1035|Penthus Asteroid Belt 1|asteroid-belt|2416378427
+1036|Penthus Asteroid Belt 2|asteroid-belt|3429097611
+1037|Auphorus|star|2133373671
+1038|Auphorus Orbit|orbit|1291542272
+1039|Theseus|planet|3389911346
+1040|Theseus Orbit|orbit|4272825945
+1041|Minkey|moon|212904208
+1042|Minkey Orbit|orbit|3129572398
+1043|Koolimon|moon|3698580038
+1044|Koolimon Orbit|orbit|1125433535
+1045|Claustry|moon|1199365273
+1046|Claustry Orbit|orbit|1418152065
+1047|Noventede|planet|84863718
+1048|Noventede Orbit|orbit|20507308
+1049|Noctis|moon|4207670918
+1050|Noctis Orbit|orbit|4102511231
+1051|Dyton|planet|2602079447
+1052|Dyton Orbit|orbit|3837898080
+1053|Osis|moon|1234029665
+1054|Osis Orbit|orbit|2204124106
+1055|Metapilla|moon|916324545
+1056|Metapilla Orbit|orbit|2035809784
+1057|Legogene|moon|1426368133
+1058|Legogene Orbit|orbit|3625113048
+1059|Falconsabre|moon|428678838
+1060|Falconsabre Orbit|orbit|4292033276
+1061|Thule|moon|4265958129
+1062|Thule Orbit|orbit|627954082
+1063|Rivos|planet|2488095468
+1064|Rivos Orbit|orbit|234143513
+1065|Windlace|moon|1878182873
+1066|Windlace Orbit|orbit|1549009365
+1067|Bandoch|moon|1873969359
+1068|Bandoch Orbit|orbit|1559546421
+1069|Auphorus Asteroid Belt 1|asteroid-belt|589251262
+1070|Auphorus Asteroid Belt 2|asteroid-belt|2223912894
+1071|Nalara|star|2572959778
+1072|Nalara Orbit|orbit|1996893898
+1073|Melione|planet|3091163524
+1074|Melione Orbit|orbit|4174582087
+1075|Avernus|moon|1473642500
+1076|Avernus Orbit|orbit|1045798742
+1077|Jetenury|planet|3478917232
+1078|Jetenury Orbit|orbit|3547189442
+1079|Owleye|moon|4007028298
+1080|Owleye Orbit|orbit|2679573967
+1081|Bolina|planet|1608174618
+1082|Bolina Orbit|orbit|2934325339
+1083|Narsus|moon|2964824484
+1084|Narsus Orbit|orbit|684969211
+1085|Oliran|moon|994915620
+1086|Oliran Orbit|orbit|22334637
+1087|Stromhurst|moon|2679999858
+1088|Stromhurst Orbit|orbit|953155520
+1089|Mirage|planet|125607738
+1090|Mirage Orbit|orbit|1079835131
+1091|Pentto|moon|218871773
+1092|Pentto Orbit|orbit|3085839292
+1093|Linken|moon|4039498894
+1094|Linken Orbit|orbit|2821284123
+1095|Nalara Asteroid Belt 1|asteroid-belt|2592186131
+1096|Nalara Asteroid Belt 2|asteroid-belt|1353412363
+1097|Pontus|star|2445622450
+1098|Pontus Orbit|orbit|2266469416
+1099|Oneiros|planet|2956605316
+1100|Oneiros Orbit|orbit|3695683251
+1101|Yaegner|moon|3282064159
+1102|Yaegner Orbit|orbit|3703853925
+1103|Prism|moon|1010928209
+1104|Prism Orbit|orbit|1508005665
+1105|Thrasos|moon|3786021152
+1106|Thrasos Orbit|orbit|393789912
+1107|Lath|moon|2423593236
+1108|Lath Orbit|orbit|2562986144
+1109|Tanzan|planet|3981540843
+1110|Tanzan Orbit|orbit|2625094030
+1111|Alastor|moon|2571671658
+1112|Alastor Orbit|orbit|1733639642
+1113|Viken|moon|3232298559
+1114|Viken Orbit|orbit|3846696729
+1115|Alfonso|moon|3603350077
+1116|Alfonso Orbit|orbit|1346204542
+1117|Nookryme|planet|1725265514
+1118|Nookryme Orbit|orbit|1173448121
+1119|Mercutio|moon|738895083
+1120|Mercutio Orbit|orbit|1556884396
+1121|Angelos|moon|998907537
+1122|Angelos Orbit|orbit|4096222116
+1123|Fodius|moon|1600380459
+1124|Fodius Orbit|orbit|2663401599
+1125|Nexus|moon|622364787
+1126|Nexus Orbit|orbit|1235327291
+1127|Santo|moon|2268752094
+1128|Santo Orbit|orbit|3689798515
+1129|Atos|planet|3167818723
+1130|Atos Orbit|orbit|45997880
+1131|Mordiggian|moon|4136121223
+1132|Mordiggian Orbit|orbit|2415006780
+1133|Magi|moon|3054044348
+1134|Magi Orbit|orbit|3673663054
+1135|Numrah|moon|4070258629
+1136|Numrah Orbit|orbit|2575703814
+1137|Bromwinkle|moon|1938151343
+1138|Bromwinkle Orbit|orbit|894135412
+1139|Amadeo|planet|3807950217
+1140|Amadeo Orbit|orbit|3337278755
+1141|Feaora|moon|4074331684
+1142|Feaora Orbit|orbit|1705008087
+1143|Vekars|moon|1970644991
+1144|Vekars Orbit|orbit|2206732737
+1145|Cadmus|moon|4157429155
+1146|Cadmus Orbit|orbit|305841682
+1147|Miranda|moon|3996201891
+1148|Miranda Orbit|orbit|1110007603
+1149|Skadi|planet|763358203
+1150|Skadi Orbit|orbit|1466845280
+1151|Soma|moon|1646002535
+1152|Soma Orbit|orbit|3616468029
+1153|Ester|moon|2088449674
+1154|Ester Orbit|orbit|1731242777
+1155|Anemoi|moon|3769698267
+1156|Anemoi Orbit|orbit|3914252898
+1157|Amechania|moon|2672021696
+1158|Amechania Orbit|orbit|825208683
+1159|Cinrad|moon|2289157227
+1160|Cinrad Orbit|orbit|1402451476
+1161|Pontus Asteroid Belt 1|asteroid-belt|3545947758
+1162|Alacrity|star|2325772712
+1163|Alacrity Orbit|orbit|1870873090
+1164|Deadwood|planet|1967329615
+1165|Deadwood Orbit|orbit|3690970453
+1166|Segel|moon|2506244075
+1167|Segel Orbit|orbit|1332776948
+1168|Jasbury|moon|3326868231
+1169|Jasbury Orbit|orbit|1526564764
+1170|Clotho|planet|3077166140
+1171|Clotho Orbit|orbit|3772673650
+1172|Lamia|moon|1396710915
+1173|Lamia Orbit|orbit|1171450563
+1174|Esenudreus|moon|2296158296
+1175|Esenudreus Orbit|orbit|3172381308
+1176|Boros|planet|3462773068
+1177|Boros Orbit|orbit|3659676179
+1178|Acheron|moon|3345068560
+1179|Acheron Orbit|orbit|279569996
+1180|Chiron|moon|2472894245
+1181|Chiron Orbit|orbit|1699267875
+1182|Benthai|moon|4207366610
+1183|Benthai Orbit|orbit|1928968532
+1184|Deurus|moon|3550474259
+1185|Deurus Orbit|orbit|3057299315
+1186|Vioress|planet|794693882
+1187|Vioress Orbit|orbit|4272538349
+1188|Roma|moon|3274042404
+1189|Roma Orbit|orbit|2329991287
+1190|Androgun|moon|3488482097
+1191|Androgun Orbit|orbit|3243555184
+1192|Antaeus|moon|3454674970
+1193|Antaeus Orbit|orbit|3654410609
+1194|Toucan|planet|2764864180
+1195|Toucan Orbit|orbit|1318302977
+1196|Rylai|moon|3779055281
+1197|Rylai Orbit|orbit|1708548351
+1198|Arae|moon|1306534674
+1199|Arae Orbit|orbit|3443743706
+1200|Alba|moon|3169167003
+1201|Alba Orbit|orbit|2992160926
+1202|Itnora|moon|1871484145
+1203|Itnora Orbit|orbit|4262759718
+1204|Phoebe|moon|1038436384
+1205|Phoebe Orbit|orbit|3721455966
+1206|Alacrity Asteroid Belt 1|asteroid-belt|2782542710
+1207|Asteroidia|asteroid-field|3729990296
+1208|Astral Snow|asteroid-field|3070055642
+1209|Breadcrumbs|asteroid-field|3979429452
+1210|Broken Mirror|asteroid-field|399594334
+1211|Black Mirror|asteroid-field|26758461
+1212|Bumperfield|asteroid-field|667133065
+1213|Caltrops|asteroid-field|530281701
+1214|Crystal Collective|asteroid-field|216453470
+1215|Creepy Hollow|asteroid-field|1262970376
+1216|Cosmic Dustlands|asteroid-field|2588349710
+1217|Dark Assemblage|asteroid-field|825358154
+1218|Darkflare|asteroid-field|1144469675
+1219|Deadspace|asteroid-field|1910845381
+1220|Dusty Voids|asteroid-field|2217020099
+1221|Ephemeral Expanse|asteroid-field|91688742
+1222|Felleim|asteroid-field|1683918142
+1223|Galactic Gravel|asteroid-field|769475484
+1224|Godash|asteroid-field|4253895408
+1225|Grapeshot|asteroid-field|1066503662
+1226|Galactic Graveyard|asteroid-field|1086852646
+1227|Haunted Hollows|asteroid-field|4042926003
+1228|Hailstorm|asteroid-field|2693843173
+1229|Interstellar Grotto|asteroid-field|2459056117
+1230|Interstellar Barrens|asteroid-field|3353338116
+1231|Ice Field|asteroid-field|3672025684
+1232|Kaleidoscope|asteroid-field|847775596
+1233|Melancholia|asteroid-field|944036509
+1234|Oblongglobulata|asteroid-field|2020997039
+1235|Poltergeist|asteroid-field|2006499309
+1236|Pebbles|asteroid-field|1103226125
+1237|Rocky Ridge|asteroid-field|3052390499
+1238|Razor Field|asteroid-field|1990081396
+1239|Realm of Shadows|asteroid-field|3357588959
+1240|Sands of Time|asteroid-field|444195811
+1241|Shadeland|asteroid-field|773980569
+1242|Sea of Sorrows|asteroid-field|2711961772
+1243|Shattered Skies|asteroid-field|1664591612
+1244|Stardew|asteroid-field|3897621204
+1245|Stardust|asteroid-field|4037263702
+1246|Stone Circles|asteroid-field|1685751225
+1247|Solar Entrails|asteroid-field|3933764528
+1248|Slumberland|asteroid-field|2325341315
+1249|Starcorpse|asteroid-field|3224128040
+1250|Sky Fragments|asteroid-field|3715661909
+1251|Specter|asteroid-field|2464487698
+1252|gs-haven|moon|593626509
+1253|gs-haven Orbit|orbit|1605232327
+1254|gs-vulcanite|planet|4085590136
+1255|gs-vulcanite Orbit|orbit|857377309
+1256|gs-vitamelange|moon|1786379986
+1257|gs-vitamelange Orbit|orbit|1636772703
+1258|gs-iridium|moon|3346813039
+1259|gs-iridium Orbit|orbit|2706766281
+1260|gs-holmium|moon|871607323
+1261|gs-holmium Orbit|orbit|1568559308
+1262|gs-cryonite|moon|1990695818
+1263|gs-cryonite Orbit|orbit|2297998814
+1264|gs-beryllium-belt|asteroid-belt|558875667
+1265|gs-methane-belt|asteroid-belt|1384897361

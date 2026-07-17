@@ -2,15 +2,7 @@ local summarize = {}
 
 local se_data = require('se_data')
 
-local function summarize_zone(zone)
-    local nauvis = storage.zones_by_name['Nauvis']
-    local stars = {}
-    for _, zone in pairs(storage.zones_by_name) do
-        if zone.type == "star" then
-            table.insert(stars, zone)
-        end
-    end
-
+local function summarize_zone(zone, nauvis, stars)
     local summary = {}
     summary.name = zone.name
     summary.zone_type = zone.type
@@ -83,19 +75,14 @@ end
 -- summarize_seed and the comparison harness so both drive generation identically.
 function summarize.build_universe(seed)
     FactorioRNG.global_seed = seed
-    -- Factorio 2.0 renamed `global` to `storage`. SE 0.7's Universe.build reads
-    -- several of these tables before writing them, so seed them here. storage.seed
-    -- is the map seed used by the per-zone resource generators (see docs).
     storage = {
         seed = seed,
         meteor_zones = {},
         zones_by_surface = {},
         spaceships = {},
         forces = { player = {} },
-        cache_travel_delta_v = {},  -- memoisation table used by Zone.get_travel_delta_v
+        cache_travel_delta_v = {},
     }
-    -- Mirror Ancient.on_init(): the ancient-vault loot generator is a standalone
-    -- generator seeded from the map seed (independent of the universe RNG stream).
     storage.glyph_vaults = {}
     storage.glyph_vaults_made_loot = {}
     storage.vault_loot_rng = game.create_random_generator()
@@ -106,29 +93,48 @@ end
 function summarize.summarize_seed(seed)
     summarize.build_universe(seed)
 
+    -- Hoist commonly-used references so summarize_zone doesn't rebuild them.
+    local nauvis = storage.zones_by_name['Nauvis']
+    local stars = {}
+    for _, z in pairs(storage.zones_by_name) do
+        if z.type == "star" then
+            table.insert(stars, z)
+        end
+    end
+
+    -- Home-system planets and moons (Calidus children).
     local planets = {}
     local moons = {}
     for _, planet in pairs(storage.zones_by_name['Calidus'].children) do
         if planet.type == "planet" then
             if not planet.is_homeworld then
-                local summary = summarize_zone(planet)
-                table.insert(planets, summary)
+                table.insert(planets, summarize_zone(planet, nauvis, stars))
             end
             for _, moon in pairs(planet.children) do
-                local summary = summarize_zone(moon)
-                table.insert(moons, summary)
+                table.insert(moons, summarize_zone(moon, nauvis, stars))
             end
         end
     end
 
-    local fields = {}
-    for _, zone in pairs(storage.zones_by_name) do
-        if zone.type == "asteroid-field" then
-            local summary = summarize_zone(zone)
-            table.insert(fields, summary)
+    -- Only keep the nearest asteroid fields. Naquium + methane ice for deep
+    -- space science are the primary concern; far fields are irrelevant.
+    local MAX_FIELDS = 10
+    local all_fields = {}
+    for _, z in pairs(storage.zones_by_name) do
+        if z.type == "asteroid-field" then
+            -- Compute delta_v (memoized) for sorting; defer full summarization.
+            local v = math.ceil(Zone.get_travel_delta_v(nauvis, z))
+            table.insert(all_fields, { zone = z, delta_v = v })
         end
     end
+    table.sort(all_fields, function (this, that) return this.delta_v < that.delta_v end)
 
+    local fields = {}
+    for i = 1, math.min(MAX_FIELDS, #all_fields) do
+        table.insert(fields, summarize_zone(all_fields[i].zone, nauvis, stars))
+    end
+
+    -- Ancient vault loot.
     local loot = {}
     for i = 1, #planets do
         local module = Ancient.get_next_vault_loot({ name = "player" })
@@ -136,7 +142,7 @@ function summarize.summarize_seed(seed)
             table.insert(loot, "P")
         elseif module == "speed-module-9" then
             table.insert(loot, "S")
-        elseif module == "efficiency-module-9" then  -- renamed from effectivity-module-9 in SE 0.7
+        elseif module == "efficiency-module-9" then
             table.insert(loot, "E")
         else
             assert(false)
@@ -145,7 +151,7 @@ function summarize.summarize_seed(seed)
 
     table.sort(planets, function (this, that) return this.delta_v < that.delta_v end)
     table.sort(moons, function (this, that) return this.delta_v < that.delta_v end)
-    table.sort(fields, function (this, that) return this.delta_v < that.delta_v end)
+    -- Fields are already sorted by delta_v from the all_fields sort above.
 
     return {
         seed = seed,
