@@ -131,6 +131,14 @@ pub fn main() !void {
     std.debug.print("SECTION: build_planets_done {d} extra_floats={d}\n", .{rng.draw, extra_floats});
     const total_planets: u32 = @intCast(all_planet_names.items.len);
 
+    // Debug: print planets per star
+    std.debug.print("DEBUG: planets per star after build:\n", .{});
+    for (star_order) |si| {
+        if (star_planets[si].items.len > 0) {
+            std.debug.print("  {s}: {d} planets\n", .{data.stars[si], star_planets[si].items.len});
+        }
+    }
+
     // DEBUG: print all_planets order
     std.debug.print("PLANETS_ORDER\n", .{});
     for (all_planet_names.items, all_planet_stars.items) |pn, si| {
