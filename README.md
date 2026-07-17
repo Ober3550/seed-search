@@ -1,19 +1,44 @@
-# Running the seed finder
+# SE Universe Seed Finder
 
 Reach out to @ctgPi in the [SE Discord](https://discord.gg/GDvxHgXjkk) so you can be assigned a range of chunks
 to work on.
 
-## Windows
+## Project structure
+
+```
+├── generator/    Core seed-generation engine (Lua)
+├── runner/       Distributed execution (Docker, task manager, temp data)
+├── verifier/     End-to-end verification against a real Factorio game
+├── .env.example  Template for local configuration
+└── .env          Local overrides (gitignored) — copy from .env.example
+```
+
+## Configuration
+
+Copy `.env.example` to `.env` and edit the paths for your machine:
+
+```sh
+cp .env.example .env
+```
+
+Key settings:
+- `FACTORIO_BIN` — path to your Factorio executable (needed for verification)
+- `SEED_LUA` — how to invoke the bundled Lua interpreter (auto-detected if unset)
+- `SE_ENABLE_K2` — set to `1` if you play with Krastorio2
+
+## Running the seed finder
+
+### Windows
 
     run.bat
 
-## Linux
+### Linux
 
     ./run.sh
 
 # Uncompressing binary universe files
 
-    ./unpack.lua output/universe-xxxx.bin > output/universe-xxxx.txt
+    runner/bin/lua generator/unpack.lua runner/output/universe-xxxx.bin > runner/output/universe-xxxx.txt
 
 # Design rationale
 

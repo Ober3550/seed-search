@@ -16,7 +16,7 @@ Prerequisites (override via flags/env):
                 (default: /Applications/factorio.app/Contents/MacOS/factorio)
 
 Usage:
-  tools/verify/ingame_dump.py <seed> [-o out.json]
+  verifier/verify/ingame_dump.py <seed> [-o out.json]
 """
 import argparse
 import json
@@ -34,7 +34,7 @@ DEFAULT_BIN = Path("/Applications/factorio.app/Contents/MacOS/factorio")
 FACTORIO_DATA = HOME / "Library" / "Application Support" / "factorio"
 
 # SE universe dump run via `/silent-command ... rcon.print(...)`. Mirrors
-# tools/ingame-dump.lua but returns the JSON directly over RCON. Also captures
+# verifier/ingame-dump.lua but returns the JSON directly over RCON. Also captures
 # each zone's resource controls (frequency/richness/size) for resource-data
 # verification.
 DUMP_LUA = (
@@ -74,7 +74,7 @@ def main():
     args = ap.parse_args()
 
     factorio_bin = Path(args.factorio_bin)
-    out_path = Path(args.out or (REPO / f"universe-ingame-{args.seed}.json"))
+    out_path = Path(args.out or (REPO / "verifier" / "fixtures" / f"universe-ingame-{args.seed}.json"))
 
     if not factorio_bin.exists():
         log(f"Factorio binary not found: {factorio_bin} (set FACTORIO_BIN)")

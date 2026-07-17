@@ -12,6 +12,10 @@ se_env.k2_enabled = SE_K2
 -- generator draws RNG inside string-keyed pairs() loops, and Lua 5.2 randomises
 -- its hash order per process, so without this the harness is not reproducible.
 -- See det_pairs.lua for the important caveat about matching Factorio's order.
+-- Resolve factorio-util.lua relative to the generator directory, whether CWD is
+-- the repo root or runner/.
+local gen_dir = debug.getinfo(1, 'S').source:match('^@(.+/)') or './'
+
 require('det_pairs')
 
 local zip = require('zip')
@@ -22,8 +26,8 @@ serpent.block = function () return "" end
 serpent.line = function () return "" end
 --serpent = dofile('./serpent.lua')
 
-util = dofile('./factorio-util.lua')
-core_util = dofile('./factorio-util.lua')
+util = dofile(gen_dir .. 'factorio-util.lua')
+core_util = dofile(gen_dir .. 'factorio-util.lua')
 
 function table_size(t)
     local count = 0
@@ -584,6 +588,8 @@ if os.getenv('FACTORIO_HOME') ~= nil then
     FACTORIO_HOME = os.getenv('FACTORIO_HOME')
 elseif env.file_exists(env.join_path('.', 'mods', MOD_TAG .. ".zip")) then
     FACTORIO_HOME = '.'
+elseif env.file_exists(env.join_path('.', 'runner', 'mods', MOD_TAG .. ".zip")) then
+    FACTORIO_HOME = env.join_path('.', 'runner')
 else
     if env.operating_system() == "win32" then
         FACTORIO_HOME = env.join_path(os.getenv('APPDATA'), "Factorio")

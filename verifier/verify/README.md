@@ -7,7 +7,7 @@ finder's generation with `compare.lua`. They are a slim migration of the
 no docker, no MCP.
 
 ```
-tools/verify/
+verifier/verify/
   rcon.py         minimal Source-RCON client (stdlib only)
   ingame_dump.py  create seeded SE save -> headless server -> RCON dump -> JSON
   verify-seed.sh  ingame_dump.py + compare.lua, one command
@@ -17,10 +17,10 @@ tools/verify/
 
 ```
 # SE (Krastorio2 disabled in the mod set)
-tools/verify/verify-seed.sh 123458
+verifier/verify/verify-seed.sh 123458
 
 # SE + Krastorio2 (K2 enabled in the mod set)
-SE_ENABLE_K2=1 tools/verify/verify-seed.sh 123458
+SE_ENABLE_K2=1 verifier/verify/verify-seed.sh 123458
 ```
 
 Prints a `compare.lua` report; exit 0 = the finder matches the game for that seed.
@@ -31,7 +31,7 @@ Prints a `compare.lua` report; exit 0 = the finder matches the game for that see
    `factorio --create` — this executes SE's `on_init`, generating the universe
    into the save. It then starts `factorio --start-server` (headless, RCON on),
    calls SE's `get_zone_index` remote interface, and writes the same JSON schema
-   as `tools/ingame-dump.lua`.
+   as `verifier/ingame-dump.lua`.
 2. `compare.lua` regenerates that seed in the finder and diffs. Each zone's `seed`
    is drawn sequentially from the global universe RNG, so all zone seeds matching
    by name means the RNG streams ran in lockstep.
@@ -52,12 +52,12 @@ The macOS `factorio.app` binary is a universal binary and runs **arm64 natively*
     generation-affecting mod) in the mod set and leave `SE_ENABLE_K2` unset.
 - **Ports.** Uses game `:34717` / RCON `:27717` by default (override with
   `GAME_PORT` / `RCON_PORT`) to avoid clashing with a running game.
-- **Lua runner.** `verify-seed.sh` uses `./bin/lua` when it runs natively,
+- **Lua runner.** `verify-seed.sh` uses `runner/bin/lua` when it runs natively,
   otherwise the `seedlua` docker image (a 90 MB Lua-interpreter image — this is
   the finder side, not Factorio). Override with `SEED_LUA`.
 
 ## Latest result
 
 SE + Krastorio2, seed 123458: 1270/1270 zones, 1256/1258 shared zones with
-byte-identical seeds. See `docs/universe-generation.md` → "Real-game comparison
+byte-identical seeds. See `runner/docs/universe-generation.md` → "Real-game comparison
 result" for the full breakdown and the single remaining divergence.

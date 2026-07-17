@@ -1,3 +1,3 @@
 @echo off
 
-bin\lua.exe manager.lua
+cd runner && bin\lua.exe manager.lua

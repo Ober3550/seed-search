@@ -4,15 +4,15 @@
 -- game: every zone's `seed` is drawn sequentially from the global universe RNG,
 -- so if all zone seeds match by name, the RNG stream ran in perfect lockstep.
 --
---   bin/lua compare.lua <dump.json> [seed]
+--   runner/bin/lua verifier/compare.lua <dump.json> [seed]
 --
--- <dump.json> is produced in-game by tools/ingame-dump.lua. If [seed] is omitted
--- the dump's map_seed is used. On Apple Silicon run bin/lua via the seedlua
--- docker image (see docs/universe-generation.md).
+-- <dump.json> is produced in-game by verifier/ingame-dump.lua. If [seed] is omitted
+-- the dump's map_seed is used. On Apple Silicon run through the seedlua
+-- docker image (see runner/docs/universe-generation.md).
 --
 -- Exit code 0 = perfect match, 1 = differences found, 2 = usage/IO error.
 
-package.path = './?.lua;' .. package.path
+package.path = './generator/?.lua;./verifier/?.lua;' .. package.path
 require('se_env')
 local summarize = require('summarize')
 local json = require('json')
@@ -63,7 +63,7 @@ for _, z in pairs(ref_zones) do
 end
 
 -- Resources whose per-zone controls (frequency/richness/size) we verify. Must
--- match the RES list in tools/verify/ingame_dump.py.
+-- match the RES list in verifier/verify/ingame_dump.py.
 local RES = {
     "coal", "stone", "iron-ore", "copper-ore", "crude-oil", "uranium-ore",
     "se-vulcanite", "se-cryonite", "se-vitamelange", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore",

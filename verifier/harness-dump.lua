@@ -1,13 +1,13 @@
 #!/usr/bin/env lua
 -- Dump THIS harness's generated universe for a seed, in the same JSON schema as
--- tools/ingame-dump.lua. Useful as a reference to eyeball, and to self-test
+-- verifier/ingame-dump.lua. Useful as a reference to eyeball, and to self-test
 -- compare.lua (comparing a harness dump against the same seed must be perfect).
 --
---   bin/lua tools/harness-dump.lua <seed> [outfile.json]
+--   runner/bin/lua verifier/harness-dump.lua <seed> [outfile.json]
 --
--- (run bin/lua through the seedlua docker image on Apple Silicon.)
+-- (run through the seedlua docker image on Apple Silicon.)
 
-package.path = './?.lua;' .. package.path
+package.path = './generator/?.lua;./verifier/?.lua;' .. package.path
 require('se_env')
 local summarize = require('summarize')
 local json = require('json')

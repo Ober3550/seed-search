@@ -1,3 +1,5 @@
+package.path = '../generator/?.lua;./?.lua;' .. package.path
+
 local env = require('env')
 local curl = require('curl')
 local json = require('json')
@@ -154,7 +156,7 @@ local function spawn_workers()
             if handle[task_chunk] == nil and not env.file_exists('output/universe-' .. string.format('%04x', task_chunk) .. '.bin') then
                 timing[task_chunk] = env.monotonic_clock()
                 -- TODO: renice as part of the BG spawn
-                local task_command = 'nice -n20 ' .. INTERPRETER .. ' generate.lua ' .. tostring(task_chunk)
+                local task_command = 'nice -n20 ' .. INTERPRETER .. ' ../generator/generate.lua ' .. tostring(task_chunk)
                 handle[task_chunk] = env.spawn_background_process(task_command)
                 log('37', "Starting chunk " .. string.format('%04x', task_chunk))
                 done = false

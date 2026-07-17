@@ -12,9 +12,9 @@
 --       ~/Library/Application Support/factorio/script-output on macOS,
 --       %APPDATA%/Factorio/script-output on Windows.)
 --   4. Copy that file into this repo and run:
---        bin/lua compare.lua se-universe-dump.json
---      (on Apple Silicon, run bin/lua through the `seedlua` docker image, see
---       docs/universe-generation.md).
+--        runner/bin/lua verifier/compare.lua se-universe-dump.json
+--      (on Apple Silicon, run through the `seedlua` docker image, see
+--       runner/docs/universe-generation.md).
 --
 -- Dump the universe as early as possible (right after map creation, before
 -- visiting surfaces) so zones carry only their generated values.

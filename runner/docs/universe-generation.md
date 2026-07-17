@@ -195,17 +195,17 @@ FROM --platform=linux/amd64 debian:bookworm-slim
 RUN apt-get update -qq && apt-get install -y -qq libreadline8 libcurl4 && rm -rf /var/lib/apt/lists/*
 EOF
 docker run --rm --platform linux/amd64 -v "$PWD":/w -w /w \
-  --entrypoint /w/bin/lua-linux-x86_64 seedlua <script>.lua
+  --entrypoint /w/runner/bin/lua-linux-x86_64 seedlua <script>.lua
 ```
 
-The mod zip must be at `mods/space-exploration_0.7.57.zip` (already copied there;
-`mods/*.zip` is gitignored). Throughput under emulation ≈ 0.24 s/seed; the native
+The mod zip must be at `runner/mods/space-exploration_0.7.57.zip` (already copied there;
+`runner/mods/*.zip` is gitignored). Throughput under emulation ≈ 0.24 s/seed; the native
 Linux workers this tool targets will be several times faster.
 
 ## Optional Krastorio2 support
 
 Set `SE_ENABLE_K2=1` in the environment to model SE **with Krastorio2 active**
-(any consumer — `generate.lua`, `compare.lua`, `tools/harness-dump.lua` — reads
+(any consumer — `generator/generate.lua`, `verifier/compare.lua`, `verifier/harness-dump.lua` — reads
 it via `se_env`). It reproduces what SE's K2 compatibility does to generation:
 
 - **Data stage** (`se_k2.lua`): adds the resources `kr-rare-metal-ore`,
@@ -225,7 +225,7 @@ pure SE → 1268 zones, K2 → 1270 (the imersite moon + its orbit); both reprod
 across processes and self-comparing PERFECT.
 
 ⚠ When verifying K2 against the game, the in-game mod set must **also** have K2
-enabled (`SE_ENABLE_K2=1 tools/verify/verify-seed.sh <seed>` forwards the toggle
+enabled (`SE_ENABLE_K2=1 verifier/verify/verify-seed.sh <seed>` forwards the toggle
 to the finder; you must enable K2 in `SE_MODS_DIR`). Note the finder's summary
 vocabulary (`se_data.RESOURCE`) is unchanged, so `kr-*` resources are generated
 but not yet scored/packed — add them there if the finder should weigh them.
@@ -268,14 +268,14 @@ one place to extend the ordering rule if another order-dependent loop surfaces.
 
 Three pieces close the "does it match the game?" gap:
 
-- `tools/ingame-dump.lua` — a console command to run in-game (SE 0.7.57) that
+- `verifier/ingame-dump.lua` — a console command to run in-game (SE 0.7.57) that
   writes every zone's `name/type/parent/radius/seed` + the map seed to
   `script-output/se-universe-dump.json`.
-- `compare.lua` — `bin/lua compare.lua <dump.json> [seed]` regenerates the
+- `verifier/compare.lua` — `runner/bin/lua verifier/compare.lua <dump.json> [seed]` regenerates the
   universe for that seed and diffs it against the dump. Each zone's `seed` is
   drawn sequentially from the global RNG, so **all zone seeds matching by name ⇒
   the RNG stream ran in perfect lockstep**. Exit 0 = perfect, 1 = differences.
-- `tools/harness-dump.lua` — writes the harness's own generation in the same
+- `verifier/harness-dump.lua` — writes the harness's own generation in the same
   schema (for eyeballing and self-testing `compare.lua`).
 
 Self-tested: a harness dump compared against its own seed reports PERFECT (1268/
@@ -290,7 +290,7 @@ carry only their generated values.
 
 ### Native runner (macOS, no docker)
 
-`tools/verify/ingame_dump.py` + `tools/verify/verify-seed.sh` automate the above
+`verifier/verify/ingame_dump.py` + `verifier/verify/verify-seed.sh` automate the above
 against the installed `factorio.app` (universal binary, runs arm64) using headless
 `--create` + `--start-server` + RCON — no docker, no Xvfb. It uses Factorio's
 default local mod dir, so whatever is enabled there (here SE + Krastorio2)

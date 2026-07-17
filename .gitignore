@@ -1,15 +1,18 @@
 cartouche.html
 space-exploration_*/
 space-exploration_*.zip
-output/
-mods/*.zip
-# Ground-truth dumps produced by tools/verify (regenerable via verify-seed.sh)
+runner/output/
+runner/mods/*.zip
+# Local environment (edit .env.example to see options)
+.env
+# Ground-truth dumps produced by verifier/verify (regenerable via verify-seed.sh)
+verifier/fixtures/universe-ingame-*.json
 universe-ingame-*.json
 universe-dump-*.json
 *.dll.obj
 *.pdb
 *.lib
-_config.json
-_queue.json
+runner/_config.json
+runner/_queue.json
 __pycache__/
 *.pyc
