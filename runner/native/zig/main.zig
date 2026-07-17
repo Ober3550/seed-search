@@ -123,6 +123,8 @@ pub fn main() !void {
     defer arena.deinit();
     const a = arena.allocator();
 
+    const k2_enabled = if (std.c.getenv("SE_K2")) |v| std.mem.eql(u8, std.mem.sliceTo(v, 0), "1") or std.mem.eql(u8, std.mem.sliceTo(v, 0), "true") else false;
+
     const seed: u32 = 341;
     var rng = Rng.initFactorio(seed);
 
@@ -331,12 +333,14 @@ pub fn main() !void {
     // Gather available Calidus planets (non-Nauvis) and asteroid belts
     var available_planets = ArrayList([]const u8).init(a);
     var available_belts = ArrayList([]const u8).init(a);
+    var calidus_all_non_homeworld = ArrayList([]const u8).init(a); // tracks all non-Nauvis planets for K2 kr-imersite
     const calidus_si = for (star_order) |s| {
         if (std.mem.eql(u8, data.stars[s], "Calidus")) break s;
     } else @as(u32, 0);
     for (star_planets[calidus_si].items) |p| {
         if (!std.mem.eql(u8, p.name, "Nauvis")) {
             try available_planets.append(p.name);
+            try calidus_all_non_homeworld.append(p.name);
         }
     }
     // Count pre-existing belts for Calidus
@@ -370,6 +374,7 @@ pub fn main() !void {
     // ---- vulcanite: create new planet from vulcanite_planets ----
     {
         const name = try pickShuffledName(&rng, a, &data.vulcanite_planets_names, zones);
+        try calidus_all_non_homeworld.append(name);
         const planet_seed = rng.int1(4294967295);
         try zones.append(.{ .name = name, .ztype = "planet", .seed = planet_seed });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
@@ -414,6 +419,7 @@ pub fn main() !void {
             };
             _ = rng.float(); // radius
             const planet_seed = rng.int1(4294967295);
+            try calidus_all_non_homeworld.append(planet_name);
             try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
             const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
             const planet_orbit_seed = rng.int1(4294967295);
@@ -450,6 +456,7 @@ pub fn main() !void {
             };
             _ = rng.float(); // radius
             const planet_seed = rng.int1(4294967295);
+            try calidus_all_non_homeworld.append(planet_name);
             try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
             const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
             const planet_orbit_seed = rng.int1(4294967295);
@@ -486,6 +493,7 @@ pub fn main() !void {
             };
             _ = rng.float(); // radius
             const planet_seed = rng.int1(4294967295);
+            try calidus_all_non_homeworld.append(planet_name);
             try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
             const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
             const planet_orbit_seed = rng.int1(4294967295);
@@ -530,10 +538,49 @@ pub fn main() !void {
         }
     }
 
+    // ---- kr-imersite (K2 only): planet-or-moon, uses existing planet or random + special moon from unassigned ----
+    if (k2_enabled) {
+        // Consume existing planet if any, otherwise pick random non-homeworld Calidus planet
+        if (available_planets.items.len > 0) {
+            _ = available_planets.orderedRemove(0);
+        } else {
+            // Shuffle all non-homeworld Calidus planets (including homesystem-created ones)
+            if (calidus_all_non_homeworld.items.len > 1) {
+                shuffleNames(&rng, calidus_all_non_homeworld.items);
+            }
+        }
+
+        // add_special_moon_from_unassigned: shuffle pm_pool, pick first without primary_resource
+        const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
+        for (data.unassigned_planets_or_moons, 0..) |b, idx| pm_names[idx] = b.name;
+        shuffleNames(&rng, pm_names);
+        const moon_name = blk: {
+            for (pm_names) |n| {
+                var used = false;
+                for (zones.items) |z| { if (std.mem.eql(u8, z.name, n)) { used = true; break; } }
+                if (!used) {
+                    for (data.unassigned_planets_or_moons) |b| {
+                        if (std.mem.eql(u8, b.name, n)) {
+                            if (b.primary_resource == null) break :blk n;
+                            break;
+                        }
+                    }
+                }
+            }
+            @panic("no unused unassigned body without primary_resource");
+        };
+        _ = rng.intRange(80, 120); // radius multiplier rng(80,120)/100
+        const moon_seed = rng.int1(4294967295);
+        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = moon_seed });
+        const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
+        const moon_orbit_seed = rng.int1(4294967295);
+        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = moon_orbit_seed });
+    }
+
     std.debug.print("SECTION: homesystem_done {d}\n", .{rng.draw});
 
     // ===== Output =====
-    std.debug.print("Seed: {d}  RNG draws: {d}  Zones: {d}\n", .{ seed, rng.draw, zones.items.len });
+    std.debug.print("Seed: {d}  RNG draws: {d}  Zones: {d}  K2: {}\n", .{ seed, rng.draw, zones.items.len, k2_enabled });
 
     // Dump zone index
     for (zones.items, 0..) |z, i| {
