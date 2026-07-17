@@ -645,4 +645,50 @@ do
     end
 end
 
+-- ============================================================
+-- RNG tracer: set SE_TRACE=1 to log draw counts at key boundaries.
+-- Compare with Zig's draw counts to find divergence points.
+-- ============================================================
+if os.getenv('SE_TRACE') == '1' then
+    local draw = 0
+    local orig_create = game.create_random_generator
+    game.create_random_generator = function(s)
+        local gen = orig_create(s)
+        if s == nil then
+            local proxy = {}
+            local mt = {
+                __call = function(_, a, b)
+                    draw = draw + 1
+                    if a == nil then return gen() end
+                    if b == nil then return gen(a) end
+                    return gen(a, b)
+                end
+            }
+            setmetatable(proxy, mt)
+
+            -- Wrap Universe.build to trace sections
+            local orig_build = Universe.build
+            Universe.build = function()
+                io.stderr:write(string.format('SECTION: build_start %d\n', draw))
+
+                -- Hook shuffle
+                local orig_shuffle = Universe.shuffle
+                Universe.shuffle = function(tbl)
+                    local before = draw
+                    orig_shuffle(tbl)
+                    local n = 0; for _ in pairs(tbl) do n = n + 1 end
+                    io.stderr:write(string.format('SECTION: shuffle_%d %d->%d\n', n, before, draw))
+                end
+
+                orig_build()
+                Universe.shuffle = orig_shuffle
+                io.stderr:write(string.format('SECTION: build_end %d\n', draw))
+            end
+
+            return proxy
+        end
+        return gen
+    end
+end
+
 return se_env

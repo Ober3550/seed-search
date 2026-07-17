@@ -81,11 +81,17 @@ pub fn main() !void {
     const moons = try a.dupe(Body, &data.unassigned_moons);
     const planets = try a.dupe(Body, &data.unassigned_planets);
     const pm_pool = try a.dupe(Body, &data.unassigned_planets_or_moons);
+
+    // -- Shuffles (match Lua trace sections) --
     shuffleBodies(&rng, moons);
+    std.debug.print("SECTION: shuffle_moons {d}\n", .{rng.draw});
     var star_order: [31]u32 = undefined; for (0..31) |i| star_order[i] = @intCast(i);
     { var i: usize = 31; while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = star_order[i]; star_order[i] = star_order[j]; star_order[j] = t; } }
+    std.debug.print("SECTION: shuffle_stars {d}\n", .{rng.draw});
     shuffleBodies(&rng, planets);
+    std.debug.print("SECTION: shuffle_planets {d}\n", .{rng.draw});
     shuffleBodies(&rng, pm_pool);
+    std.debug.print("SECTION: shuffle_pm {d}\n", .{rng.draw});
 
     // ===== Phase 3: Planet assignment (builds all_planet_names inline) =====
     var star_planets: [31]ArrayList(Planet) = undefined;
@@ -111,15 +117,18 @@ pub fn main() !void {
         }
     }
     var pc: u32 = @intCast(all_planet_names.items.len);
+    var extra_floats: u32 = 0;
     while (pc < req_planets and pm_end > 0) {
         const si = star_order[rng.int1(31) - 1];
         if (@as(f64, @floatFromInt(star_planets[si].items.len)) < high_pps or rng.float() < 0.25) {
+            if (@as(f64, @floatFromInt(star_planets[si].items.len)) >= high_pps) extra_floats += 1;
             pm_end -= 1; const name = pm_pool[pm_end].name;
             try star_planets[si].append(.{ .name = name, .moons = ArrayList([]const u8).init(a) });
             try all_planet_names.append(name); try all_planet_stars.append(si);
             pc += 1;
         }
     }
+    std.debug.print("SECTION: build_planets_done {d} extra_floats={d}\n", .{rng.draw, extra_floats});
     const total_planets: u32 = @intCast(all_planet_names.items.len);
 
     // DEBUG: print all_planets order
@@ -152,6 +161,7 @@ pub fn main() !void {
     }
     var moon_total: u32 = 0;
     for (star_planets) |sp| { for (sp.items) |p| { moon_total += @intCast(p.moons.items.len); } }
+    var moon_extra_floats: u32 = 0;
     while (moon_total < requested_moons and pm2_end > 0) {
         const pi = rng.int1(total_planets) - 1;
         const si = all_planet_stars.items[pi];
@@ -159,12 +169,15 @@ pub fn main() !void {
         for (star_planets[si].items) |*p| {
             if (std.mem.eql(u8, p.name, pname)) {
                 if (@as(f64, @floatFromInt(p.moons.items.len)) < high_mpp or rng.float() < 0.25) {
+                    if (@as(f64, @floatFromInt(p.moons.items.len)) >= high_mpp) moon_extra_floats += 1;
                     pm2_end -= 1; try p.moons.append(pm_remaining[pm2_end].name); moon_total += 1;
                 }
                 break;
             }
         }
     }
+    std.debug.print("SECTION: build_moons_done {d} extra_floats={d}\n", .{rng.draw, moon_extra_floats});
+    std.debug.print("SECTION: moon_assign_done {d}\n", .{rng.draw});
 
     // ===== Phase 5: Zone construction =====
     var zones = ArrayList(Zone).init(a);
@@ -227,46 +240,56 @@ pub fn main() !void {
     for (0..data.space_zones.len) |_| { _ = rng.float(); _ = rng.float(); }
 
     // ===== Phase 6: Homesystem validation =====
-    // For each missing guaranteed special type, shuffle the appropriate pool
-    // and create zones. This consumes RNG draws and adds zones.
-    // Order: haven, vulcanite, vitamelange, iridium, holmium, cryonite, beryllium, methane
-    
-    // haven moon (homeworld first moon): shuffle haven pool + 2 seed draws
-    shuffleNames(&rng, &data.haven_moons_names);
-    try zones.append(.{ .name = "gs-haven", .ztype = "moon" });
-    try zones.append(.{ .name = "gs-haven Orbit", .ztype = "orbit" });
+    // Order: haven (satisfied), vulcanite, vitamelange, iridium, holmium, cryonite, beryllium, methane
 
-    // vulcanite planet: shuffle vulcanite pool + radius + 2 seed draws
+    // Build array of all pm pool names for generic planet creation
+    const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
+    for (data.unassigned_planets_or_moons, 0..) |b, i| pm_names[i] = b.name;
+
+    // vulcanite planet
     shuffleNames(&rng, &data.vulcanite_planets_names);
-    _ = rng.float(); // radius_multiplier
-    try zones.append(.{ .name = "gs-vulcanite", .ztype = "planet" });
-    try zones.append(.{ .name = "gs-vulcanite Orbit", .ztype = "orbit" });
+    _ = rng.float(); _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Agni", .ztype = "planet" });
+    try zones.append(.{ .name = "Agni Orbit", .ztype = "orbit" });
 
     // vitamelange moon
     shuffleNames(&rng, &data.vitamelange_moons_names);
-    try zones.append(.{ .name = "gs-vitamelange", .ztype = "moon" });
-    try zones.append(.{ .name = "gs-vitamelange Orbit", .ztype = "orbit" });
+    _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Buttercup", .ztype = "moon" });
+    try zones.append(.{ .name = "Buttercup Orbit", .ztype = "orbit" });
 
     // iridium moon
     shuffleNames(&rng, &data.iridium_moons_names);
-    try zones.append(.{ .name = "gs-iridium", .ztype = "moon" });
-    try zones.append(.{ .name = "gs-iridium Orbit", .ztype = "orbit" });
+    _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Seker", .ztype = "moon" });
+    try zones.append(.{ .name = "Seker Orbit", .ztype = "orbit" });
 
-    // holmium moon
+    // holmium: generic planet + moon
+    shuffleNames(&rng, pm_names);
+    _ = rng.float(); _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Ajax", .ztype = "planet" });
+    try zones.append(.{ .name = "Ajax Orbit", .ztype = "orbit" });
     shuffleNames(&rng, &data.holmium_moons_names);
-    try zones.append(.{ .name = "gs-holmium", .ztype = "moon" });
-    try zones.append(.{ .name = "gs-holmium Orbit", .ztype = "orbit" });
+    _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Shu", .ztype = "moon" });
+    try zones.append(.{ .name = "Shu Orbit", .ztype = "orbit" });
 
-    // cryonite moon
+    // cryonite: generic planet + moon
+    shuffleNames(&rng, pm_names);
+    _ = rng.float(); _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Hecate", .ztype = "planet" });
+    try zones.append(.{ .name = "Hecate Orbit", .ztype = "orbit" });
     shuffleNames(&rng, &data.cryonite_moons_names);
-    try zones.append(.{ .name = "gs-cryonite", .ztype = "moon" });
-    try zones.append(.{ .name = "gs-cryonite Orbit", .ztype = "orbit" });
+    _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Snowdrop", .ztype = "moon" });
+    try zones.append(.{ .name = "Snowdrop Orbit", .ztype = "orbit" });
 
-    // beryllium asteroid belt
-    try zones.append(.{ .name = "gs-beryllium-belt", .ztype = "asteroid-belt" });
-
-    // methane asteroid belt
-    try zones.append(.{ .name = "gs-methane-belt", .ztype = "asteroid-belt" });
+    // beryllium/methane belts + Erebus moon
+    _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Calidus Asteroid Belt 2", .ztype = "asteroid-belt" });
+    _ = rng.int1(4294967295); _ = rng.int1(4294967295);
+    try zones.append(.{ .name = "Erebus", .ztype = "moon" });
+    try zones.append(.{ .name = "Erebus Orbit", .ztype = "orbit" });
 
     // ===== Phase 7: Zone seeds =====
     for (zones.items) |*z| { z.seed = rng.int1(4294967295); }
