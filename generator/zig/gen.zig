@@ -271,21 +271,18 @@ const RESOURCE_NORM_FIELD: f64 = 167.79554553234018499;
 /// Compute resource scores for a single planet or moon.
 /// primary_resource must be known (from prototype, special_type, or claiming).
 /// Returns scores indexed by resource_order (0..17). Score = FSR / norm.
-pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resource: ?[]const u8) [18]f64 {
-    var scores: [18]f64 = undefined;
+pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
+    var scores: [18]f64 = @splat(0.0);
 
     // Per-zone RNG for bias generation
     var bias_rng = Rng.initFactorio(zone_seed);
-    const debug_this = zone_seed == 1288077524;
-    if (debug_this) std.debug.print("BIASDEBUG seed={d}\n", .{zone_seed});
 
-    // Generate base biases for each resource (matches generate_zone_resource_bias)
+    // Generate base biases for each resource
     var biases: [18]f64 = undefined;
     var bias_indices: [18]u32 = undefined;
-    for (resource_order, 0..) |rn, ri| {
+    for (resource_order, 0..) |_, ri| {
         biases[ri] = bias_rng.float();
         bias_indices[ri] = @intCast(ri);
-        if (debug_this and ri < 3) std.debug.print("BIASDEBUG {s}[{d}]: {d:.10}\n", .{rn, ri, biases[ri]});
     }
 
     // Sort biases descending
@@ -301,6 +298,78 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
         }
     }
 
+    // Rebuild ordered list with tag filtering, then sort by ordered_bias
+    // Primary resource gets ordered_bias = base_bias + 1 to ensure it's first
+    var ordered_ri: [18]u32 = undefined;
+    var ordered_vals: [18]f64 = undefined;
+    var ordered_n: u32 = 0;
+
+    for (bias_indices) |ri| {
+        const rname = resource_order[ri];
+        var allowed = true;
+
+        // Filter by tag requirements for presence
+        if (primary_resource == null or !std.mem.eql(u8, rname, primary_resource.?)) {
+            if (std.mem.eql(u8, rname, "se-cryonite")) {
+                allowed = tags.temperature != null and
+                    (std.mem.eql(u8, tags.temperature.?, "temperature_extreme") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_cool") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_cold") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_vcold") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_frozen"));
+            } else if (std.mem.eql(u8, rname, "se-vitamelange")) {
+                allowed = tags.moisture != null and
+                    (std.mem.eql(u8, tags.moisture.?, "moisture_med") or
+                     std.mem.eql(u8, tags.moisture.?, "moisture_high") or
+                     std.mem.eql(u8, tags.moisture.?, "moisture_max"));
+            } else if (std.mem.eql(u8, rname, "se-vulcanite")) {
+                allowed = tags.temperature != null and
+                    (std.mem.eql(u8, tags.temperature.?, "temperature_extreme") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_warm") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_hot") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_vhot") or
+                     std.mem.eql(u8, tags.temperature.?, "temperature_volcanic"));
+            } else if (std.mem.eql(u8, rname, "kr-mineral-water")) {
+                allowed = tags.water != null and
+                    (std.mem.eql(u8, tags.water.?, "water_low") or
+                     std.mem.eql(u8, tags.water.?, "water_med") or
+                     std.mem.eql(u8, tags.water.?, "water_high") or
+                     std.mem.eql(u8, tags.water.?, "water_max"));
+            }
+        }
+
+        if (allowed) {
+            const sort_key: f64 = if (primary_resource != null and std.mem.eql(u8, rname, primary_resource.?))
+                biases[ri] + 1.0
+            else
+                biases[ri];
+            ordered_ri[ordered_n] = ri;
+            ordered_vals[ordered_n] = sort_key;
+            ordered_n += 1;
+        }
+    }
+
+    // Sort by ordered_vals descending
+    var si: usize = 0;
+    while (si < ordered_n) : (si += 1) {
+        var sj: usize = si + 1;
+        while (sj < ordered_n) : (sj += 1) {
+            if (ordered_vals[sj] > ordered_vals[si]) {
+                const tmp_ri = ordered_ri[si]; ordered_ri[si] = ordered_ri[sj]; ordered_ri[sj] = tmp_ri;
+                const tmp_v = ordered_vals[si]; ordered_vals[si] = ordered_vals[sj]; ordered_vals[sj] = tmp_v;
+            }
+        }
+    }
+
+    // Find primary position in sorted list
+    var primary_pos: i32 = -1;
+    for (ordered_ri[0..ordered_n], 0..) |ri, pi| {
+        if (primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?)) {
+            primary_pos = @intCast(pi);
+            break;
+        }
+    }
+
     // Category properties
     const is_field = std.mem.eql(u8, zone_type, "asteroid-field");
     const freq_lo: f64 = if (is_field) 1 else 0.2;
@@ -311,14 +380,16 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     const rich_hi: f64 = if (is_field) 2 else 2;
     const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
 
-    // Compute FSR for each resource
-    for (bias_indices, 0..) |ri, pos| {
-        const base_bias = biases[ri];
-        const ordered_bias: f64 = 1.0 + (base_bias - @as(f64, @floatFromInt(pos + 1))) / 18.0;
+    // Compute FSR using correct ordered_bias = (N - i) / N
+    for (ordered_ri[0..ordered_n], 0..) |ri, pos| {
+        const base_bias: f64 = if (pos == primary_pos) 1.0 else biases[ri];
+        const ordered_bias: f64 = @as(f64, @floatFromInt(ordered_n - @as(u32, @intCast(pos)) - 1)) / @as(f64, @floatFromInt(ordered_n));
 
         var resource_value: f64 = RESOURCE_SECONDARY_IRREGULARITY * base_bias + (1.0 - RESOURCE_SECONDARY_IRREGULARITY) * ordered_bias;
-        const is_primary = primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?);
-        if (is_primary) {
+        if (std.mem.eql(u8, resource_order[ri], "coal") and zone_seed == 1288077524) {
+            std.debug.print("COALDEBUG pos={d} N={d} base={d:.6} ordered={d:.6} rv={d:.6}\n", .{pos, ordered_n, base_bias, ordered_bias, resource_value});
+        }
+        if (pos == primary_pos) {
             resource_value = 1.0 + RESOURCE_PRIMARY_BOOST;
         }
         resource_value = std.math.pow(f64, resource_value, RESOURCE_POWER);
@@ -328,10 +399,6 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
         const richness = rich_lo + resource_value * (rich_hi - rich_lo);
         const fsr = freq * size * richness;
         scores[ri] = fsr / norm;
-
-        if (debug_this) {
-            std.debug.print("DBG {s}: pos={d} base={d:.6} ordered={d:.6} rv={d:.6} score={d:.6}\n", .{resource_order[ri], pos, base_bias, ordered_bias, resource_value, fsr / norm});
-        }
     }
 
     return scores;

@@ -110,7 +110,7 @@ pub fn main() !void {
                 // Resources
                 const primary = primaries.get(z.name);
                 if (primary) |prim| {
-                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim);
+                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
                     var first_res = true;
                     for (gen.resource_order, 0..) |rname, ri| {
                         if (scores[ri] > 0.0001) {
