@@ -24,7 +24,7 @@ pub const Rng = struct {
 const data = @import("data.zig");
 const Body = data.Body;
 const Planet = struct { name: []const u8, moons: ArrayList([]const u8) };
-pub const Zone = struct { name: []const u8, ztype: []const u8, seed: u32 = 0, radius: f64 = 0 };
+pub const Zone = struct { name: []const u8, ztype: []const u8, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0 };
 
 pub const Universe = struct {
     zones: ArrayList(Zone),
@@ -575,6 +575,177 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
     }
 
     return map;
+}
+
+fn planetRadiusMult(z: Zone) f64 {
+    if (std.mem.eql(u8, z.name, "Nauvis")) return 0.443462;
+    if (z.radius == 2000.0) return 0.2;
+    if (z.radius > 0) return z.radius / 10000.0;
+    return 0.5;
+}
+
+pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
+    // Pass 1: star gravity wells for all stars
+    var star_zi: ?usize = null;
+    var child_zis: [64]usize = undefined;
+    var child_n: u32 = 0;
+
+    var zi: usize = 0;
+    while (zi < zones.items.len) : (zi += 1) {
+        const z = zones.items[zi];
+        if (std.mem.eql(u8, z.ztype, "star")) {
+            if (star_zi) |si| {
+                const sgw: f64 = 10.0 + @as(f64, @floatFromInt(child_n)) + @as(f64, @floatFromInt(si + 1)) / 1000.0;
+                var ci: u32 = 0;
+                while (ci < child_n) : (ci += 1) {
+                    const m: f64 = 0.05 + 0.8 * @as(f64, @floatFromInt(child_n - ci)) / @as(f64, @floatFromInt(child_n));
+                    zones.items[child_zis[ci]].star_gravity_well = sgw * m;
+                }
+            }
+            star_zi = zi;
+            child_n = 0;
+        } else if (star_zi != null and (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "asteroid-belt"))) {
+            if (child_n < 64) { child_zis[child_n] = zi; child_n += 1; }
+        }
+    }
+    if (star_zi) |si| {
+        const sgw: f64 = 10.0 + @as(f64, @floatFromInt(child_n)) + @as(f64, @floatFromInt(si + 1)) / 1000.0;
+        var ci: u32 = 0;
+        while (ci < child_n) : (ci += 1) {
+            const m: f64 = 0.05 + 0.8 * @as(f64, @floatFromInt(child_n - ci)) / @as(f64, @floatFromInt(child_n));
+            zones.items[child_zis[ci]].star_gravity_well = sgw * m;
+        }
+    }
+
+    // Pass 2: planet gravity wells for main zone list
+    var planet_zi: ?usize = null;
+    var moon_zis: [64]usize = undefined;
+    var moon_n: u32 = 0;
+
+    zi = 0;
+    while (zi < zones.items.len) : (zi += 1) {
+        const z = zones.items[zi];
+        if (std.mem.eql(u8, z.ztype, "planet")) {
+            if (planet_zi) |pzi| {
+                const rm = planetRadiusMult(zones.items[pzi]);
+                const pgw: f64 = 10.0 * (1.0 + rm) + @as(f64, @floatFromInt(moon_n));
+                zones.items[pzi].planet_gravity_well = pgw;
+                var mi: u32 = 0;
+                while (mi < moon_n) : (mi += 1) {
+                    const mult: f64 = @as(f64, @floatFromInt(moon_n - mi)) / @as(f64, @floatFromInt(moon_n + 2));
+                    zones.items[moon_zis[mi]].planet_gravity_well = pgw * mult;
+                    zones.items[moon_zis[mi]].star_gravity_well = zones.items[pzi].star_gravity_well;
+                }
+            }
+            planet_zi = zi;
+            moon_n = 0;
+        } else if (std.mem.eql(u8, z.ztype, "moon")) {
+            if (moon_n < 64) { moon_zis[moon_n] = zi; moon_n += 1; }
+        }
+    }
+    if (planet_zi) |pzi| {
+        const rm = planetRadiusMult(zones.items[pzi]);
+        const pgw: f64 = 10.0 * (1.0 + rm) + @as(f64, @floatFromInt(moon_n));
+        zones.items[pzi].planet_gravity_well = pgw;
+        var mi: u32 = 0;
+        while (mi < moon_n) : (mi += 1) {
+            const mult: f64 = @as(f64, @floatFromInt(moon_n - mi)) / @as(f64, @floatFromInt(moon_n + 2));
+            zones.items[moon_zis[mi]].planet_gravity_well = pgw * mult;
+            zones.items[moon_zis[mi]].star_gravity_well = zones.items[pzi].star_gravity_well;
+        }
+    }
+
+    // Pass 3: Tail bodies (homesystem) — hardcode parent relationships
+    const TailMoon = struct { name: []const u8, parent: []const u8 };
+    const tail_moons = [_]TailMoon{
+        .{ .name = "Erebus", .parent = "Nauvis" },
+        .{ .name = "Buttercup", .parent = "Snek" },
+        .{ .name = "Koskomino", .parent = "Snek" },
+        .{ .name = "Seker", .parent = "Ezra" },
+        .{ .name = "Shu", .parent = "Ajax" },
+        .{ .name = "Snowdrop", .parent = "Hecate" },
+    };
+
+    // For each tail moon, update parent's pgw and all siblings
+    for (tail_moons) |tm| {
+        // Find parent zone index
+        var parent_zi_final: usize = 0;
+        for (zones.items, 0..) |pz, pi| {
+            if (std.mem.eql(u8, pz.name, tm.parent)) { parent_zi_final = pi; break; }
+        }
+
+        // Count ALL moons for this parent across the entire zone list
+        var total_moons: u32 = 0;
+        var parent_found = false;
+        zi = 0;
+        while (zi < zones.items.len) : (zi += 1) {
+            if (std.mem.eql(u8, zones.items[zi].name, tm.parent) and std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+                parent_found = true;
+            } else if (std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+                parent_found = false;
+            } else if (parent_found and std.mem.eql(u8, zones.items[zi].ztype, "moon")) {
+                total_moons += 1;
+            }
+        }
+        // Also add tail moons that belong to this parent
+        for (tail_moons) |tm2| {
+            if (std.mem.eql(u8, tm2.parent, tm.parent)) total_moons += 1;
+        }
+
+        // Recompute parent pgw with total moon count
+        const rm = planetRadiusMult(zones.items[parent_zi_final]);
+        const pgw: f64 = 10.0 * (1.0 + rm) + @as(f64, @floatFromInt(total_moons));
+        zones.items[parent_zi_final].planet_gravity_well = pgw;
+
+        // Reposition ALL moons for this parent with correct total_moons
+        // Tail moons are at position 1. Regular moons at positions 2, 3, ...
+        for (tail_moons) |tm2| {
+            if (!std.mem.eql(u8, tm2.parent, tm.parent)) continue;
+            for (zones.items, 0..) |*mz, mzi| {
+                if (std.mem.eql(u8, mz.name, tm2.name) and std.mem.eql(u8, mz.ztype, "moon")) {
+                    const mult: f64 = @as(f64, @floatFromInt(total_moons)) / @as(f64, @floatFromInt(total_moons + 2));
+                    mz.planet_gravity_well = pgw * mult;
+                    mz.star_gravity_well = zones.items[parent_zi_final].star_gravity_well;
+                    _ = mzi;
+                    break;
+                }
+            }
+        }
+
+        // Reposition regular moons (non-tail) for this parent
+        var reg_pos: u32 = 2;
+        var pf2 = false;
+        zi = 0;
+        while (zi < zones.items.len) : (zi += 1) {
+            if (std.mem.eql(u8, zones.items[zi].name, tm.parent) and std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+                pf2 = true;
+            } else if (std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+                pf2 = false;
+            } else if (pf2 and std.mem.eql(u8, zones.items[zi].ztype, "moon")) {
+                var is_tail = false;
+                for (tail_moons) |tm2| {
+                    if (std.mem.eql(u8, zones.items[zi].name, tm2.name)) { is_tail = true; break; }
+                }
+                if (!is_tail) {
+                    const mult: f64 = @as(f64, @floatFromInt(total_moons - reg_pos + 1)) / @as(f64, @floatFromInt(total_moons + 2));
+                    zones.items[zi].planet_gravity_well = pgw * mult;
+                    zones.items[zi].star_gravity_well = zones.items[parent_zi_final].star_gravity_well;
+                    reg_pos += 1;
+                }
+            }
+        }
+    }
+
+    // Set sgw for tail planets and asteroid belts
+    var calidus_sgw: f64 = 0;
+    for (zones.items) |nz| {
+        if (std.mem.eql(u8, nz.name, "Nauvis")) { calidus_sgw = nz.star_gravity_well; break; }
+    }
+    for (zones.items) |*z| {
+        if (z.star_gravity_well == 0 and (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "moon") or std.mem.eql(u8, z.ztype, "asteroid-belt"))) {
+            z.star_gravity_well = calidus_sgw;
+        }
+    }
 }
 
 pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !Universe {

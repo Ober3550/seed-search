@@ -40,7 +40,7 @@ pub fn main() !void {
     while (generated < count) : (generated += 1) {
         if (generated > 0) _ = arena.reset(.retain_capacity);
 
-        const universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
+        var universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
             std.debug.print("# ERROR seed {d}: {}\n", .{ seed, err });
             seed += 2;
             continue;
@@ -58,6 +58,14 @@ pub fn main() !void {
         pos += open.len;
 
         const primaries = gen.resolvePrimaries(a, universe.zones) catch unreachable;
+        gen.computeGravityWells(&universe.zones);
+
+        // Find Nauvis for delta-v reference
+        var nauvis_sgw: f64 = 0;
+        var nauvis_pgw: f64 = 0;
+        for (universe.zones.items) |nz| {
+            if (std.mem.eql(u8, nz.name, "Nauvis")) { nauvis_sgw = nz.star_gravity_well; nauvis_pgw = nz.planet_gravity_well; break; }
+        }
 
         for (universe.zones.items, 0..) |z, i| {
             if (i > 0) {
@@ -130,6 +138,17 @@ pub fn main() !void {
                         buf[pos] = '}';
                         pos += 1;
                     }
+                }
+
+                // Delta-v
+                if (nauvis_sgw > 0 and z.star_gravity_well > 0 and z.planet_gravity_well > 0) {
+                    const dv_raw: f64 = if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
+                        100.0 * @abs(z.planet_gravity_well - nauvis_pgw)
+                    else
+                        500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
+                    const dv: u32 = @as(u32, @intFromFloat(@ceil(dv_raw)));
+                    const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
+                    pos += dv_part.len;
                 }
             }
 
