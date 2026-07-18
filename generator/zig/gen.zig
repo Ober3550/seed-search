@@ -309,7 +309,11 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
         var allowed = true;
 
         // Filter by tag requirements for presence
-        if (primary_resource == null or !std.mem.eql(u8, rname, primary_resource.?)) {
+        // Also exclude space-only resources that never appear on planets
+        if (std.mem.eql(u8, rname, "se-naquium-ore") or std.mem.eql(u8, rname, "se-methane-ice") or std.mem.eql(u8, rname, "se-water-ice")) {
+            allowed = false;
+        }
+        if (allowed and (primary_resource == null or !std.mem.eql(u8, rname, primary_resource.?))) {
             if (std.mem.eql(u8, rname, "se-cryonite")) {
                 allowed = tags.temperature != null and
                     (std.mem.eql(u8, tags.temperature.?, "temperature_extreme") or
@@ -370,6 +374,41 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
         }
     }
 
+    // Apply incompatible resource exclusions (beryllium/iridium/holmium/vitamelange)
+    // These four are mutually exclusive - only the highest-ranked survives
+    var exclude_beryllium = false;
+    var exclude_iridium = false;
+    var exclude_holmium = false;
+    var exclude_vitamelange = false;
+    for (ordered_ri[0..ordered_n]) |ri| {
+        const rn = resource_order[ri];
+        if (!exclude_beryllium and !exclude_iridium and !exclude_holmium and !exclude_vitamelange) break; // all found, stop
+        if (std.mem.eql(u8, rn, "se-beryllium-ore")) exclude_beryllium = true;
+        if (std.mem.eql(u8, rn, "se-iridium-ore")) exclude_iridium = true;
+        if (std.mem.eql(u8, rn, "se-holmium-ore")) exclude_holmium = true;
+        if (std.mem.eql(u8, rn, "se-vitamelange")) exclude_vitamelange = true;
+    }
+    // Remove excluded ones from the ordered list (except the one that triggered the exclusion)
+    var filtered_n: u32 = 0;
+    var filtered_ri: [18]u32 = undefined;
+    var found_excluder = false;
+    for (ordered_ri[0..ordered_n]) |ri| {
+        const rn = resource_order[ri];
+        var keep = true;
+        if (std.mem.eql(u8, rn, "se-beryllium-ore") or std.mem.eql(u8, rn, "se-iridium-ore") or
+            std.mem.eql(u8, rn, "se-holmium-ore") or std.mem.eql(u8, rn, "se-vitamelange")) {
+            if (!found_excluder) {
+                found_excluder = true; // first one found is the excluder, keep it
+            } else {
+                keep = false; // subsequent ones are excluded
+            }
+        }
+        if (keep) {
+            filtered_ri[filtered_n] = ri;
+            filtered_n += 1;
+        }
+    }
+
     // Category properties
     const is_field = std.mem.eql(u8, zone_type, "asteroid-field");
     const freq_lo: f64 = if (is_field) 1 else 0.2;
@@ -380,15 +419,21 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     const rich_hi: f64 = if (is_field) 2 else 2;
     const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
 
+    // Recompute primary position in filtered list
+    primary_pos = -1;
+    for (filtered_ri[0..filtered_n], 0..) |ri, pi| {
+        if (primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?)) {
+            primary_pos = @intCast(pi);
+            break;
+        }
+    }
+
     // Compute FSR using correct ordered_bias = (N - i) / N
-    for (ordered_ri[0..ordered_n], 0..) |ri, pos| {
+    for (filtered_ri[0..filtered_n], 0..) |ri, pos| {
         const base_bias: f64 = if (pos == primary_pos) 1.0 else biases[ri];
-        const ordered_bias: f64 = @as(f64, @floatFromInt(ordered_n - @as(u32, @intCast(pos)) - 1)) / @as(f64, @floatFromInt(ordered_n));
+        const ordered_bias: f64 = @as(f64, @floatFromInt(filtered_n - @as(u32, @intCast(pos)) - 1)) / @as(f64, @floatFromInt(filtered_n));
 
         var resource_value: f64 = RESOURCE_SECONDARY_IRREGULARITY * base_bias + (1.0 - RESOURCE_SECONDARY_IRREGULARITY) * ordered_bias;
-        if (std.mem.eql(u8, resource_order[ri], "coal") and zone_seed == 1288077524) {
-            std.debug.print("COALDEBUG pos={d} N={d} base={d:.6} ordered={d:.6} rv={d:.6}\n", .{pos, ordered_n, base_bias, ordered_bias, resource_value});
-        }
         if (pos == primary_pos) {
             resource_value = 1.0 + RESOURCE_PRIMARY_BOOST;
         }
