@@ -256,8 +256,10 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
 
     for (star_order) |si| {
         const sname = data.stars[si];
+        const is_calidus = std.mem.eql(u8, sname, "Calidus");
+
         _ = rng.float(); // orientation
-        _ = rng.float() * scale * (if (std.mem.eql(u8, sname, "Calidus")) @as(f64, 0.1) else 1.0); // distance
+        _ = rng.float() * scale * (if (is_calidus) @as(f64, 0.1) else 1.0); // distance
 
         try zones.append(.{ .name = sname, .ztype = "star" });
         const sorbit = try std.fmt.allocPrint(a, "{s} Orbit", .{sname});
@@ -277,7 +279,8 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         }
 
         for (0..belts) |bi| {
-            const lua_pos = @as(usize, @intFromFloat(@floor(0.4 + rng.float() + @as(f64, @floatFromInt(child_names.items.len)) * @as(f64, @floatFromInt(bi + 1)) / @as(f64, @floatFromInt(belts)))));
+            const belt_rng = rng.float();
+            const lua_pos = @as(usize, @intFromFloat(@floor(0.4 + belt_rng + @as(f64, @floatFromInt(child_names.items.len)) * @as(f64, @floatFromInt(bi + 1)) / @as(f64, @floatFromInt(belts)))));
             const bn = try std.fmt.allocPrint(a, "{s} Asteroid Belt {d}", .{ sname, bi + 1 });
             try child_names.insert(lua_pos - 1, bn);
             try child_types.insert(lua_pos - 1, "asteroid-belt");
@@ -300,9 +303,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             } else {
                 const pradius = planetRadius(&rng, cn);
                 try zones.append(.{ .name = cn, .ztype = "planet", .radius = pradius });
-                // Nauvis radius is overwritten with a constant in Lua
+                // Nauvis radius is overwritten with a constant in Lua, but AFTER moon radii use the RNG value
+                const parent_r = pradius;
                 if (std.mem.eql(u8, cn, "Nauvis")) zones.items[zones.items.len - 1].radius = 5691.73;
-                const parent_r = zones.items[zones.items.len - 1].radius;
                 const porbit = try std.fmt.allocPrint(a, "{s} Orbit", .{cn});
                 try zones.append(.{ .name = porbit, .ztype = "orbit" });
                 for (star_planets[si].items) |p| {
