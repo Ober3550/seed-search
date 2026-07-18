@@ -627,18 +627,22 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         }
     }
 
-    // After Pass 1: update Calidus with tail children
+    // After Pass 1: update Calidus with tail children in correct positions
     for (zones.items, 0..) |z, si| {
         if (!std.mem.eql(u8, z.ztype, "star") or !std.mem.eql(u8, z.name, "Calidus")) continue;
-        // Find tail start (after last asteroid-field)
         var ts: usize = zones.items.len;
         var tzi: usize = zones.items.len;
         while (tzi > 0) { tzi -= 1; if (std.mem.eql(u8, zones.items[tzi].ztype, "asteroid-field")) { ts = tzi + 1; break; } }
-        // Count tail children (planets + asteroid belts) not already in the child list
-        var new_n = child_n;
-        // We need to rebuild child_zis with both main and tail children
-        // First, preserve existing main children
-        // Then scan tail for new children
+
+        // Collect tail children with their correct insertion positions
+        // Agni (vulcanite) is inserted at position 1 via table.insert(children, 1, ...)
+        // Other generic planets/belts are appended
+        // Agni goes to front, everything else appends
+        var insert_front: [64]usize = undefined;
+        var insert_front_n: u32 = 0;
+        var insert_back: [64]usize = undefined;
+        var insert_back_n: u32 = 0;
+
         tzi = ts;
         while (tzi < zones.items.len) : (tzi += 1) {
             const tz = zones.items[tzi];
@@ -647,15 +651,42 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
                 for (child_zis[0..child_n]) |ci| {
                     if (std.mem.eql(u8, zones.items[ci].name, tz.name)) { dup = true; break; }
                 }
-                if (!dup and new_n < 64) { child_zis[new_n] = tzi; new_n += 1; }
+                if (!dup) {
+                    // Agni goes to front, others to back
+                    if (std.mem.eql(u8, tz.name, "Agni")) {
+                        if (insert_front_n < 64) { insert_front[insert_front_n] = tzi; insert_front_n += 1; }
+                    } else {
+                        if (insert_back_n < 64) { insert_back[insert_back_n] = tzi; insert_back_n += 1; }
+                    }
+                }
             }
         }
-        // Recompute sgw with full child count
+
+        // Rebuild child_zis: front inserts + main children + back appends
+        var new_child_zis: [64]usize = undefined;
+        var new_n: u32 = 0;
+        // Front inserts (in reverse order — last inserted at position 1)
+        var fi: i32 = @as(i32, @intCast(insert_front_n)) - 1;
+        while (fi >= 0) : (fi -= 1) {
+            new_child_zis[new_n] = insert_front[@intCast(fi)];
+            new_n += 1;
+        }
+        // Main children
+        for (child_zis[0..child_n]) |ci| {
+            new_child_zis[new_n] = ci;
+            new_n += 1;
+        }
+        // Back appends
+        for (insert_back[0..insert_back_n]) |bi| {
+            new_child_zis[new_n] = bi;
+            new_n += 1;
+        }
+
         const sgw: f64 = 10.0 + @as(f64, @floatFromInt(new_n)) + @as(f64, @floatFromInt(si + 1)) / 1000.0;
         var ci2: u32 = 0;
         while (ci2 < new_n) : (ci2 += 1) {
             const m: f64 = 0.05 + 0.8 * @as(f64, @floatFromInt(new_n - ci2)) / @as(f64, @floatFromInt(new_n));
-            zones.items[child_zis[ci2]].star_gravity_well = sgw * m;
+            zones.items[new_child_zis[ci2]].star_gravity_well = sgw * m;
         }
         break;
     }
@@ -764,6 +795,8 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
 
         // Reposition regular moons (non-tail) starting after tail moons
         var reg_pos: u32 = tail_pos;
+        if (std.mem.eql(u8, tm.parent, "Snek")) {
+        }
         var pf2 = false;
         zi = 0;
         while (zi < zones.items.len) : (zi += 1) {
@@ -778,6 +811,8 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
                 }
                 if (!is_tail) {
                     const mult: f64 = @as(f64, @floatFromInt(total_moons - reg_pos + 1)) / @as(f64, @floatFromInt(total_moons + 2));
+                    if (std.mem.eql(u8, tm.parent, "Snek")) {
+                    }
                     zones.items[zi].planet_gravity_well = pgw * mult;
                     zones.items[zi].star_gravity_well = zones.items[parent_zi_final].star_gravity_well;
                     reg_pos += 1;
