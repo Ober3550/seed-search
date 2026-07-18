@@ -489,24 +489,36 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         }
     }
 
-    // Second pass: claiming algorithm for unassigned zones
-    // For now, hardcode known primaries for seed 341
-    // TODO: implement proper claiming with tag requirements and quotas
-    const hardcoded = [_]struct { name: []const u8, primary: []const u8 }{
-        .{ .name = "Snek", .primary = "kr-imersite" },
-        .{ .name = "Ezra", .primary = "crude-oil" },
-        .{ .name = "Ajax", .primary = "uranium-ore" },
-        .{ .name = "Hecate", .primary = "se-iridium-ore" },
-        .{ .name = "Empusa", .primary = "se-beryllium-ore" },
-        .{ .name = "Rylai", .primary = "coal" },
-        .{ .name = "Boerdig", .primary = "se-vulcanite" },
-        .{ .name = "Nechrophos", .primary = "copper-ore" },
-        .{ .name = "Gelos", .primary = "crude-oil" },
-        .{ .name = "Lath", .primary = "se-vitamelange" },
-        .{ .name = "Perseus", .primary = "se-holmium-ore" },
-    };
-    for (hardcoded) |h| {
-        if (!map.contains(h.name)) try map.put(h.name, h.primary);
+    // Second pass: dynamic claiming for unassigned zones
+    // Each zone gets its highest ordered_bias resource that's eligible as primary
+    for (zones.items) |z| {
+        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+        if (map.contains(z.name)) continue;
+
+        // Compute ordered_bias and pick highest valid primary
+        var bias_rng = Rng.initFactorio(z.seed);
+        var biases: [18]f64 = undefined;
+        var indices: [18]u32 = undefined;
+        for (0..18) |ri| { biases[ri] = bias_rng.float(); indices[ri] = @intCast(ri); }
+        var si: usize = 0;
+        while (si < 18) : (si += 1) {
+            var sj: usize = si + 1;
+            while (sj < 18) : (sj += 1) {
+                if (biases[indices[sj]] > biases[indices[si]]) {
+                    const t = indices[si]; indices[si] = indices[sj]; indices[sj] = t;
+                }
+            }
+        }
+        var best_val: f64 = -1;
+        var best_ri: u32 = 0;
+        for (indices, 0..) |ri, pos| {
+            // Exclude space-only resources from primary options
+            const rn = resource_order[ri];
+            if (std.mem.eql(u8, rn, "se-naquium-ore") or std.mem.eql(u8, rn, "se-methane-ice") or std.mem.eql(u8, rn, "se-water-ice")) continue;
+            const ordered = 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos + 1))) / 18.0;
+            if (ordered > best_val) { best_val = ordered; best_ri = ri; }
+        }
+        try map.put(z.name, resource_order[best_ri]);
     }
 
     return map;

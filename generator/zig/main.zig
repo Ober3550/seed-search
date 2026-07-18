@@ -50,7 +50,7 @@ pub fn main() !void {
 
         // JSONL: one compact JSON object per seed.
         // {"s":341,"d":5192,"k":true,"l":"PESPS","z":[{"i":1,"n":"Foo","t":"star","s":123,"r":5000},...]}
-        var buf: [262144]u8 = undefined;
+        var buf: [524288]u8 = undefined;
         var pos: usize = 0;
 
         // Opening: {"s":SEED,"d":DRAWS,"k":K2,"l":"LOOT","z":[
