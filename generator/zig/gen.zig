@@ -645,13 +645,18 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         }
     }
 
-    // Pass 2: planet gravity wells for main zone list
+    // Compute tail start once for all passes
+    var tail_start_final: usize = zones.items.len;
+    var tsf_zi: usize = zones.items.len;
+    while (tsf_zi > 0) { tsf_zi -= 1; if (std.mem.eql(u8, zones.items[tsf_zi].ztype, "asteroid-field")) { tail_start_final = tsf_zi + 1; break; } }
+
+    // Pass 2: planet gravity wells for main zone list (excludes tail)
     var planet_zi: ?usize = null;
     var moon_zis: [64]usize = undefined;
     var moon_n: u32 = 0;
 
     zi = 0;
-    while (zi < zones.items.len) : (zi += 1) {
+    while (zi < tail_start_final) : (zi += 1) {
         const z = zones.items[zi];
         if (std.mem.eql(u8, z.ztype, "planet")) {
             if (planet_zi) |pzi| {
@@ -703,21 +708,25 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         }
 
         // Count ALL moons for this parent across the entire zone list
+        // Walk from parent to next planet/star/field/belt, counting moons
         var total_moons: u32 = 0;
-        var parent_found = false;
-        zi = 0;
+        zi = parent_zi_final + 1;
         while (zi < zones.items.len) : (zi += 1) {
-            if (std.mem.eql(u8, zones.items[zi].name, tm.parent) and std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
-                parent_found = true;
-            } else if (std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
-                parent_found = false;
-            } else if (parent_found and std.mem.eql(u8, zones.items[zi].ztype, "moon")) {
-                total_moons += 1;
-            }
+            const tz = zones.items[zi];
+            if (std.mem.eql(u8, tz.ztype, "planet") or std.mem.eql(u8, tz.ztype, "star") or std.mem.eql(u8, tz.ztype, "asteroid-field") or std.mem.eql(u8, tz.ztype, "asteroid-belt")) break;
+            if (std.mem.eql(u8, tz.ztype, "moon")) total_moons += 1;
         }
-        // Also add tail moons that belong to this parent
+        // Also add tail moons for this parent that are NOT adjacent (at the very tail)
         for (tail_moons) |tm2| {
-            if (std.mem.eql(u8, tm2.parent, tm.parent)) total_moons += 1;
+            if (!std.mem.eql(u8, tm2.parent, tm.parent)) continue;
+            // Check if this tail moon was already counted in the zone walk above
+            var already = false;
+            var check_zi: usize = parent_zi_final + 1;
+            while (check_zi < zones.items.len) : (check_zi += 1) {
+                if (std.mem.eql(u8, zones.items[check_zi].ztype, "planet") or std.mem.eql(u8, zones.items[check_zi].ztype, "star") or std.mem.eql(u8, zones.items[check_zi].ztype, "asteroid-field") or std.mem.eql(u8, zones.items[check_zi].ztype, "asteroid-belt")) break;
+                if (std.mem.eql(u8, zones.items[check_zi].name, tm2.name)) { already = true; break; }
+            }
+            if (!already) total_moons += 1;
         }
 
         // Recompute parent pgw with total moon count
@@ -772,6 +781,33 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
                     reg_pos += 1;
                 }
             }
+        }
+    }
+
+    // Set pgw for tail planets that weren't handled by tail moon parent updates
+    zi = tail_start_final;
+    while (zi < zones.items.len) : (zi += 1) {
+        const z = zones.items[zi];
+        if (std.mem.eql(u8, z.ztype, "planet") and z.planet_gravity_well == 0) {
+            const rm = planetRadiusMult(z);
+            var tm_n: u32 = 0;
+            var tz = zi + 1;
+            while (tz < zones.items.len) : (tz += 1) {
+                const tzone = zones.items[tz];
+                if (std.mem.eql(u8, tzone.ztype, "planet") or std.mem.eql(u8, tzone.ztype, "asteroid-belt")) break;
+                if (std.mem.eql(u8, tzone.ztype, "moon")) {
+                    // Exclude known tail moons that belong to other planets
+                    var is_tail_of_other = false;
+                    for (tail_moons) |tm2| {
+                        if (std.mem.eql(u8, tzone.name, tm2.name) and !std.mem.eql(u8, tm2.parent, z.name)) {
+                            is_tail_of_other = true;
+                            break;
+                        }
+                    }
+                    if (!is_tail_of_other) tm_n += 1;
+                }
+            }
+            zones.items[zi].planet_gravity_well = 10.0 * (1.0 + rm) + @as(f64, @floatFromInt(tm_n));
         }
     }
 
