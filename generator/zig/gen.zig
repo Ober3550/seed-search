@@ -630,6 +630,17 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     // After Pass 1: update Calidus with tail children in correct positions
     for (zones.items, 0..) |z, si| {
         if (!std.mem.eql(u8, z.ztype, "star") or !std.mem.eql(u8, z.name, "Calidus")) continue;
+
+        // Rebuild Calidus main child list (child_zis is from wrong star)
+        var cal_main: [64]usize = undefined;
+        var cal_main_n: u32 = 0;
+        var wi: usize = si + 2;
+        while (wi < zones.items.len and !std.mem.eql(u8, zones.items[wi].ztype, "star")) : (wi += 1) {
+            const wz = zones.items[wi];
+            if (std.mem.eql(u8, wz.ztype, "planet") or std.mem.eql(u8, wz.ztype, "asteroid-belt")) {
+                if (cal_main_n < 64) { cal_main[cal_main_n] = wi; cal_main_n += 1; }
+            }
+        }
         var ts: usize = zones.items.len;
         var tzi: usize = zones.items.len;
         while (tzi > 0) { tzi -= 1; if (std.mem.eql(u8, zones.items[tzi].ztype, "asteroid-field")) { ts = tzi + 1; break; } }
@@ -648,7 +659,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             const tz = zones.items[tzi];
             if (std.mem.eql(u8, tz.ztype, "planet") or std.mem.eql(u8, tz.ztype, "asteroid-belt")) {
                 var dup = false;
-                for (child_zis[0..child_n]) |ci| {
+                for (cal_main[0..cal_main_n]) |ci| {
                     if (std.mem.eql(u8, zones.items[ci].name, tz.name)) { dup = true; break; }
                 }
                 if (!dup) {
@@ -662,21 +673,18 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             }
         }
 
-        // Rebuild child_zis: front inserts + main children + back appends
+        // Rebuild: front inserts + main children + back appends
         var new_child_zis: [64]usize = undefined;
         var new_n: u32 = 0;
-        // Front inserts (in reverse order — last inserted at position 1)
-        var fi: i32 = @as(i32, @intCast(insert_front_n)) - 1;
-        while (fi >= 0) : (fi -= 1) {
-            new_child_zis[new_n] = insert_front[@intCast(fi)];
+        var fi2: i32 = @as(i32, @intCast(insert_front_n)) - 1;
+        while (fi2 >= 0) : (fi2 -= 1) {
+            new_child_zis[new_n] = insert_front[@intCast(fi2)];
             new_n += 1;
         }
-        // Main children
-        for (child_zis[0..child_n]) |ci| {
+        for (cal_main[0..cal_main_n]) |ci| {
             new_child_zis[new_n] = ci;
             new_n += 1;
         }
-        // Back appends
         for (insert_back[0..insert_back_n]) |bi| {
             new_child_zis[new_n] = bi;
             new_n += 1;
