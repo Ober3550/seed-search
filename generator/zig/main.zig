@@ -49,12 +49,12 @@ pub fn main() !void {
         std.debug.print("# {d} z={d} d={d}\n", .{ seed, universe.zones.items.len, universe.draws });
 
         // JSONL: one compact JSON object per seed.
-        // Build in a stack buffer; max ~1275 zones * ~40 bytes ≈ 51KB.
+        // {"s":341,"d":5192,"k":true,"l":"PESPS","z":[{"i":1,"n":"Foo","t":"star","s":123,"r":5000},...]}
         var buf: [131072]u8 = undefined;
         var pos: usize = 0;
 
-        // Opening: {"s":SEED,"d":DRAWS,"k":K2,"z":[
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"z\":[", .{ seed, universe.draws, k2_enabled }) catch unreachable;
+        // Opening: {"s":SEED,"d":DRAWS,"k":K2,"l":"LOOT","z":[
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
         pos += open.len;
 
         for (universe.zones.items, 0..) |z, i| {
@@ -62,8 +62,13 @@ pub fn main() !void {
                 buf[pos] = ',';
                 pos += 1;
             }
-            const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
-            pos += zone_json.len;
+            if (z.radius > 0) {
+                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d},\"r\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed, z.radius }) catch unreachable;
+                pos += zone_json.len;
+            } else {
+                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
+                pos += zone_json.len;
+            }
         }
 
         // Closing: ]}
