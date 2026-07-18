@@ -72,7 +72,7 @@ fn sortByPriority(slice: []Body) void {
         var pv: i32 = @intCast(idx + 1);
         if (p.patron != null) pv += 10000;
         if (p.has_biome_replacements) pv += 5000;
-        if (p.tag_temperature != null) pv += 1000;
+        if (p.tag_temperature != null or p.tag_water != null or p.tag_moisture != null or p.tag_trees != null or p.tag_aux != null or p.tag_cliff != null or p.tag_enemy != null) pv += 1000;
         if (p.primary_resource != null) pv += 500;
         keys[idx] = pv;
     }
