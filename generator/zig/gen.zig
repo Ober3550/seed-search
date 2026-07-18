@@ -452,6 +452,30 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
 /// Resolve primary resources for all planet/moon zones.
 /// Returns a map from zone name to primary resource name.
 /// Handles prototype primary, special types, and the claiming algorithm.
+fn isPrimaryEligible(resource_name: []const u8, tags: Tags) bool {
+    if (std.mem.eql(u8, resource_name, "se-cryonite")) {
+        return tags.temperature != null and
+            (std.mem.eql(u8, tags.temperature.?, "temperature_vcold") or
+             std.mem.eql(u8, tags.temperature.?, "temperature_frozen"));
+    }
+    if (std.mem.eql(u8, resource_name, "se-vitamelange")) {
+        return tags.moisture != null and
+            (std.mem.eql(u8, tags.moisture.?, "moisture_high") or
+             std.mem.eql(u8, tags.moisture.?, "moisture_max"));
+    }
+    if (std.mem.eql(u8, resource_name, "se-vulcanite")) {
+        return tags.temperature != null and
+            (std.mem.eql(u8, tags.temperature.?, "temperature_vhot") or
+             std.mem.eql(u8, tags.temperature.?, "temperature_volcanic"));
+    }
+    if (std.mem.eql(u8, resource_name, "kr-mineral-water")) {
+        return tags.water != null and
+            (std.mem.eql(u8, tags.water.?, "water_high") or
+             std.mem.eql(u8, tags.water.?, "water_max"));
+    }
+    return true;
+}
+
 pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
 
@@ -515,6 +539,9 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
             // Exclude space-only resources from primary options
             const rn = resource_order[ri];
             if (std.mem.eql(u8, rn, "se-naquium-ore") or std.mem.eql(u8, rn, "se-methane-ice") or std.mem.eql(u8, rn, "se-water-ice")) continue;
+            // Check tag eligibility
+            const ztags = computeTags(z.seed, z.name);
+            if (!isPrimaryEligible(rn, ztags)) continue;
             const ordered = 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos + 1))) / 18.0;
             if (ordered > best_val) { best_val = ordered; best_ri = ri; }
         }
