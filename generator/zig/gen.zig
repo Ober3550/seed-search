@@ -584,6 +584,16 @@ fn planetRadiusMult(z: Zone) f64 {
     return 0.5;
 }
 
+fn parentNameForTailMoon(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "Erebus")) return "Nauvis";
+    if (std.mem.eql(u8, name, "Buttercup")) return "Snek";
+    if (std.mem.eql(u8, name, "Koskomino")) return "Snek";
+    if (std.mem.eql(u8, name, "Seker")) return "Ezra";
+    if (std.mem.eql(u8, name, "Shu")) return "Ajax";
+    if (std.mem.eql(u8, name, "Snowdrop")) return "Hecate";
+    return "Nauvis";
+}
+
 pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     // Pass 1: star gravity wells for all stars
     var star_zi: ?usize = null;
@@ -615,6 +625,39 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             const m: f64 = 0.05 + 0.8 * @as(f64, @floatFromInt(child_n - ci)) / @as(f64, @floatFromInt(child_n));
             zones.items[child_zis[ci]].star_gravity_well = sgw * m;
         }
+    }
+
+    // After Pass 1: update Calidus with tail children
+    for (zones.items, 0..) |z, si| {
+        if (!std.mem.eql(u8, z.ztype, "star") or !std.mem.eql(u8, z.name, "Calidus")) continue;
+        // Find tail start (after last asteroid-field)
+        var ts: usize = zones.items.len;
+        var tzi: usize = zones.items.len;
+        while (tzi > 0) { tzi -= 1; if (std.mem.eql(u8, zones.items[tzi].ztype, "asteroid-field")) { ts = tzi + 1; break; } }
+        // Count tail children (planets + asteroid belts) not already in the child list
+        var new_n = child_n;
+        // We need to rebuild child_zis with both main and tail children
+        // First, preserve existing main children
+        // Then scan tail for new children
+        tzi = ts;
+        while (tzi < zones.items.len) : (tzi += 1) {
+            const tz = zones.items[tzi];
+            if (std.mem.eql(u8, tz.ztype, "planet") or std.mem.eql(u8, tz.ztype, "asteroid-belt")) {
+                var dup = false;
+                for (child_zis[0..child_n]) |ci| {
+                    if (std.mem.eql(u8, zones.items[ci].name, tz.name)) { dup = true; break; }
+                }
+                if (!dup and new_n < 64) { child_zis[new_n] = tzi; new_n += 1; }
+            }
+        }
+        // Recompute sgw with full child count
+        const sgw: f64 = 10.0 + @as(f64, @floatFromInt(new_n)) + @as(f64, @floatFromInt(si + 1)) / 1000.0;
+        var ci2: u32 = 0;
+        while (ci2 < new_n) : (ci2 += 1) {
+            const m: f64 = 0.05 + 0.8 * @as(f64, @floatFromInt(new_n - ci2)) / @as(f64, @floatFromInt(new_n));
+            zones.items[child_zis[ci2]].star_gravity_well = sgw * m;
+        }
+        break;
     }
 
     // Pass 2: planet gravity wells for main zone list
@@ -698,22 +741,29 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         zones.items[parent_zi_final].planet_gravity_well = pgw;
 
         // Reposition ALL moons for this parent with correct total_moons
-        // Tail moons are at position 1. Regular moons at positions 2, 3, ...
-        for (tail_moons) |tm2| {
-            if (!std.mem.eql(u8, tm2.parent, tm.parent)) continue;
+        // Tail moons are inserted at position 1 via table.insert(children, 1, moon)
+        // Multiple tail moons: later ones in homesystem order push earlier ones down
+        // Order: haven, vulcanite, vitamelange, iridium, holmium, cryonite, beryllium, methane, K2
+        // So for Snek: Koskomino(K2, later) at pos 1, Buttercup(vitamelange) at pos 2
+        var tail_pos: u32 = 1;
+        // Process tail moons in REVERSE homesystem order (later insertions at position 1)
+        const tail_order = [_][]const u8{ "Koskomino", "Snowdrop", "Shu", "Seker", "Buttercup", "Erebus" };
+        for (tail_order) |tname| {
+            if (!std.mem.eql(u8, tm.parent, parentNameForTailMoon(tname))) continue;
             for (zones.items, 0..) |*mz, mzi| {
-                if (std.mem.eql(u8, mz.name, tm2.name) and std.mem.eql(u8, mz.ztype, "moon")) {
-                    const mult: f64 = @as(f64, @floatFromInt(total_moons)) / @as(f64, @floatFromInt(total_moons + 2));
+                if (std.mem.eql(u8, mz.name, tname) and std.mem.eql(u8, mz.ztype, "moon")) {
+                    const mult: f64 = @as(f64, @floatFromInt(total_moons - tail_pos + 1)) / @as(f64, @floatFromInt(total_moons + 2));
                     mz.planet_gravity_well = pgw * mult;
                     mz.star_gravity_well = zones.items[parent_zi_final].star_gravity_well;
                     _ = mzi;
+                    tail_pos += 1;
                     break;
                 }
             }
         }
 
-        // Reposition regular moons (non-tail) for this parent
-        var reg_pos: u32 = 2;
+        // Reposition regular moons (non-tail) starting after tail moons
+        var reg_pos: u32 = tail_pos;
         var pf2 = false;
         zi = 0;
         while (zi < zones.items.len) : (zi += 1) {
