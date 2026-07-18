@@ -63,7 +63,8 @@ pub fn main() !void {
                 pos += 1;
             }
             if (z.radius > 0) {
-                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d},\"r\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed, z.radius }) catch unreachable;
+                const display_r: u32 = @as(u32, @intFromFloat(@floor(z.radius + 0.5)));
+                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d},\"r\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed, display_r }) catch unreachable;
                 pos += zone_json.len;
             } else {
                 const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
