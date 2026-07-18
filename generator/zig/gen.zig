@@ -173,7 +173,7 @@ pub const Tags = struct {
 };
 
 // Look up a body prototype by name from all pools (including special)
-fn lookupBody(name: []const u8) ?data.Body {
+pub fn lookupBody(name: []const u8) ?data.Body {
     for (data.unassigned_planets) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
     for (data.unassigned_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
     for (data.unassigned_planets_or_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
@@ -250,6 +250,85 @@ pub fn computeTags(zone_seed: u32, name: []const u8) Tags {
     }
 
     return tags;
+}
+
+// ===== Resource computation =====
+// Matches Universe.generate_zone_resource_bias + apply_zone_resource_assignments
+
+pub const resource_order = [_][]const u8{
+    "iron-ore", "copper-ore", "uranium-ore", "coal", "crude-oil", "stone",
+    "se-vulcanite", "se-cryonite", "se-vitamelange", "se-naquium-ore", "se-methane-ice", "se-water-ice",
+    "se-beryllium-ore", "se-iridium-ore", "se-holmium-ore",
+    "kr-imersite", "kr-mineral-water", "kr-rare-metal-ore",
+};
+
+const RESOURCE_PRIMARY_BOOST: f64 = 0.5;
+const RESOURCE_SECONDARY_IRREGULARITY: f64 = 0.75;
+const RESOURCE_POWER: f64 = 1.5;
+const RESOURCE_NORM_PLANET: f64 = 22.02730826300005162466;
+const RESOURCE_NORM_FIELD: f64 = 167.79554553234018499;
+
+/// Compute resource scores for a single planet or moon.
+/// primary_resource must be known (from prototype, special_type, or claiming).
+/// Returns scores indexed by resource_order (0..17). Score = FSR / norm.
+pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resource: ?[]const u8) [18]f64 {
+    var scores: [18]f64 = undefined;
+
+    // Per-zone RNG for bias generation
+    var bias_rng = Rng.initFactorio(zone_seed);
+
+    // Generate base biases for each resource (matches generate_zone_resource_bias)
+    var biases: [18]f64 = undefined;
+    var bias_indices: [18]u32 = undefined;
+    for (resource_order, 0..) |_, ri| {
+        biases[ri] = bias_rng.float();
+        bias_indices[ri] = @intCast(ri);
+    }
+
+    // Sort biases descending
+    var i: usize = 0;
+    while (i < 18) : (i += 1) {
+        var j: usize = i + 1;
+        while (j < 18) : (j += 1) {
+            if (biases[bias_indices[j]] > biases[bias_indices[i]]) {
+                const tmp = bias_indices[i];
+                bias_indices[i] = bias_indices[j];
+                bias_indices[j] = tmp;
+            }
+        }
+    }
+
+    // Category properties
+    const is_field = std.mem.eql(u8, zone_type, "asteroid-field");
+    const freq_lo: f64 = if (is_field) 1 else 0.2;
+    const freq_hi: f64 = if (is_field) 4 else 1;
+    const size_lo: f64 = 0;
+    const size_hi: f64 = if (is_field) 4 else 2;
+    const rich_lo: f64 = 0.2;
+    const rich_hi: f64 = if (is_field) 2 else 2;
+    const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
+
+    // Compute FSR for each resource
+    for (bias_indices, 0..) |ri, pos| {
+        const rname = resource_order[ri];
+        _ = rname;
+        const base_bias = biases[ri];
+        const ordered_bias: f64 = 1.0 + (base_bias - @as(f64, @floatFromInt(pos + 1))) / 18.0;
+
+        var resource_value: f64 = RESOURCE_SECONDARY_IRREGULARITY * base_bias + (1.0 - RESOURCE_SECONDARY_IRREGULARITY) * ordered_bias;
+        if (primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?)) {
+            resource_value = 1.0 + RESOURCE_PRIMARY_BOOST;
+        }
+        resource_value = std.math.pow(f64, resource_value, RESOURCE_POWER);
+
+        const freq = freq_lo + resource_value * (freq_hi - freq_lo);
+        const size = size_lo + resource_value * (size_hi - size_lo);
+        const richness = rich_lo + resource_value * (rich_hi - rich_lo);
+        const fsr = freq * size * richness;
+        scores[ri] = fsr / norm;
+    }
+
+    return scores;
 }
 
 pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !Universe {

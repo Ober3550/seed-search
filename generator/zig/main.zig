@@ -104,6 +104,32 @@ pub fn main() !void {
                     const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v}) catch unreachable;
                     pos += t.len;
                 }
+
+                // Resources
+                const proto = gen.lookupBody(z.name);
+                const primary = if (proto) |p| p.primary_resource else null;
+                if (primary) |prim| {
+                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim);
+                    var first_res = true;
+                    for (gen.resource_order, 0..) |rname, ri| {
+                        if (scores[ri] > 0.0001) {
+                            if (first_res) {
+                                const prefix = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                                pos += prefix.len;
+                                first_res = false;
+                            } else {
+                                buf[pos] = ',';
+                                pos += 1;
+                            }
+                            const rpart = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable;
+                            pos += rpart.len;
+                        }
+                    }
+                    if (!first_res) {
+                        buf[pos] = '}';
+                        pos += 1;
+                    }
+                }
             }
 
             buf[pos] = '}';
