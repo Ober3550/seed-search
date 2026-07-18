@@ -1,11 +1,10 @@
-/// SE seed finder — complete Zig generator with homesystem validation.
-/// Matches the Lua trace for seed 341 byte-for-byte.
+/// SE universe generator — extracted from main.zig as a reusable module.
+/// Call generateUniverse() to get the zone list for a given seed.
 
 const std = @import("std");
-fn ArrayList(comptime T: type) type { return std.array_list.AlignedManaged(T, null); }
-const assert = std.debug.assert;
+pub fn ArrayList(comptime T: type) type { return std.array_list.AlignedManaged(T, null); }
 
-const Rng = struct {
+pub const Rng = struct {
     s1: u32, s2: u32, s3: u32, draw: u32 = 0,
     pub fn initFactorio(seed: u32) Rng {
         const s = if (seed < 341) @as(u32, 341) else seed;
@@ -25,7 +24,13 @@ const Rng = struct {
 const data = @import("data.zig");
 const Body = data.Body;
 const Planet = struct { name: []const u8, moons: ArrayList([]const u8) };
-const Zone = struct { name: []const u8, ztype: []const u8, seed: u32 = 0 };
+pub const Zone = struct { name: []const u8, ztype: []const u8, seed: u32 = 0 };
+
+pub const Universe = struct {
+    zones: ArrayList(Zone),
+    draws: u32,
+    k2: bool,
+};
 
 fn shuffleBodies(rng: *Rng, slice: []Body) void {
     var i: usize = slice.len;
@@ -42,12 +47,10 @@ fn shuffleNames(rng: *Rng, names: [][]const u8) void {
     while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = names[i]; names[i] = names[j]; names[j] = t; }
 }
 
-/// Shuffle a const name array by copying into a mutable buffer, shuffling, and picking first unused.
 fn pickShuffledName(rng: *Rng, alloc: std.mem.Allocator, const_names: []const []const u8, zones: ArrayList(Zone)) ![]const u8 {
     const names = try alloc.alloc([]const u8, const_names.len);
     @memcpy(names, const_names);
     shuffleNames(rng, names);
-    // Lua loop doesn't break: iterates ALL, last unused wins
     var result: ?[]const u8 = null;
     for (names) |n| {
         var used = false;
@@ -84,24 +87,7 @@ fn sortByPriority(slice: []Body) void {
     }
 }
 
-/// Find a name from `names` that is NOT already present in `zones` (by name lookup).
-/// Returns the index into names. Assumes names has been shuffled; picks first unused.
-fn pickUnusedName(names: []const []const u8, zones: ArrayList(Zone)) usize {
-    // Build a simple set of existing zone names for O(1) lookup.
-    // Since we only call this a few times, linear scan is fine.
-    for (names, 0..) |n, idx| {
-        var found = false;
-        for (zones.items) |z| {
-            if (std.mem.eql(u8, z.name, n)) { found = true; break; }
-        }
-        if (!found) return idx;
-    }
-    @panic("No unused name found in pool");
-}
-
-// Count belts already present for a given star (by prefix "StarName Asteroid Belt ")
 fn countBelts(zones: ArrayList(Zone), star_name: []const u8) u32 {
-    // Belt names are "StarName Asteroid Belt N" where N is a number
     var count: u32 = 0;
     const marker = " Asteroid Belt ";
     for (zones.items) |z| {
@@ -118,14 +104,8 @@ fn countBelts(zones: ArrayList(Zone), star_name: []const u8) u32 {
     return count;
 }
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-
-    const k2_enabled = if (std.c.getenv("SE_K2")) |v| std.mem.eql(u8, std.mem.sliceTo(v, 0), "1") or std.mem.eql(u8, std.mem.sliceTo(v, 0), "true") else false;
-
-    const seed: u32 = 341;
+pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !Universe {
+    const a = alloc;
     var rng = Rng.initFactorio(seed);
 
     // ===== Phase 1: Constants =====
@@ -144,14 +124,10 @@ pub fn main() !void {
     const pm_pool = try a.dupe(Body, &data.unassigned_planets_or_moons);
 
     shuffleBodies(&rng, moons);
-    std.debug.print("SECTION: shuffle_moons {d}\n", .{rng.draw});
     var star_order: [31]u32 = undefined; for (0..31) |i| star_order[i] = @intCast(i);
     { var i: usize = 31; while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = star_order[i]; star_order[i] = star_order[j]; star_order[j] = t; } }
-    std.debug.print("SECTION: shuffle_stars {d}\n", .{rng.draw});
     shuffleBodies(&rng, planets);
-    std.debug.print("SECTION: shuffle_planets {d}\n", .{rng.draw});
     shuffleBodies(&rng, pm_pool);
-    std.debug.print("SECTION: shuffle_pm {d}\n", .{rng.draw});
 
     // ===== Phase 3: Planet assignment =====
     var star_planets: [31]ArrayList(Planet) = undefined;
@@ -177,18 +153,15 @@ pub fn main() !void {
         }
     }
     var pc: u32 = @intCast(all_planet_names.items.len);
-    var extra_floats: u32 = 0;
     while (pc < req_planets and pm_end > 0) {
         const si = star_order[rng.int1(31) - 1];
         if (@as(f64, @floatFromInt(star_planets[si].items.len)) < high_pps or rng.float() < 0.25) {
-            if (@as(f64, @floatFromInt(star_planets[si].items.len)) >= high_pps) extra_floats += 1;
             pm_end -= 1; const name = pm_pool[pm_end].name;
             try star_planets[si].append(.{ .name = name, .moons = ArrayList([]const u8).init(a) });
             try all_planet_names.append(name); try all_planet_stars.append(si);
             pc += 1;
         }
     }
-    std.debug.print("SECTION: build_planets_done {d} extra_floats={d}\n", .{rng.draw, extra_floats});
     const total_planets: u32 = @intCast(all_planet_names.items.len);
 
     // ===== Phase 4: Moon assignment =====
@@ -201,7 +174,6 @@ pub fn main() !void {
         }
     }
 
-    // min 1 moon per planet (Lua: BEFORE priority sort, uses all_planets order)
     var pm2_end: u32 = pm_end;
     for (all_planet_names.items, all_planet_stars.items) |pname, si| {
         for (star_planets[si].items) |*p| {
@@ -213,11 +185,9 @@ pub fn main() !void {
             }
         }
     }
-    // Sort only the remaining (unconsumed) portion of pm_pool
     sortByPriority(pm_pool[0..pm2_end]);
     var moon_total: u32 = 0;
     for (star_planets) |sp| { for (sp.items) |p| { moon_total += @intCast(p.moons.items.len); } }
-    var moon_extra_floats: u32 = 0;
     while (moon_total < requested_moons and pm2_end > 0) {
         const pi = rng.int1(total_planets) - 1;
         const si = all_planet_stars.items[pi];
@@ -225,15 +195,13 @@ pub fn main() !void {
         for (star_planets[si].items) |*p| {
             if (std.mem.eql(u8, p.name, pname)) {
                 if (@as(f64, @floatFromInt(p.moons.items.len)) < high_mpp or rng.float() < 0.25) {
-                    if (@as(f64, @floatFromInt(p.moons.items.len)) >= high_mpp) moon_extra_floats += 1;
                     pm2_end -= 1; try p.moons.append(pm_pool[pm2_end].name); moon_total += 1;
                 }
                 break;
             }
         }
     }
-    std.debug.print("SECTION: build_moons_done {d} extra_floats={d}\n", .{rng.draw, moon_extra_floats});
-    std.debug.print("SECTION: moon_assign_done {d}\n", .{rng.draw});
+
     // ===== Phase 5: Zone construction =====
     var zones = ArrayList(Zone).init(a);
     try zones.append(.{ .name = "Foenestra", .ztype = "anomaly" });
@@ -248,16 +216,12 @@ pub fn main() !void {
         const sorbit = try std.fmt.allocPrint(a, "{s} Orbit", .{sname});
         try zones.append(.{ .name = sorbit, .ztype = "orbit" });
 
-        // 1. Number of asteroid belts (Lua: called BEFORE planet shuffle)
         const belts = rng.int1(data.max_asteroid_belts);
-
-        // 2. Shuffle planets (consuming RNG)
         const n_planets = star_planets[si].items.len;
         if (n_planets > 1) {
             shufflePlanets(&rng, star_planets[si].items);
         }
 
-        // 3. Build combined child list: start with planet names in shuffled order
         var child_names = ArrayList([]const u8).init(a);
         var child_types = ArrayList([]const u8).init(a);
         for (star_planets[si].items) |p| {
@@ -265,7 +229,6 @@ pub fn main() !void {
             try child_types.append("planet");
         }
 
-        // 4. Insert asteroid belts at RNG-determined positions (Lua: math.floor(0.4 + rng() + #children * i / belts))
         for (0..belts) |bi| {
             const lua_pos = @as(usize, @intFromFloat(@floor(0.4 + rng.float() + @as(f64, @floatFromInt(child_names.items.len)) * @as(f64, @floatFromInt(bi + 1)) / @as(f64, @floatFromInt(belts)))));
             const bn = try std.fmt.allocPrint(a, "{s} Asteroid Belt {d}", .{ sname, bi + 1 });
@@ -273,7 +236,6 @@ pub fn main() !void {
             try child_types.insert(lua_pos - 1, "asteroid-belt");
         }
 
-        // 5. Move Nauvis to front
         for (child_names.items, 0..) |cn, ci| {
             if (std.mem.eql(u8, cn, "Nauvis") and ci > 0) {
                 const tn = child_names.items[0]; child_names.items[0] = child_names.items[ci]; child_names.items[ci] = tn;
@@ -282,7 +244,6 @@ pub fn main() !void {
             }
         }
 
-        // 6. Iterate children, add zones (Lua: belts get renamed with sequential numbering)
         var asteroid_belts: u32 = 0;
         for (child_names.items, child_types.items) |cn, ct| {
             if (std.mem.eql(u8, ct, "asteroid-belt")) {
@@ -294,7 +255,6 @@ pub fn main() !void {
                 try zones.append(.{ .name = cn, .ztype = "planet" });
                 const porbit = try std.fmt.allocPrint(a, "{s} Orbit", .{cn});
                 try zones.append(.{ .name = porbit, .ztype = "orbit" });
-                // Find planet and add its moons
                 for (star_planets[si].items) |p| {
                     if (std.mem.eql(u8, p.name, cn)) {
                         if (p.moons.items.len > 1) {
@@ -319,21 +279,15 @@ pub fn main() !void {
     for (sz) |name| { try zones.append(.{ .name = name, .ztype = "asteroid-field" }); }
     for (0..data.space_zones.len) |_| { _ = rng.float(); _ = rng.float(); }
 
-    // ===== Phase 5b: Assign seeds to all zones (before homesystem) =====
-    std.debug.print("SECTION: zone_seeds_start {d}\n", .{rng.draw});
+    // ===== Phase 5b: Assign seeds to all zones =====
     for (zones.items) |*z| {
         z.seed = rng.int1(4294967295);
     }
-    std.debug.print("SECTION: zone_seeds_done {d}\n", .{rng.draw});
 
     // ===== Phase 6: Homesystem validation =====
-    // Lua: UniverseHomesystem.make_validate_homesystem(storage.zones_by_name["Nauvis"])
-    // Order: haven, vulcanite, vitamelange, iridium, holmium, cryonite, beryllium, methane
-
-    // Gather available Calidus planets (non-Nauvis) and asteroid belts
     var available_planets = ArrayList([]const u8).init(a);
     var available_belts = ArrayList([]const u8).init(a);
-    var calidus_all_non_homeworld = ArrayList([]const u8).init(a); // tracks all non-Nauvis planets for K2 kr-imersite
+    var calidus_all_non_homeworld = ArrayList([]const u8).init(a);
     const calidus_si = for (star_order) |s| {
         if (std.mem.eql(u8, data.stars[s], "Calidus")) break s;
     } else @as(u32, 0);
@@ -343,14 +297,13 @@ pub fn main() !void {
             try calidus_all_non_homeworld.append(p.name);
         }
     }
-    // Count pre-existing belts for Calidus
     const pre_belts = countBelts(zones, "Calidus");
     for (0..pre_belts) |i| {
         const bn = try std.fmt.allocPrint(a, "Calidus Asteroid Belt {d}", .{i + 1});
         try available_belts.append(bn);
     }
 
-    // ---- haven: add special moon to Nauvis from haven_moons ----
+    // haven
     {
         const names = try a.alloc([]const u8, data.haven_moons_names.len);
         for (data.haven_moons_names, 0..) |n, idx| names[idx] = n;
@@ -364,193 +317,113 @@ pub fn main() !void {
             }
             break :blk result orelse @panic("no unused");
         };
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = moon_seed });
+        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295) });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        const orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = orbit_seed });
+        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
     }
 
-    // ---- vulcanite: create new planet from vulcanite_planets ----
+    // vulcanite
     {
         const name = try pickShuffledName(&rng, a, &data.vulcanite_planets_names, zones);
         try calidus_all_non_homeworld.append(name);
-        const planet_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = name, .ztype = "planet", .seed = planet_seed });
+        try zones.append(.{ .name = name, .ztype = "planet", .seed = rng.int1(4294967295) });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        const orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = orbit_seed });
+        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
     }
 
-    // ---- vitamelange: uses first available planet + special moon ----
+    // vitamelange
     {
-        _ = if (available_planets.items.len > 0) blk: {
-            _ = available_planets.orderedRemove(0);
-            break :blk true;
-        } else false;
-
+        _ = if (available_planets.items.len > 0) blk: { _ = available_planets.orderedRemove(0); break :blk true; } else false;
         const name = try pickShuffledName(&rng, a, &data.vitamelange_moons_names, zones);
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = moon_seed });
+        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295) });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        const orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = orbit_seed });
+        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
     }
 
-    // ---- iridium: use available planet if any, else generic + special moon ----
-    {
-        const used_existing = if (available_planets.items.len > 0) blk: {
-            _ = available_planets.orderedRemove(0);
-            break :blk true;
-        } else false;
-
-        if (!used_existing) {
-            const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
-            for (data.unassigned_planets_or_moons, 0..) |b, i| pm_names[i] = b.name;
-            shuffleNames(&rng, pm_names);
-            const planet_name = blk: {
-                var result: ?[]const u8 = null;
-                for (pm_names) |n| {
-                    var used = false;
-                    for (zones.items) |z| { if (std.mem.eql(u8, z.name, n)) { used = true; break; } }
-                    if (!used) result = n;
-                }
-                break :blk result orelse @panic("no unused");
-            };
-            _ = rng.float(); // radius
-            const planet_seed = rng.int1(4294967295);
-            try calidus_all_non_homeworld.append(planet_name);
-            try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
-            const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
-            const planet_orbit_seed = rng.int1(4294967295);
-            try zones.append(.{ .name = planet_orbit_name, .ztype = "orbit", .seed = planet_orbit_seed });
+    // Helper: make a generic planet from unassigned pool, or reuse existing
+    const makeGenericPlanet = struct {
+        fn call(ap: *ArrayList([]const u8), rzones: *ArrayList(Zone), rng2: *Rng, alloc2: std.mem.Allocator, cahnw: *ArrayList([]const u8)) !void {
+            const used = if (ap.items.len > 0) blk: { _ = ap.orderedRemove(0); break :blk true; } else false;
+            if (!used) {
+                const pm_names = try alloc2.alloc([]const u8, data.unassigned_planets_or_moons.len);
+                for (data.unassigned_planets_or_moons, 0..) |b, i| pm_names[i] = b.name;
+                shuffleNames(rng2, pm_names);
+                const planet_name = blk: {
+                    var result: ?[]const u8 = null;
+                    for (pm_names) |n| {
+                        var used2 = false;
+                        for (rzones.items) |z| { if (std.mem.eql(u8, z.name, n)) { used2 = true; break; } }
+                        if (!used2) result = n;
+                    }
+                    break :blk result orelse @panic("no unused");
+                };
+                _ = rng2.float(); // radius
+                try cahnw.append(planet_name);
+                try rzones.append(.{ .name = planet_name, .ztype = "planet", .seed = rng2.int1(4294967295) });
+                const planet_orbit_name = try std.fmt.allocPrint(alloc2, "{s} Orbit", .{planet_name});
+                try rzones.append(.{ .name = planet_orbit_name, .ztype = "orbit", .seed = rng2.int1(4294967295) });
+            }
         }
+    }.call;
 
-        const moon_name = try pickShuffledName(&rng, a, &data.iridium_moons_names, zones);
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = moon_seed });
-        const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
-        const moon_orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = moon_orbit_seed });
-    }
-
-    // ---- holmium: use available planet if any, else generic + special moon ----
-    {
-        const used_existing = if (available_planets.items.len > 0) blk: {
-            _ = available_planets.orderedRemove(0);
-            break :blk true;
-        } else false;
-
-        if (!used_existing) {
-            const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
-            for (data.unassigned_planets_or_moons, 0..) |b, i| pm_names[i] = b.name;
-            shuffleNames(&rng, pm_names);
-            const planet_name = blk: {
-                var result: ?[]const u8 = null;
-                for (pm_names) |n| {
-                    var used = false;
-                    for (zones.items) |z| { if (std.mem.eql(u8, z.name, n)) { used = true; break; } }
-                    if (!used) result = n;
-                }
-                break :blk result orelse @panic("no unused");
-            };
-            _ = rng.float(); // radius
-            const planet_seed = rng.int1(4294967295);
-            try calidus_all_non_homeworld.append(planet_name);
-            try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
-            const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
-            const planet_orbit_seed = rng.int1(4294967295);
-            try zones.append(.{ .name = planet_orbit_name, .ztype = "orbit", .seed = planet_orbit_seed });
+    // Helper: add special moon
+    const addSpecialMoon = struct {
+        fn call(moon_names: []const []const u8, rzones: *ArrayList(Zone), rng2: *Rng, alloc2: std.mem.Allocator) !void {
+            const name = try pickShuffledName(rng2, alloc2, moon_names, rzones.*);
+            try rzones.append(.{ .name = name, .ztype = "moon", .seed = rng2.int1(4294967295) });
+            const orbit_name = try std.fmt.allocPrint(alloc2, "{s} Orbit", .{name});
+            try rzones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng2.int1(4294967295) });
         }
+    }.call;
 
-        const moon_name = try pickShuffledName(&rng, a, &data.holmium_moons_names, zones);
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = moon_seed });
-        const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
-        const moon_orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = moon_orbit_seed });
-    }
+    // iridium
+    try makeGenericPlanet(&available_planets, &zones, &rng, a, &calidus_all_non_homeworld);
+    try addSpecialMoon(&data.iridium_moons_names, &zones, &rng, a);
 
-    // ---- cryonite: use available planet if any, else generic + special moon ----
+    // holmium
+    try makeGenericPlanet(&available_planets, &zones, &rng, a, &calidus_all_non_homeworld);
+    try addSpecialMoon(&data.holmium_moons_names, &zones, &rng, a);
+
+    // cryonite
+    try makeGenericPlanet(&available_planets, &zones, &rng, a, &calidus_all_non_homeworld);
+    try addSpecialMoon(&data.cryonite_moons_names, &zones, &rng, a);
+
+    // beryllium
     {
-        const used_existing = if (available_planets.items.len > 0) blk: {
-            _ = available_planets.orderedRemove(0);
-            break :blk true;
-        } else false;
-
-        if (!used_existing) {
-            const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
-            for (data.unassigned_planets_or_moons, 0..) |b, i| pm_names[i] = b.name;
-            shuffleNames(&rng, pm_names);
-            const planet_name = blk: {
-                var result: ?[]const u8 = null;
-                for (pm_names) |n| {
-                    var used = false;
-                    for (zones.items) |z| { if (std.mem.eql(u8, z.name, n)) { used = true; break; } }
-                    if (!used) result = n;
-                }
-                break :blk result orelse @panic("no unused");
-            };
-            _ = rng.float(); // radius
-            const planet_seed = rng.int1(4294967295);
-            try calidus_all_non_homeworld.append(planet_name);
-            try zones.append(.{ .name = planet_name, .ztype = "planet", .seed = planet_seed });
-            const planet_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{planet_name});
-            const planet_orbit_seed = rng.int1(4294967295);
-            try zones.append(.{ .name = planet_orbit_name, .ztype = "orbit", .seed = planet_orbit_seed });
-        }
-
-        const moon_name = try pickShuffledName(&rng, a, &data.cryonite_moons_names, zones);
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = moon_seed });
-        const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
-        const moon_orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = moon_orbit_seed });
-    }
-
-    // ---- beryllium: reuse existing asteroid belt if any, else make_generic_belt ----
-    {
-        const used_existing = if (available_belts.items.len > 0) blk: {
+        const used = if (available_belts.items.len > 0) blk: {
             _ = available_belts.orderedRemove(0);
             break :blk true;
         } else false;
-
-        if (!used_existing) {
+        if (!used) {
             const existing = countBelts(zones, "Calidus");
             const belt_name = try std.fmt.allocPrint(a, "Calidus Asteroid Belt {d}", .{existing + 1});
-            const belt_seed = rng.int1(4294967295);
-            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = belt_seed });
+            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = rng.int1(4294967295) });
         }
     }
 
-    // ---- methane: use available belt if any, else make_generic_belt ----
+    // methane
     {
-        const used_existing = if (available_belts.items.len > 0) blk: {
+        const used = if (available_belts.items.len > 0) blk: {
             _ = available_belts.orderedRemove(0);
             break :blk true;
         } else false;
-
-        if (!used_existing) {
+        if (!used) {
             const existing = countBelts(zones, "Calidus");
             const belt_name = try std.fmt.allocPrint(a, "Calidus Asteroid Belt {d}", .{existing + 1});
-            const belt_seed = rng.int1(4294967295);
-            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = belt_seed });
+            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = rng.int1(4294967295) });
         }
     }
 
-    // ---- kr-imersite (K2 only): planet-or-moon, uses existing planet or random + special moon from unassigned ----
+    // kr-imersite (K2 only)
     if (k2_enabled) {
-        // Consume existing planet if any, otherwise pick random non-homeworld Calidus planet
         if (available_planets.items.len > 0) {
             _ = available_planets.orderedRemove(0);
         } else {
-            // Shuffle all non-homeworld Calidus planets (including homesystem-created ones)
             if (calidus_all_non_homeworld.items.len > 1) {
                 shuffleNames(&rng, calidus_all_non_homeworld.items);
             }
         }
 
-        // add_special_moon_from_unassigned: shuffle pm_pool, pick first without primary_resource
         const pm_names = try a.alloc([]const u8, data.unassigned_planets_or_moons.len);
         for (data.unassigned_planets_or_moons, 0..) |b, idx| pm_names[idx] = b.name;
         shuffleNames(&rng, pm_names);
@@ -569,21 +442,11 @@ pub fn main() !void {
             }
             @panic("no unused unassigned body without primary_resource");
         };
-        _ = rng.intRange(80, 120); // radius multiplier rng(80,120)/100
-        const moon_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = moon_seed });
+        _ = rng.intRange(80, 120);
+        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = rng.int1(4294967295) });
         const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
-        const moon_orbit_seed = rng.int1(4294967295);
-        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = moon_orbit_seed });
+        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
     }
 
-    std.debug.print("SECTION: homesystem_done {d}\n", .{rng.draw});
-
-    // ===== Output =====
-    std.debug.print("Seed: {d}  RNG draws: {d}  Zones: {d}  K2: {}\n", .{ seed, rng.draw, zones.items.len, k2_enabled });
-
-    // Dump zone index
-    for (zones.items, 0..) |z, i| {
-        std.debug.print("{d}|{s}|{s}|{d}\n", .{ i+1, z.name, z.ztype, z.seed });
-    }
+    return .{ .zones = zones, .draws = rng.draw, .k2 = k2_enabled };
 }

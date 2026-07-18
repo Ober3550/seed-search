@@ -1,6 +1,6 @@
 #!/usr/bin/env lua5.2
 
-package.path = './generator/?.lua;../generator/?.lua;' .. package.path
+package.path = './generator/lua/?.lua;../generator/lua/?.lua;' .. package.path
 
 local struct = require('struct')
 

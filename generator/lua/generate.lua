@@ -1,4 +1,4 @@
-package.path = './generator/?.lua;../generator/?.lua;' .. package.path
+package.path = './generator/lua/?.lua;../generator/lua/?.lua;' .. package.path
 
 local env = require('env')
 local struct = require('struct')

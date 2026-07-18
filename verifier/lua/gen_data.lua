@@ -65,7 +65,7 @@ for _, special in ipairs({
     end
 end
 
-local f = io.open("/w/runner/native/zig/data.zig", "w")
+local f = io.open("generator/zig/data.zig", "w")
 f:write(table.concat(lines, "\n"))
 f:close()
 print("Wrote " .. #lines .. " lines")

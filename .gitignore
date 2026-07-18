@@ -1,6 +1,7 @@
 cartouche.html
 space-exploration_*/
 space-exploration_*.zip
+output/
 runner/output/
 runner/mods/*.zip
 # Local environment (edit .env.example to see options)
