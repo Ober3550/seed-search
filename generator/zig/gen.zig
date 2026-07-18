@@ -513,7 +513,33 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         }
     }
 
-    // Second pass: dynamic claiming for unassigned zones
+    // Second pass: uncontested strong claims
+    // Tag-required resources get first dibs on zones that match ONLY them
+    for (zones.items) |z| {
+        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+        if (map.contains(z.name)) continue;
+
+        const ztags = computeTags(z.seed, z.name);
+        // Count how many tag-required resources this zone matches
+        var match_count: u32 = 0;
+        var matched_resource: ?[]const u8 = null;
+
+        inline for (.{ "se-cryonite", "se-vitamelange", "se-vulcanite", "kr-mineral-water" }) |rn| {
+            if (isPrimaryEligible(rn, ztags)) {
+                match_count += 1;
+                matched_resource = rn;
+            }
+        }
+
+        // If exactly one match, claim it (uncontested strong claim)
+        if (match_count == 1) {
+            if (matched_resource) |rn| {
+                try map.put(z.name, rn);
+            }
+        }
+    }
+
+    // Third pass: greedy claiming for remaining unassigned zones
     // Each zone gets its highest ordered_bias resource that's eligible as primary
     for (zones.items) |z| {
         if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
