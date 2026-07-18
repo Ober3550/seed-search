@@ -72,7 +72,7 @@ fn sortByPriority(slice: []Body) void {
         var pv: i32 = @intCast(idx + 1);
         if (p.patron != null) pv += 10000;
         if (p.has_biome_replacements) pv += 5000;
-        if (p.has_tags) pv += 1000;
+        if (p.tag_temperature != null) pv += 1000;
         if (p.primary_resource != null) pv += 500;
         keys[idx] = pv;
     }
@@ -144,11 +144,112 @@ fn specialMoonRadius(parent_radius: f64, name: []const u8) f64 {
 }
 
 // Radius for K2 imersite moon (add_special_moon_from_unassigned): uses rng(80,120)/100 extra
+// Radius for K2 imersite moon (add_special_moon_from_unassigned): uses rng(80,120)/100 extra
 fn specialMoonRadiusRng(parent_radius: f64, name: []const u8, rng_mult: u32) f64 {
     const base_mult: f64 = lookupRadiusMultiplier(name) orelse 0.3;
     const mult: f64 = base_mult * @as(f64, @floatFromInt(rng_mult)) / 100.0;
     const cap: f64 = @min(parent_radius, 5000.0);
     return (0.5 * parent_radius + cap) / 2.0 * mult;
+}
+
+// ===== Tag computation =====
+// Tag tables match Universe.temperature_tags etc. in universe.lua
+const temperature_tags = [_][]const u8{ "temperature_bland", "temperature_temperate", "temperature_midrange", "temperature_balanced", "temperature_wild", "temperature_extreme", "temperature_cool", "temperature_cold", "temperature_vcold", "temperature_frozen", "temperature_warm", "temperature_hot", "temperature_vhot", "temperature_volcanic" };
+const water_tags = [_][]const u8{ "water_none", "water_low", "water_med", "water_high", "water_max" };
+const moisture_tags = [_][]const u8{ "moisture_none", "moisture_low", "moisture_med", "moisture_high", "moisture_max" };
+const trees_tags = [_][]const u8{ "trees_none", "trees_low", "trees_med", "trees_high", "trees_max" };
+const aux_tags = [_][]const u8{ "aux_very_low", "aux_low", "aux_med", "aux_high", "aux_very_high" };
+const cliff_tags = [_][]const u8{ "cliff_none", "cliff_low", "cliff_med", "cliff_high", "cliff_max" };
+const enemy_tags = [_][]const u8{ "enemy_none", "enemy_very_low", "enemy_low", "enemy_med", "enemy_high", "enemy_very_high", "enemy_max" };
+
+pub const Tags = struct {
+    temperature: ?[]const u8,
+    water: ?[]const u8,
+    moisture: ?[]const u8,
+    trees: ?[]const u8,
+    aux: ?[]const u8,
+    cliff: ?[]const u8,
+    enemy: ?[]const u8,
+};
+
+// Look up a body prototype by name from all pools (including special)
+fn lookupBody(name: []const u8) ?data.Body {
+    for (data.unassigned_planets) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.unassigned_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.unassigned_planets_or_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.special_bodies) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    return null;
+}
+
+// Compute tags for a planet or moon using per-zone RNG (matches Universe.inflate_climate_controls)
+pub fn computeTags(zone_seed: u32, name: []const u8) Tags {
+    var crng = Rng.initFactorio(zone_seed);
+    const proto = lookupBody(name);
+
+    // Start with prototype tags if available
+    var tags = Tags{
+        .temperature = if (proto) |p| p.tag_temperature else null,
+        .water = if (proto) |p| p.tag_water else null,
+        .moisture = if (proto) |p| p.tag_moisture else null,
+        .trees = if (proto) |p| p.tag_trees else null,
+        .aux = if (proto) |p| p.tag_aux else null,
+        .cliff = if (proto) |p| p.tag_cliff else null,
+        .enemy = if (proto) |p| p.tag_enemy else null,
+    };
+
+    // ticks_per_day: skip (not used for summary)
+    if (!std.mem.eql(u8, name, "Nauvis")) {
+        if (crng.float() < 0.5) {
+            _ = crng.int1(60 * 60 * 59);
+        } else {
+            _ = crng.int1(60 * 60 * 19);
+        }
+    }
+
+    // Temperature
+    if (tags.temperature == null) {
+        tags.temperature = temperature_tags[crng.int1(@intCast(temperature_tags.len)) - 1];
+    }
+
+    // Water, moisture, trees
+    if (tags.water == null or tags.moisture == null or tags.trees == null) {
+        var rng_water: u32 = 1;
+        var rng_moisture: u32 = 1;
+        var rng_trees: u32 = 1;
+        if (crng.float() < 0.75) {
+            rng_water = crng.int1(5);
+            rng_moisture = rng_water;
+            if (crng.float() < 0.5) {
+                rng_moisture = crng.int1(5);
+            }
+            rng_trees = rng_moisture;
+            if (crng.float() < 0.5) {
+                rng_trees = crng.int1(5);
+            }
+        }
+        rng_trees = @min(rng_trees, crng.int1(5));
+
+        if (tags.water == null) tags.water = water_tags[rng_water - 1];
+        if (tags.moisture == null) tags.moisture = moisture_tags[rng_moisture - 1];
+        if (tags.trees == null) tags.trees = trees_tags[rng_trees - 1];
+    }
+
+    // Enemy
+    if (tags.enemy == null) {
+        tags.enemy = enemy_tags[crng.int1(@intCast(enemy_tags.len)) - 1];
+    }
+
+    // Aux
+    if (tags.aux == null) {
+        tags.aux = aux_tags[crng.int1(@intCast(aux_tags.len)) - 1];
+    }
+
+    // Cliff
+    if (tags.cliff == null) {
+        tags.cliff = cliff_tags[crng.int1(@intCast(cliff_tags.len)) - 1];
+    }
+
+    return tags;
 }
 
 pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !Universe {

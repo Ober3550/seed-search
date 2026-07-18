@@ -50,7 +50,7 @@ pub fn main() !void {
 
         // JSONL: one compact JSON object per seed.
         // {"s":341,"d":5192,"k":true,"l":"PESPS","z":[{"i":1,"n":"Foo","t":"star","s":123,"r":5000},...]}
-        var buf: [131072]u8 = undefined;
+        var buf: [262144]u8 = undefined;
         var pos: usize = 0;
 
         // Opening: {"s":SEED,"d":DRAWS,"k":K2,"l":"LOOT","z":[
@@ -62,14 +62,52 @@ pub fn main() !void {
                 buf[pos] = ',';
                 pos += 1;
             }
+
+            // Base zone fields
+            const open_brace = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
+            pos += open_brace.len;
+
             if (z.radius > 0) {
                 const display_r: u32 = @as(u32, @intFromFloat(@floor(z.radius + 0.5)));
-                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d},\"r\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed, display_r }) catch unreachable;
-                pos += zone_json.len;
-            } else {
-                const zone_json = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}}}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
-                pos += zone_json.len;
+                const r_part = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{display_r}) catch unreachable;
+                pos += r_part.len;
             }
+
+            // Tags for planets and moons
+            if (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "moon")) {
+                const tags = gen.computeTags(z.seed, z.name);
+                if (tags.temperature) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.water) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.moisture) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.trees) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"tr\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.aux) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"a\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.cliff) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"c\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+                if (tags.enemy) |v| {
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v}) catch unreachable;
+                    pos += t.len;
+                }
+            }
+
+            buf[pos] = '}';
+            pos += 1;
         }
 
         // Closing: ]}

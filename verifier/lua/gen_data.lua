@@ -24,10 +24,19 @@ end
 local function body(p)
     local rm = p.radius_multiplier
     local rm_str = rm and string.format("%.6f", rm) or "null"
-    return string.format("    .{ .name=\"%s\", .patron=%s, .primary_resource=%s, .radius_multiplier=%s, .has_biome_replacements=%s, .has_tags=%s },",
+    -- Parse tags into individual fields
+    local tag_fields = {temperature="null", water="null", moisture="null", trees="null", aux="null", cliff="null", enemy="null"}
+    if p.tags then
+        for _, t in ipairs(p.tags) do
+            local u = string.find(t, "_")
+            local domain = string.sub(t, 1, u-1)
+            tag_fields[domain] = '"' .. t .. '"'
+        end
+    end
+    return string.format("    .{ .name=\"%s\", .patron=%s, .primary_resource=%s, .radius_multiplier=%s, .has_biome_replacements=%s, .tag_temperature=%s, .tag_water=%s, .tag_moisture=%s, .tag_trees=%s, .tag_aux=%s, .tag_cliff=%s, .tag_enemy=%s },",
         p.name, esc(p.patron), esc(p.primary_resource), rm_str,
         p.biome_replacements and "true" or "false",
-        p.tags and "true" or "false")
+        tag_fields.temperature, tag_fields.water, tag_fields.moisture, tag_fields.trees, tag_fields.aux, tag_fields.cliff, tag_fields.enemy)
 end
 
 local lines = {}
@@ -35,7 +44,7 @@ local function w(s) table.insert(lines, s) end
 
 w("// Auto-generated from SE 0.7.57 universe-raw.lua.")
 w("")
-w('pub const Body = struct { name: []const u8, patron: ?[]const u8, primary_resource: ?[]const u8, radius_multiplier: ?f64, has_biome_replacements: bool, has_tags: bool, };')
+w('pub const Body = struct { name: []const u8, patron: ?[]const u8, primary_resource: ?[]const u8, radius_multiplier: ?f64, has_biome_replacements: bool, tag_temperature: ?[]const u8, tag_water: ?[]const u8, tag_moisture: ?[]const u8, tag_trees: ?[]const u8, tag_aux: ?[]const u8, tag_cliff: ?[]const u8, tag_enemy: ?[]const u8, };')
 w("")
 w("pub const stars = [_][]const u8{")
 for _, s in ipairs(UR.universe.stars) do w('    "' .. s.name .. '",') end
@@ -93,6 +102,24 @@ for _, special in ipairs({
             local rm = p.radius_multiplier or 0.3
             w(string.format('    .{ .name="%s", .radius_multiplier=%.6f },', p.name, rm))
         end
+    end
+end
+w("};") 
+w("")
+
+-- All special pool bodies with their tags for lookup
+w("pub const special_bodies = [_]Body{")
+for _, special in ipairs({
+    {"vulcanite_planets"},
+    {"cryonite_moons"},
+    {"iridium_moons"},
+    {"holmium_moons"},
+    {"vitamelange_moons"},
+    {"haven_moons"},
+}) do
+    local pool = UR[special[1]]
+    if pool then
+        for _, p in ipairs(pool) do w(body(p)) end
     end
 end
 w("};")
