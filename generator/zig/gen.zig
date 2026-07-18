@@ -276,13 +276,16 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
 
     // Per-zone RNG for bias generation
     var bias_rng = Rng.initFactorio(zone_seed);
+    const debug_this = zone_seed == 1288077524;
+    if (debug_this) std.debug.print("BIASDEBUG seed={d}\n", .{zone_seed});
 
     // Generate base biases for each resource (matches generate_zone_resource_bias)
     var biases: [18]f64 = undefined;
     var bias_indices: [18]u32 = undefined;
-    for (resource_order, 0..) |_, ri| {
+    for (resource_order, 0..) |rn, ri| {
         biases[ri] = bias_rng.float();
         bias_indices[ri] = @intCast(ri);
+        if (debug_this and ri < 3) std.debug.print("BIASDEBUG {s}[{d}]: {d:.10}\n", .{rn, ri, biases[ri]});
     }
 
     // Sort biases descending
@@ -319,15 +322,16 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
             resource_value = 1.0 + RESOURCE_PRIMARY_BOOST;
         }
         resource_value = std.math.pow(f64, resource_value, RESOURCE_POWER);
-        if (is_primary and std.mem.eql(u8, resource_order[ri], "crude-oil")) {
-            std.debug.print("RESDEBUG crude-oil: rv={d:.6} freq={d:.6} size={d:.6} rich={d:.6}\n", .{resource_value, freq_lo + resource_value * (freq_hi - freq_lo), size_lo + resource_value * (size_hi - size_lo), rich_lo + resource_value * (rich_hi - rich_lo)});
-        }
 
         const freq = freq_lo + resource_value * (freq_hi - freq_lo);
         const size = size_lo + resource_value * (size_hi - size_lo);
         const richness = rich_lo + resource_value * (rich_hi - rich_lo);
         const fsr = freq * size * richness;
         scores[ri] = fsr / norm;
+
+        if (debug_this) {
+            std.debug.print("DBG {s}: pos={d} base={d:.6} ordered={d:.6} rv={d:.6} score={d:.6}\n", .{resource_order[ri], pos, base_bias, ordered_bias, resource_value, fsr / norm});
+        }
     }
 
     return scores;
