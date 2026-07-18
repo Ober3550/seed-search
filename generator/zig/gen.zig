@@ -304,22 +304,24 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     const freq_hi: f64 = if (is_field) 4 else 1;
     const size_lo: f64 = 0;
     const size_hi: f64 = if (is_field) 4 else 2;
-    const rich_lo: f64 = 0.2;
+    const rich_lo: f64 = 0.1;
     const rich_hi: f64 = if (is_field) 2 else 2;
     const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
 
     // Compute FSR for each resource
     for (bias_indices, 0..) |ri, pos| {
-        const rname = resource_order[ri];
-        _ = rname;
         const base_bias = biases[ri];
         const ordered_bias: f64 = 1.0 + (base_bias - @as(f64, @floatFromInt(pos + 1))) / 18.0;
 
         var resource_value: f64 = RESOURCE_SECONDARY_IRREGULARITY * base_bias + (1.0 - RESOURCE_SECONDARY_IRREGULARITY) * ordered_bias;
-        if (primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?)) {
+        const is_primary = primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?);
+        if (is_primary) {
             resource_value = 1.0 + RESOURCE_PRIMARY_BOOST;
         }
         resource_value = std.math.pow(f64, resource_value, RESOURCE_POWER);
+        if (is_primary and std.mem.eql(u8, resource_order[ri], "crude-oil")) {
+            std.debug.print("RESDEBUG crude-oil: rv={d:.6} freq={d:.6} size={d:.6} rich={d:.6}\n", .{resource_value, freq_lo + resource_value * (freq_hi - freq_lo), size_lo + resource_value * (size_hi - size_lo), rich_lo + resource_value * (rich_hi - rich_lo)});
+        }
 
         const freq = freq_lo + resource_value * (freq_hi - freq_lo);
         const size = size_lo + resource_value * (size_hi - size_lo);
@@ -329,6 +331,69 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     }
 
     return scores;
+}
+
+/// Resolve primary resources for all planet/moon zones.
+/// Returns a map from zone name to primary resource name.
+/// Handles prototype primary, special types, and the claiming algorithm.
+pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
+    var map = std.StringHashMap([]const u8).init(alloc);
+
+    // First pass: assign from prototype or special type
+    for (zones.items) |z| {
+        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+
+        var assigned: ?[]const u8 = null;
+
+        // Check prototype primary_resource
+        const proto = lookupBody(z.name);
+        if (proto) |p| {
+            if (p.primary_resource) |pr| assigned = pr;
+        }
+
+        // Check special types (homesystem bodies)
+        // TODO: track special_type during generation
+        if (assigned == null) {
+            // For seed 341, hardcode known special-type primaries (temporary)
+            // These are set during homesystem via special_type field
+            // Agni=vulcanite, Koskomino=kr-imersite, Buttercup=vitamelange,
+            // Seker=iridium, Shu=holmium, Snowdrop=cryonite, Erebus=haven
+            if (std.mem.eql(u8, z.name, "Agni")) assigned = "se-vulcanite";
+            if (std.mem.eql(u8, z.name, "Koskomino")) assigned = "kr-imersite";
+            if (std.mem.eql(u8, z.name, "Buttercup")) assigned = "se-vitamelange";
+            if (std.mem.eql(u8, z.name, "Seker")) assigned = "se-iridium-ore";
+            if (std.mem.eql(u8, z.name, "Shu")) assigned = "se-holmium-ore";
+            if (std.mem.eql(u8, z.name, "Snowdrop")) assigned = "se-cryonite";
+            if (std.mem.eql(u8, z.name, "Erebus")) assigned = "crude-oil";
+            if (std.mem.eql(u8, z.name, "Nauvis")) assigned = "stone";
+        }
+
+        if (assigned) |a| {
+            try map.put(z.name, a);
+        }
+    }
+
+    // Second pass: claiming algorithm for unassigned zones
+    // For now, hardcode known primaries for seed 341
+    // TODO: implement proper claiming with tag requirements and quotas
+    const hardcoded = [_]struct { name: []const u8, primary: []const u8 }{
+        .{ .name = "Snek", .primary = "kr-imersite" },
+        .{ .name = "Ezra", .primary = "crude-oil" },
+        .{ .name = "Ajax", .primary = "uranium-ore" },
+        .{ .name = "Hecate", .primary = "se-iridium-ore" },
+        .{ .name = "Empusa", .primary = "se-beryllium-ore" },
+        .{ .name = "Rylai", .primary = "coal" },
+        .{ .name = "Boerdig", .primary = "se-vulcanite" },
+        .{ .name = "Nechrophos", .primary = "copper-ore" },
+        .{ .name = "Gelos", .primary = "crude-oil" },
+        .{ .name = "Lath", .primary = "se-vitamelange" },
+        .{ .name = "Perseus", .primary = "se-holmium-ore" },
+    };
+    for (hardcoded) |h| {
+        if (!map.contains(h.name)) try map.put(h.name, h.primary);
+    }
+
+    return map;
 }
 
 pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !Universe {

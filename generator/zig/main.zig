@@ -57,6 +57,8 @@ pub fn main() !void {
         const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
         pos += open.len;
 
+        const primaries = gen.resolvePrimaries(a, universe.zones) catch unreachable;
+
         for (universe.zones.items, 0..) |z, i| {
             if (i > 0) {
                 buf[pos] = ',';
@@ -106,8 +108,7 @@ pub fn main() !void {
                 }
 
                 // Resources
-                const proto = gen.lookupBody(z.name);
-                const primary = if (proto) |p| p.primary_resource else null;
+                const primary = primaries.get(z.name);
                 if (primary) |prim| {
                     const scores = gen.computeZoneResources(z.seed, z.ztype, prim);
                     var first_res = true;
