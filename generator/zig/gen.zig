@@ -30,7 +30,9 @@ pub const Universe = struct {
     zones: ArrayList(Zone),
     draws: u32,
     k2: bool,
-    vault_loot: []const u8, // string of P/S/E, one per Calidus planet
+    vault_loot: []const u8,
+    calidus_children: ArrayList([]const u8),
+    calidus_child_types: ArrayList([]const u8),
 };
 
 fn shuffleBodies(rng: *Rng, slice: []Body) void {
