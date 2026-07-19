@@ -20,6 +20,6 @@ services:
       - SE_K2=1
       - MIN_NAQ_DV=20000
       - MIN_PROD_MODULES=4
-      - MAX_LINES_PER_FILE=10000
+    restart: always
     volumes:
       - ./output:/workspace/output
