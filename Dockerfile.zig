@@ -10,7 +10,7 @@
 #   Native (macOS/Linux):  cd generator/zig && zig build-exe main.zig -O ReleaseFast -femit-bin=seedgen
 #   Linux x86_64 target:   cd generator/zig && zig build-exe main.zig -O ReleaseFast -femit-bin=seedgen -target x86_64-linux-musl
 
-FROM --platform=linux/amd64 debian:bookworm-slim
+FROM debian:bookworm-slim
 WORKDIR /workspace
 COPY generator/zig/seedgen /usr/local/bin/seedgen
 RUN mkdir -p /workspace/output

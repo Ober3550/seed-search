@@ -16,6 +16,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.zig
+      platforms:
+        - linux/arm64
     env_file:
       - .env
     environment:
@@ -26,6 +28,11 @@ services:
       - MIN_PROD_MODULES=4
     volumes:
       - ./output:/workspace/output
-    # JSONL output goes to stderr; progress goes to stderr.
-    # Docker captures both. Redirect to file in output/:
-    command: ["sh", "-c", "/usr/local/bin/seedgen 2>/workspace/output/seeds.jsonl"]
+    # All output goes to stderr. Capture JSONL to seeds.jsonl, progress to progress.log
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "[seedgen] Starting at $$(date -Iseconds)" | tee /workspace/output/progress.log
+        /usr/local/bin/seedgen 2>/workspace/output/seeds.jsonl
+        echo "[seedgen] Done at $$(date -Iseconds)" | tee -a /workspace/output/progress.log
+        wc -l /workspace/output/seeds.jsonl | tee -a /workspace/output/progress.log
