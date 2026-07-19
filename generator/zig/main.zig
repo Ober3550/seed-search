@@ -171,7 +171,7 @@ pub fn main(init: std.process.Init) !void {
                 const dr: u32 = @intFromFloat(@floor(z.radius + 0.5));
                 const rp = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{dr}) catch unreachable; pos += rp.len;
             }
-            if (z.ztype == .planet or z.ztype == .moon) {
+            if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
                 const tags = gen.computeTags(z.seed, z.name, bodyMap);
                 if (tags.temperature) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.water) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
@@ -227,7 +227,7 @@ pub fn main(init: std.process.Init) !void {
         }
         // Append asteroid fields and tail homesystem bodies
         for (universe.zones.items[zone_end..]) |z| {
-            if (z.ztype == .planet or z.ztype == .moon) {
+            if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
                 buf[pos] = ','; pos += 1;
                 zi += 1;
                 const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
