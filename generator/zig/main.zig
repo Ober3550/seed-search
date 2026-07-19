@@ -57,6 +57,7 @@ pub fn main(init: std.process.Init) !void {
     // --- Resume from last seed ---
     var cur_n: u32 = 0;
     var start_seed: u32 = getEnvU32("START_SEED", 341);
+    var existing_lines: u32 = 0;
 
     // Find highest existing seeds_N.jsonl and read last seed
     var probe_n: u32 = 0;
@@ -69,6 +70,7 @@ pub fn main(init: std.process.Init) !void {
             var reader = f.reader(io, &.{});
             const content = try reader.interface.readAlloc(a, @intCast(file_len));
             if (content.len > 0) {
+                existing_lines = @intCast(std.mem.count(u8, content, "\n"));
                 var last_line_start: usize = 0;
                 var i: usize = content.len;
                 while (i > 0) { i -= 1; if (content[i] == '\n') { last_line_start = if (i + 1 < content.len) i + 1 else i; break; } }
@@ -81,20 +83,23 @@ pub fn main(init: std.process.Init) !void {
         cur_n = probe_n;
     }
     if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
+    if (existing_lines >= max_lines) { cur_n += 1; existing_lines = 0; }
+
+    std.debug.print("# Resumed: file {d}, {d} existing lines, max {d}/file\n", .{ cur_n, existing_lines, max_lines });
 
     // --- Open current output file (append if exists, create if not) ---
     const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-    var out_file = dir.createFile(io, fname, .{ .truncate = false, .read = true }) catch
-        try dir.createFile(io, fname, .{ .truncate = true, .read = true });
+    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
+
+    var out_file = dir.openFile(io, fname, .{ .mode = .read_write }) catch blk: {
+        break :blk try dir.createFile(io, fname, .{ .truncate = true, .read = true });
+    };
     var write_offset: u64 = try out_file.length(io);
     defer out_file.close(io);
 
-    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
-    std.debug.print("# Resumed: file {d}, max {d}/file\n", .{ cur_n, max_lines });
-
     var seed = start_seed;
     var passed: u32 = 0;
-    var file_lines: u32 = 0;
+    var file_lines: u32 = existing_lines;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
 
     while (seed <= count) : (seed += 2) {
