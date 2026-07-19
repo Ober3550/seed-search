@@ -1,15 +1,17 @@
 /// SE seed finder — batch runner for gen.zig.
 ///
-/// Environment variables:
-///   START_SEED   First seed to generate (default: 341)
-///   COUNT        Number of seeds to generate (default: 1)
-///   SE_K2        Set to "1" or "true" to enable Krastorio2
-///   MIN_NAQ_DV        Skip seeds where nearest naquium field delta-v exceeds this
-///   MIN_PROD_MODULES   Skip seeds with fewer than this many prod modules (P in loot)
+/// Environment:
+///   START_SEED          First seed (default 341)
+///   COUNT               Seeds to generate (default 1)
+///   SE_K2 / SE_ENABLE_K2  Enable Krastorio2 (1 or true)
+///   MIN_NAQ_DV          Naquium field delta-v filter (0=off)
+///   MIN_PROD_MODULES    Prod module filter (0=off)
+///   OUTPUT_DIR          Output directory (default "output")
+///   MAX_LINES_PER_FILE  Lines per JSONL file before rotating (default 10000)
 ///
-/// Output (stderr): one JSONL line per seed, plus #-prefixed progress lines.
-///   ./seedgen 2> output.jsonl
-///   grep '^{' output.jsonl          # data only
+/// Output:
+///   stderr → progress log (redirect to file in docker)
+///   OUTPUT_DIR/seeds_N.jsonl → rotating JSONL, auto-resumes from last seed
 
 const std = @import("std");
 const gen = @import("gen.zig");
@@ -17,14 +19,21 @@ const data = @import("data.zig");
 
 fn getEnvU32(comptime name: [:0]const u8, default: u32) u32 {
     const val = std.c.getenv(name) orelse return default;
-    const slice = std.mem.sliceTo(val, 0);
-    return std.fmt.parseInt(u32, slice, 10) catch default;
+    return std.fmt.parseInt(u32, std.mem.sliceTo(val, 0), 10) catch default;
 }
-
 fn getEnvBool(comptime name: [:0]const u8) bool {
     const val = std.c.getenv(name) orelse return false;
-    const slice = std.mem.sliceTo(val, 0);
-    return std.mem.eql(u8, slice, "1") or std.mem.eql(u8, slice, "true");
+    const s = std.mem.sliceTo(val, 0);
+    return std.mem.eql(u8, s, "1") or std.mem.eql(u8, s, "true");
+}
+
+/// Parse "s":NNN from the start of a JSON line. Returns 0 on failure.
+fn parseSeedFromJson(line: []const u8) u32 {
+    const needle = "\"s\":";
+    const idx = std.mem.indexOf(u8, line, needle) orelse return 0;
+    var rest = line[idx + needle.len ..];
+    const end = std.mem.indexOfScalar(u8, rest, ',') orelse std.mem.indexOfScalar(u8, rest, '}') orelse rest.len;
+    return std.fmt.parseInt(u32, rest[0..end], 10) catch 0;
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -33,51 +42,83 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const a = arena.allocator();
 
-    const start_seed = getEnvU32("START_SEED", 341);
     const count = getEnvU32("COUNT", 1);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
+    const max_lines = getEnvU32("MAX_LINES_PER_FILE", 10000);
+    const output_dir = std.mem.sliceTo(std.c.getenv("OUTPUT_DIR") orelse ".", 0);
 
-    std.debug.print("# Generating {d} seeds from {d} (K2={})\n", .{ count, start_seed, k2_enabled });
+    // --- Find or create output directory ---
+    var dir = std.Io.Dir.cwd().createDirPathOpen(io, output_dir, .{}) catch |e| {
+        std.debug.print("# ERROR opening output dir '{s}': {}\n", .{ output_dir, e });
+        return;
+    };
+    defer dir.close(io);
+
+    // --- Resume from last seed ---
+    var cur_n: u32 = 0;
+    var start_seed: u32 = getEnvU32("START_SEED", 341);
+
+    // Find highest existing seeds_N.jsonl and read last seed
+    var probe_n: u32 = 0;
+    while (true) : (probe_n += 1) {
+        const name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{probe_n});
+        var f = dir.openFile(io, name, .{}) catch break;
+        defer f.close(io);
+        const file_len = try f.length(io);
+        if (file_len > 0) {
+            var reader = f.reader(io, &.{});
+            const content = try reader.interface.readAlloc(a, @intCast(file_len));
+            if (content.len > 0) {
+                var last_line_start: usize = 0;
+                var i: usize = content.len;
+                while (i > 0) { i -= 1; if (content[i] == '\n') { last_line_start = if (i + 1 < content.len) i + 1 else i; break; } }
+                if (last_line_start < content.len) {
+                    start_seed = parseSeedFromJson(content[last_line_start..]);
+                    if (start_seed > 0) start_seed += 2;
+                }
+            }
+        }
+        cur_n = probe_n;
+    }
+    if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
+
+    // --- Open current output file (truncate, we start fresh from the resumed seed) ---
+    const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
+    var out_file = try dir.createFile(io, fname, .{ .truncate = true });
+    defer out_file.close(io);
+
+    std.debug.print("# Generating {d} seeds from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
+    std.debug.print("# Resumed: file {d}, max {d}/file\n", .{ cur_n, max_lines });
 
     var seed = start_seed;
     var generated: u32 = 0;
     var passed: u32 = 0;
-
-    var t_gen: u64 = 0;
-    var t_prim: u64 = 0;
-    var t_gw: u64 = 0;
-    var t_json: u64 = 0;
+    var file_lines: u32 = 0;
+    const t_start = std.Io.Clock.awake.now(io).nanoseconds;
 
     while (generated < count) : (generated += 1) {
-        if (generated > 0 and generated % 1000 == 0) {
-            std.debug.print("# Progress: {d}/{d} seeds processed, {d} passed\n", .{ generated, count, passed });
-        }
         if (generated > 0) _ = arena.reset(.retain_capacity);
 
-        const t0 = std.Io.Clock.awake.now(io).nanoseconds;
+        if (generated > 0 and generated % 1000 == 0) {
+            const elapsed_s: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).nanoseconds - t_start)) / 1_000_000_000.0;
+            std.debug.print("# [{d:.1}s] {d}/{d} processed, {d} passed\n", .{ elapsed_s, generated, count, passed });
+        }
+
         var universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
             std.debug.print("# ERROR seed {d}: {}\n", .{ seed, err });
             seed += 2;
             continue;
         };
-        const t1 = std.Io.Clock.awake.now(io).nanoseconds;
-        t_gen += @intCast(t1 - t0);
 
         const bodyMap = try gen.buildBodyMap(a);
         const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap) catch unreachable;
-        const t2 = std.Io.Clock.awake.now(io).nanoseconds;
-        t_prim += @intCast(t2 - t1);
-
         gen.computeGravityWells(&universe.zones, universe.zoneByName);
-        const t3 = std.Io.Clock.awake.now(io).nanoseconds;
-        t_gw += @intCast(t3 - t2);
 
-        // Nauvis reference for delta-v
         const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
-        // Pre-filter: skip seeds with no naquium field within delta-v threshold
+        // --- Filters ---
         const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
         if (min_naq_dv > 0) {
             const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
@@ -87,7 +128,6 @@ pub fn main(init: std.process.Init) !void {
             var nearest: u32 = std.math.maxInt(u32);
             for (universe.zones.items) |z| {
                 if (z.ztype == .@"asteroid-field") {
-                    // Only consider fields that actually have naquium
                     const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
                     if (scores[@intFromEnum(data.Resource.se_naquium_ore)] <= 0.0001) continue;
                     const dx = z.stellar_x - cx;
@@ -97,46 +137,30 @@ pub fn main(init: std.process.Init) !void {
                     if (dv < nearest) nearest = dv;
                 }
             }
-            if (nearest > min_naq_dv) {
-                seed += 2;
-                continue;
-            }
+            if (nearest > min_naq_dv) { seed += 2; continue; }
         }
 
-        // Post-filter: require minimum productivity modules in vault loot
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
             var p_count: u32 = 0;
             for (universe.vault_loot) |c| { if (c == 'P') p_count += 1; }
-            if (p_count < min_prod) {
-                seed += 2;
-                continue;
-            }
+            if (p_count < min_prod) { seed += 2; continue; }
         }
 
-        // JSONL output
-        passed += 1;
-        const tj0 = std.Io.Clock.awake.now(io).nanoseconds;
+        // --- Serialize JSONL ---
         var buf: [524288]u8 = undefined;
         var pos: usize = 0;
         const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
         pos += open.len;
 
         for (universe.zones.items, 0..) |z, i| {
-            if (i > 0) {
-                buf[pos] = ',';
-                pos += 1;
-            }
-
-            const open_brace = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
-            pos += open_brace.len;
-
+            if (i > 0) { buf[pos] = ','; pos += 1; }
+            const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
+            pos += ob.len;
             if (z.radius > 0) {
-                const display_r: u32 = @as(u32, @intFromFloat(@floor(z.radius + 0.5)));
-                const r_part = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{display_r}) catch unreachable;
-                pos += r_part.len;
+                const dr: u32 = @intFromFloat(@floor(z.radius + 0.5));
+                const rp = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{dr}) catch unreachable; pos += rp.len;
             }
-
             if (z.ztype == .planet or z.ztype == .moon) {
                 const tags = gen.computeTags(z.seed, z.name, bodyMap);
                 if (tags.temperature) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
@@ -146,69 +170,39 @@ pub fn main(init: std.process.Init) !void {
                 if (tags.aux) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"a\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.cliff) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"c\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.enemy) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
-
                 const primary = primaries.get(z.name);
                 if (primary) |prim| {
                     const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
-                    var first_res = true;
+                    var first = true;
                     for (gen.resource_order, 0..) |rname, ri| {
                         if (scores[ri] > 0.0001) {
-                            if (first_res) {
-                                const prefix = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
-                                pos += prefix.len;
-                                first_res = false;
-                            } else {
-                                buf[pos] = ',';
-                                pos += 1;
-                            }
-                            const rpart = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable;
-                            pos += rpart.len;
+                            if (first) { const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable; pos += p.len; first = false; }
+                            else { buf[pos] = ','; pos += 1; }
+                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
                         }
                     }
-                    if (!first_res) {
-                        buf[pos] = '}';
-                        pos += 1;
-                    }
+                    if (!first) { buf[pos] = '}'; pos += 1; }
                 }
-
                 if (nauvis_sgw > 0 and z.star_gravity_well > 0 and z.planet_gravity_well > 0) {
                     const dv_raw: f64 = if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
                         100.0 * @abs(z.planet_gravity_well - nauvis_pgw)
-                    else
-                        500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
-                    const dv: u32 = @as(u32, @intFromFloat(@ceil(dv_raw)));
-                    const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
-                    pos += dv_part.len;
+                    else 500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
+                    const dv: u32 = @intFromFloat(@ceil(dv_raw));
+                    const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable; pos += dp.len;
                 }
             }
-
-            // Asteroid fields: resources (no primary, no tags)
             if (z.ztype == .@"asteroid-field") {
                 const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
                 const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
-                var first_res = true;
+                var first = true;
                 for (gen.resource_order, 0..) |rname, ri| {
                     if (scores[ri] > 0.0001) {
-                        if (first_res) {
-                            const prefix = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
-                            pos += prefix.len;
-                            first_res = false;
-                        } else {
-                            buf[pos] = ',';
-                            pos += 1;
-                        }
-                        const rpart = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable;
-                        pos += rpart.len;
+                        if (first) { const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable; pos += p.len; first = false; }
+                        else { buf[pos] = ','; pos += 1; }
+                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
                     }
                 }
-                if (!first_res) {
-                    buf[pos] = '}';
-                    pos += 1;
-                }
-            }
-
-            // Delta-v for asteroid fields (interstellar formula)
-            if (z.ztype == .@"asteroid-field") {
+                if (!first) { buf[pos] = '}'; pos += 1; }
                 const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
                 const cx = universe.zones.items[calidus_zi].stellar_x;
                 const cy = universe.zones.items[calidus_zi].stellar_y;
@@ -217,30 +211,32 @@ pub fn main(init: std.process.Init) !void {
                 const dist = @sqrt(dx * dx + dy * dy);
                 const dv_raw: f64 = 400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw;
                 const dv: u32 = @intFromFloat(@ceil(dv_raw));
-                const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
-                pos += dv_part.len;
+                const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable; pos += dp.len;
             }
-
-            buf[pos] = '}';
-            pos += 1;
+            buf[pos] = '}'; pos += 1;
         }
+        buf[pos] = ']'; pos += 1;
+        buf[pos] = '}'; pos += 1;
+        buf[pos] = '\n'; pos += 1;
 
-        buf[pos] = ']';
-        pos += 1;
-        buf[pos] = '}';
-        pos += 1;
-        buf[pos] = '\n';
-        pos += 1;
+        // Write to file via writer
+        var fw = out_file.writer(io, &.{});
+        _ = try fw.interface.writeSplat(&.{buf[0..pos]}, 1);
+        passed += 1;
+        file_lines += 1;
 
-        std.debug.print("{s}", .{buf[0..pos]});
-        t_json += @intCast(std.Io.Clock.awake.now(io).nanoseconds - tj0);
+        // Rotate if full
+        if (file_lines >= max_lines) {
+            out_file.close(io);
+            cur_n += 1;
+            file_lines = 0;
+            const new_name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
+            out_file = try dir.createFile(io, new_name, .{});
+            std.debug.print("# Rolled over to {s}\n", .{new_name});
+        }
 
         seed += 2;
     }
 
-    // Summary (ns → μs)
-    const n: f64 = @floatFromInt(@max(1, generated));
-    std.debug.print("# Timing (μs/seed): gen={d:.0} prim={d:.0} gw={d:.0} json={d:.0} total={d:.0}\n",
-        .{ @as(f64, @floatFromInt(t_gen)) / n / 1000, @as(f64, @floatFromInt(t_prim)) / n / 1000, @as(f64, @floatFromInt(t_gw)) / n / 1000, @as(f64, @floatFromInt(t_json)) / n / 1000, @as(f64, @floatFromInt(t_gen + t_prim + t_gw + t_json)) / n / 1000 });
-    std.debug.print("# Done: {d} seeds.\n", .{generated});
+    std.debug.print("# Done: {d} processed, {d} passed -> {s}\n", .{ generated, passed, fname });
 }
