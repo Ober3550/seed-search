@@ -143,9 +143,9 @@ function evalSeed(seedObject) {
             && s.radius > 2000;
     });
 
-    if (viable.length > 0) {
+    if (bodies.length > 0) {
         console.log(`seed: ${seedObject.seed} loot: ${seedObject.loot.join("")}`);
-        printPlanetsAndMoons(viable);
+        printPlanetsAndMoons(bodies);
         console.log();
         return true;
     }
