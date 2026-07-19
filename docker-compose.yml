@@ -21,5 +21,7 @@ services:
       - MIN_NAQ_DV=20000
       - MIN_PROD_MODULES=4
     restart: always
+    ulimits:
+      stack: 1073741824
     volumes:
       - ./output:/workspace/output

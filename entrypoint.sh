@@ -1,8 +1,10 @@
 #!/bin/sh
-mkdir -p /workspace/output 2>/dev/null
-cd /workspace/output 2>/dev/null || exit 1
+for i in $(seq 1 30); do
+  mkdir -p /workspace/output 2>/dev/null && break
+  sleep 0.1
+done
+cd /workspace/output 2>/dev/null || { echo "ERROR: /workspace/output not available"; exit 1; }
 
-# Resume: find last file, compute next seed
 PREV=$(ls seeds_*.jsonl 2>/dev/null | sort -t_ -k2 -n | tail -1)
 if [ -n "$PREV" ] && [ -s "$PREV" ]; then
   LAST_SEED=$(tail -1 "$PREV" | head -c 50 | sed 's/{"s":\([0-9]*\).*/\1/')
