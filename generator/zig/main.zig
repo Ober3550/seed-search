@@ -58,14 +58,12 @@ pub fn main() !void {
         pos += open.len;
 
         const primaries = gen.resolvePrimaries(a, universe.zones) catch unreachable;
-        gen.computeGravityWells(&universe.zones);
+        gen.computeGravityWells(&universe.zones, universe.zoneByName);
 
         // Find Nauvis for delta-v reference
-        var nauvis_sgw: f64 = 0;
-        var nauvis_pgw: f64 = 0;
-        for (universe.zones.items) |nz| {
-            if (std.mem.eql(u8, nz.name, "Nauvis")) { nauvis_sgw = nz.star_gravity_well; nauvis_pgw = nz.planet_gravity_well; break; }
-        }
+        const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
+        const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
+        const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
         for (universe.zones.items, 0..) |z, i| {
             if (i > 0) {
