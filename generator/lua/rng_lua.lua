@@ -40,12 +40,12 @@ end
 -- Integer in [1, n] from a 32-bit value.
 -- Factorio uses: floor(u32 / 2^32 * n) + 1
 local function to_int(u32, n)
-    return math.floor(u32 * 2.3283064365386963e-10 * n) + 1
+    return math.floor(u32 * 2.3283064365386963e-10 * n - 0.0000001) + 1
 end
 
 -- Integer in [lo, hi] from a 32-bit value
 local function to_int_range(u32, lo, hi)
-    return lo + math.floor(u32 * 2.3283064365386963e-10 * (hi - lo + 1))
+    return lo + math.floor(u32 * 2.3283064365386963e-10 * (hi - lo + 1) - 0.0000001)
 end
 
 -- Seed initialization. The RNG module itself does NOT apply corrections;

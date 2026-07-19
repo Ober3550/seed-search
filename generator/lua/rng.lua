@@ -14,11 +14,11 @@ local function to_float(u32)
 end
 
 local function to_int(u32, n)
-    return math.floor(u32 * 2.3283064365386963e-10 * n) + 1
+    return math.floor(u32 * 2.3283064365386963e-10 * n - 0.0000001) + 1
 end
 
 local function to_int_range(u32, lo, hi)
-    return lo + math.floor(u32 * 2.3283064365386963e-10 * (hi - lo + 1))
+    return lo + math.floor(u32 * 2.3283064365386963e-10 * (hi - lo + 1) - 0.0000001)
 end
 
 function rng.new(seed)

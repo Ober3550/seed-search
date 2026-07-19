@@ -58,7 +58,7 @@ pub fn main() !void {
         pos += open.len;
 
         const primaries = gen.resolvePrimaries(a, universe.zones) catch unreachable;
-        gen.computeGravityWells(&universe.zones, universe.calidus_children);
+        gen.computeGravityWells(&universe.zones);
 
         // Find Nauvis for delta-v reference
         var nauvis_sgw: f64 = 0;

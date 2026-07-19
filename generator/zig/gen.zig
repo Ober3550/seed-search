@@ -8,7 +8,7 @@ pub const Rng = struct {
     s1: u32, s2: u32, s3: u32, draw: u32 = 0,
     pub fn initFactorio(seed: u32) Rng {
         const s = if (seed < 341) @as(u32, 341) else seed;
-        return .{ .s1 = s & 0xFFFFFFFE, .s2 = s & 0xFFFFFFFE, .s3 = s & 0xFFFFFFFE };
+        return .{ .s1 = s, .s2 = s, .s3 = s };
     }
     pub fn next(self: *Rng) u32 { self.draw += 1;
         self.s1 = ((self.s1 & 0xFFFFFFFE) << 12) ^ (((self.s1 << 13) ^ self.s1) >> 19);
@@ -17,8 +17,8 @@ pub const Rng = struct {
         return self.s1 ^ self.s2 ^ self.s3;
     }
     pub fn float(self: *Rng) f64 { return @as(f64, @floatFromInt(self.next())) * 2.3283064365386963e-10; }
-    pub fn int1(self: *Rng, n: u32) u32 { return @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(n))))) + 1; }
-    pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 { return lo + @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1))))); }
+    pub fn int1(self: *Rng, n: u32) u32 { return @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(n)) - 0.0000001))) + 1; }
+    pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 { return lo + @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001))); }
 };
 
 const data = @import("data.zig");

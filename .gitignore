@@ -17,3 +17,4 @@ runner/_config.json
 runner/_queue.json
 __pycache__/
 *.pyc
+tmp/
