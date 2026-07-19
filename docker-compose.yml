@@ -7,7 +7,7 @@ services:
   seedgen:
     build:
       context: .
-      dockerfile: Dockerfile.zig
+      dockerfile: runner/zig/Dockerfile.zig
     environment:
       - END_SEED=100000
       - SE_K2=1
