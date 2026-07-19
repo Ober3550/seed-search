@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             if (z.ztype == .planet or z.ztype == .moon) {
-                const tags = gen.computeTags(z.seed, z.name);
+                const tags = gen.computeTags(z.seed, z.name, null);
                 if (tags.temperature) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.water) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.moisture) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }

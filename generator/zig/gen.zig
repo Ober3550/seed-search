@@ -36,6 +36,30 @@ pub const Universe = struct {
     calidus_child_types: ArrayList(data.ZoneType),
 };
 
+/// Build a name→Body hash map for O(1) lookups (replaces 4 linear scans).
+fn buildBodyMap(alloc: std.mem.Allocator) !std.StringHashMapUnmanaged(data.Body) {
+    var map: std.StringHashMapUnmanaged(data.Body) = .{};
+    for (&data.unassigned_planets) |*b| { try map.put(alloc, b.name, b.*); }
+    for (&data.unassigned_moons) |*b| { try map.put(alloc, b.name, b.*); }
+    for (&data.unassigned_planets_or_moons) |*b| { try map.put(alloc, b.name, b.*); }
+    for (&data.special_bodies) |*b| { try map.put(alloc, b.name, b.*); }
+    return map;
+}
+
+/// Look up a body prototype by name (O(1) via hash map).
+pub fn lookupBodyFast(bodyMap: std.StringHashMapUnmanaged(data.Body), name: []const u8) ?data.Body {
+    return bodyMap.get(name);
+}
+
+/// Legacy: linear scan body lookup. Prefer lookupBodyFast with a pre-built map.
+pub fn lookupBody(name: []const u8) ?data.Body {
+    for (data.unassigned_planets) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.unassigned_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.unassigned_planets_or_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    for (data.special_bodies) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
+    return null;
+}
+
 /// Get a zone's index by name (O(1)). Panics if not found.
 fn zoneIndex(byName: std.StringHashMapUnmanaged(u32), name: []const u8) u32 {
     return byName.get(name) orelse @panic("zone not found");
@@ -198,19 +222,10 @@ fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
     return null;
 }
 
-// Look up a body prototype by name from all pools (including special)
-pub fn lookupBody(name: []const u8) ?data.Body {
-    for (data.unassigned_planets) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
-    for (data.unassigned_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
-    for (data.unassigned_planets_or_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
-    for (data.special_bodies) |b| { if (std.mem.eql(u8, b.name, name)) return b; }
-    return null;
-}
-
-// Compute tags for a planet or moon using per-zone RNG (matches Universe.inflate_climate_controls)
-pub fn computeTags(zone_seed: u32, name: []const u8) Tags {
+// Compute tags for a planet or moon. Pass bodyMap for O(1) prototype lookups.
+pub fn computeTags(zone_seed: u32, name: []const u8, bodyMap: ?std.StringHashMapUnmanaged(data.Body)) Tags {
     var crng = Rng.initFactorio(zone_seed);
-    const proto = lookupBody(name);
+    const proto = if (bodyMap) |bm| bm.get(name) else lookupBody(name);
 
     // Start with prototype tags if available
     var tags = Tags{
@@ -489,26 +504,19 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
 
 pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
+    const bodyMap = try buildBodyMap(alloc);
 
     // First pass: assign from prototype or special type
     for (zones.items) |z| {
         if (z.ztype != .planet and z.ztype != .moon) continue;
 
         var assigned: ?[]const u8 = null;
-
-        // Check prototype primary_resource
-        const proto = lookupBody(z.name);
-        if (proto) |p| {
+        if (lookupBodyFast(bodyMap, z.name)) |p| {
             if (p.primary_resource) |pr| assigned = pr;
         }
 
-        // Check special types (homesystem bodies)
-        // TODO: track special_type during generation
+        // Hardcoded special types (TODO: track during generation)
         if (assigned == null) {
-            // For seed 341, hardcode known special-type primaries (temporary)
-            // These are set during homesystem via special_type field
-            // Agni=vulcanite, Koskomino=kr-imersite, Buttercup=vitamelange,
-            // Seker=iridium, Shu=holmium, Snowdrop=cryonite, Erebus=haven
             if (std.mem.eql(u8, z.name, "Agni")) assigned = "se-vulcanite";
             if (std.mem.eql(u8, z.name, "Koskomino")) assigned = "kr-imersite";
             if (std.mem.eql(u8, z.name, "Buttercup")) assigned = "se-vitamelange";
@@ -525,12 +533,11 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
     }
 
     // Second pass: uncontested strong claims
-    // Tag-required resources get first dibs on zones that match ONLY them
     for (zones.items) |z| {
         if (z.ztype != .planet and z.ztype != .moon) continue;
         if (map.contains(z.name)) continue;
 
-        const ztags = computeTags(z.seed, z.name);
+        const ztags = computeTags(z.seed, z.name, bodyMap);
         var match_count: u32 = 0;
         var matched_resource: ?[]const u8 = null;
 
@@ -553,6 +560,9 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         if (z.ztype != .planet and z.ztype != .moon) continue;
         if (map.contains(z.name)) continue;
 
+        // Compute tags ONCE per zone (was inside the inner loop!)
+        const ztags = computeTags(z.seed, z.name, bodyMap);
+
         var bias_rng = Rng.initFactorio(z.seed);
         var biases: [18]f64 = undefined;
         var indices: [18]u32 = undefined;
@@ -569,9 +579,7 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         var best_val: f64 = -1;
         var best_ri: u32 = 0;
         for (indices, 0..) |ri, pos| {
-            // Exclude space-only resources from primary options
             if (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice)) continue;
-            const ztags = computeTags(z.seed, z.name);
             if (!isPrimaryEligible(ri, ztags)) continue;
             const ordered = 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos + 1))) / 18.0;
             if (ordered > best_val) { best_val = ordered; best_ri = ri; }
