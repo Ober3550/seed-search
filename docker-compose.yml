@@ -1,0 +1,31 @@
+# Docker Compose configuration for the Zig seed finder.
+#
+# Usage:
+#   docker compose up --build        # build + run once
+#   docker compose run seedgen       # run with overrides
+#
+# Environment (set in .env or override on command line):
+#   START_SEED=341       first seed (default)
+#   COUNT=1000000        number of seeds to generate
+#   SE_K2=1              enable Krastorio2 (0 or 1)
+#   MIN_NAQ_DV=20000     skip seeds with no naq field this close
+#   MIN_PROD_MODULES=4   skip seeds with fewer P modules in loot
+
+services:
+  seedgen:
+    build:
+      context: .
+      dockerfile: Dockerfile.zig
+    env_file:
+      - .env
+    environment:
+      - START_SEED=341
+      - COUNT=1000000
+      - SE_K2=1
+      - MIN_NAQ_DV=20000
+      - MIN_PROD_MODULES=4
+    volumes:
+      - ./output:/workspace/output
+    # JSONL output goes to stderr; progress goes to stderr.
+    # Docker captures both. Redirect to file in output/:
+    command: ["sh", "-c", "/usr/local/bin/seedgen 2>/workspace/output/seeds.jsonl"]
