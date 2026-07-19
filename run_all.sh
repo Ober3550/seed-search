@@ -24,7 +24,7 @@ for ((s=0; s<END; s+=RANGE)); do
   
   E=$((s + RANGE))
   [ $E -gt $END ] && E=$END
-  wid=$((worker % THREADS))
+  wid=$((worker % THREADS + 1))
   
   echo "[orch] worker $wid: $s → $E ($(( active + 1 ))/$THREADS)"
   docker run --rm --platform linux/arm64 --ulimit stack=1073741824 \
