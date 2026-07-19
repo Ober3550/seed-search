@@ -98,7 +98,12 @@ pub fn main(init: std.process.Init) !void {
     var file_lines: u32 = existing_lines;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
 
-    while (seed <= count) : (seed += 2) {
+    // Stop at next 100K boundary (so shell can restart with new bucket)
+    const start_bucket = start_seed / 100000;
+    const bucket_limit: u32 = (start_bucket + 1) * 100000 - 1;
+    const max_seed = @min(count, bucket_limit);
+
+    while (seed <= max_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
         if (seed > start_seed and (seed - start_seed) % 2000 == 0) {
