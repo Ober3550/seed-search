@@ -1,5 +1,27 @@
 // Auto-generated from SE 0.7.57 universe-raw.lua.
 
+pub const ZoneType = enum {
+    anomaly,
+    star,
+    orbit,
+    planet,
+    moon,
+    @"asteroid-belt",
+    @"asteroid-field",
+
+    pub fn asStr(self: ZoneType) []const u8 {
+        return switch (self) {
+            .anomaly => "anomaly",
+            .star => "star",
+            .orbit => "orbit",
+            .planet => "planet",
+            .moon => "moon",
+            .@"asteroid-belt" => "asteroid-belt",
+            .@"asteroid-field" => "asteroid-field",
+        };
+    }
+};
+
 pub const Body = struct { name: []const u8, patron: ?[]const u8, primary_resource: ?[]const u8, radius_multiplier: ?f64, has_biome_replacements: bool, tag_temperature: ?[]const u8, tag_water: ?[]const u8, tag_moisture: ?[]const u8, tag_trees: ?[]const u8, tag_aux: ?[]const u8, tag_cliff: ?[]const u8, tag_enemy: ?[]const u8, };
 
 pub const stars = [_][]const u8{

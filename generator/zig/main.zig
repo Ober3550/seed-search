@@ -74,7 +74,7 @@ pub fn main() !void {
             }
 
             // Base zone fields
-            const open_brace = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype, z.seed }) catch unreachable;
+            const open_brace = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
             pos += open_brace.len;
 
             if (z.radius > 0) {
@@ -84,7 +84,7 @@ pub fn main() !void {
             }
 
             // Tags for planets and moons
-            if (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "moon")) {
+            if (z.ztype == .planet or z.ztype == .moon) {
                 const tags = gen.computeTags(z.seed, z.name);
                 if (tags.temperature) |v| {
                     const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v}) catch unreachable;
@@ -118,7 +118,7 @@ pub fn main() !void {
                 // Resources
                 const primary = primaries.get(z.name);
                 if (primary) |prim| {
-                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
+                    const scores = gen.computeZoneResources(z.seed, z.ztype.asStr(), prim, tags);
                     var first_res = true;
                     for (gen.resource_order, 0..) |rname, ri| {
                         if (scores[ri] > 0.0001) {

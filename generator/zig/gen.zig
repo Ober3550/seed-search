@@ -24,7 +24,7 @@ pub const Rng = struct {
 const data = @import("data.zig");
 const Body = data.Body;
 const Planet = struct { name: []const u8, moons: ArrayList([]const u8) };
-pub const Zone = struct { name: []const u8, ztype: []const u8, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0 };
+pub const Zone = struct { name: []const u8, ztype: data.ZoneType, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0 };
 
 pub const Universe = struct {
     zones: ArrayList(Zone),
@@ -32,7 +32,7 @@ pub const Universe = struct {
     k2: bool,
     vault_loot: []const u8,
     calidus_children: ArrayList([]const u8),
-    calidus_child_types: ArrayList([]const u8),
+    calidus_child_types: ArrayList(data.ZoneType),
 };
 
 fn shuffleBodies(rng: *Rng, slice: []Body) void {
@@ -110,7 +110,7 @@ fn countBelts(zones: ArrayList(Zone), star_name: []const u8) u32 {
 // Helper: find a planet's raw radius (f64) by name from the zone list
 fn findPlanetRadius(zones: ArrayList(Zone), name: []const u8) f64 {
     for (zones.items) |z| {
-        if (std.mem.eql(u8, z.name, name) and std.mem.eql(u8, z.ztype, "planet")) return z.radius;
+        if (std.mem.eql(u8, z.name, name) and z.ztype == .planet) return z.radius;
     }
     return 0;
 }
@@ -483,7 +483,7 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
 
     // First pass: assign from prototype or special type
     for (zones.items) |z| {
-        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+        if (z.ztype != .planet and z.ztype != .moon) continue;
 
         var assigned: ?[]const u8 = null;
 
@@ -518,7 +518,7 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
     // Second pass: uncontested strong claims
     // Tag-required resources get first dibs on zones that match ONLY them
     for (zones.items) |z| {
-        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+        if (z.ztype != .planet and z.ztype != .moon) continue;
         if (map.contains(z.name)) continue;
 
         const ztags = computeTags(z.seed, z.name);
@@ -544,7 +544,7 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
     // Third pass: greedy claiming for remaining unassigned zones
     // Each zone gets its highest ordered_bias resource that's eligible as primary
     for (zones.items) |z| {
-        if (!std.mem.eql(u8, z.ztype, "planet") and !std.mem.eql(u8, z.ztype, "moon")) continue;
+        if (z.ztype != .planet and z.ztype != .moon) continue;
         if (map.contains(z.name)) continue;
 
         // Compute ordered_bias and pick highest valid primary
@@ -605,7 +605,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     var zi: usize = 0;
     while (zi < zones.items.len) : (zi += 1) {
         const z = zones.items[zi];
-        if (std.mem.eql(u8, z.ztype, "star")) {
+        if (z.ztype == .star) {
             if (star_zi) |si| {
                 const sgw: f64 = 10.0 + @as(f64, @floatFromInt(child_n)) + @as(f64, @floatFromInt(si + 1)) / 1000.0;
                 var ci: u32 = 0;
@@ -616,7 +616,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             }
             star_zi = zi;
             child_n = 0;
-        } else if (star_zi != null and (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "asteroid-belt"))) {
+        } else if (star_zi != null and (z.ztype == .planet or z.ztype == .@"asteroid-belt")) {
             if (child_n < 64) { child_zis[child_n] = zi; child_n += 1; }
         }
     }
@@ -634,7 +634,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     const hardcoded_order = [_][]const u8{ "Agni", "Nauvis", "Snek", "Calidus Asteroid Belt 1", "Ezra", "Ajax", "Hecate", "Calidus Asteroid Belt 2" };
     var cal_si: usize = 0;
     for (zones.items, 0..) |sz, si| {
-        if (std.mem.eql(u8, sz.ztype, "star") and std.mem.eql(u8, sz.name, "Calidus")) { cal_si = si; break; }
+        if (sz.ztype == .star and std.mem.eql(u8, sz.name, "Calidus")) { cal_si = si; break; }
     }
     const n = hardcoded_order.len;
     const sgw: f64 = 10.0 + @as(f64, @floatFromInt(n)) + @as(f64, @floatFromInt(cal_si + 1)) / 1000.0;
@@ -648,7 +648,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     // Compute tail start once for all passes
     var tail_start_final: usize = zones.items.len;
     var tsf_zi: usize = zones.items.len;
-    while (tsf_zi > 0) { tsf_zi -= 1; if (std.mem.eql(u8, zones.items[tsf_zi].ztype, "asteroid-field")) { tail_start_final = tsf_zi + 1; break; } }
+    while (tsf_zi > 0) { tsf_zi -= 1; if (zones.items[tsf_zi].ztype == .@"asteroid-field") { tail_start_final = tsf_zi + 1; break; } }
 
     // Pass 2: planet gravity wells for main zone list (excludes tail)
     var planet_zi: ?usize = null;
@@ -658,7 +658,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     zi = 0;
     while (zi < tail_start_final) : (zi += 1) {
         const z = zones.items[zi];
-        if (std.mem.eql(u8, z.ztype, "planet")) {
+        if (z.ztype == .planet) {
             if (planet_zi) |pzi| {
                 const rm = planetRadiusMult(zones.items[pzi]);
                 const pgw: f64 = 10.0 * (1.0 + rm) + @as(f64, @floatFromInt(moon_n));
@@ -672,7 +672,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             }
             planet_zi = zi;
             moon_n = 0;
-        } else if (std.mem.eql(u8, z.ztype, "moon")) {
+        } else if (z.ztype == .moon) {
             if (moon_n < 64) { moon_zis[moon_n] = zi; moon_n += 1; }
         }
     }
@@ -713,8 +713,8 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         zi = parent_zi_final + 1;
         while (zi < zones.items.len) : (zi += 1) {
             const tz = zones.items[zi];
-            if (std.mem.eql(u8, tz.ztype, "planet") or std.mem.eql(u8, tz.ztype, "star") or std.mem.eql(u8, tz.ztype, "asteroid-field") or std.mem.eql(u8, tz.ztype, "asteroid-belt")) break;
-            if (std.mem.eql(u8, tz.ztype, "moon")) total_moons += 1;
+            if (tz.ztype == .planet or tz.ztype == .star or tz.ztype == .@"asteroid-field" or tz.ztype == .@"asteroid-belt") break;
+            if (tz.ztype == .moon) total_moons += 1;
         }
         // Also add tail moons for this parent that are NOT adjacent (at the very tail)
         for (tail_moons) |tm2| {
@@ -723,7 +723,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
             var already = false;
             var check_zi: usize = parent_zi_final + 1;
             while (check_zi < zones.items.len) : (check_zi += 1) {
-                if (std.mem.eql(u8, zones.items[check_zi].ztype, "planet") or std.mem.eql(u8, zones.items[check_zi].ztype, "star") or std.mem.eql(u8, zones.items[check_zi].ztype, "asteroid-field") or std.mem.eql(u8, zones.items[check_zi].ztype, "asteroid-belt")) break;
+                if (zones.items[check_zi].ztype == .planet or zones.items[check_zi].ztype == .star or zones.items[check_zi].ztype == .@"asteroid-field" or zones.items[check_zi].ztype == .@"asteroid-belt") break;
                 if (std.mem.eql(u8, zones.items[check_zi].name, tm2.name)) { already = true; break; }
             }
             if (!already) total_moons += 1;
@@ -745,7 +745,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         for (tail_order) |tname| {
             if (!std.mem.eql(u8, tm.parent, parentNameForTailMoon(tname))) continue;
             for (zones.items, 0..) |*mz, mzi| {
-                if (std.mem.eql(u8, mz.name, tname) and std.mem.eql(u8, mz.ztype, "moon")) {
+                if (std.mem.eql(u8, mz.name, tname) and mz.ztype == .moon) {
                     const mult: f64 = @as(f64, @floatFromInt(total_moons - tail_pos + 1)) / @as(f64, @floatFromInt(total_moons + 2));
                     mz.planet_gravity_well = pgw * mult;
                     mz.star_gravity_well = zones.items[parent_zi_final].star_gravity_well;
@@ -763,11 +763,11 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         var pf2 = false;
         zi = 0;
         while (zi < zones.items.len) : (zi += 1) {
-            if (std.mem.eql(u8, zones.items[zi].name, tm.parent) and std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+            if (std.mem.eql(u8, zones.items[zi].name, tm.parent) and zones.items[zi].ztype == .planet) {
                 pf2 = true;
-            } else if (std.mem.eql(u8, zones.items[zi].ztype, "planet")) {
+            } else if (zones.items[zi].ztype == .planet) {
                 pf2 = false;
-            } else if (pf2 and std.mem.eql(u8, zones.items[zi].ztype, "moon")) {
+            } else if (pf2 and zones.items[zi].ztype == .moon) {
                 var is_tail = false;
                 for (tail_moons) |tm2| {
                     if (std.mem.eql(u8, zones.items[zi].name, tm2.name)) { is_tail = true; break; }
@@ -788,14 +788,14 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
     zi = tail_start_final;
     while (zi < zones.items.len) : (zi += 1) {
         const z = zones.items[zi];
-        if (std.mem.eql(u8, z.ztype, "planet") and z.planet_gravity_well == 0) {
+        if (z.ztype == .planet and z.planet_gravity_well == 0) {
             const rm = planetRadiusMult(z);
             var tm_n: u32 = 0;
             var tz = zi + 1;
             while (tz < zones.items.len) : (tz += 1) {
                 const tzone = zones.items[tz];
-                if (std.mem.eql(u8, tzone.ztype, "planet") or std.mem.eql(u8, tzone.ztype, "asteroid-belt")) break;
-                if (std.mem.eql(u8, tzone.ztype, "moon")) {
+                if (tzone.ztype == .planet or tzone.ztype == .@"asteroid-belt") break;
+                if (tzone.ztype == .moon) {
                     // Exclude known tail moons that belong to other planets
                     var is_tail_of_other = false;
                     for (tail_moons) |tm2| {
@@ -817,7 +817,7 @@ pub fn computeGravityWells(zones: *ArrayList(Zone)) void {
         if (std.mem.eql(u8, nz.name, "Nauvis")) { calidus_sgw = nz.star_gravity_well; break; }
     }
     for (zones.items) |*z| {
-        if (z.star_gravity_well == 0 and (std.mem.eql(u8, z.ztype, "planet") or std.mem.eql(u8, z.ztype, "moon") or std.mem.eql(u8, z.ztype, "asteroid-belt"))) {
+        if (z.star_gravity_well == 0 and (z.ztype == .planet or z.ztype == .moon or z.ztype == .@"asteroid-belt")) {
             z.star_gravity_well = calidus_sgw;
         }
     }
@@ -924,8 +924,8 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     // ===== Phase 5: Zone construction =====
     var zones = ArrayList(Zone).init(a);
     var calidus_children = ArrayList([]const u8).init(a);
-    var calidus_child_types = ArrayList([]const u8).init(a);
-    try zones.append(.{ .name = "Foenestra", .ztype = "anomaly" });
+    var calidus_child_types = ArrayList(data.ZoneType).init(a);
+    try zones.append(.{ .name = "Foenestra", .ztype = .anomaly });
     const scale = @sqrt(@as(f64, @floatFromInt(data.stars.len + data.space_zones.len))) * 50.0;
 
     for (star_order) |si| {
@@ -935,9 +935,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         _ = rng.float(); // orientation
         _ = rng.float() * scale * (if (is_calidus) @as(f64, 0.1) else 1.0); // distance
 
-        try zones.append(.{ .name = sname, .ztype = "star" });
+        try zones.append(.{ .name = sname, .ztype = .star });
         const sorbit = try std.fmt.allocPrint(a, "{s} Orbit", .{sname});
-        try zones.append(.{ .name = sorbit, .ztype = "orbit" });
+        try zones.append(.{ .name = sorbit, .ztype = .orbit });
 
         const belts = rng.int1(data.max_asteroid_belts);
         const n_planets = star_planets[si].items.len;
@@ -946,10 +946,10 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         }
 
         var child_names = ArrayList([]const u8).init(a);
-        var child_types = ArrayList([]const u8).init(a);
+        var child_types = ArrayList(data.ZoneType).init(a);
         for (star_planets[si].items) |p| {
             try child_names.append(p.name);
-            try child_types.append("planet");
+            try child_types.append(.planet);
         }
 
         for (0..belts) |bi| {
@@ -957,7 +957,7 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             const lua_pos = @as(usize, @intFromFloat(@floor(0.4 + belt_rng + @as(f64, @floatFromInt(child_names.items.len)) * @as(f64, @floatFromInt(bi + 1)) / @as(f64, @floatFromInt(belts)))));
             const bn = try std.fmt.allocPrint(a, "{s} Asteroid Belt {d}", .{ sname, bi + 1 });
             try child_names.insert(lua_pos - 1, bn);
-            try child_types.insert(lua_pos - 1, "asteroid-belt");
+            try child_types.insert(lua_pos - 1, .@"asteroid-belt");
         }
 
         for (child_names.items, 0..) |cn, ci| {
@@ -970,20 +970,20 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
 
         var asteroid_belts: u32 = 0;
         for (child_names.items, child_types.items) |cn, ct| {
-            if (std.mem.eql(u8, ct, "asteroid-belt")) {
+            if (ct == .@"asteroid-belt") {
                 asteroid_belts += 1;
                 const belt_name = try std.fmt.allocPrint(a, "{s} Asteroid Belt {d}", .{ sname, asteroid_belts });
-                try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt" });
-                if (is_calidus) { try calidus_children.append(belt_name); try calidus_child_types.append("asteroid-belt"); }
+                try zones.append(.{ .name = belt_name, .ztype = .@"asteroid-belt" });
+                if (is_calidus) { try calidus_children.append(belt_name); try calidus_child_types.append(.@"asteroid-belt"); }
             } else {
                 const pradius = planetRadius(&rng, cn);
-                try zones.append(.{ .name = cn, .ztype = "planet", .radius = pradius });
-                if (is_calidus) { try calidus_children.append(cn); try calidus_child_types.append("planet"); }
+                try zones.append(.{ .name = cn, .ztype = .planet, .radius = pradius });
+                if (is_calidus) { try calidus_children.append(cn); try calidus_child_types.append(.planet); }
                 // Nauvis radius is overwritten with a constant in Lua, but AFTER moon radii use the RNG value
                 const parent_r = pradius;
                 if (std.mem.eql(u8, cn, "Nauvis")) zones.items[zones.items.len - 1].radius = 5691.73;
                 const porbit = try std.fmt.allocPrint(a, "{s} Orbit", .{cn});
-                try zones.append(.{ .name = porbit, .ztype = "orbit" });
+                try zones.append(.{ .name = porbit, .ztype = .orbit });
                 for (star_planets[si].items) |p| {
                     if (std.mem.eql(u8, p.name, cn)) {
                         if (p.moons.items.len > 1) {
@@ -991,9 +991,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
                         }
                         for (p.moons.items) |m| {
                             const mradius = moonRadius(&rng, parent_r, m);
-                            try zones.append(.{ .name = m, .ztype = "moon", .radius = mradius });
+                            try zones.append(.{ .name = m, .ztype = .moon, .radius = mradius });
                             const morbit = try std.fmt.allocPrint(a, "{s} Orbit", .{m});
-                            try zones.append(.{ .name = morbit, .ztype = "orbit" });
+                            try zones.append(.{ .name = morbit, .ztype = .orbit });
                         }
                         break;
                     }
@@ -1005,7 +1005,7 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     // Space zones
     const sz = try a.dupe([]const u8, &data.space_zones);
     if (sz.len > 1) { shuffleNames(&rng, sz); }
-    for (sz) |name| { try zones.append(.{ .name = name, .ztype = "asteroid-field" }); }
+    for (sz) |name| { try zones.append(.{ .name = name, .ztype = .@"asteroid-field" }); }
     for (0..data.space_zones.len) |_| { _ = rng.float(); _ = rng.float(); }
 
     // ===== Phase 5b: Assign seeds to all zones =====
@@ -1048,9 +1048,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             break :blk result orelse @panic("no unused");
         };
         const mr: f64 = specialMoonRadius(nauvis_radius, name);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // vulcanite: planet with radius_multiplier = 0.2 from prototype
@@ -1058,11 +1058,11 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         const name = try pickShuffledName(&rng, a, &data.vulcanite_planets_names, zones);
         try calidus_all_non_homeworld.insert(0, name);
         const vradius: f64 = 2000.0;
-        try zones.append(.{ .name = name, .ztype = "planet", .seed = rng.int1(4294967295), .radius = vradius });
+        try zones.append(.{ .name = name, .ztype = .planet, .seed = rng.int1(4294967295), .radius = vradius });
         try calidus_children.insert(0, name);
-        try calidus_child_types.insert(0, "planet");
+        try calidus_child_types.insert(0, .planet);
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // vitamelange: consume first available planet, add special moon to it
@@ -1073,9 +1073,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         const name = try pickShuffledName(&rng, a, &data.vitamelange_moons_names, zones);
         const parent_r: f64 = if (planet_name) |pn| findPlanetRadius(zones, pn) else nauvis_radius;
         const mr: f64 = specialMoonRadius(parent_r, name);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // iridium: use existing planet or make generic, then add special moon
@@ -1099,17 +1099,17 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             const mult: f64 = lookupRadiusMultiplier(pn) orelse (0.4 + 0.6 * gpr * gpr);
             const gpr_radius: f64 = 10000.0 * mult;
             try calidus_all_non_homeworld.append(pn);
-            try zones.append(.{ .name = pn, .ztype = "planet", .seed = rng.int1(4294967295), .radius = gpr_radius });
+            try zones.append(.{ .name = pn, .ztype = .planet, .seed = rng.int1(4294967295), .radius = gpr_radius });
             const po = try std.fmt.allocPrint(a, "{s} Orbit", .{pn});
-            try zones.append(.{ .name = po, .ztype = "orbit", .seed = rng.int1(4294967295) });
+            try zones.append(.{ .name = po, .ztype = .orbit, .seed = rng.int1(4294967295) });
             break :blk pn;
         };
         const name = try pickShuffledName(&rng, a, &data.iridium_moons_names, zones);
         const parent_r = findPlanetRadius(zones, planet_name);
         const mr: f64 = specialMoonRadius(parent_r, name);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // holmium
@@ -1133,17 +1133,17 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             const mult: f64 = lookupRadiusMultiplier(pn) orelse (0.4 + 0.6 * gpr * gpr);
             const gpr_radius: f64 = 10000.0 * mult;
             try calidus_all_non_homeworld.append(pn);
-            try zones.append(.{ .name = pn, .ztype = "planet", .seed = rng.int1(4294967295), .radius = gpr_radius });
+            try zones.append(.{ .name = pn, .ztype = .planet, .seed = rng.int1(4294967295), .radius = gpr_radius });
             const po = try std.fmt.allocPrint(a, "{s} Orbit", .{pn});
-            try zones.append(.{ .name = po, .ztype = "orbit", .seed = rng.int1(4294967295) });
+            try zones.append(.{ .name = po, .ztype = .orbit, .seed = rng.int1(4294967295) });
             break :blk pn;
         };
         const name = try pickShuffledName(&rng, a, &data.holmium_moons_names, zones);
         const parent_r = findPlanetRadius(zones, planet_name);
         const mr: f64 = specialMoonRadius(parent_r, name);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // cryonite
@@ -1167,17 +1167,17 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             const mult: f64 = lookupRadiusMultiplier(pn) orelse (0.4 + 0.6 * gpr * gpr);
             const gpr_radius: f64 = 10000.0 * mult;
             try calidus_all_non_homeworld.append(pn);
-            try zones.append(.{ .name = pn, .ztype = "planet", .seed = rng.int1(4294967295), .radius = gpr_radius });
+            try zones.append(.{ .name = pn, .ztype = .planet, .seed = rng.int1(4294967295), .radius = gpr_radius });
             const po = try std.fmt.allocPrint(a, "{s} Orbit", .{pn});
-            try zones.append(.{ .name = po, .ztype = "orbit", .seed = rng.int1(4294967295) });
+            try zones.append(.{ .name = po, .ztype = .orbit, .seed = rng.int1(4294967295) });
             break :blk pn;
         };
         const name = try pickShuffledName(&rng, a, &data.cryonite_moons_names, zones);
         const parent_r = findPlanetRadius(zones, planet_name);
         const mr: f64 = specialMoonRadius(parent_r, name);
-        try zones.append(.{ .name = name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{name});
-        try zones.append(.{ .name = orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // beryllium
@@ -1189,8 +1189,8 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         if (!used) {
             const existing = countBelts(zones, "Calidus");
             const belt_name = try std.fmt.allocPrint(a, "Calidus Asteroid Belt {d}", .{existing + 1});
-            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = rng.int1(4294967295) });
-            try calidus_children.append(belt_name); try calidus_child_types.append("asteroid-belt");
+            try zones.append(.{ .name = belt_name, .ztype = .@"asteroid-belt", .seed = rng.int1(4294967295) });
+            try calidus_children.append(belt_name); try calidus_child_types.append(.@"asteroid-belt");
         }
     }
 
@@ -1203,8 +1203,8 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         if (!used) {
             const existing = countBelts(zones, "Calidus");
             const belt_name = try std.fmt.allocPrint(a, "Calidus Asteroid Belt {d}", .{existing + 1});
-            try zones.append(.{ .name = belt_name, .ztype = "asteroid-belt", .seed = rng.int1(4294967295) });
-            try calidus_children.append(belt_name); try calidus_child_types.append("asteroid-belt");
+            try zones.append(.{ .name = belt_name, .ztype = .@"asteroid-belt", .seed = rng.int1(4294967295) });
+            try calidus_children.append(belt_name); try calidus_child_types.append(.@"asteroid-belt");
         }
     }
 
@@ -1242,9 +1242,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         const rng_mult: u32 = rng.intRange(80, 120);
         const parent_r: f64 = if (imersite_parent) |pn| findPlanetRadius(zones, pn) else nauvis_radius;
         const mr: f64 = specialMoonRadiusRng(parent_r, moon_name, rng_mult);
-        try zones.append(.{ .name = moon_name, .ztype = "moon", .seed = rng.int1(4294967295), .radius = mr });
+        try zones.append(.{ .name = moon_name, .ztype = .moon, .seed = rng.int1(4294967295), .radius = mr });
         const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
-        try zones.append(.{ .name = moon_orbit_name, .ztype = "orbit", .seed = rng.int1(4294967295) });
+        try zones.append(.{ .name = moon_orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
 
     // ===== Phase 7: Vault loot =====
