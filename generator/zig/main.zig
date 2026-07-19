@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
 
     const count = getEnvU32("COUNT", 1);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
-    const max_lines = getEnvU32("MAX_LINES_PER_FILE", 10000);
+    const max_lines = getEnvU32("MAX_LINES_PER_FILE", 99999999);
     const output_dir = std.mem.sliceTo(std.c.getenv("OUTPUT_DIR") orelse ".", 0);
 
     // --- Find or create output directory ---
