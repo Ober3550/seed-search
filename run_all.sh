@@ -15,6 +15,7 @@ echo "=== seedgen: 0 → $END, $THREADS threads ==="
 mkdir -p output
 
 active=0
+worker=0
 for ((s=0; s<END; s+=RANGE)); do
   while [ $active -ge $THREADS ]; do
     wait -n 2>/dev/null || true
@@ -23,16 +24,19 @@ for ((s=0; s<END; s+=RANGE)); do
   
   E=$((s + RANGE))
   [ $E -gt $END ] && E=$END
+  wid=$((worker % THREADS))
   
-  echo "[orch] $s → $E ($(( active + 1 ))/$THREADS)"
+  echo "[orch] worker $wid: $s → $E ($(( active + 1 ))/$THREADS)"
   docker run --rm --platform linux/arm64 --ulimit stack=1073741824 \
     -v "${PWD}/output:/workspace/output" \
+    -e WORKER_ID=$wid \
     -e START_SEED=$s -e END_SEED=$E \
     -e SE_K2=1 \
     -e MIN_NAQ_DV=${MIN_NAQ_DV:-20000} \
     -e MIN_PROD_MODULES=${MIN_PROD_MODULES:-4} \
     seed-search-seedgen 2>&1 | grep '^\[' &
   active=$((active + 1))
+  worker=$((worker + 1))
 done
 
 wait
