@@ -97,6 +97,9 @@ pub fn main(init: std.process.Init) !void {
     var passed: u32 = 0;
     var file_lines: u32 = existing_lines;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
+    var last_t = t_start;
+    var last_seed = start_seed;
+    var last_passed: u32 = 0;
 
     // Stop at next 100K boundary (so shell can restart with new bucket)
     const start_bucket = start_seed / 100000;
@@ -107,8 +110,16 @@ pub fn main(init: std.process.Init) !void {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
         if (seed > start_seed and (seed - start_seed) % 2000 == 0) {
-            const elapsed_s: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).nanoseconds - t_start)) / 1_000_000_000.0;
-            std.debug.print("# [{d:.1}s] seed {d}/{d}, {d} passed\n", .{ elapsed_s, seed, count, passed });
+            const now = std.Io.Clock.awake.now(io).nanoseconds;
+            const elapsed_s: f64 = @as(f64, @floatFromInt(now - t_start)) / 1_000_000_000.0;
+            const delta_s: f64 = @as(f64, @floatFromInt(now - last_t)) / 1_000_000_000.0;
+            const delta_seeds = seed - last_seed;
+            const rate: u32 = if (delta_s > 0) @intFromFloat(@round(@as(f64, @floatFromInt(delta_seeds)) / delta_s)) else 0;
+            const delta_passed = passed - last_passed;
+            std.debug.print("# [{d:.0}s] {d}/s, {d} passed (total {d})\n", .{ elapsed_s, rate, delta_passed, passed });
+            last_t = now;
+            last_seed = seed;
+            last_passed = passed;
         }
 
         var universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
