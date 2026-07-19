@@ -82,12 +82,14 @@ pub fn main(init: std.process.Init) !void {
     }
     if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
 
-    // --- Open current output file (truncate, we start fresh from the resumed seed) ---
+    // --- Open current output file (append if exists, create if not) ---
     const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-    var out_file = try dir.createFile(io, fname, .{ .truncate = true });
+    var out_file = dir.createFile(io, fname, .{ .truncate = false, .read = true }) catch
+        try dir.createFile(io, fname, .{ .truncate = true, .read = true });
+    var write_offset: u64 = try out_file.length(io);
     defer out_file.close(io);
 
-    std.debug.print("# Generating {d} seeds from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
+    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
     std.debug.print("# Resumed: file {d}, max {d}/file\n", .{ cur_n, max_lines });
 
     var seed = start_seed;
@@ -95,13 +97,12 @@ pub fn main(init: std.process.Init) !void {
     var file_lines: u32 = 0;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
 
-    while (seed - start_seed < count) : (seed += 2) {
+    while (seed <= count) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
-        const processed = seed - start_seed;
-        if (processed > 0 and processed % 2000 == 0) {
+        if (seed > start_seed and (seed - start_seed) % 2000 == 0) {
             const elapsed_s: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).nanoseconds - t_start)) / 1_000_000_000.0;
-            std.debug.print("# [{d:.1}s] {d}/{d} seeds, {d} passed\n", .{ elapsed_s, processed, count, passed });
+            std.debug.print("# [{d:.1}s] seed {d}/{d}, {d} passed\n", .{ elapsed_s, seed, count, passed });
         }
 
         var universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
@@ -219,9 +220,9 @@ pub fn main(init: std.process.Init) !void {
         buf[pos] = '}'; pos += 1;
         buf[pos] = '\n'; pos += 1;
 
-        // Write to file via writer
-        var fw = out_file.writer(io, &.{});
-        _ = try fw.interface.writeSplat(&.{buf[0..pos]}, 1);
+        // Write to file at current offset (append)
+        try out_file.writePositionalAll(io, buf[0..pos], write_offset);
+        write_offset += pos;
         passed += 1;
         file_lines += 1;
 
@@ -232,11 +233,12 @@ pub fn main(init: std.process.Init) !void {
             file_lines = 0;
             const new_name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
             out_file = try dir.createFile(io, new_name, .{});
+            write_offset = 0;
             std.debug.print("# Rolled over to {s}\n", .{new_name});
         }
 
         // loop advances seed
     }
 
-    std.debug.print("# Done: {d} seeds, {d} passed -> {s}\n", .{ count, passed, fname });
+    std.debug.print("# Done: seed {d}, {d} passed -> {s}\n", .{ seed - 2, passed, fname });
 }
