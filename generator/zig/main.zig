@@ -91,22 +91,22 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("# Resumed: file {d}, max {d}/file\n", .{ cur_n, max_lines });
 
     var seed = start_seed;
-    var generated: u32 = 0;
     var passed: u32 = 0;
     var file_lines: u32 = 0;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
 
-    while (generated < count) : (generated += 1) {
-        if (generated > 0) _ = arena.reset(.retain_capacity);
+    while (seed - start_seed < count) : (seed += 2) {
+        if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
-        if (generated > 0 and generated % 1000 == 0) {
+        const processed = seed - start_seed;
+        if (processed > 0 and processed % 2000 == 0) {
             const elapsed_s: f64 = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).nanoseconds - t_start)) / 1_000_000_000.0;
-            std.debug.print("# [{d:.1}s] {d}/{d} processed, {d} passed\n", .{ elapsed_s, generated, count, passed });
+            std.debug.print("# [{d:.1}s] {d}/{d} seeds, {d} passed\n", .{ elapsed_s, processed, count, passed });
         }
 
         var universe = gen.generateUniverse(a, seed, k2_enabled) catch |err| {
             std.debug.print("# ERROR seed {d}: {}\n", .{ seed, err });
-            seed += 2;
+            // loop advances seed
             continue;
         };
 
@@ -137,14 +137,14 @@ pub fn main(init: std.process.Init) !void {
                     if (dv < nearest) nearest = dv;
                 }
             }
-            if (nearest > min_naq_dv) { seed += 2; continue; }
+            if (nearest > min_naq_dv) { continue; }
         }
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
             var p_count: u32 = 0;
             for (universe.vault_loot) |c| { if (c == 'P') p_count += 1; }
-            if (p_count < min_prod) { seed += 2; continue; }
+            if (p_count < min_prod) { continue; }
         }
 
         // --- Serialize JSONL ---
@@ -235,8 +235,8 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("# Rolled over to {s}\n", .{new_name});
         }
 
-        seed += 2;
+        // loop advances seed
     }
 
-    std.debug.print("# Done: {d} processed, {d} passed -> {s}\n", .{ generated, passed, fname });
+    std.debug.print("# Done: {d} seeds, {d} passed -> {s}\n", .{ count, passed, fname });
 }
