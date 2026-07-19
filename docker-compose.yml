@@ -1,26 +1,18 @@
-# Docker Compose for the Zig seed finder.
+# Docker Compose for the Zig seed finder — single range per container.
+# Orchestrate externally: run one container per 100K bucket.
 #
-# stdout (progress) → output/progress.log
-# stderr (JSONL)   → output/seeds_N.jsonl (rotating, auto-resume)
-#
-# Usage:
-#   docker compose up --build
-#   docker compose up -d          # background
-#   tail -f output/progress.log   # monitor
+#   docker compose run --rm -e START_SEED=341 -e COUNT=100000 seedgen
 
 services:
   seedgen:
     build:
       context: .
       dockerfile: Dockerfile.zig
-    env_file:
-      - .env
     environment:
-      - COUNT=1000000
+      - COUNT=100000
       - SE_K2=1
       - MIN_NAQ_DV=20000
       - MIN_PROD_MODULES=4
-    restart: always
     ulimits:
       stack: 1073741824
     volumes:

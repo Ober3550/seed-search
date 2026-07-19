@@ -43,76 +43,24 @@ pub fn main(init: std.process.Init) !void {
 
     const count = getEnvU32("COUNT", 1);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
-    const max_lines = getEnvU32("MAX_LINES_PER_FILE", 99999999);
-    const output_dir = std.mem.sliceTo(std.c.getenv("OUTPUT_DIR") orelse ".", 0);
 
     // --- Find or create output directory ---
-    var dir = std.Io.Dir.cwd().createDirPathOpen(io, output_dir, .{}) catch |e| {
-        std.debug.print("# ERROR opening output dir '{s}': {}\n", .{ output_dir, e });
-        return;
     };
-    defer dir.close(io);
 
     // --- Resume from last seed ---
-    var cur_n: u32 = 0;
-    var start_seed: u32 = getEnvU32("START_SEED", 341);
-    var existing_lines: u32 = 0;
+    const start_seed = getEnvU32("START_SEED", 341);
+    const end_seed = start_seed + count - 1;
 
-    // Find highest existing seeds_N.jsonl and read last seed.
-    // Close each file explicitly so reads see flushed data.
-    var probe_n: u32 = 0;
-    while (true) : (probe_n += 1) {
-        const name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{probe_n});
-        var f = std.Io.Dir.cwd().openFile(io, name, .{}) catch break;
-        const file_len = f.length(io) catch 0;
-        if (file_len > 0) {
-            var reader = f.reader(io, &.{});
-            const content = reader.interface.readAlloc(a, @intCast(file_len)) catch "";
-            if (content.len > 0) {
-                existing_lines = @intCast(std.mem.count(u8, content, "\n"));
-                // Find last line's seed
-                var last_line_start: usize = 0;
-                var i: usize = content.len;
-                while (i > 0) {
-                    i -= 1;
-                    if (content[i] == '\n') {
-                        last_line_start = if (i + 1 < content.len) i + 1 else i;
-                        break;
-                    }
-                }
-                if (last_line_start < content.len) {
-                    start_seed = parseSeedFromJson(content[last_line_start..]);
-                    if (start_seed > 0) start_seed += 2;
-                }
-            }
-        }
-        f.close(io);
-        cur_n = probe_n;
-    }
-    if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
-    cur_n += 1;
-    existing_lines = 0;
-
-    std.debug.print("# Resumed: file {d}, {d} existing lines, max {d}/file\n", .{ cur_n, existing_lines, max_lines });
-
-    // --- Open current output file (append if exists, create if not) ---
-    const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-    std.debug.print("# Generating seeds {d} to {d} (K2={}) -> {s}\n", .{ start_seed, count, k2_enabled, fname });
+    std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
     var seed = start_seed;
     var passed: u32 = 0;
-    var file_lines: u32 = existing_lines;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
     var last_t = t_start;
     var last_seed = start_seed;
     var last_passed: u32 = 0;
 
-    // Stop at next 100K boundary (so shell can restart with new bucket)
-    const start_bucket = start_seed / 100000;
-    const bucket_limit: u32 = (start_bucket + 1) * 100000 - 1;
-    const max_seed = @min(count, bucket_limit);
-
-    while (seed <= max_seed) : (seed += 2) {
+    while (seed <= end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
         if (seed > start_seed and (seed - start_seed) % 2000 == 0) {
@@ -361,13 +309,8 @@ pub fn main(init: std.process.Init) !void {
             try fw.interface.flush();
         }
         passed += 1;
-        file_lines += 1;
 
         // Rotate if full
-        if (file_lines >= max_lines) {
-            cur_n += 1;
-            file_lines = 0;
-            // New file will be created on next write
             std.debug.print("# Rolled over to seeds_{d}.jsonl\n", .{cur_n});
         }
 
