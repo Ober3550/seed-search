@@ -56,7 +56,8 @@ pub fn main(init: std.process.Init) !void {
         const t1 = std.Io.Clock.awake.now(io).nanoseconds;
         t_gen += @intCast(t1 - t0);
 
-        const primaries = gen.resolvePrimaries(a, universe.zones) catch unreachable;
+        const bodyMap = try gen.buildBodyMap(a);
+        const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap) catch unreachable;
         const t2 = std.Io.Clock.awake.now(io).nanoseconds;
         t_prim += @intCast(t2 - t1);
 
@@ -92,7 +93,7 @@ pub fn main(init: std.process.Init) !void {
             }
 
             if (z.ztype == .planet or z.ztype == .moon) {
-                const tags = gen.computeTags(z.seed, z.name, null);
+                const tags = gen.computeTags(z.seed, z.name, bodyMap);
                 if (tags.temperature) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.water) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }
                 if (tags.moisture) |v| { const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v.tagStr()}) catch unreachable; pos += t.len; }

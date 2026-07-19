@@ -37,7 +37,7 @@ pub const Universe = struct {
 };
 
 /// Build a name→Body hash map for O(1) lookups (replaces 4 linear scans).
-fn buildBodyMap(alloc: std.mem.Allocator) !std.StringHashMapUnmanaged(data.Body) {
+pub fn buildBodyMap(alloc: std.mem.Allocator) !std.StringHashMapUnmanaged(data.Body) {
     var map: std.StringHashMapUnmanaged(data.Body) = .{};
     for (&data.unassigned_planets) |*b| { try map.put(alloc, b.name, b.*); }
     for (&data.unassigned_moons) |*b| { try map.put(alloc, b.name, b.*); }
@@ -502,9 +502,8 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
     return true;
 }
 
-pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
+pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMap: std.StringHashMapUnmanaged(data.Body)) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
-    const bodyMap = try buildBodyMap(alloc);
 
     // First pass: assign from prototype or special type
     for (zones.items) |z| {
