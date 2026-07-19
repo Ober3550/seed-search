@@ -4,7 +4,8 @@
 ///   START_SEED   First seed to generate (default: 341)
 ///   COUNT        Number of seeds to generate (default: 1)
 ///   SE_K2        Set to "1" or "true" to enable Krastorio2
-///   MIN_NAQ_DV   Skip seeds where nearest asteroid field delta-v exceeds this
+///   MIN_NAQ_DV        Skip seeds where nearest naquium field delta-v exceeds this
+///   MIN_PROD_MODULES   Skip seeds with fewer than this many prod modules (P in loot)
 ///
 /// Output (stderr): one JSONL line per seed, plus #-prefixed progress lines.
 ///   ./seedgen 2> output.jsonl
@@ -73,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
         // Pre-filter: skip seeds with no naquium field within delta-v threshold
-        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 20000);
+        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
         if (min_naq_dv > 0) {
             const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
             const cx = universe.zones.items[calidus_zi].stellar_x;
@@ -93,6 +94,17 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
             if (nearest > min_naq_dv) {
+                seed += 2;
+                continue;
+            }
+        }
+
+        // Post-filter: require minimum productivity modules in vault loot
+        const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
+        if (min_prod > 0) {
+            var p_count: u32 = 0;
+            for (universe.vault_loot) |c| { if (c == 'P') p_count += 1; }
+            if (p_count < min_prod) {
                 seed += 2;
                 continue;
             }
