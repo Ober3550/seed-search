@@ -5,10 +5,9 @@ cd /workspace/output 2>/dev/null || exit 1
 # Resume: find last file, compute next seed
 PREV=$(ls seeds_*.jsonl 2>/dev/null | sort -t_ -k2 -n | tail -1)
 if [ -n "$PREV" ] && [ -s "$PREV" ]; then
-  FIRST=$(head -c 50 "$PREV" | sed 's/{"s":\([0-9]*\).*/\1/')
-  LINES=$(grep -c '^{' "$PREV" 2>/dev/null || echo 0)
-  if [ -n "$FIRST" ] && [ "$FIRST" -gt 0 ] && [ "$LINES" -gt 0 ]; then
-    export START_SEED=$((FIRST + 2 * LINES))
+  LAST_SEED=$(tail -1 "$PREV" | head -c 50 | sed 's/{"s":\([0-9]*\).*/\1/')
+  if [ -n "$LAST_SEED" ] && [ "$LAST_SEED" -gt 0 ]; then
+    export START_SEED=$((LAST_SEED + 2))
   fi
 fi
 
