@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const gen = @import("gen.zig");
+const data = @import("data.zig");
 
 fn getEnvU32(comptime name: [:0]const u8, default: u32) u32 {
     const val = std.c.getenv(name) orelse return default;
@@ -71,15 +72,19 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
-        // Pre-filter: skip seeds where the nearest field is too far
+        // Pre-filter: skip seeds with no naquium field within delta-v threshold
         const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
         if (min_naq_dv > 0) {
             const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
             const cx = universe.zones.items[calidus_zi].stellar_x;
             const cy = universe.zones.items[calidus_zi].stellar_y;
+            const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
             var nearest: u32 = std.math.maxInt(u32);
             for (universe.zones.items) |z| {
                 if (z.ztype == .@"asteroid-field") {
+                    // Only consider fields that actually have naquium
+                    const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                    if (scores[@intFromEnum(data.Resource.se_naquium_ore)] <= 0.0001) continue;
                     const dx = z.stellar_x - cx;
                     const dy = z.stellar_y - cy;
                     const dist = @sqrt(dx * dx + dy * dy);
@@ -157,6 +162,31 @@ pub fn main(init: std.process.Init) !void {
                     const dv: u32 = @as(u32, @intFromFloat(@ceil(dv_raw)));
                     const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
                     pos += dv_part.len;
+                }
+            }
+
+            // Asteroid fields: resources (no primary, no tags)
+            if (z.ztype == .@"asteroid-field") {
+                const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
+                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                var first_res = true;
+                for (gen.resource_order, 0..) |rname, ri| {
+                    if (scores[ri] > 0.0001) {
+                        if (first_res) {
+                            const prefix = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                            pos += prefix.len;
+                            first_res = false;
+                        } else {
+                            buf[pos] = ',';
+                            pos += 1;
+                        }
+                        const rpart = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable;
+                        pos += rpart.len;
+                    }
+                }
+                if (!first_res) {
+                    buf[pos] = '}';
+                    pos += 1;
                 }
             }
 

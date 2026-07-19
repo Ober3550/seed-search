@@ -348,8 +348,8 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_re
     for (bias_indices) |ri| {
         var allowed = true;
 
-        // Exclude space-only resources that never appear on planets
-        if (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice)) {
+        // Exclude space-only resources from planets and moons (they can only appear on asteroid fields)
+        if (zone_type != .@"asteroid-field" and (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice))) {
             allowed = false;
         }
         if (allowed and (primary_resource == null or !std.mem.eql(u8, resource_order[ri], primary_resource.?))) {
