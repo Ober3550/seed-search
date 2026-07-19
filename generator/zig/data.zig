@@ -22,6 +22,114 @@ pub const ZoneType = enum {
     }
 };
 
+// Resource indices matching resource_order in gen.zig (0..17).
+pub const Resource = enum(u8) {
+    iron_ore = 0,
+    copper_ore = 1,
+    uranium_ore = 2,
+    coal = 3,
+    crude_oil = 4,
+    stone = 5,
+    se_vulcanite = 6,
+    se_cryonite = 7,
+    se_vitamelange = 8,
+    se_naquium_ore = 9,
+    se_methane_ice = 10,
+    se_water_ice = 11,
+    se_beryllium_ore = 12,
+    se_iridium_ore = 13,
+    se_holmium_ore = 14,
+    kr_imersite = 15,
+    kr_mineral_water = 16,
+    kr_rare_metal_ore = 17,
+};
+
+// Tag enums — one per climate category. Values match Factorio tag strings
+// without the category prefix (e.g. "temperature_bland" → .bland).
+pub const Temperature = enum(u4) {
+    bland, temperate, midrange, balanced, wild, extreme,
+    cool, cold, vcold, frozen, warm, hot, vhot, volcanic,
+
+    pub fn tagStr(self: Temperature) []const u8 {
+        return switch (self) {
+            .bland => "temperature_bland", .temperate => "temperature_temperate",
+            .midrange => "temperature_midrange", .balanced => "temperature_balanced",
+            .wild => "temperature_wild", .extreme => "temperature_extreme",
+            .cool => "temperature_cool", .cold => "temperature_cold",
+            .vcold => "temperature_vcold", .frozen => "temperature_frozen",
+            .warm => "temperature_warm", .hot => "temperature_hot",
+            .vhot => "temperature_vhot", .volcanic => "temperature_volcanic",
+        };
+    }
+};
+
+pub const Water = enum(u3) {
+    none, low, med, high, max,
+
+    pub fn tagStr(self: Water) []const u8 {
+        return switch (self) {
+            .none => "water_none", .low => "water_low",
+            .med => "water_med", .high => "water_high", .max => "water_max",
+        };
+    }
+};
+
+pub const Moisture = enum(u3) {
+    none, low, med, high, max,
+
+    pub fn tagStr(self: Moisture) []const u8 {
+        return switch (self) {
+            .none => "moisture_none", .low => "moisture_low",
+            .med => "moisture_med", .high => "moisture_high", .max => "moisture_max",
+        };
+    }
+};
+
+pub const Trees = enum(u3) {
+    none, low, med, high, max,
+
+    pub fn tagStr(self: Trees) []const u8 {
+        return switch (self) {
+            .none => "trees_none", .low => "trees_low",
+            .med => "trees_med", .high => "trees_high", .max => "trees_max",
+        };
+    }
+};
+
+pub const Aux = enum(u3) {
+    very_low, low, med, high, very_high,
+
+    pub fn tagStr(self: Aux) []const u8 {
+        return switch (self) {
+            .very_low => "aux_very_low", .low => "aux_low",
+            .med => "aux_med", .high => "aux_high", .very_high => "aux_very_high",
+        };
+    }
+};
+
+pub const Cliff = enum(u3) {
+    none, low, med, high, max,
+
+    pub fn tagStr(self: Cliff) []const u8 {
+        return switch (self) {
+            .none => "cliff_none", .low => "cliff_low",
+            .med => "cliff_med", .high => "cliff_high", .max => "cliff_max",
+        };
+    }
+};
+
+pub const Enemy = enum(u3) {
+    none, very_low, low, med, high, very_high, max,
+
+    pub fn tagStr(self: Enemy) []const u8 {
+        return switch (self) {
+            .none => "enemy_none", .very_low => "enemy_very_low", .low => "enemy_low",
+            .med => "enemy_med", .high => "enemy_high", .very_high => "enemy_very_high",
+            .max => "enemy_max",
+        };
+    }
+};
+
 pub const Body = struct { name: []const u8, patron: ?[]const u8, primary_resource: ?[]const u8, radius_multiplier: ?f64, has_biome_replacements: bool, tag_temperature: ?[]const u8, tag_water: ?[]const u8, tag_moisture: ?[]const u8, tag_trees: ?[]const u8, tag_aux: ?[]const u8, tag_cliff: ?[]const u8, tag_enemy: ?[]const u8, };
 
 pub const stars = [_][]const u8{

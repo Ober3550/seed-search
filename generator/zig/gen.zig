@@ -156,23 +156,32 @@ fn specialMoonRadiusRng(parent_radius: f64, name: []const u8, rng_mult: u32) f64
 
 // ===== Tag computation =====
 // Tag tables match Universe.temperature_tags etc. in universe.lua
-const temperature_tags = [_][]const u8{ "temperature_bland", "temperature_temperate", "temperature_midrange", "temperature_balanced", "temperature_wild", "temperature_extreme", "temperature_cool", "temperature_cold", "temperature_vcold", "temperature_frozen", "temperature_warm", "temperature_hot", "temperature_vhot", "temperature_volcanic" };
-const water_tags = [_][]const u8{ "water_none", "water_low", "water_med", "water_high", "water_max" };
-const moisture_tags = [_][]const u8{ "moisture_none", "moisture_low", "moisture_med", "moisture_high", "moisture_max" };
-const trees_tags = [_][]const u8{ "trees_none", "trees_low", "trees_med", "trees_high", "trees_max" };
-const aux_tags = [_][]const u8{ "aux_very_low", "aux_low", "aux_med", "aux_high", "aux_very_high" };
-const cliff_tags = [_][]const u8{ "cliff_none", "cliff_low", "cliff_med", "cliff_high", "cliff_max" };
-const enemy_tags = [_][]const u8{ "enemy_none", "enemy_very_low", "enemy_low", "enemy_med", "enemy_high", "enemy_very_high", "enemy_max" };
+const temperature_tags = [_]data.Temperature{ .bland, .temperate, .midrange, .balanced, .wild, .extreme, .cool, .cold, .vcold, .frozen, .warm, .hot, .vhot, .volcanic };
+const water_tags = [_]data.Water{ .none, .low, .med, .high, .max };
+const moisture_tags = [_]data.Moisture{ .none, .low, .med, .high, .max };
+const trees_tags = [_]data.Trees{ .none, .low, .med, .high, .max };
+const aux_tags = [_]data.Aux{ .very_low, .low, .med, .high, .very_high };
+const cliff_tags = [_]data.Cliff{ .none, .low, .med, .high, .max };
+const enemy_tags = [_]data.Enemy{ .none, .very_low, .low, .med, .high, .very_high, .max };
 
 pub const Tags = struct {
-    temperature: ?[]const u8,
-    water: ?[]const u8,
-    moisture: ?[]const u8,
-    trees: ?[]const u8,
-    aux: ?[]const u8,
-    cliff: ?[]const u8,
-    enemy: ?[]const u8,
+    temperature: ?data.Temperature,
+    water: ?data.Water,
+    moisture: ?data.Moisture,
+    trees: ?data.Trees,
+    aux: ?data.Aux,
+    cliff: ?data.Cliff,
+    enemy: ?data.Enemy,
 };
+
+fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
+    if (tag_str) |s| {
+        inline for (@typeInfo(E).@"enum".fields) |f| {
+            if (std.mem.eql(u8, s, @field(E, f.name).tagStr())) return @enumFromInt(f.value);
+        }
+    }
+    return null;
+}
 
 // Look up a body prototype by name from all pools (including special)
 pub fn lookupBody(name: []const u8) ?data.Body {
@@ -190,13 +199,13 @@ pub fn computeTags(zone_seed: u32, name: []const u8) Tags {
 
     // Start with prototype tags if available
     var tags = Tags{
-        .temperature = if (proto) |p| p.tag_temperature else null,
-        .water = if (proto) |p| p.tag_water else null,
-        .moisture = if (proto) |p| p.tag_moisture else null,
-        .trees = if (proto) |p| p.tag_trees else null,
-        .aux = if (proto) |p| p.tag_aux else null,
-        .cliff = if (proto) |p| p.tag_cliff else null,
-        .enemy = if (proto) |p| p.tag_enemy else null,
+        .temperature = parseTagEnum(data.Temperature, if (proto) |p| p.tag_temperature else null),
+        .water = parseTagEnum(data.Water, if (proto) |p| p.tag_water else null),
+        .moisture = parseTagEnum(data.Moisture, if (proto) |p| p.tag_moisture else null),
+        .trees = parseTagEnum(data.Trees, if (proto) |p| p.tag_trees else null),
+        .aux = parseTagEnum(data.Aux, if (proto) |p| p.tag_aux else null),
+        .cliff = parseTagEnum(data.Cliff, if (proto) |p| p.tag_cliff else null),
+        .enemy = parseTagEnum(data.Enemy, if (proto) |p| p.tag_enemy else null),
     };
 
     // ticks_per_day: skip (not used for summary)
@@ -273,7 +282,7 @@ const RESOURCE_NORM_FIELD: f64 = 167.79554553234018499;
 /// Compute resource scores for a single planet or moon.
 /// primary_resource must be known (from prototype, special_type, or claiming).
 /// Returns scores indexed by resource_order (0..17). Score = FSR / norm.
-pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
+pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
     var scores: [18]f64 = @splat(0.0);
 
     // Per-zone RNG for bias generation
@@ -307,45 +316,35 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     var ordered_n: u32 = 0;
 
     for (bias_indices) |ri| {
-        const rname = resource_order[ri];
         var allowed = true;
 
-        // Filter by tag requirements for presence
-        // Also exclude space-only resources that never appear on planets
-        if (std.mem.eql(u8, rname, "se-naquium-ore") or std.mem.eql(u8, rname, "se-methane-ice") or std.mem.eql(u8, rname, "se-water-ice")) {
+        // Exclude space-only resources that never appear on planets
+        if (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice)) {
             allowed = false;
         }
-        if (allowed and (primary_resource == null or !std.mem.eql(u8, rname, primary_resource.?))) {
-            if (std.mem.eql(u8, rname, "se-cryonite")) {
+        if (allowed and (primary_resource == null or !std.mem.eql(u8, resource_order[ri], primary_resource.?))) {
+            if (ri == @intFromEnum(data.Resource.se_cryonite)) {
                 allowed = tags.temperature != null and
-                    (std.mem.eql(u8, tags.temperature.?, "temperature_extreme") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_cool") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_cold") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_vcold") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_frozen"));
-            } else if (std.mem.eql(u8, rname, "se-vitamelange")) {
+                    (tags.temperature.? == .extreme or tags.temperature.? == .cool or
+                     tags.temperature.? == .cold or tags.temperature.? == .vcold or
+                     tags.temperature.? == .frozen);
+            } else if (ri == @intFromEnum(data.Resource.se_vitamelange)) {
                 allowed = tags.moisture != null and
-                    (std.mem.eql(u8, tags.moisture.?, "moisture_med") or
-                     std.mem.eql(u8, tags.moisture.?, "moisture_high") or
-                     std.mem.eql(u8, tags.moisture.?, "moisture_max"));
-            } else if (std.mem.eql(u8, rname, "se-vulcanite")) {
+                    (tags.moisture.? == .med or tags.moisture.? == .high or tags.moisture.? == .max);
+            } else if (ri == @intFromEnum(data.Resource.se_vulcanite)) {
                 allowed = tags.temperature != null and
-                    (std.mem.eql(u8, tags.temperature.?, "temperature_extreme") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_warm") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_hot") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_vhot") or
-                     std.mem.eql(u8, tags.temperature.?, "temperature_volcanic"));
-            } else if (std.mem.eql(u8, rname, "kr-mineral-water")) {
+                    (tags.temperature.? == .extreme or tags.temperature.? == .warm or
+                     tags.temperature.? == .hot or tags.temperature.? == .vhot or
+                     tags.temperature.? == .volcanic);
+            } else if (ri == @intFromEnum(data.Resource.kr_mineral_water)) {
                 allowed = tags.water != null and
-                    (std.mem.eql(u8, tags.water.?, "water_low") or
-                     std.mem.eql(u8, tags.water.?, "water_med") or
-                     std.mem.eql(u8, tags.water.?, "water_high") or
-                     std.mem.eql(u8, tags.water.?, "water_max"));
+                    (tags.water.? == .low or tags.water.? == .med or
+                     tags.water.? == .high or tags.water.? == .max);
             }
         }
 
         if (allowed) {
-            const sort_key: f64 = if (primary_resource != null and std.mem.eql(u8, rname, primary_resource.?))
+            const sort_key: f64 = if (primary_resource != null and std.mem.eql(u8, resource_order[ri], primary_resource.?))
                 biases[ri] + 1.0
             else
                 biases[ri];
@@ -395,14 +394,13 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     var filtered_ri: [18]u32 = undefined;
     var found_excluder = false;
     for (ordered_ri[0..ordered_n]) |ri| {
-        const rn = resource_order[ri];
         var keep = true;
-        if (std.mem.eql(u8, rn, "se-beryllium-ore") or std.mem.eql(u8, rn, "se-iridium-ore") or
-            std.mem.eql(u8, rn, "se-holmium-ore") or std.mem.eql(u8, rn, "se-vitamelange")) {
+        if (ri == @intFromEnum(data.Resource.se_beryllium_ore) or ri == @intFromEnum(data.Resource.se_iridium_ore) or
+            ri == @intFromEnum(data.Resource.se_holmium_ore) or ri == @intFromEnum(data.Resource.se_vitamelange)) {
             if (!found_excluder) {
-                found_excluder = true; // first one found is the excluder, keep it
+                found_excluder = true;
             } else {
-                keep = false; // subsequent ones are excluded
+                keep = false;
             }
         }
         if (keep) {
@@ -412,7 +410,7 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
     }
 
     // Category properties
-    const is_field = std.mem.eql(u8, zone_type, "asteroid-field");
+    const is_field = zone_type == .@"asteroid-field";
     const freq_lo: f64 = if (is_field) 1 else 0.2;
     const freq_hi: f64 = if (is_field) 4 else 1;
     const size_lo: f64 = 0;
@@ -454,26 +452,22 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: []const u8, primary_resou
 /// Resolve primary resources for all planet/moon zones.
 /// Returns a map from zone name to primary resource name.
 /// Handles prototype primary, special types, and the claiming algorithm.
-fn isPrimaryEligible(resource_name: []const u8, tags: Tags) bool {
-    if (std.mem.eql(u8, resource_name, "se-cryonite")) {
+fn isPrimaryEligible(ri: u32, tags: Tags) bool {
+    if (ri == @intFromEnum(data.Resource.se_cryonite)) {
         return tags.temperature != null and
-            (std.mem.eql(u8, tags.temperature.?, "temperature_vcold") or
-             std.mem.eql(u8, tags.temperature.?, "temperature_frozen"));
+            (tags.temperature.? == .vcold or tags.temperature.? == .frozen);
     }
-    if (std.mem.eql(u8, resource_name, "se-vitamelange")) {
+    if (ri == @intFromEnum(data.Resource.se_vitamelange)) {
         return tags.moisture != null and
-            (std.mem.eql(u8, tags.moisture.?, "moisture_high") or
-             std.mem.eql(u8, tags.moisture.?, "moisture_max"));
+            (tags.moisture.? == .high or tags.moisture.? == .max);
     }
-    if (std.mem.eql(u8, resource_name, "se-vulcanite")) {
+    if (ri == @intFromEnum(data.Resource.se_vulcanite)) {
         return tags.temperature != null and
-            (std.mem.eql(u8, tags.temperature.?, "temperature_vhot") or
-             std.mem.eql(u8, tags.temperature.?, "temperature_volcanic"));
+            (tags.temperature.? == .vhot or tags.temperature.? == .volcanic);
     }
-    if (std.mem.eql(u8, resource_name, "kr-mineral-water")) {
+    if (ri == @intFromEnum(data.Resource.kr_mineral_water)) {
         return tags.water != null and
-            (std.mem.eql(u8, tags.water.?, "water_high") or
-             std.mem.eql(u8, tags.water.?, "water_max"));
+            (tags.water.? == .high or tags.water.? == .max);
     }
     return true;
 }
@@ -522,18 +516,16 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         if (map.contains(z.name)) continue;
 
         const ztags = computeTags(z.seed, z.name);
-        // Count how many tag-required resources this zone matches
         var match_count: u32 = 0;
         var matched_resource: ?[]const u8 = null;
 
-        inline for (.{ "se-cryonite", "se-vitamelange", "se-vulcanite", "kr-mineral-water" }) |rn| {
-            if (isPrimaryEligible(rn, ztags)) {
+        inline for (.{ @intFromEnum(data.Resource.se_cryonite), @intFromEnum(data.Resource.se_vitamelange), @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.kr_mineral_water) }) |ri| {
+            if (isPrimaryEligible(ri, ztags)) {
                 match_count += 1;
-                matched_resource = rn;
+                matched_resource = resource_order[ri];
             }
         }
 
-        // If exactly one match, claim it (uncontested strong claim)
         if (match_count == 1) {
             if (matched_resource) |rn| {
                 try map.put(z.name, rn);
@@ -542,12 +534,10 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
     }
 
     // Third pass: greedy claiming for remaining unassigned zones
-    // Each zone gets its highest ordered_bias resource that's eligible as primary
     for (zones.items) |z| {
         if (z.ztype != .planet and z.ztype != .moon) continue;
         if (map.contains(z.name)) continue;
 
-        // Compute ordered_bias and pick highest valid primary
         var bias_rng = Rng.initFactorio(z.seed);
         var biases: [18]f64 = undefined;
         var indices: [18]u32 = undefined;
@@ -565,11 +555,9 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.S
         var best_ri: u32 = 0;
         for (indices, 0..) |ri, pos| {
             // Exclude space-only resources from primary options
-            const rn = resource_order[ri];
-            if (std.mem.eql(u8, rn, "se-naquium-ore") or std.mem.eql(u8, rn, "se-methane-ice") or std.mem.eql(u8, rn, "se-water-ice")) continue;
-            // Check tag eligibility
+            if (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice)) continue;
             const ztags = computeTags(z.seed, z.name);
-            if (!isPrimaryEligible(rn, ztags)) continue;
+            if (!isPrimaryEligible(ri, ztags)) continue;
             const ordered = 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos + 1))) / 18.0;
             if (ordered > best_val) { best_val = ordered; best_ri = ri; }
         }

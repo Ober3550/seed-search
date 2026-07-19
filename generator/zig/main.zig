@@ -87,38 +87,38 @@ pub fn main() !void {
             if (z.ztype == .planet or z.ztype == .moon) {
                 const tags = gen.computeTags(z.seed, z.name);
                 if (tags.temperature) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.water) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.moisture) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.trees) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"tr\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"tr\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.aux) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"a\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"a\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.cliff) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"c\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"c\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.enemy) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v.tagStr()}) catch unreachable;
                     pos += t.len;
                 }
 
                 // Resources
                 const primary = primaries.get(z.name);
                 if (primary) |prim| {
-                    const scores = gen.computeZoneResources(z.seed, z.ztype.asStr(), prim, tags);
+                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
                     var first_res = true;
                     for (gen.resource_order, 0..) |rname, ri| {
                         if (scores[ri] > 0.0001) {
