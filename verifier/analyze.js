@@ -143,16 +143,9 @@ function evalSeed(seedObject) {
             && s.radius > 2000;
     });
 
-    const specialHolm = bodies.filter(s => {
-        const r = resourcesArray(s.resource);
-        return r.includes("se-cryonite")
-            && r.includes("se-vulcanite")
-            && r.includes("se-holmium-ore");
-    });
-
-    if (specialHolm.length > 0) {
+    if (viable.length > 0) {
         console.log(`seed: ${seedObject.seed} loot: ${seedObject.loot.join("")}`);
-        printPlanetsAndMoons(bodies);
+        printPlanetsAndMoons(viable);
         console.log();
         return true;
     }
