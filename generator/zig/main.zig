@@ -116,7 +116,7 @@ pub fn main(init: std.process.Init) !void {
             const delta_seeds = seed - last_seed;
             const rate: u32 = if (delta_s > 0) @intFromFloat(@round(@as(f64, @floatFromInt(delta_seeds)) / delta_s)) else 0;
             const delta_passed = passed - last_passed;
-            std.debug.print("# [{d:.0}s] {d}/s, {d} passed (total {d})\n", .{ elapsed_s, rate, delta_passed, passed });
+            std.debug.print("# [{d:.0}s] seed {d}  {d}/s, {d} passed (total {d})\n", .{ elapsed_s, seed, rate, delta_passed, passed });
             last_t = now;
             last_seed = seed;
             last_passed = passed;
