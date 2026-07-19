@@ -14,19 +14,26 @@ echo "=== seedgen: 0 → $END, $THREADS threads ==="
 
 mkdir -p output
 
-active=0
+declare -a PIDS=()
 worker=0
+
 for ((s=0; s<END; s+=RANGE)); do
-  while [ $active -ge $THREADS ]; do
-    wait -n 2>/dev/null || true
-    active=$((active - 1))
+  # Wait for a slot to free up
+  while [ ${#PIDS[@]} -ge $THREADS ]; do
+    for i in "${!PIDS[@]}"; do
+      if ! kill -0 "${PIDS[$i]}" 2>/dev/null; then
+        unset "PIDS[$i]"
+      fi
+    done
+    PIDS=("${PIDS[@]}")  # re-index
+    [ ${#PIDS[@]} -ge $THREADS ] && sleep 1
   done
   
   E=$((s + RANGE))
   [ $E -gt $END ] && E=$END
   wid=$((worker % THREADS + 1))
   
-  echo "[orch] worker $wid: $s → $E ($(( active + 1 ))/$THREADS)"
+  echo "[orch] worker $wid: $s → $E (${#PIDS[@]}/$THREADS)"
   docker run --rm --platform linux/arm64 --ulimit stack=1073741824 \
     -v "${PWD}/output:/workspace/output" \
     -e WORKER_ID=$wid \
@@ -35,10 +42,14 @@ for ((s=0; s<END; s+=RANGE)); do
     -e MIN_NAQ_DV=${MIN_NAQ_DV:-20000} \
     -e MIN_PROD_MODULES=${MIN_PROD_MODULES:-4} \
     seed-search-seedgen 2>&1 &
-  active=$((active + 1))
+  PIDS+=($!)
   worker=$((worker + 1))
 done
 
-wait
+# Wait for remaining jobs
+for pid in "${PIDS[@]}"; do
+  wait "$pid" 2>/dev/null || true
+done
+
 echo "=== Done ==="
 ls -la output/seeds_*.jsonl
