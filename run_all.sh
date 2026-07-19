@@ -34,7 +34,7 @@ for ((s=0; s<END; s+=RANGE)); do
     -e SE_K2=1 \
     -e MIN_NAQ_DV=${MIN_NAQ_DV:-20000} \
     -e MIN_PROD_MODULES=${MIN_PROD_MODULES:-4} \
-    seed-search-seedgen 2>&1 | grep '^\[' &
+    seed-search-seedgen 2>&1 &
   active=$((active + 1))
   worker=$((worker + 1))
 done
