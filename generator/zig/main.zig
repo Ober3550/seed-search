@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
     var probe_n: u32 = 0;
     while (true) : (probe_n += 1) {
         const name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{probe_n});
-        var f = dir.openFile(io, name, .{}) catch break;
+        var f = std.Io.Dir.cwd().openFile(io, name, .{}) catch break;
         const file_len = f.length(io) catch 0;
         if (file_len > 0) {
             var reader = f.reader(io, &.{});
@@ -91,7 +91,7 @@ pub fn main(init: std.process.Init) !void {
 
     // --- Open current output file (append if exists, create if not) ---
     const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}\n", .{ count, start_seed, k2_enabled, fname });
+    std.debug.print("# Generating seeds {d} to {d} (K2={}) -> {s}\n", .{ start_seed, count, k2_enabled, fname });
 
     var seed = start_seed;
     var passed: u32 = 0;
@@ -221,13 +221,12 @@ pub fn main(init: std.process.Init) !void {
         buf[pos] = '}'; pos += 1;
         buf[pos] = '\n'; pos += 1;
 
-        // Write each line by opening, appending, and closing for durability
+        // Write JSONL to stdout (shell redirects to file)
         {
-            const wname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-            var f = try dir.createFile(io, wname, .{ .truncate = true, .read = true });
-            defer f.close(io);
-            const end = f.length(io) catch 0;
-            try f.writePositionalAll(io, buf[0..pos], end);
+            var stdout_buf: [4096]u8 = [_]u8{0} ** 4096;
+            var fw = std.Io.File.stdout().writer(io, &stdout_buf);
+            _ = try fw.interface.writeSplat(&.{buf[0..pos]}, 1);
+            try fw.interface.flush();
         }
         passed += 1;
         file_lines += 1;
