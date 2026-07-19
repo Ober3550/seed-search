@@ -59,18 +59,19 @@ pub fn main(init: std.process.Init) !void {
     var start_seed: u32 = getEnvU32("START_SEED", 341);
     var existing_lines: u32 = 0;
 
-    // Find highest existing seeds_N.jsonl and read last seed
+    // Find highest existing seeds_N.jsonl and read last seed.
+    // Close each file explicitly so reads see flushed data.
     var probe_n: u32 = 0;
     while (true) : (probe_n += 1) {
         const name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{probe_n});
         var f = dir.openFile(io, name, .{}) catch break;
-        defer f.close(io);
-        const file_len = try f.length(io);
+        const file_len = f.length(io) catch 0;
         if (file_len > 0) {
             var reader = f.reader(io, &.{});
-            const content = try reader.interface.readAlloc(a, @intCast(file_len));
+            const content = reader.interface.readAlloc(a, @intCast(file_len)) catch "";
             if (content.len > 0) {
                 existing_lines = @intCast(std.mem.count(u8, content, "\n"));
+                // Find last line's seed
                 var last_line_start: usize = 0;
                 var i: usize = content.len;
                 while (i > 0) { i -= 1; if (content[i] == '\n') { last_line_start = if (i + 1 < content.len) i + 1 else i; break; } }
@@ -80,6 +81,7 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
         }
+        f.close(io);
         cur_n = probe_n;
     }
     if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
@@ -90,12 +92,6 @@ pub fn main(init: std.process.Init) !void {
     // --- Open current output file (append if exists, create if not) ---
     const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
     std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
-
-    var out_file = dir.openFile(io, fname, .{ .mode = .read_write }) catch blk: {
-        break :blk try dir.createFile(io, fname, .{ .truncate = true, .read = true });
-    };
-    var write_offset: u64 = try out_file.length(io);
-    defer out_file.close(io);
 
     var seed = start_seed;
     var passed: u32 = 0;
@@ -225,21 +221,24 @@ pub fn main(init: std.process.Init) !void {
         buf[pos] = '}'; pos += 1;
         buf[pos] = '\n'; pos += 1;
 
-        // Write to file at current offset (append)
-        try out_file.writePositionalAll(io, buf[0..pos], write_offset);
-        write_offset += pos;
+        // Write each line by opening, appending, and closing for durability
+        {
+            const wname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
+            var f = dir.openFile(io, wname, .{ .mode = .read_write }) catch
+                try dir.createFile(io, wname, .{ .truncate = true, .read = true });
+            defer f.close(io);
+            const end = f.length(io) catch 0;
+            try f.writePositionalAll(io, buf[0..pos], end);
+        }
         passed += 1;
         file_lines += 1;
 
         // Rotate if full
         if (file_lines >= max_lines) {
-            out_file.close(io);
             cur_n += 1;
             file_lines = 0;
-            const new_name = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-            out_file = try dir.createFile(io, new_name, .{});
-            write_offset = 0;
-            std.debug.print("# Rolled over to {s}\n", .{new_name});
+            // New file will be created on next write
+            std.debug.print("# Rolled over to seeds_{d}.jsonl\n", .{cur_n});
         }
 
         // loop advances seed
