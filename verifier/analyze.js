@@ -12,7 +12,7 @@ const readline = require("readline");
 
 // ── new → old format converter ──────────────────────────────────────
 
-function convertNewToOld(seed) {
+function convertNewToOld(seed, calidusOnly) {
     const zones = seed.z || [];
     const out = {
         seed: seed.s,
@@ -21,7 +21,20 @@ function convertNewToOld(seed) {
         moons: [],
         fields: [],
     };
-    for (const z of zones) {
+
+    // If calidusOnly, find the Calidus star and only use zones until next star
+    let startIdx = 0, endIdx = zones.length;
+    if (calidusOnly) {
+        for (let i = 0; i < zones.length; i++) {
+            if (zones[i].n === "Calidus" && zones[i].t === "star") startIdx = i;
+            else if (startIdx > 0 && zones[i].t === "star" && zones[i].n !== "Calidus") {
+                endIdx = i; break;
+            }
+        }
+    }
+
+    for (let i = startIdx; i < endIdx; i++) {
+        const z = zones[i];
         const t = z.t;
         const entry = {
             name: z.n,
@@ -150,7 +163,8 @@ function evalSeed(seedObject) {
 
 const args = process.argv.slice(2);
 const allMode = args.includes("--all");
-const files = args.filter(a => a !== "--all");
+const calidusOnly = args.includes("--calidus");
+const files = args.filter(a => a !== "--all" && a !== "--calidus");
 
 // Collect file names (expand directories to seeds_*.jsonl)
 let fnames = [];
@@ -176,7 +190,7 @@ for (const fname of fnames) {
         if (!line.startsWith("{")) continue;
         try {
             const seed = JSON.parse(line);
-            const old = convertNewToOld(seed);
+            const old = convertNewToOld(seed, calidusOnly);
             const loot = old.loot.join("");
             if (allMode || loot.match(/^PPSS/)) {
                 if (evalSeed(old)) matched++;
