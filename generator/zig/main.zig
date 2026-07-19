@@ -4,6 +4,7 @@
 ///   START_SEED   First seed to generate (default: 341)
 ///   COUNT        Number of seeds to generate (default: 1)
 ///   SE_K2        Set to "1" or "true" to enable Krastorio2
+///   MIN_NAQ_DV   Skip seeds where nearest asteroid field delta-v exceeds this
 ///
 /// Output (stderr): one JSONL line per seed, plus #-prefixed progress lines.
 ///   ./seedgen 2> output.jsonl
@@ -70,6 +71,28 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
+        // Pre-filter: skip seeds where the nearest field is too far
+        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
+        if (min_naq_dv > 0) {
+            const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+            const cx = universe.zones.items[calidus_zi].stellar_x;
+            const cy = universe.zones.items[calidus_zi].stellar_y;
+            var nearest: u32 = std.math.maxInt(u32);
+            for (universe.zones.items) |z| {
+                if (z.ztype == .@"asteroid-field") {
+                    const dx = z.stellar_x - cx;
+                    const dy = z.stellar_y - cy;
+                    const dist = @sqrt(dx * dx + dy * dy);
+                    const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
+                    if (dv < nearest) nearest = dv;
+                }
+            }
+            if (nearest > min_naq_dv) {
+                seed += 2;
+                continue;
+            }
+        }
+
         // JSONL output
         const tj0 = std.Io.Clock.awake.now(io).nanoseconds;
         var buf: [524288]u8 = undefined;
@@ -135,6 +158,20 @@ pub fn main(init: std.process.Init) !void {
                     const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
                     pos += dv_part.len;
                 }
+            }
+
+            // Delta-v for asteroid fields (interstellar formula)
+            if (z.ztype == .@"asteroid-field") {
+                const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+                const cx = universe.zones.items[calidus_zi].stellar_x;
+                const cy = universe.zones.items[calidus_zi].stellar_y;
+                const dx = z.stellar_x - cx;
+                const dy = z.stellar_y - cy;
+                const dist = @sqrt(dx * dx + dy * dy);
+                const dv_raw: f64 = 400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw;
+                const dv: u32 = @intFromFloat(@ceil(dv_raw));
+                const dv_part = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
+                pos += dv_part.len;
             }
 
             buf[pos] = '}';

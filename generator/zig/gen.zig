@@ -24,7 +24,7 @@ pub const Rng = struct {
 const data = @import("data.zig");
 const Body = data.Body;
 const Planet = struct { name: []const u8, moons: ArrayList([]const u8) };
-pub const Zone = struct { name: []const u8, ztype: data.ZoneType, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0 };
+pub const Zone = struct { name: []const u8, ztype: data.ZoneType, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0, stellar_x: f64 = 0, stellar_y: f64 = 0 };
 
 pub const Universe = struct {
     zones: ArrayList(Zone),
@@ -921,10 +921,12 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         const sname = data.stars[si];
         const is_calidus = std.mem.eql(u8, sname, "Calidus");
 
-        _ = rng.float(); // orientation
-        _ = rng.float() * scale * (if (is_calidus) @as(f64, 0.1) else 1.0); // distance
+        const orientation = rng.float();
+        const distance = rng.float() * scale * (if (is_calidus) @as(f64, 0.1) else 1.0);
+        const sx: f64 = @cos(orientation * 2.0 * std.math.pi) * distance;
+        const sy: f64 = @sin(orientation * 2.0 * std.math.pi) * distance;
 
-        try zones.append(.{ .name = sname, .ztype = .star });
+        try zones.append(.{ .name = sname, .ztype = .star, .stellar_x = sx, .stellar_y = sy });
         const sorbit = try std.fmt.allocPrint(a, "{s} Orbit", .{sname});
         try zones.append(.{ .name = sorbit, .ztype = .orbit });
 
@@ -994,8 +996,18 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     // Space zones
     const sz = try a.dupe([]const u8, &data.space_zones);
     if (sz.len > 1) { shuffleNames(&rng, sz); }
+    const fields_start = zones.items.len;
     for (sz) |name| { try zones.append(.{ .name = name, .ztype = .@"asteroid-field" }); }
-    for (0..data.space_zones.len) |_| { _ = rng.float(); _ = rng.float(); }
+    // Record positions (same RNG calls as before, just capturing values)
+    {
+        var fi: usize = fields_start;
+        while (fi < zones.items.len) : (fi += 1) {
+            const forient = rng.float();
+            const fdist = rng.float() * scale;
+            zones.items[fi].stellar_x = @cos(forient * 2.0 * std.math.pi) * fdist;
+            zones.items[fi].stellar_y = @sin(forient * 2.0 * std.math.pi) * fdist;
+        }
+    }
 
     // ===== Phase 5b: Assign seeds to all zones =====
     for (zones.items) |*z| {
