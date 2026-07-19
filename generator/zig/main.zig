@@ -227,7 +227,7 @@ pub fn main(init: std.process.Init) !void {
         }
         // Append asteroid fields and tail homesystem bodies
         for (universe.zones.items[zone_end..]) |z| {
-            if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
+            if (z.ztype == .planet or z.ztype == .moon) {
                 buf[pos] = ','; pos += 1;
                 zi += 1;
                 const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
