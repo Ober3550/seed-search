@@ -85,13 +85,13 @@ pub fn main(init: std.process.Init) !void {
         cur_n = probe_n;
     }
     if (start_seed < 341) start_seed = getEnvU32("START_SEED", 341);
-    if (existing_lines >= max_lines) { cur_n += 1; existing_lines = 0; }
+    cur_n += 1; existing_lines = 0;
 
     std.debug.print("# Resumed: file {d}, {d} existing lines, max {d}/file\n", .{ cur_n, existing_lines, max_lines });
 
     // --- Open current output file (append if exists, create if not) ---
     const fname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}/{s}\n", .{ count, start_seed, k2_enabled, output_dir, fname });
+    std.debug.print("# Generating to seed {d} from {d} (K2={}) -> {s}\n", .{ count, start_seed, k2_enabled, fname });
 
     var seed = start_seed;
     var passed: u32 = 0;
