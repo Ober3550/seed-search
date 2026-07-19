@@ -12,6 +12,7 @@ if [ -n "$PREV" ] && [ -s "$PREV" ]; then
   fi
 fi
 
-# Name file by starting seed
-echo "[seedgen] $(date -Iseconds) seeds_${START_SEED:-341}.jsonl"
-exec /usr/local/bin/seedgen 1>> "seeds_${START_SEED:-341}.jsonl" 2>> progress.log
+# Bucket by 100k: seeds_0.jsonl, seeds_100000.jsonl, etc.
+BUCKET=$(( ${START_SEED:-341} / 100000 * 100000 ))
+echo "[seedgen] $(date -Iseconds) seeds_${BUCKET}.jsonl (from seed ${START_SEED:-341})"
+exec /usr/local/bin/seedgen 1>> "seeds_${BUCKET}.jsonl" 2>> progress.log
