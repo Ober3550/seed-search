@@ -9,7 +9,7 @@ services:
       context: .
       dockerfile: Dockerfile.zig
     environment:
-      - COUNT=100000
+      - END_SEED=100000
       - SE_K2=1
       - MIN_NAQ_DV=20000
       - MIN_PROD_MODULES=4

@@ -41,15 +41,9 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const a = arena.allocator();
 
-    const count = getEnvU32("COUNT", 1);
+    const end_seed = getEnvU32("END_SEED", 100000);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
-
-    // --- Find or create output directory ---
-    };
-
-    // --- Resume from last seed ---
-    const start_seed = getEnvU32("START_SEED", 341);
-    const end_seed = start_seed + count - 1;
+    const start_seed = getEnvU32("START_SEED", 0);
 
     std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
