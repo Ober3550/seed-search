@@ -149,33 +149,39 @@ function evalSeed(seedObject) {
 // ── main ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
+const allMode = args.includes("--all");
+const files = args.filter(a => a !== "--all");
 
-if (args.length > 0) {
-    // Read from files (sync for simplicity)
-    for (const fname of args) {
-        const content = fs.readFileSync(fname, "utf8");
-        for (const line of content.split("\n")) {
-            if (!line.startsWith("{")) continue;
-            try {
-                const seed = JSON.parse(line);
-                const old = convertNewToOld(seed);
-                const loot = old.loot.join("");
-                if (loot.match(/^PPSS/)) evalSeed(old);
-            } catch (e) {
-                // skip malformed lines
-            }
-        }
+// Collect file names (expand directories to seeds_*.jsonl)
+let fnames = [];
+for (const arg of files) {
+    if (fs.statSync(arg).isDirectory()) {
+        const dirFiles = fs.readdirSync(arg).filter(f => f.startsWith("seeds_") && f.endsWith(".jsonl"));
+        fnames.push(...dirFiles.map(f => arg + "/" + f));
+    } else {
+        fnames.push(arg);
     }
-} else {
-    // Read from stdin
-    const input = readline.createInterface({ input: process.stdin, terminal: false });
-    input.on("line", line => {
-        if (!line.startsWith("{")) return;
+}
+// Sort numerically
+fnames.sort((a, b) => {
+    const na = parseInt(a.match(/seeds_(\d+)/)?.[1] || "0");
+    const nb = parseInt(b.match(/seeds_(\d+)/)?.[1] || "0");
+    return na - nb;
+});
+
+let matched = 0;
+for (const fname of fnames) {
+    const content = fs.readFileSync(fname, "utf8");
+    for (const line of content.split("\n")) {
+        if (!line.startsWith("{")) continue;
         try {
             const seed = JSON.parse(line);
             const old = convertNewToOld(seed);
             const loot = old.loot.join("");
-            if (loot.match(/^PPSS/)) evalSeed(old);
+            if (allMode || loot.match(/^PPSS/)) {
+                if (evalSeed(old)) matched++;
+            }
         } catch (e) {}
-    });
+    }
 }
+console.log(`${matched} seeds matched (${fnames.length} files scanned)`);
