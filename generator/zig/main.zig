@@ -224,8 +224,7 @@ pub fn main(init: std.process.Init) !void {
         // Write each line by opening, appending, and closing for durability
         {
             const wname = try std.fmt.allocPrint(a, "seeds_{d}.jsonl", .{cur_n});
-            var f = dir.openFile(io, wname, .{ .mode = .read_write }) catch
-                try dir.createFile(io, wname, .{ .truncate = true, .read = true });
+            var f = try dir.createFile(io, wname, .{ .truncate = true, .read = true });
             defer f.close(io);
             const end = f.length(io) catch 0;
             try f.writePositionalAll(io, buf[0..pos], end);
