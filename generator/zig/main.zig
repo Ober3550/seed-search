@@ -180,7 +180,7 @@ pub fn main(init: std.process.Init) !void {
                         if (scores[ri] > 0.0001) {
                             if (first) { const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable; pos += p.len; first = false; }
                             else { buf[pos] = ','; pos += 1; }
-                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
+                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
                         }
                     }
                     if (!first) { buf[pos] = '}'; pos += 1; }
@@ -201,7 +201,7 @@ pub fn main(init: std.process.Init) !void {
                     if (scores[ri] > 0.0001) {
                         if (first) { const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable; pos += p.len; first = false; }
                         else { buf[pos] = ','; pos += 1; }
-                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
+                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
                     }
                 }
                 if (!first) { buf[pos] = '}'; pos += 1; }
