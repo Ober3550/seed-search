@@ -41,6 +41,7 @@ pub fn main(init: std.process.Init) !void {
 
     var seed = start_seed;
     var generated: u32 = 0;
+    var passed: u32 = 0;
 
     var t_gen: u64 = 0;
     var t_prim: u64 = 0;
@@ -48,6 +49,9 @@ pub fn main(init: std.process.Init) !void {
     var t_json: u64 = 0;
 
     while (generated < count) : (generated += 1) {
+        if (generated > 0 and generated % 1000 == 0) {
+            std.debug.print("# Progress: {d}/{d} seeds processed, {d} passed\n", .{ generated, count, passed });
+        }
         if (generated > 0) _ = arena.reset(.retain_capacity);
 
         const t0 = std.Io.Clock.awake.now(io).nanoseconds;
@@ -111,6 +115,7 @@ pub fn main(init: std.process.Init) !void {
         }
 
         // JSONL output
+        passed += 1;
         const tj0 = std.Io.Clock.awake.now(io).nanoseconds;
         var buf: [524288]u8 = undefined;
         var pos: usize = 0;

@@ -39,10 +39,10 @@ services:
         (
           LAST=0
           while true; do
-            sleep 10
+            sleep 30
             NOW=$$(wc -l < /workspace/output/seeds.jsonl 2>/dev/null || echo 0)
             DELTA=$$((NOW - LAST))
-            echo "[seedgen] $$(date +%H:%M:%S)  seeds: $$NOW  (+$${DELTA}/10s = ~$$((DELTA * 6))/min)" | tee -a /workspace/output/progress.log
+            echo "[seedgen] $$(date +%H:%M:%S)  seeds: $$NOW  (+$${DELTA}/30s = ~$$((DELTA * 6))/min)" | tee -a /workspace/output/progress.log
             LAST=$$NOW
           done
         ) &
