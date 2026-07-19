@@ -64,7 +64,7 @@ pub fn main(init: std.process.Init) !void {
             const delta_seeds = seed - last_seed;
             const rate: u32 = if (delta_s > 0) @intFromFloat(@round(@as(f64, @floatFromInt(delta_seeds)) / delta_s)) else 0;
             const worker_id = getEnvU32("WORKER_ID", 0);
-            std.debug.print("worker {d}, [{d:.0}s] seed {d} rate {d}/s, passed {d}\n", .{ worker_id, elapsed_s, seed, rate, passed });
+            std.debug.print("worker {d}, [{d:>3.0}s] seed {d} rate {d}/s, passed {d}\n", .{ worker_id, elapsed_s, seed, rate, passed });
             last_t = now;
             last_seed = seed;
             last_passed = passed;
