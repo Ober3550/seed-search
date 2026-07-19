@@ -304,12 +304,8 @@ pub fn main(init: std.process.Init) !void {
         }
         passed += 1;
 
-        // Rotate if full
-            std.debug.print("# Rolled over to seeds_{d}.jsonl\n", .{cur_n});
-        }
 
         // loop advances seed
     }
 
-    std.debug.print("# Done: seed {d}, {d} passed -> {s}\n", .{ seed - 2, passed, fname });
 }

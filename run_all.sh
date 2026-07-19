@@ -25,7 +25,13 @@ for ((s=0; s<END; s+=RANGE)); do
   [ $E -gt $END ] && E=$END
   
   echo "[orch] $s → $E ($(( active + 1 ))/$THREADS)"
-  docker compose run --rm -e START_SEED=$s -e END_SEED=$E seedgen 2>&1 | grep '^\[' &
+  docker run --rm --platform linux/arm64 --ulimit stack=1073741824 \
+    -v "${PWD}/output:/workspace/output" \
+    -e START_SEED=$s -e END_SEED=$E \
+    -e SE_K2=1 \
+    -e MIN_NAQ_DV=${MIN_NAQ_DV:-20000} \
+    -e MIN_PROD_MODULES=${MIN_PROD_MODULES:-4} \
+    seed-search-seedgen 2>&1 | grep '^\[' &
   active=$((active + 1))
 done
 
