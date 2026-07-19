@@ -10,7 +10,7 @@ JSONL for analysis.
 # 1. Build
 cd generator/zig && zig build-exe main.zig -O ReleaseFast -femit-bin=seedgen -target aarch64-linux-gnu -lc
 cd ../..
-docker build --platform linux/arm64 -t seed-search-seedgen -f Dockerfile.zig .
+docker build --platform linux/arm64 -t seed-search-seedgen -f runner/zig/Dockerfile.zig .
 
 # 2. Run 1M seeds with 8 parallel workers
 ./run_all.sh 1000000 8
