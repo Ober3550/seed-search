@@ -1,62 +1,25 @@
-# Docker Compose configuration for the Zig seed finder.
+# Docker Compose for the Zig seed finder.
+#
+# stdout (progress) → output/progress.log
+# stderr (JSONL)   → output/seeds_N.jsonl (rotating, auto-resume)
 #
 # Usage:
-#   docker compose up --build        # build + run once
-#   docker compose run seedgen       # run with overrides
-#
-# Environment (set in .env or override on command line):
-#   START_SEED=341       first seed (default)
-#   COUNT=1000000        number of seeds to generate
-#   SE_K2=1              enable Krastorio2 (0 or 1)
-#   MIN_NAQ_DV=20000     skip seeds with no naq field this close
-#   MIN_PROD_MODULES=4   skip seeds with fewer P modules in loot
+#   docker compose up --build
+#   docker compose up -d          # background
+#   tail -f output/progress.log   # monitor
 
 services:
   seedgen:
     build:
       context: .
       dockerfile: Dockerfile.zig
-      platforms:
-        - linux/arm64
     env_file:
       - .env
     environment:
-      - START_SEED=341
       - COUNT=1000000
       - SE_K2=1
       - MIN_NAQ_DV=20000
       - MIN_PROD_MODULES=4
+      - MAX_LINES_PER_FILE=10000
     volumes:
       - ./output:/workspace/output
-    # Run seedgen, logging progress rate every 10s in the background
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        echo "[seedgen] Starting at $$(date -Iseconds)" | tee /workspace/output/progress.log
-        echo "[seedgen] Config: K2=$${SE_K2:-0} MIN_NAQ_DV=$${MIN_NAQ_DV:-0} MIN_PROD_MODULES=$${MIN_PROD_MODULES:-0} COUNT=$${COUNT:-0}" | tee -a /workspace/output/progress.log
-
-        # Background monitor: log count and rate every 10s
-        (
-          LAST=0
-          while true; do
-            sleep 30
-            NOW=$$(wc -l < /workspace/output/seeds.jsonl 2>/dev/null || echo 0)
-            DELTA=$$((NOW - LAST))
-            echo "[seedgen] $$(date +%H:%M:%S)  seeds: $$NOW  (+$${DELTA}/30s = ~$$((DELTA * 6))/min)" | tee -a /workspace/output/progress.log
-            LAST=$$NOW
-          done
-        ) &
-        MONITOR_PID=$$!
-
-        # Run the generator: progress lines to log, JSONL (starts with '{') to file
-        /usr/local/bin/seedgen 2>&1 | while IFS= read -r line; do
-          case "$$line" in
-            "{"*) echo "$$line" >> /workspace/output/seeds.jsonl ;;
-            "#"*) echo "$$line" | tee -a /workspace/output/progress.log ;;
-          esac
-        done
-
-        kill $$MONITOR_PID 2>/dev/null || true
-        wait $$MONITOR_PID 2>/dev/null || true
-        echo "[seedgen] Done at $$(date -Iseconds)" | tee -a /workspace/output/progress.log
-        echo "[seedgen] Final count: $$(wc -l < /workspace/output/seeds.jsonl) seeds" | tee -a /workspace/output/progress.log
