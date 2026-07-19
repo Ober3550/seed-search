@@ -73,7 +73,7 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
         // Pre-filter: skip seeds with no naquium field within delta-v threshold
-        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
+        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 20000);
         if (min_naq_dv > 0) {
             const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
             const cx = universe.zones.items[calidus_zi].stellar_x;
