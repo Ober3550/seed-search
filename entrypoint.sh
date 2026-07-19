@@ -45,8 +45,9 @@ echo "[seedgen] Config: K2=${SE_K2:-0} MIN_NAQ_DV=${MIN_NAQ_DV:-0} MIN_PROD_MODU
 MONITOR_PID=$!
 
 # Run seedgen: stdout (progress) → progress.log, stderr (JSONL) → rotating file
-START_SEED=$START /usr/local/bin/seedgen 2>&1 > progress.log | (
-  COUNT=0
+# Run seedgen: progress lines (starting with # or [) → progress.log, JSON (starting with {) → jsonl
+START_SEED=$START /usr/local/bin/seedgen 2>&1 | (
+  COUNT=$CUR_LINES
   while IFS= read -r line; do
     case "$line" in
       "{"*)
@@ -57,6 +58,12 @@ START_SEED=$START /usr/local/bin/seedgen 2>&1 > progress.log | (
           COUNT=0
           echo "[seedgen] $(date +%H:%M:%S)  rolled over to seeds_${CUR_N}.jsonl" | tee -a progress.log
         fi
+        ;;
+      "#"*)
+        echo "$line" | tee -a progress.log
+        ;;
+      "["*)
+        echo "$line" | tee -a progress.log
         ;;
     esac
   done
