@@ -18,3 +18,5 @@ runner/_queue.json
 __pycache__/
 *.pyc
 tmp/
+seedgen
+generator/zig/seedgen.native

@@ -149,15 +149,23 @@ pub fn main(init: std.process.Init) !void {
             if (p_count < min_prod) { continue; }
         }
 
-        // --- Serialize JSONL ---
+        // --- Serialize JSONL (Calidus system only, plus all asteroid fields) ---
         var buf: [524288]u8 = undefined;
         var pos: usize = 0;
         const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
         pos += open.len;
 
-        for (universe.zones.items, 0..) |z, i| {
-            if (i > 0) { buf[pos] = ','; pos += 1; }
-            const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ i + 1, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
+        // Only serialize Calidus system + asteroid fields
+        const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+        var zone_end: usize = universe.zones.items.len;
+        for (universe.zones.items[calidus_zi + 1 ..], calidus_zi + 1..) |z, si| {
+            if (z.ztype == .star) { zone_end = si; break; }
+        }
+        var zi: u32 = 0;
+        for (universe.zones.items[calidus_zi..zone_end]) |z| {
+            if (zi > 0) { buf[pos] = ','; pos += 1; }
+            zi += 1;
+            const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
             pos += ob.len;
             if (z.radius > 0) {
                 const dr: u32 = @intFromFloat(@floor(z.radius + 0.5));
@@ -205,7 +213,7 @@ pub fn main(init: std.process.Init) !void {
                     }
                 }
                 if (!first) { buf[pos] = '}'; pos += 1; }
-                const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+                
                 const cx = universe.zones.items[calidus_zi].stellar_x;
                 const cy = universe.zones.items[calidus_zi].stellar_y;
                 const dx = z.stellar_x - cx;
@@ -216,6 +224,35 @@ pub fn main(init: std.process.Init) !void {
                 const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable; pos += dp.len;
             }
             buf[pos] = '}'; pos += 1;
+        }
+        // Append asteroid fields and tail homesystem bodies
+        for (universe.zones.items[zone_end..]) |z| {
+            if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
+                buf[pos] = ','; pos += 1;
+                zi += 1;
+                const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
+                pos += ob.len;
+                const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
+                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                var fr: bool = true;
+                for (gen.resource_order, 0..) |rname, ri| {
+                    if (scores[ri] > 0.0001) {
+                        if (fr) { const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable; pos += p.len; fr = false; }
+                        else { buf[pos] = ','; pos += 1; }
+                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{rname, scores[ri]}) catch unreachable; pos += rp.len;
+                    }
+                }
+                if (!fr) { buf[pos] = '}'; pos += 1; }
+                const cx = universe.zones.items[calidus_zi].stellar_x;
+                const cy = universe.zones.items[calidus_zi].stellar_y;
+                const dx = z.stellar_x - cx;
+                const dy = z.stellar_y - cy;
+                const dist = @sqrt(dx * dx + dy * dy);
+                const dv_raw: f64 = 400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw;
+                const dv: u32 = @intFromFloat(@ceil(dv_raw));
+                const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable; pos += dp.len;
+                buf[pos] = '}'; pos += 1;
+            }
         }
         buf[pos] = ']'; pos += 1;
         buf[pos] = '}'; pos += 1;
