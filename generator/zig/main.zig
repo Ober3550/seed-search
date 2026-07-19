@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
 
     const start_seed = getEnvU32("START_SEED", 341);
     const count = getEnvU32("COUNT", 1);
-    const k2_enabled = getEnvBool("SE_K2");
+    const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
 
     std.debug.print("# Generating {d} seeds from {d} (K2={})\n", .{ count, start_seed, k2_enabled });
 
