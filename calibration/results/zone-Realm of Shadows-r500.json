@@ -1,0 +1,43 @@
+{
+  "zone": "Realm of Shadows",
+  "universe_seed": 8242,
+  "surface_seed": 969941609,
+  "radius": 500,
+  "total_tiles": 1000000,
+  "water_tiles": 34621,
+  "land_tiles": 965379,
+  "resources": {
+    "stone": {
+      "total": 1250727,
+      "patches": 2112
+    },
+    "crude-oil": {
+      "total": 9654229,
+      "patches": 39
+    },
+    "iron-ore": {
+      "total": 44473539,
+      "patches": 7550
+    },
+    "uranium-ore": {
+      "total": 93753,
+      "patches": 369
+    },
+    "kr-rare-metal-ore": {
+      "total": 3918007,
+      "patches": 1949
+    },
+    "coal": {
+      "total": 4917705,
+      "patches": 1796
+    },
+    "copper-ore": {
+      "total": 4404497,
+      "patches": 4371
+    },
+    "kr-mineral-water": {
+      "total": 2658438,
+      "patches": 18
+    }
+  }
+}

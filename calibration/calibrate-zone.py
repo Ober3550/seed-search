@@ -75,16 +75,21 @@ if not r or "ZONE_NOT_FOUND" in r:
     c.close(); server.terminate(); sys.exit(1)
 parts = r.split()
 zone_seed = int(parts[0])
-zone_radius = int(float(parts[1]))
-print(f"   Zone seed: {zone_seed}, radius: {zone_radius}")
+zone_radius = int(float(parts[1])) if parts[1] != "nil" else 0
+is_asteroid_field = zone_radius == 0
+if is_asteroid_field:
+    zone_radius = 500  # asteroid fields use fixed effective radius for calibration
+    print(f"   Asteroid field, using r={zone_radius}")
+else:
+    print(f"   Zone seed: {zone_seed}, radius: {zone_radius}")
 
-# Skip zones too large to generate quickly
-if zone_radius > 1000:
+# Skip zones too large to generate quickly (asteroid fields always pass)
+if not is_asteroid_field and zone_radius > 1000:
     print(f"   SKIPPED: radius {zone_radius} > 1000")
     c.close(); server.terminate()
     sys.exit(0)
 
-# Use zone's actual radius unless CLI override given
+# Use zone's actual radius unless CLI override given (asteroid fields use fixed 500)
 if radius == 0:
     radius = zone_radius
     print(f"   Using zone radius: {radius}")
@@ -93,7 +98,7 @@ if radius == 0:
 step(f"5. Creating surface for {zone_name} (seed={zone_seed})")
 lua = (
     f'local mgs=table.deepcopy(game.surfaces["nauvis"].map_gen_settings);'
-    f'mgs.seed={zone_seed}; mgs.width={zone_radius*2+32}; mgs.height={zone_radius*2+32};'
+    f'mgs.seed={zone_seed}; mgs.width={zone_radius*2+32 if not is_asteroid_field else 1032}; mgs.height={zone_radius*2+32 if not is_asteroid_field else 1032};'
     f'mgs.autoplace_controls=mgs.autoplace_controls or {{}};'
     # Apply ALL zone controls (including SE specials not in Nauvis template)
     f'local z=remote.call("space-exploration","get_zone_from_name",{{zone_name="{zone_name}"}});'

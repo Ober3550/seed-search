@@ -1,0 +1,43 @@
+{
+  "zone": "Haunted Hollows",
+  "universe_seed": 8242,
+  "surface_seed": 1350170645,
+  "radius": 500,
+  "total_tiles": 1000000,
+  "water_tiles": 58140,
+  "land_tiles": 941860,
+  "resources": {
+    "iron-ore": {
+      "total": 2120317,
+      "patches": 2205
+    },
+    "stone": {
+      "total": 390741,
+      "patches": 736
+    },
+    "copper-ore": {
+      "total": 6559013,
+      "patches": 2921
+    },
+    "kr-rare-metal-ore": {
+      "total": 123569552,
+      "patches": 9954
+    },
+    "kr-mineral-water": {
+      "total": 607339,
+      "patches": 3
+    },
+    "coal": {
+      "total": 1285414,
+      "patches": 1101
+    },
+    "crude-oil": {
+      "total": 8897168,
+      "patches": 34
+    },
+    "uranium-ore": {
+      "total": 4768,
+      "patches": 99
+    }
+  }
+}
