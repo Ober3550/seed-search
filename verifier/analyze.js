@@ -84,6 +84,9 @@ const nameMap = {
     "se-iridium-ore": `${COLOR.YELLOW}iridium${COLOR.RESET}`,
     "se-holmium-ore": `${COLOR.MAGENTA}holmium${COLOR.RESET}`,
     "se-beryllium-ore": `${COLOR.CYAN}beryl${COLOR.RESET}`,
+    "kr-imersite": `imersite`,
+    "kr-rare-metal-ore": `rare-metal`,
+    "kr-mineral-water": `mineral-water`,
 };
 function rename(n) { return nameMap[n] || n; }
 function noColor(s) { return s.replace(/\x1b\[[0-9;]*m/g, ""); }
@@ -129,6 +132,7 @@ function printPlanetsAndMoons(items) {
 const resourceNames = {
     "se-vulcanite": true, "se-cryonite": true, "se-holmium-ore": true,
     "se-beryllium-ore": true, "se-iridium-ore": true, "se-vitamelange": true,
+    "kr-imersite": true, "kr-rare-metal-ore": true,
 };
 
 // ── evaluation modes ────────────────────────────────────────────────
@@ -176,13 +180,14 @@ function evalCore(seedOld) {
                 console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}`);
             }
         }
-        // Bonus: best imersite and rare metal bodies
+        // Bonus: best imersite and rare metal bodies (highest score)
         for (const extra of ["kr-imersite", "kr-rare-metal-ore"]) {
-            const best = bodies.filter(x => (x.resource||{})[extra] >= 0.9999).sort((a,b) => a.delta_v - b.delta_v)[0];
-            if (best) {
+            const best = bodies.reduce((a, b) => ((a?.resource||{})[extra]||0) > ((b?.resource||{})[extra]||0) ? a : b, null);
+            if (best && (best.resource||{})[extra] > 0) {
                 const e = (best.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
                 const w = (best.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (best.tags.water || "").replace("water_", "");
-                console.log(`    ${rename(extra)}: ${best.name} (${best.zone_type[0]}) dv=${best.delta_v} r=${best.radius} e=${e} w=${w}`);
+                const score = (best.resource||{})[extra].toFixed(4);
+                console.log(`    ${rename(extra)}: ${best.name} (${best.zone_type[0]}) dv=${best.delta_v} r=${best.radius} e=${e} w=${w} (${score})`);
             }
         }
         console.log();
