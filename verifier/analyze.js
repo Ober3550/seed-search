@@ -133,7 +133,7 @@ const resourceNames = {
 
 // ── evaluation modes ────────────────────────────────────────────────
 
-const SPECIAL = ["se-vulcanite", "se-cryonite", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore", "se-vitamelange", "kr-rare-metal-ore"];
+const SPECIAL = ["se-vulcanite", "se-cryonite", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore", "se-vitamelange"];
 
 function viableBodies(seedOld) {
     const planets = seedOld.planets.sort((a, b) => a.delta_v - b.delta_v);
@@ -188,6 +188,7 @@ function evalPairs(seedOld) {
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
         { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
+        { name: "K2:imer+h2o", want: ["kr-imersite", "kr-mineral-water"] },
     ];
 
     const bodies = viableBodies(seedOld).filter(b => {
