@@ -204,7 +204,10 @@ function primaryResource(s) {
 
 function bestNaqField(seedOld) {
   const fields = (seedOld.fields || []).filter(
-    (f) => (f.resource["se-naquium-ore"] || 0) > 0 && (f.delta_v || 0) > 0,
+    (f) =>
+      (f.resource["se-naquium-ore"] || 0) > 0.0001 &&
+      (f.delta_v || 0) > 0 &&
+      (f.delta_v || 0) <= 20000,
   );
   fields.sort((a, b) => a.delta_v - b.delta_v);
   return fields[0] || null;
