@@ -188,7 +188,7 @@ function evalPairs(seedOld) {
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
         { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
-        { name: "K2:imer+h2o", want: ["kr-imersite", "kr-mineral-water"] },
+        { name: "K2:imer", want: ["kr-imersite"] },
     ];
 
     const bodies = viableBodies(seedOld).filter(b => {
