@@ -18,6 +18,15 @@ declare -a PIDS=()
 worker=0
 
 for ((s=0; s<END; s+=RANGE)); do
+  E=$((s + RANGE))
+  [ $E -gt $END ] && E=$END
+
+  # Skip if output file already exists and has data
+  if [ -s "output/seeds_${E}.jsonl" ]; then
+    echo "[orch] SKIP $s → $E (already exists)"
+    continue
+  fi
+
   # Wait for a slot to free up
   while [ ${#PIDS[@]} -ge $THREADS ]; do
     for i in "${!PIDS[@]}"; do
@@ -29,8 +38,6 @@ for ((s=0; s<END; s+=RANGE)); do
     [ ${#PIDS[@]} -ge $THREADS ] && sleep 1
   done
   
-  E=$((s + RANGE))
-  [ $E -gt $END ] && E=$END
   wid=$((worker % THREADS + 1))
   
   echo "[orch] worker $wid: $s → $E (${#PIDS[@]}/$THREADS)"
