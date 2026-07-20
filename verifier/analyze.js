@@ -67,6 +67,7 @@ function convertNewToOld(seed, calidusOnly) {
 const COLOR = {
     RESET: "\u001b[0m",
     WHITE: "\u001b[37m",
+    GREY: "\u001b[90m",
     RED: "\u001b[31m",
     GREEN: "\u001b[32m",
     BLUE: "\u001b[34m",
@@ -77,7 +78,7 @@ const COLOR = {
 
 const nameMap = {
     "iron-ore": "iron", "copper-ore": "copper", "crude-oil": "oil",
-    "uranium-ore": "uranium", "stone": `\x1b[90mstone\x1b[0m`, "coal": "coal",
+    "uranium-ore": "uranium", "stone": `${COLOR.GREY}stone${COLOR.RESET}`, "coal": "coal",
     "se-cryonite": `${COLOR.BLUE}cryonite${COLOR.RESET}`,
     "se-vulcanite": `${COLOR.RED}vulcanite${COLOR.RESET}`,
     "se-vitamelange": `${COLOR.GREEN}vitamelange${COLOR.RESET}`,
