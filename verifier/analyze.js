@@ -131,21 +131,63 @@ const resourceNames = {
     "se-beryllium-ore": true, "se-iridium-ore": true, "se-vitamelange": true,
 };
 
-function evalSeed(seedObject) {
-    const planets = seedObject.planets.sort((a, b) => a.delta_v - b.delta_v);
-    const moons = seedObject.moons.sort((a, b) => a.delta_v - b.delta_v);
-    let bodies = [...planets, ...moons].sort((a, b) => a.delta_v - b.delta_v);
+// ── evaluation modes ────────────────────────────────────────────────
 
-    bodies = bodies.filter(s => {
+const SPECIAL = ["se-vulcanite", "se-cryonite", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore", "se-vitamelange"];
+
+function viableBodies(seedOld) {
+    const planets = seedOld.planets.sort((a, b) => a.delta_v - b.delta_v);
+    const moons = seedOld.moons.sort((a, b) => a.delta_v - b.delta_v);
+    const bodies = [...planets, ...moons].sort((a, b) => a.delta_v - b.delta_v);
+    return bodies.filter(s => {
         const r = resourcesArray(s.resource);
         return s.tags.water !== "water_none"
             && resourceNames[noColor(r[0])]
             && s.radius > 2000;
     });
+}
 
-    if (bodies.length > 0) {
-        console.log(`seed: ${seedObject.seed} loot: ${seedObject.loot.join("")}`);
-        printPlanetsAndMoons(bodies);
+function primaryResource(s) {
+    const r = resourcesArray(s.resource);
+    return r.length > 0 ? noColor(r[0]) : null;
+}
+
+function evalCore(seedOld) {
+    // Seed has every special resource as primary on some viable body
+    const bodies = viableBodies(seedOld);
+    const covered = new Set();
+    for (const b of bodies) {
+        const p = primaryResource(b);
+        if (p && SPECIAL.includes(p)) covered.add(p);
+    }
+    if (covered.size >= 6) {
+        console.log(`\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        console.log(`  All 6 specials covered across ${bodies.length} viable bodies`);
+        for (const res of SPECIAL) {
+            const b = bodies.find(x => primaryResource(x) === res);
+            if (b) console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}`);
+        }
+        console.log();
+        return true;
+    }
+    return false;
+}
+
+function evalCombined(seedOld) {
+    // Bodies with 2+ special resources as primary
+    const bodies = viableBodies(seedOld);
+    const combined = bodies.filter(b => {
+        const r = resourcesArray(b.resource);
+        const specials = r.filter(x => SPECIAL.includes(noColor(x))).length;
+        return specials >= 2;
+    });
+    if (combined.length > 0) {
+        console.log(`\n=== COMBINED: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        for (const b of combined) {
+            const r = resourcesArray(b.resource);
+            const specials = r.filter(x => SPECIAL.includes(noColor(x)));
+            console.log(`  ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}: ${specials.map(rename).join(" + ")}`);
+        }
         console.log();
         return true;
     }
@@ -155,11 +197,10 @@ function evalSeed(seedObject) {
 // ── main ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
+const mode = args.includes("--core") ? "core" : args.includes("--combined") ? "combined" : "show";
 const allMode = args.includes("--all");
-const calidusOnly = args.includes("--calidus");
-const files = args.filter(a => a !== "--all" && a !== "--calidus");
+const files = args.filter(a => !a.startsWith("--"));
 
-// Collect file names (expand directories to seeds_*.jsonl)
 let fnames = [];
 for (const arg of files) {
     if (fs.statSync(arg).isDirectory()) {
@@ -169,7 +210,6 @@ for (const arg of files) {
         fnames.push(arg);
     }
 }
-// Sort numerically
 fnames.sort((a, b) => {
     const na = parseInt(a.match(/seeds_(\d+)/)?.[1] || "0");
     const nb = parseInt(b.match(/seeds_(\d+)/)?.[1] || "0");
@@ -183,11 +223,12 @@ for (const fname of fnames) {
         if (!line.startsWith("{")) continue;
         try {
             const seed = JSON.parse(line);
-            const old = convertNewToOld(seed, calidusOnly);
+            const old = convertNewToOld(seed, true); // always Calidus only
             const loot = old.loot.join("");
-            if (allMode || loot.match(/^PPSS/)) {
-                if (evalSeed(old)) matched++;
-            }
+            if (!allMode && !loot.match(/^PPSS/)) continue;
+            if (mode === "core" && evalCore(old)) matched++;
+            else if (mode === "combined" && evalCombined(old)) matched++;
+            else if (mode === "show" && evalSeed(old)) matched++;
         } catch (e) {}
     }
 }
