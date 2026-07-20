@@ -165,7 +165,11 @@ function evalCore(seedOld) {
         console.log(`  All 6 specials covered across ${bodies.length} viable bodies`);
         for (const res of SPECIAL) {
             const b = bodies.find(x => primaryResource(x) === res);
-            if (b) console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}`);
+            if (b) {
+                const e = (b.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
+                const w = (b.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (b.tags.water || "").replace("water_", "");
+                console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}`);
+            }
         }
         console.log();
         return true;
@@ -210,7 +214,9 @@ function evalPairs(seedOld) {
             // Sort resources by score (highest first)
             const parts = [...r.want].sort((a, b2) => (b.resource[b2]||0) - (b.resource[a]||0))
                 .map(w => `${rename(w)}:${((b.resource||{})[w]||0).toFixed(4)}`);
-            console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}  ${parts.join(" ")}`);
+            const enemy = (b.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
+            const water = (b.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (b.tags.water || "").replace("water_", "");
+            console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${enemy} w=${water}  ${parts.join(" ")}`);
         }
         console.log();
         return true;
