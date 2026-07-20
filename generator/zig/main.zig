@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
                     // Output yield estimates
                     var first = true;
                     for (gen.resource_order, 0..) |rname, ri| {
-                        const y = gen.computeYield(scores[ri], false, z.radius, tags.water);
+                        const y = gen.computeYield(scores[ri], false, z.radius, tags.water, rname);
                         if (y >= 0.5) {
                             if (first) {
                                 const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
@@ -243,7 +243,7 @@ pub fn main(init: std.process.Init) !void {
                 const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
                 var first = true;
                 for (gen.resource_order, 0..) |rname, ri| {
-                    const y = gen.computeYield(scores[ri], true, 0, null);
+                    const y = gen.computeYield(scores[ri], true, 0, null, rname);
                     if (y >= 0.5) {
                         if (first) {
                             const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
@@ -290,7 +290,7 @@ pub fn main(init: std.process.Init) !void {
                 var fr: bool = true;
                 for (gen.resource_order, 0..) |rname, ri| {
                     const is_field = z.ztype == .@"asteroid-field";
-                    const y = gen.computeYield(scores[ri], is_field, z.radius, null);
+                    const y = gen.computeYield(scores[ri], is_field, z.radius, null, rname);
                     if (y >= 0.5) {
                         if (fr) {
                             const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;

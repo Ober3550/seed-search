@@ -316,9 +316,10 @@ const FIELD_LAND_FRACTION: f64 = 0.95;
 
 /// Compute estimated yield in millions for a resource score on a zone.
 /// Returns 0 if the yield is negligible.
-pub fn computeYield(score: f64, is_field: bool, radius: f64, water: ?data.Water) f64 {
+pub fn computeYield(score: f64, is_field: bool, radius: f64, water: ?data.Water, resource_name: []const u8) f64 {
     const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
     const raw_fsr = score * norm;
+    const scale = resourceAmountScale(resource_name);
 
     const area: f64 = if (is_field)
         std.math.pi * FIELD_EFFECTIVE_RADIUS * FIELD_EFFECTIVE_RADIUS
@@ -332,9 +333,35 @@ pub fn computeYield(score: f64, is_field: bool, radius: f64, water: ?data.Water)
     else
         0.5;
 
-    // raw_fsr * area * land_frac gives total items
-    // Divide by 1e6 for "millions"
-    return raw_fsr * area * land_frac / 1_000_000.0;
+    return raw_fsr * area * land_frac * scale / 1_000_000.0;
+}
+
+/// Estimated per-resource base amount scaling (relative to iron=1.0).
+/// Based on Factorio `normal` amounts in resource autoplace.
+pub fn resourceAmountScale(resource_name: []const u8) f64 {
+    // vanilla solid resources
+    if (std.mem.eql(u8, resource_name, "iron-ore")) return 1.0;      // normal=500
+    if (std.mem.eql(u8, resource_name, "copper-ore")) return 1.0;    // normal=500
+    if (std.mem.eql(u8, resource_name, "coal")) return 0.8;          // normal=400
+    if (std.mem.eql(u8, resource_name, "stone")) return 0.7;         // normal=350
+    if (std.mem.eql(u8, resource_name, "uranium-ore")) return 0.6;   // normal=300
+    if (std.mem.eql(u8, resource_name, "crude-oil")) return 0.012;   // fluid, scaled down 500x
+    // SE special resources (use same scale as iron)
+    if (std.mem.eql(u8, resource_name, "se-vulcanite")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-cryonite")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-holmium-ore")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-beryllium-ore")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-iridium-ore")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-vitamelange")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-naquium-ore")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-methane-ice")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "se-water-ice")) return 1.0;
+    // K2 resources
+    if (std.mem.eql(u8, resource_name, "kr-imersite")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "kr-rare-metal-ore")) return 1.0;
+    if (std.mem.eql(u8, resource_name, "kr-mineral-water")) return 0.012;
+    // default
+    return 1.0;
 }
 
 /// Format yield as a human-readable string like "150M" or "2.3B".
