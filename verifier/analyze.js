@@ -132,7 +132,7 @@ function printPlanetsAndMoons(items) {
 const resourceNames = {
     "se-vulcanite": true, "se-cryonite": true, "se-holmium-ore": true,
     "se-beryllium-ore": true, "se-iridium-ore": true, "se-vitamelange": true,
-    "kr-imersite": true, "kr-rare-metal-ore": true,
+    "kr-imersite": true,
 };
 
 // ── evaluation modes ────────────────────────────────────────────────
@@ -180,8 +180,8 @@ function evalCore(seedOld) {
                 console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}`);
             }
         }
-        // Bonus: best imersite and rare metal bodies (highest score)
-        for (const extra of ["kr-imersite", "kr-rare-metal-ore"]) {
+        // Bonus: best imersite body
+        for (const extra of ["kr-imersite"]) {
             const best = bodies.reduce((a, b) => ((a?.resource||{})[extra]||0) > ((b?.resource||{})[extra]||0) ? a : b, null);
             if (best && (best.resource||{})[extra] > 0) {
                 const e = (best.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
@@ -200,12 +200,11 @@ function evalPairs(seedOld) {
     // Production-chain-aware resource pairings.
     // Each combo can be on the same body (ideal) or different bodies (good).
     const combos = [
-        { name: "vulc+irid", want: ["se-vulcanite", "se-iridium-ore"] },
-        { name: "beryl+cryo", want: ["se-cryonite", "se-beryllium-ore"] },
-        { name: "holm", want: ["se-holmium-ore"] },
-        { name: "vita+stone", want: ["se-vitamelange", "stone"] },
-        { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
-        { name: "K2:imer", want: ["kr-imersite"] },
+        { name: "vulc+irid", want: ["se-iridium-ore", "se-vulcanite"] },
+        { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
+        { name: "holm+h2o", want: ["se-holmium-ore", "kr-mineral-water"] },
+        { name: "vita+h2o+stone", want: ["se-vitamelange", "kr-mineral-water", "stone"] },
+        { name: "K2:imer+h2o", want: ["kr-imersite", "kr-mineral-water"] },
     ];
 
     const bodies = viableBodies(seedOld);
