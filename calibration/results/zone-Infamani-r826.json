@@ -1,0 +1,55 @@
+{
+  "zone": "Infamani",
+  "universe_seed": 8242,
+  "surface_seed": 2224623369,
+  "radius": 826,
+  "total_tiles": 2729104,
+  "water_tiles": 178915,
+  "land_tiles": 2550189,
+  "resources": {
+    "se-holmium-ore": {
+      "total": 5224517,
+      "patches": 2863
+    },
+    "kr-rare-metal-ore": {
+      "total": 6824771,
+      "patches": 1934
+    },
+    "coal": {
+      "total": 43516304,
+      "patches": 5108
+    },
+    "crude-oil": {
+      "total": 4990812,
+      "patches": 31
+    },
+    "uranium-ore": {
+      "total": 980776,
+      "patches": 856
+    },
+    "iron-ore": {
+      "total": 14249546,
+      "patches": 5085
+    },
+    "kr-mineral-water": {
+      "total": 1683417,
+      "patches": 11
+    },
+    "copper-ore": {
+      "total": 8370851,
+      "patches": 3549
+    },
+    "kr-imersite": {
+      "total": 5500507,
+      "patches": 21
+    },
+    "stone": {
+      "total": 582914,
+      "patches": 924
+    },
+    "se-cryonite": {
+      "total": 11884,
+      "patches": 104
+    }
+  }
+}

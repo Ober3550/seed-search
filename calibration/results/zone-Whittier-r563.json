@@ -1,0 +1,51 @@
+{
+  "zone": "Whittier",
+  "universe_seed": 8242,
+  "surface_seed": 1444031641,
+  "radius": 563,
+  "total_tiles": 1267876,
+  "water_tiles": 35530,
+  "land_tiles": 1232346,
+  "resources": {
+    "se-iridium-ore": {
+      "total": 29558052,
+      "patches": 4380
+    },
+    "uranium-ore": {
+      "total": 428682,
+      "patches": 648
+    },
+    "kr-rare-metal-ore": {
+      "total": 2428600,
+      "patches": 831
+    },
+    "crude-oil": {
+      "total": 990073,
+      "patches": 9
+    },
+    "kr-mineral-water": {
+      "total": 4889211,
+      "patches": 23
+    },
+    "copper-ore": {
+      "total": 31958,
+      "patches": 223
+    },
+    "iron-ore": {
+      "total": 21738,
+      "patches": 222
+    },
+    "coal": {
+      "total": 3368704,
+      "patches": 1795
+    },
+    "stone": {
+      "total": 8898042,
+      "patches": 3399
+    },
+    "kr-imersite": {
+      "total": 674009,
+      "patches": 5
+    }
+  }
+}

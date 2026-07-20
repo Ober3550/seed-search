@@ -20,13 +20,15 @@ def step(msg):
 
 def rcon(c, cmd, timeout=None):
     if timeout:
-        old = c.timeout
-        c.timeout = timeout
-    r = c.command(cmd).strip()
-    if timeout:
-        c.timeout = old
+        old = c._sock.gettimeout()
+        c._sock.settimeout(timeout)
+    try:
+        r = c.command(cmd).strip()
+    finally:
+        if timeout:
+            c._sock.settimeout(old)
     if r:
-        print(f"  <- {r[:500]}")
+        print(f"  <- {r[:200]}")
     return r
 
 # ── Args ──────────────────────────────────────────────────────────────
@@ -64,21 +66,34 @@ for i in range(30):
 else:
     print("   WARNING: game ticks not advancing")
 
-# ── Step 4: Get zone seed ─────────────────────────────────────────────
-step(f"4. Getting zone '{zone_name}' seed")
-lua = f'/silent-command local z=remote.call("space-exploration","get_zone_from_name",{{zone_name="{zone_name}"}}); if z then rcon.print(tostring(z.seed)) else rcon.print("ZONE_NOT_FOUND") end'
+# ── Step 4: Get zone data (seed + radius) ─────────────────────────────
+step(f"4. Getting zone '{zone_name}' data")
+lua = f'/silent-command local z=remote.call("space-exploration","get_zone_from_name",{{zone_name="{zone_name}"}}); if z then rcon.print(tostring(z.seed).." "..tostring(z.radius)) else rcon.print("ZONE_NOT_FOUND") end'
 r = rcon(c, lua)
-zone_seed = int(r.strip()) if r and r.strip().isdigit() else None
-if not zone_seed:
-    print(f"   FAILED: Could not get zone seed. Response: {r}")
+if not r or "ZONE_NOT_FOUND" in r:
+    print(f"   FAILED: {r}")
     c.close(); server.terminate(); sys.exit(1)
-print(f"   Zone seed: {zone_seed}")
+parts = r.split()
+zone_seed = int(parts[0])
+zone_radius = int(float(parts[1]))
+print(f"   Zone seed: {zone_seed}, radius: {zone_radius}")
+
+# Skip zones too large to generate quickly
+if zone_radius > 1000:
+    print(f"   SKIPPED: radius {zone_radius} > 1000")
+    c.close(); server.terminate()
+    sys.exit(0)
+
+# Use zone's actual radius unless CLI override given
+if radius == 0:
+    radius = zone_radius
+    print(f"   Using zone radius: {radius}")
 
 # ── Step 5: Create surface using SE's zone controls (Nauvis as template) ──
 step(f"5. Creating surface for {zone_name} (seed={zone_seed})")
 lua = (
     f'local mgs=table.deepcopy(game.surfaces["nauvis"].map_gen_settings);'
-    f'mgs.seed={zone_seed}; mgs.width=0; mgs.height=0;'
+    f'mgs.seed={zone_seed}; mgs.width={zone_radius*2+32}; mgs.height={zone_radius*2+32};'
     f'mgs.autoplace_controls=mgs.autoplace_controls or {{}};'
     # Apply ALL zone controls (including SE specials not in Nauvis template)
     f'local z=remote.call("space-exploration","get_zone_from_name",{{zone_name="{zone_name}"}});'
@@ -101,13 +116,14 @@ print("   Surface created!")
 
 # ── Step 6: Generate chunks (fire and forget) ─────────────────────────
 step(f"6. Generating chunks (r={radius})")
-lua = f'/silent-command local s=game.get_surface("{zone_name}"); s.request_to_generate_chunks({{0,0}}, {radius//32+1}); s.force_generate_chunk_requests(); rcon.print("CHUNKS_REQUESTED")'
-r = rcon(c, lua, timeout=60)
-if "CHUNKS_REQUESTED" not in (r or ""):
+r = rcon(c, f'/silent-command local s=game.get_surface("{zone_name}"); s.request_to_generate_chunks({{0,0}}, {radius//32+1}); rcon.print("REQ_OK")')
+if "REQ_OK" not in (r or ""):
     print(f"   FAILED: {r}")
     c.close(); server.terminate(); sys.exit(1)
-print("   Chunks generated. Waiting for entities to spawn...")
-time.sleep(3)
+# Wait for chunks to generate in background (skip force_generate — it blocks RCON)
+wait_s = max(3, radius // 200)
+print(f"   Chunks requested, waiting {wait_s}s for generation...")
+time.sleep(wait_s)
 
 # ── Step 7: Count resources ──────────────────────────────────────────
 step(f"7. Counting resources in {radius}x{radius} area")
@@ -129,7 +145,7 @@ lua = (
     f'radius=r,total_tiles=tt,water_tiles=wt,land_tiles=tt-wt,resources=c}};'
     f'rcon.print(helpers.table_to_json(o))'
 )
-r = rcon(c, "/silent-command " + lua)
+r = rcon(c, "/silent-command " + lua, timeout=120)
 
 if r and r.startswith("{"):
     data = json.loads(r)

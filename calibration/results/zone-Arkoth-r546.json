@@ -1,0 +1,47 @@
+{
+  "zone": "Arkoth",
+  "universe_seed": 8242,
+  "surface_seed": 3884891189,
+  "radius": 546,
+  "total_tiles": 1192464,
+  "water_tiles": 25016,
+  "land_tiles": 1167448,
+  "resources": {
+    "se-iridium-ore": {
+      "total": 2866364,
+      "patches": 1124
+    },
+    "copper-ore": {
+      "total": 53143,
+      "patches": 250
+    },
+    "kr-mineral-water": {
+      "total": 179253,
+      "patches": 1
+    },
+    "coal": {
+      "total": 65121814,
+      "patches": 6843
+    },
+    "kr-rare-metal-ore": {
+      "total": 3313932,
+      "patches": 1200
+    },
+    "stone": {
+      "total": 6168752,
+      "patches": 2172
+    },
+    "iron-ore": {
+      "total": 11034640,
+      "patches": 2796
+    },
+    "crude-oil": {
+      "total": 213409,
+      "patches": 2
+    },
+    "kr-imersite": {
+      "total": 3955306,
+      "patches": 11
+    }
+  }
+}

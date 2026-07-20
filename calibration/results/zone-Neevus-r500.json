@@ -1,0 +1,47 @@
+{
+  "zone": "Neevus",
+  "universe_seed": 8242,
+  "surface_seed": 127807078,
+  "radius": 500,
+  "total_tiles": 1000000,
+  "water_tiles": 54550,
+  "land_tiles": 945450,
+  "resources": {
+    "iron-ore": {
+      "total": 5921900,
+      "patches": 2220
+    },
+    "kr-mineral-water": {
+      "total": 1346580,
+      "patches": 8
+    },
+    "crude-oil": {
+      "total": 1742369,
+      "patches": 15
+    },
+    "kr-rare-metal-ore": {
+      "total": 1070941,
+      "patches": 646
+    },
+    "copper-ore": {
+      "total": 378791,
+      "patches": 827
+    },
+    "coal": {
+      "total": 49968185,
+      "patches": 4944
+    },
+    "stone": {
+      "total": 781145,
+      "patches": 830
+    },
+    "se-holmium-ore": {
+      "total": 346170,
+      "patches": 521
+    },
+    "kr-imersite": {
+      "total": 64323,
+      "patches": 1
+    }
+  }
+}
