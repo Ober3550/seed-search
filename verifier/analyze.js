@@ -181,7 +181,7 @@ function evalPairs(seedOld) {
         { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
-        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
+        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"], primary: "kr-rare-metal-ore" },
     ];
 
     const bodies = viableBodies(seedOld);
@@ -189,7 +189,13 @@ function evalPairs(seedOld) {
     for (const c of combos) {
         const match = bodies.find(b => {
             const rs = b.resource || {};
-            return c.want.every(r => (rs[r] || 0) > 0);
+            if (!c.want.every(r => (rs[r] || 0) > 0)) return false;
+            // If primary is specified, ensure it's the highest-scoring resource
+            if (c.primary) {
+                const sorted = Object.keys(rs).sort((a,b) => rs[b] - rs[a]);
+                if (sorted[0] !== c.primary) return false;
+            }
+            return true;
         });
         if (match) results.push({ ...c, body: match });
     }
