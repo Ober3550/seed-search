@@ -173,20 +173,35 @@ function evalCore(seedOld) {
     return false;
 }
 
-function evalCombined(seedOld) {
-    // Bodies with 2+ special resources as primary
+function evalPairs(seedOld) {
+    // Production-chain-aware resource pairings.
+    // Each combo can be on the same body (ideal) or different bodies (good).
+    const combos = [
+        { name: "vulc+irid", want: ["se-vulcanite", "se-iridium-ore"] },
+        { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
+        { name: "holm", want: ["se-holmium-ore"] },
+        { name: "vita+stone", want: ["se-vitamelange", "stone"] },
+        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
+    ];
+
     const bodies = viableBodies(seedOld);
-    const combined = bodies.filter(b => {
-        const r = resourcesArray(b.resource);
-        const specials = r.filter(x => SPECIAL.includes(noColor(x))).length;
-        return specials >= 2;
-    });
-    if (combined.length > 0) {
-        console.log(`\n=== COMBINED: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
-        for (const b of combined) {
-            const r = resourcesArray(b.resource);
-            const specials = r.filter(x => SPECIAL.includes(noColor(x)));
-            console.log(`  ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}: ${specials.map(rename).join(" + ")}`);
+    const results = [];
+    for (const c of combos) {
+        const match = bodies.find(b => {
+            const rs = b.resource || {};
+            return c.want.every(r => (rs[r] || 0) > 0);
+        });
+        if (match) results.push({ ...c, body: match });
+    }
+
+    // Only show seeds with all combos found
+    if (results.length >= combos.length) {
+        console.log(`\n=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        for (const r of results) {
+            const b = r.body;
+            const scores = {};
+            r.want.forEach(w => scores[rename(w)] = ((b.resource||{})[w]||0).toFixed(4));
+            console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}  ${JSON.stringify(scores)}`);
         }
         console.log();
         return true;
@@ -197,7 +212,7 @@ function evalCombined(seedOld) {
 // ── main ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
-const mode = args.includes("--core") ? "core" : args.includes("--combined") ? "combined" : "show";
+const mode = args.includes("--core") ? "core" : args.includes("--pairs") ? "pairs" : "show";
 const allMode = args.includes("--all");
 const files = args.filter(a => !a.startsWith("--"));
 
@@ -227,7 +242,7 @@ for (const fname of fnames) {
             const loot = old.loot.join("");
             if (!allMode && !loot.match(/^PPSS/)) continue;
             if (mode === "core" && evalCore(old)) matched++;
-            else if (mode === "combined" && evalCombined(old)) matched++;
+            else if (mode === "pairs" && evalPairs(old)) matched++;
             else if (mode === "show" && evalSeed(old)) matched++;
         } catch (e) {}
     }
