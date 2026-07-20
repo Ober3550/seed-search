@@ -199,9 +199,8 @@ function evalPairs(seedOld) {
         console.log(`\n=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
         for (const r of results) {
             const b = r.body;
-            const scores = {};
-            r.want.forEach(w => scores[rename(w)] = ((b.resource||{})[w]||0).toFixed(4));
-            console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}  ${JSON.stringify(scores)}`);
+            const parts = r.want.map(w => `${rename(w)}:${((b.resource||{})[w]||0).toFixed(4)}`);
+            console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}  ${parts.join(" ")}`);
         }
         console.log();
         return true;
