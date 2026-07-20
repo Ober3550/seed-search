@@ -77,7 +77,7 @@ const COLOR = {
 
 const nameMap = {
     "iron-ore": "iron", "copper-ore": "copper", "crude-oil": "oil",
-    "uranium-ore": "uranium", "stone": "stone", "coal": "coal",
+    "uranium-ore": "uranium", "stone": `\x1b[37mstone\x1b[0m`, "coal": "coal",
     "se-cryonite": `${COLOR.BLUE}cryonite${COLOR.RESET}`,
     "se-vulcanite": `${COLOR.RED}vulcanite${COLOR.RESET}`,
     "se-vitamelange": `${COLOR.GREEN}vitamelange${COLOR.RESET}`,
