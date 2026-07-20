@@ -181,6 +181,7 @@ pub fn main(init: std.process.Init) !void {
                 const primary = primaries.get(z.name);
                 if (primary) |prim| {
                     const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
+                    // Output yield estimates
                     var first = true;
                     for (gen.resource_order, 0..) |rname, ri| {
                         const y = gen.computeYield(scores[ri], false, z.radius, tags.water);
@@ -196,6 +197,26 @@ pub fn main(init: std.process.Init) !void {
                             var ybuf: [16]u8 = undefined;
                             const ys = gen.formatYield(y, &ybuf);
                             const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
+                            pos += rp.len;
+                        }
+                    }
+                    if (!first) {
+                        buf[pos] = '}';
+                        pos += 1;
+                    }
+                    // Also output normalized scores for ranking
+                    first = true;
+                    for (gen.resource_order, 0..) |rname, ri| {
+                        if (scores[ri] > 0.0001) {
+                            if (first) {
+                                const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                                pos += p.len;
+                                first = false;
+                            } else {
+                                buf[pos] = ',';
+                                pos += 1;
+                            }
+                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{ rname, scores[ri] }) catch unreachable;
                             pos += rp.len;
                         }
                     }
