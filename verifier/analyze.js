@@ -196,10 +196,14 @@ function evalPairs(seedOld) {
 
     // Only show seeds with all combos found
     if (results.length >= combos.length) {
+        // Sort by delta-v (closest first)
+        results.sort((a, b) => a.body.delta_v - b.body.delta_v);
         console.log(`\n=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
         for (const r of results) {
             const b = r.body;
-            const parts = r.want.map(w => `${rename(w)}:${((b.resource||{})[w]||0).toFixed(4)}`);
+            // Sort resources by score (highest first)
+            const parts = [...r.want].sort((a, b2) => (b.resource[b2]||0) - (b.resource[a]||0))
+                .map(w => `${rename(w)}:${((b.resource||{})[w]||0).toFixed(4)}`);
             console.log(`  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius}  ${parts.join(" ")}`);
         }
         console.log();
