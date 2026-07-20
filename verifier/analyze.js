@@ -84,9 +84,8 @@ const nameMap = {
     "se-iridium-ore": `${COLOR.YELLOW}iridium${COLOR.RESET}`,
     "se-holmium-ore": `${COLOR.MAGENTA}holmium${COLOR.RESET}`,
     "se-beryllium-ore": `${COLOR.CYAN}beryl${COLOR.RESET}`,
-    "kr-imersite": `imersite`,
-    "kr-rare-metal-ore": `rare-metal`,
-    "kr-mineral-water": `mineral-water`,
+    "kr-imersite": `${COLOR.MAGENTA}imersite${COLOR.RESET}`,
+    "kr-mineral-water": `${COLOR.BLUE}mineral-water${COLOR.RESET}`,
 };
 function rename(n) { return nameMap[n] || n; }
 function noColor(s) { return s.replace(/\x1b\[[0-9;]*m/g, ""); }
