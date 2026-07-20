@@ -166,7 +166,7 @@ function evalCore(seedOld) {
         }
     }
     if (covered.size >= SPECIAL.length) {
-        console.log(`=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        console.log(`\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
         console.log(`  All ${SPECIAL.length} specials at 1.0 across ${bodies.length} viable bodies`);
         for (const res of SPECIAL) {
             const b = bodies.find(x => (x.resource||{})[res] >= 0.9999);
@@ -174,6 +174,15 @@ function evalCore(seedOld) {
                 const e = (b.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
                 const w = (b.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (b.tags.water || "").replace("water_", "");
                 console.log(`    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}`);
+            }
+        }
+        // Bonus: best imersite and rare metal bodies
+        for (const extra of ["kr-imersite", "kr-rare-metal-ore"]) {
+            const best = bodies.filter(x => (x.resource||{})[extra] >= 0.9999).sort((a,b) => a.delta_v - b.delta_v)[0];
+            if (best) {
+                const e = (best.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
+                const w = (best.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (best.tags.water || "").replace("water_", "");
+                console.log(`    ${rename(extra)}: ${best.name} (${best.zone_type[0]}) dv=${best.delta_v} r=${best.radius} e=${e} w=${w}`);
             }
         }
         console.log();
