@@ -202,6 +202,14 @@ function primaryResource(s) {
   return r.length > 0 ? noColor(r[0]) : null;
 }
 
+function bestNaqField(seedOld) {
+  const fields = (seedOld.fields || []).filter(
+    (f) => (f.resource["se-naquium-ore"] || 0) > 0 && (f.delta_v || 0) > 0,
+  );
+  fields.sort((a, b) => a.delta_v - b.delta_v);
+  return fields[0] || null;
+}
+
 function evalCore(seedOld) {
   // Seed has every special resource at score >= 1.0 on some viable body
   const bodies = viableBodies(seedOld);
@@ -256,6 +264,12 @@ function evalCore(seedOld) {
           `    ${rename(extra)}: ${best.name} (${best.zone_type[0]}) dv=${best.delta_v} r=${best.radius} e=${e} w=${w} (${score})`,
         );
       }
+    }
+    // Naquium field
+    const nf = bestNaqField(seedOld);
+    if (nf) {
+      const naq = (nf.resource["se-naquium-ore"] || 0).toFixed(4);
+      console.log(`    naq: ${nf.name} dv=${nf.delta_v} (${naq})`);
     }
     console.log();
     return true;
@@ -320,6 +334,12 @@ function evalPairs(seedOld) {
       console.log(
         `  ${r.name}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${enemy} w=${water}  ${parts.join(" ")}`,
       );
+    }
+    // Naquium field
+    const nf = bestNaqField(seedOld);
+    if (nf) {
+      const naq = (nf.resource["se-naquium-ore"] || 0).toFixed(4);
+      console.log(`  naq: ${nf.name} dv=${nf.delta_v} (${naq})`);
     }
     console.log();
     return true;
