@@ -187,7 +187,7 @@ function evalPairs(seedOld) {
         { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
-        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
+        { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
     ];
 
     const bodies = viableBodies(seedOld);
