@@ -133,7 +133,7 @@ const resourceNames = {
 
 // ── evaluation modes ────────────────────────────────────────────────
 
-const SPECIAL = ["se-vulcanite", "se-cryonite", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore", "se-vitamelange"];
+const SPECIAL = ["se-vulcanite", "se-cryonite", "se-holmium-ore", "se-beryllium-ore", "se-iridium-ore", "se-vitamelange", "kr-rare-metal-ore"];
 
 function viableBodies(seedOld) {
     const planets = seedOld.planets.sort((a, b) => a.delta_v - b.delta_v);
