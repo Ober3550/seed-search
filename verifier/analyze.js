@@ -190,7 +190,10 @@ function evalPairs(seedOld) {
         { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
     ];
 
-    const bodies = viableBodies(seedOld);
+    const bodies = viableBodies(seedOld).filter(b => {
+        const e = b.tags.enemy || "enemy_none";
+        return e !== "enemy_very_high" && e !== "enemy_max";
+    });
     const results = [];
     for (const c of combos) {
         const match = bodies.find(b => {
