@@ -163,7 +163,7 @@ function evalCore(seedOld) {
         }
     }
     if (covered.size >= SPECIAL.length) {
-        console.log(`\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        console.log(`=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
         console.log(`  All ${SPECIAL.length} specials at 1.0 across ${bodies.length} viable bodies`);
         for (const res of SPECIAL) {
             const b = bodies.find(x => (x.resource||{})[res] >= 0.9999);
@@ -210,7 +210,7 @@ function evalPairs(seedOld) {
     if (results.length >= combos.length) {
         // Sort by delta-v (closest first)
         results.sort((a, b) => a.body.delta_v - b.body.delta_v);
-        console.log(`\n=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
+        console.log(`=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
         for (const r of results) {
             const b = r.body;
             // Sort resources by score (highest first)
