@@ -1,0 +1,24 @@
+{
+  "width": 0,
+  "height": 0,
+  "starting_area": 1,
+  "peaceful_mode": true,
+  "autoplace_controls": {
+    "coal": { "frequency": "{{coal_freq}}", "size": "{{coal_size}}", "richness": "{{coal_rich}}" },
+    "stone": { "frequency": "{{stone_freq}}", "size": "{{stone_size}}", "richness": "{{stone_rich}}" },
+    "copper-ore": { "frequency": "{{copper_freq}}", "size": "{{copper_size}}", "richness": "{{copper_rich}}" },
+    "iron-ore": { "frequency": "{{iron_freq}}", "size": "{{iron_size}}", "richness": "{{iron_rich}}" },
+    "uranium-ore": { "frequency": "{{uranium_freq}}", "size": "{{uranium_size}}", "richness": "{{uranium_rich}}" },
+    "crude-oil": { "frequency": "{{oil_freq}}", "size": "{{oil_size}}", "richness": "{{oil_rich}}" },
+    "water": { "frequency": 1, "size": "{{water_scale}}" },
+    "trees": { "frequency": 1, "size": 1 },
+    "enemy-base": { "frequency": 0, "size": 0 }
+  },
+  "cliff_settings": { "name": "cliff", "cliff_elevation_0": 10, "cliff_elevation_interval": 40, "richness": 0 },
+  "property_expression_names": {
+    "control:moisture:frequency": "1",
+    "control:moisture:bias": "{{moisture_bias}}"
+  },
+  "starting_points": [{ "x": 0, "y": 0 }],
+  "seed": {{seed}}
+}
