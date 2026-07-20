@@ -72,6 +72,17 @@ pub const Water = enum(u3) {
             .med => "water_med", .high => "water_high", .max => "water_max",
         };
     }
+
+    /// Approximate fraction of surface that is land (not water).
+    pub fn landFraction(self: Water) f64 {
+        return switch (self) {
+            .none => 0.95,
+            .low => 0.75,
+            .med => 0.50,
+            .high => 0.25,
+            .max => 0.10,
+        };
+    }
 };
 
 pub const Moisture = enum(u3) {

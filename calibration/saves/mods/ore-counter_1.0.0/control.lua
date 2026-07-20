@@ -1,5 +1,5 @@
 -- Count resources and write JSON on startup
-local RADIUS = 500
+local RADIUS = 300
 script.on_event(defines.events.on_tick, function(event)
   if global and global.done then return end
   if game.tick < 120 then return end

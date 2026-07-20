@@ -309,6 +309,46 @@ const RESOURCE_POWER: f64 = 1.5;
 const RESOURCE_NORM_PLANET: f64 = 22.02730826300005162466;
 const RESOURCE_NORM_FIELD: f64 = 167.79554553234018499;
 
+/// Approximate asteroid field effective radius (from SE data: ~10000 width).
+const FIELD_EFFECTIVE_RADIUS: f64 = 5000.0;
+/// Asteroid tile coverage fraction (estimated: similar to planet water_none).
+const FIELD_LAND_FRACTION: f64 = 0.95;
+
+/// Compute estimated yield in millions for a resource score on a zone.
+/// Returns 0 if the yield is negligible.
+pub fn computeYield(score: f64, is_field: bool, radius: f64, water: ?data.Water) f64 {
+    const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
+    const raw_fsr = score * norm;
+
+    const area: f64 = if (is_field)
+        std.math.pi * FIELD_EFFECTIVE_RADIUS * FIELD_EFFECTIVE_RADIUS
+    else
+        std.math.pi * radius * radius;
+
+    const land_frac: f64 = if (is_field)
+        FIELD_LAND_FRACTION
+    else if (water) |w|
+        w.landFraction()
+    else
+        0.5;
+
+    // raw_fsr * area * land_frac gives total items
+    // Divide by 1e6 for "millions"
+    return raw_fsr * area * land_frac / 1_000_000.0;
+}
+
+/// Format yield as a human-readable string like "150M" or "2.3B".
+pub fn formatYield(yield_m: f64, buf: []u8) []const u8 {
+    if (yield_m < 0.5) return "0";
+    if (yield_m >= 1000.0) {
+        return std.fmt.bufPrint(buf, "{d:.1}B", .{yield_m / 1000.0}) catch "0";
+    }
+    if (yield_m >= 1.0) {
+        return std.fmt.bufPrint(buf, "{d:.0}M", .{@floor(yield_m)}) catch "0";
+    }
+    return std.fmt.bufPrint(buf, "{d:.1}M", .{yield_m}) catch "0";
+}
+
 /// Compute resource scores for a single planet or moon.
 /// primary_resource must be known (from prototype, special_type, or claiming).
 /// Returns scores indexed by resource_order (0..17). Score = FSR / norm.

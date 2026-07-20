@@ -3,8 +3,9 @@
 # Generates a Factorio surface, counts total ore, outputs JSON.
 # Uses Factorio headless server via Docker (amd64, Rosetta-emulated).
 #
-# Usage: ./run.sh <seed> <radius> <water>
+# Usage: ./run.sh <seed> <radius> <water> [freq] [size] [rich]
 #   water: none, low, med, high, max
+#   freq/size/rich: optional overrides for iron/copper/coal (default 1.0)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,9 +13,10 @@ RESULTS_DIR="$SCRIPT_DIR/results"
 SAVES_DIR="$SCRIPT_DIR/saves"
 mkdir -p "$RESULTS_DIR" "$SAVES_DIR"
 
-SEED="${1:?Usage: run.sh <seed> <radius> <water>}"
+SEED="${1:?Usage: run.sh <seed> <radius> <water> [freq] [size] [rich]}"
 RADIUS="${2:-2000}"
 WATER="${3:-med}"
+IRON_FREQ="${4:-1.0}"; IRON_SIZE="${5:-1.0}"; IRON_RICH="${6:-1.0}"
 
 case "$WATER" in
   none) MOISTURE_BIAS="1.0" ;;
@@ -31,13 +33,13 @@ echo "=== Calibration: seed=$SEED radius=$RADIUS water=$WATER ==="
 SETTINGS_FILE="$SAVES_DIR/map-gen-settings-$SEED.json"
 sed \
   -e "s/{{seed}}/$SEED/g" \
-  -e "s/{{coal_freq}}/1.0/g" -e "s/{{coal_size}}/1.0/g" -e "s/{{coal_rich}}/1.0/g" \
-  -e "s/{{stone_freq}}/1.0/g" -e "s/{{stone_size}}/1.0/g" -e "s/{{stone_rich}}/1.0/g" \
-  -e "s/{{copper_freq}}/1.0/g" -e "s/{{copper_size}}/1.0/g" -e "s/{{copper_rich}}/1.0/g" \
-  -e "s/{{iron_freq}}/1.0/g" -e "s/{{iron_size}}/1.0/g" -e "s/{{iron_rich}}/1.0/g" \
-  -e "s/{{uranium_freq}}/1.0/g" -e "s/{{uranium_size}}/1.0/g" -e "s/{{uranium_rich}}/1.0/g" \
-  -e "s/{{oil_freq}}/1.0/g" -e "s/{{oil_size}}/1.0/g" -e "s/{{oil_rich}}/1.0/g" \
-  -e "s/{{water_scale}}/1.0/g" -e "s/{{moisture_bias}}/$MOISTURE_BIAS/g" \
+  -e "s/{{coal_freq}}/$IRON_FREQ/g" -e "s/{{coal_size}}/$IRON_SIZE/g" -e "s/{{coal_rich}}/$IRON_RICH/g" \
+  -e "s/{{stone_freq}}/$IRON_FREQ/g" -e "s/{{stone_size}}/$IRON_SIZE/g" -e "s/{{stone_rich}}/$IRON_RICH/g" \
+  -e "s/{{copper_freq}}/$IRON_FREQ/g" -e "s/{{copper_size}}/$IRON_SIZE/g" -e "s/{{copper_rich}}/$IRON_RICH/g" \
+  -e "s/{{iron_freq}}/$IRON_FREQ/g" -e "s/{{iron_size}}/$IRON_SIZE/g" -e "s/{{iron_rich}}/$IRON_RICH/g" \
+  -e "s/{{uranium_freq}}/0.0/g" -e "s/{{uranium_size}}/0.0/g" -e "s/{{uranium_rich}}/0.0/g" \
+  -e "s/{{oil_freq}}/0.0/g" -e "s/{{oil_size}}/0.0/g" -e "s/{{oil_rich}}/0.0/g" \
+  -e "s/{{water_scale}}/0.0/g" -e "s/{{moisture_bias}}/$MOISTURE_BIAS/g" \
   "$SCRIPT_DIR/map-gen-settings.template.json" > "$SETTINGS_FILE"
 
 # ── Create save file ──
@@ -170,7 +172,7 @@ docker run --rm \
   --name factorio-calib \
   -v "$RESULTS_DIR:/factorio/script-output" \
   "$IMAGE_TAG" \
-  2>&1 | tee "$RESULTS_DIR/server-$SEED.log" &
+  2>&1 | tee "$RESULTS_DIR/server-$SEED.log" > /dev/null &
 
 SERVER_PID=$!
 

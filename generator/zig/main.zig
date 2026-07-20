@@ -183,16 +183,19 @@ pub fn main(init: std.process.Init) !void {
                     const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
                     var first = true;
                     for (gen.resource_order, 0..) |rname, ri| {
-                        if (scores[ri] > 0.0001) {
+                        const y = gen.computeYield(scores[ri], false, z.radius, tags.water);
+                        if (y >= 0.5) {
                             if (first) {
-                                const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                                const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
                                 pos += p.len;
                                 first = false;
                             } else {
                                 buf[pos] = ',';
                                 pos += 1;
                             }
-                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{ rname, scores[ri] }) catch unreachable;
+                            var ybuf: [16]u8 = undefined;
+                            const ys = gen.formatYield(y, &ybuf);
+                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
                             pos += rp.len;
                         }
                     }
@@ -200,6 +203,9 @@ pub fn main(init: std.process.Init) !void {
                         buf[pos] = '}';
                         pos += 1;
                     }
+                    // Output primary resource
+                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim}) catch unreachable;
+                    pos += pp.len;
                 }
                 if (nauvis_sgw > 0 and z.star_gravity_well > 0 and z.planet_gravity_well > 0) {
                     const dv_raw: f64 = if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
@@ -216,16 +222,19 @@ pub fn main(init: std.process.Init) !void {
                 const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
                 var first = true;
                 for (gen.resource_order, 0..) |rname, ri| {
-                    if (scores[ri] > 0.0001) {
+                    const y = gen.computeYield(scores[ri], true, 0, null);
+                    if (y >= 0.5) {
                         if (first) {
-                            const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                            const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
                             pos += p.len;
                             first = false;
                         } else {
                             buf[pos] = ',';
                             pos += 1;
                         }
-                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{ rname, scores[ri] }) catch unreachable;
+                        var ybuf: [16]u8 = undefined;
+                        const ys = gen.formatYield(y, &ybuf);
+                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
                         pos += rp.len;
                     }
                 }
@@ -259,16 +268,20 @@ pub fn main(init: std.process.Init) !void {
                 const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
                 var fr: bool = true;
                 for (gen.resource_order, 0..) |rname, ri| {
-                    if (scores[ri] > 0.0001) {
+                    const is_field = z.ztype == .@"asteroid-field";
+                    const y = gen.computeYield(scores[ri], is_field, z.radius, null);
+                    if (y >= 0.5) {
                         if (fr) {
-                            const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
+                            const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
                             pos += p.len;
                             fr = false;
                         } else {
                             buf[pos] = ',';
                             pos += 1;
                         }
-                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{ rname, scores[ri] }) catch unreachable;
+                        var ybuf: [16]u8 = undefined;
+                        const ys = gen.formatYield(y, &ybuf);
+                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
                         pos += rp.len;
                     }
                 }

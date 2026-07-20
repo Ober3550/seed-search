@@ -12,6 +12,15 @@ const readline = require("readline");
 
 // ── new → old format converter ──────────────────────────────────────
 
+// Parse yield string ("150M", "2.3B") to numeric millions
+function parseYield(y) {
+  if (typeof y === "number") return y;
+  if (y === "0" || !y) return 0;
+  if (y.endsWith("B")) return parseFloat(y) * 1000;
+  if (y.endsWith("M")) return parseFloat(y);
+  return parseFloat(y) || 0;
+}
+
 function convertNewToOld(seed, calidusOnly) {
   const zones = seed.z || [];
   const out = {
@@ -47,7 +56,14 @@ function convertNewToOld(seed, calidusOnly) {
       zone_type: [t],
       delta_v: z.dv || 0,
       radius: z.r || 0,
-      resource: z.rs || {},
+      resource: z.y
+        ? Object.fromEntries(
+            Object.entries(z.y).map(function (kv) {
+              return [kv[0], parseYield(kv[1])];
+            }),
+          )
+        : z.rs || {},
+      primary: z.p || null,
       tags: {},
     };
     if (z.g) entry.tags.temperature = z.g;
@@ -202,6 +218,21 @@ function primaryResource(s) {
   return r.length > 0 ? noColor(r[0]) : null;
 }
 
+function formatVal(v) {
+  if (v >= 1000) return (v / 1000).toFixed(1) + "B";
+  if (v >= 1) return Math.round(v) + "M";
+  if (v > 0) return v.toFixed(4);
+  return "0";
+}
+
+function isPrimaryResource(body, res) {
+  // Check the primary field first (new format)
+  if (body.primary) return body.primary === res;
+  // Fallback: check normalized scores (old format)
+  const rs = body.resource || {};
+  return (rs[res] || 0) >= 0.9999;
+}
+
 function bestNaqField(seedOld) {
   const fields = (seedOld.fields || []).filter(
     (f) =>
@@ -218,9 +249,8 @@ function evalCore(seedOld) {
   const bodies = viableBodies(seedOld);
   const covered = new Set();
   for (const b of bodies) {
-    const rs = b.resource || {};
     for (const r of SPECIAL) {
-      if ((rs[r] || 0) >= 0.9999) covered.add(r);
+      if (isPrimaryResource(b, r)) covered.add(r);
     }
   }
   if (covered.size >= SPECIAL.length) {
@@ -228,10 +258,10 @@ function evalCore(seedOld) {
       `\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`,
     );
     console.log(
-      `  All ${SPECIAL.length} specials at 1.0 across ${bodies.length} viable bodies`,
+      `  All ${SPECIAL.length} specials as primary across ${bodies.length} viable bodies`,
     );
     for (const res of SPECIAL) {
-      const b = bodies.find((x) => (x.resource || {})[res] >= 0.9999);
+      const b = bodies.find((x) => isPrimaryResource(x, res));
       if (b) {
         const e = (b.tags.enemy || "enemy_none")
           .replace("enemy_", "")
@@ -262,7 +292,7 @@ function evalCore(seedOld) {
           (best.tags.water || "water_none").replace("water_", "") === "none"
             ? "dry"
             : (best.tags.water || "").replace("water_", "");
-        const score = (best.resource || {})[extra].toFixed(4);
+        const score = formatVal((best.resource || {})[extra]);
         console.log(
           `    ${rename(extra)}: ${best.name} (${best.zone_type[0]}) dv=${best.delta_v} r=${best.radius} e=${e} w=${w} (${score})`,
         );
@@ -271,7 +301,7 @@ function evalCore(seedOld) {
     // Naquium field
     const nf = bestNaqField(seedOld);
     if (nf) {
-      const naq = (nf.resource["se-naquium-ore"] || 0).toFixed(4);
+      const naq = formatVal(nf.resource["se-naquium-ore"] || 0);
       console.log(`    naq: ${nf.name} dv=${nf.delta_v} (${naq})`);
     }
     console.log();
@@ -297,11 +327,12 @@ function evalPairs(seedOld) {
   const bodies = viableBodies(seedOld);
   const results = [];
   for (const c of combos) {
-    // First try: find body where the primary resource is at 1.0
+    // First try: find body where the first resource is primary
     let match = bodies.find((b) => {
       const rs = b.resource || {};
       return (
-        (rs[c.want[0]] || 0) >= 0.9999 && c.want.every((r) => (rs[r] || 0) > 0)
+        isPrimaryResource(b, c.want[0]) &&
+        c.want.every((r) => (rs[r] || 0) > 0)
       );
     });
     // Fallback: any body with all resources present
@@ -326,7 +357,7 @@ function evalPairs(seedOld) {
       // Sort resources by score (highest first)
       const parts = [...r.want]
         .sort((a, b2) => (b.resource[b2] || 0) - (b.resource[a] || 0))
-        .map((w) => `${rename(w)}:${((b.resource || {})[w] || 0).toFixed(4)}`);
+        .map((w) => `${rename(w)}:${formatVal((b.resource || {})[w] || 0)}`);
       const enemy = (b.tags.enemy || "enemy_none")
         .replace("enemy_", "")
         .replace("very_", "v");
@@ -341,7 +372,7 @@ function evalPairs(seedOld) {
     // Naquium field
     const nf = bestNaqField(seedOld);
     if (nf) {
-      const naq = (nf.resource["se-naquium-ore"] || 0).toFixed(4);
+      const naq = formatVal(nf.resource["se-naquium-ore"] || 0);
       console.log(`  naq: ${nf.name} dv=${nf.delta_v} (${naq})`);
     }
     console.log();
