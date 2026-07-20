@@ -153,18 +153,20 @@ function primaryResource(s) {
 }
 
 function evalCore(seedOld) {
-    // Seed has every special resource as primary on some viable body
+    // Seed has every special resource at score >= 1.0 on some viable body
     const bodies = viableBodies(seedOld);
     const covered = new Set();
     for (const b of bodies) {
-        const p = primaryResource(b);
-        if (p && SPECIAL.includes(p)) covered.add(p);
+        const rs = b.resource || {};
+        for (const r of SPECIAL) {
+            if ((rs[r] || 0) >= 0.9999) covered.add(r);
+        }
     }
-    if (covered.size >= 6) {
+    if (covered.size >= SPECIAL.length) {
         console.log(`\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`);
-        console.log(`  All 6 specials covered across ${bodies.length} viable bodies`);
+        console.log(`  All ${SPECIAL.length} specials at 1.0 across ${bodies.length} viable bodies`);
         for (const res of SPECIAL) {
-            const b = bodies.find(x => primaryResource(x) === res);
+            const b = bodies.find(x => (x.resource||{})[res] >= 0.9999);
             if (b) {
                 const e = (b.tags.enemy || "enemy_none").replace("enemy_", "").replace("very_", "v");
                 const w = (b.tags.water || "water_none").replace("water_", "") === "none" ? "dry" : (b.tags.water || "").replace("water_", "");
@@ -185,7 +187,7 @@ function evalPairs(seedOld) {
         { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
-        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"], primary: "kr-rare-metal-ore" },
+        { name: "K2:rare+H2O", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
     ];
 
     const bodies = viableBodies(seedOld);
