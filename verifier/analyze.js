@@ -141,9 +141,12 @@ function viableBodies(seedOld) {
     const bodies = [...planets, ...moons].sort((a, b) => a.delta_v - b.delta_v);
     return bodies.filter(s => {
         const r = resourcesArray(s.resource);
+        const enemy = s.tags.enemy || "enemy_none";
         return s.tags.water !== "water_none"
             && resourceNames[noColor(r[0])]
-            && s.radius > 2000;
+            && s.radius > 2000
+            && enemy !== "enemy_very_high"
+            && enemy !== "enemy_max";
     });
 }
 
@@ -184,17 +187,14 @@ function evalPairs(seedOld) {
     // Each combo can be on the same body (ideal) or different bodies (good).
     const combos = [
         { name: "vulc+irid", want: ["se-vulcanite", "se-iridium-ore"] },
-        { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
+        { name: "beryl+cryo", want: ["se-cryonite", "se-beryllium-ore"] },
         { name: "holm", want: ["se-holmium-ore"] },
         { name: "vita+stone", want: ["se-vitamelange", "stone"] },
         { name: "K2:rare+h2o", want: ["kr-rare-metal-ore", "kr-mineral-water"] },
         { name: "K2:imer", want: ["kr-imersite"] },
     ];
 
-    const bodies = viableBodies(seedOld).filter(b => {
-        const e = b.tags.enemy || "enemy_none";
-        return e !== "enemy_very_high" && e !== "enemy_max";
-    });
+    const bodies = viableBodies(seedOld);
     const results = [];
     for (const c of combos) {
         // First try: find body where the primary resource is at 1.0
