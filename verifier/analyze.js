@@ -66,13 +66,13 @@ function convertNewToOld(seed, calidusOnly) {
       primary: z.p || null,
       tags: {},
     };
-    if (z.g) entry.tags.temperature = z.g;
-    if (z.w) entry.tags.water = z.w;
-    if (z.m) entry.tags.moisture = z.m;
-    if (z.tr) entry.tags.trees = z.tr;
-    if (z.a) entry.tags.aux = z.a;
-    if (z.c) entry.tags.cliff = z.c;
-    if (z.e) entry.tags.enemy = z.e;
+    if (z.temperature) entry.tags.temperature = "temperature_" + z.temperature;
+    if (z.water) entry.tags.water = "water_" + z.water;
+    if (z.moisture) entry.tags.moisture = "moisture_" + z.moisture;
+    if (z.trees) entry.tags.trees = "trees_" + z.trees;
+    if (z.aux) entry.tags.aux = "aux_" + z.aux;
+    if (z.cliff) entry.tags.cliff = "cliff_" + z.cliff;
+    if (z.enemy) entry.tags.enemy = "enemy_" + z.enemy;
 
     if (t === "planet") out.planets.push(entry);
     else if (t === "moon") out.moons.push(entry);

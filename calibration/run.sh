@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
 # calibration/run.sh
 # Generates a Factorio surface, counts total ore, outputs JSON.
-# Uses Factorio headless server via Docker (amd64, Rosetta-emulated).
+# Always includes Space Exploration mod. Optionally includes K2.
 #
-# Usage: ./run.sh <seed> <radius> <water> [freq] [size] [rich]
+# Usage: ./run.sh <seed> <radius> <water> [freq] [size] [rich] [--k2]
 #   water: none, low, med, high, max
-#   freq/size/rich: optional overrides for iron/copper/coal (default 1.0)
+#   freq/size/rich: optional overrides (default 1.0)
+#   --k2: also include Krastorio 2 mod (requires mod zip)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RESULTS_DIR="$SCRIPT_DIR/results"
 SAVES_DIR="$SCRIPT_DIR/saves"
 mkdir -p "$RESULTS_DIR" "$SAVES_DIR"
 
-SEED="${1:?Usage: run.sh <seed> <radius> <water> [freq] [size] [rich]}"
+SEED="${1:?Usage: run.sh <seed> <radius> <water> [freq] [size] [rich] [--k2]}"
 RADIUS="${2:-2000}"
 WATER="${3:-med}"
 IRON_FREQ="${4:-1.0}"; IRON_SIZE="${5:-1.0}"; IRON_RICH="${6:-1.0}"
+
+# Parse --k2 flag
+K2_ENABLED=false
+for arg in "$@"; do
+  if [ "$arg" = "--k2" ]; then K2_ENABLED=true; fi
+done
 
 case "$WATER" in
   none) MOISTURE_BIAS="1.0" ;;
@@ -59,7 +67,8 @@ if [ ! -f "$SAVE_FILE" ]; then
   exit 1
 fi
 
-# ── Prepare mod ──
+# ── Prepare mods ──
+# Always include ore-counter + Space Exploration
 MOD_DIR="$SAVES_DIR/mods/ore-counter_1.0.0"
 mkdir -p "$MOD_DIR"
 cat > "$MOD_DIR/info.json" << 'JSON'
@@ -69,9 +78,27 @@ cat > "$MOD_DIR/info.json" << 'JSON'
   "title": "Ore Counter",
   "author": "calibration",
   "factorio_version": "2.0",
-  "dependencies": ["base >= 2.0"]
+  "dependencies": ["base >= 2.0", "space-exploration >= 0.7.0"]
 }
 JSON
+
+# Always bundle SE mod
+SE_MOD_ZIP="$PROJECT_DIR/runner/mods/space-exploration_0.7.57.zip"
+if [ -f "$SE_MOD_ZIP" ]; then
+  SE_MOD_DIR="$SAVES_DIR/mods/space-exploration_0.7.57"
+  rm -rf "$SE_MOD_DIR"
+  mkdir -p "$SE_MOD_DIR"
+  unzip -q -o "$SE_MOD_ZIP" -d "$SE_MOD_DIR"
+  echo "[$(date +%H:%M:%S)] SE mod bundled"
+else
+  echo "ERROR: SE mod not found at $SE_MOD_ZIP"
+  exit 1
+fi
+
+# Optionally bundle K2 mod
+if $K2_ENABLED; then
+  echo "WARNING: K2 mod not yet available - skipping"
+fi
 
 cat > "$MOD_DIR/control.lua" << LUA
 -- Count resources and write JSON on startup
@@ -100,6 +127,10 @@ script.on_event(defines.events.on_tick, function(event)
   local result = {
     seed = surface.map_gen_settings.seed,
     radius = RADIUS,
+    water = "${WATER}",
+    freq = ${IRON_FREQ},
+    size = ${IRON_SIZE},
+    rich = ${IRON_RICH},
     total_tiles = total_tiles,
     water_tiles = water_tiles,
     land_tiles = land_tiles,
@@ -195,25 +226,28 @@ wait $SERVER_PID 2>/dev/null || true
 docker rmi "$IMAGE_TAG" 2>/dev/null || true
 
 # ── Parse results ──
-# Try script-output file first, then fall back to log parsing
+# Save with FSR info in filename
+FSR_TAG="f${IRON_FREQ}-s${IRON_SIZE}-r${IRON_RICH}"
+SAVE_AS="$RESULTS_DIR/seed-${SEED}-r${RADIUS}-${FSR_TAG}.json"
+
 RESULT_FILE="$RESULTS_DIR/ore-count-$RADIUS.json"
 if [ -f "$RESULT_FILE" ]; then
   echo ""
-  echo "=== RESULTS: seed=$SEED radius=$RADIUS water=$WATER ==="
+  echo "=== RESULTS: seed=$SEED radius=$RADIUS water=$WATER freq=$IRON_FREQ size=$IRON_SIZE rich=$IRON_RICH ==="
   python3 -m json.tool "$RESULT_FILE" 2>/dev/null || cat "$RESULT_FILE"
-  cp "$RESULT_FILE" "$RESULTS_DIR/seed-$SEED.json"
+  cp "$RESULT_FILE" "$SAVE_AS"
   echo ""
-  echo "Saved to $RESULTS_DIR/seed-$SEED.json"
+  echo "Saved to $SAVE_AS"
 else
   # Fallback: parse from log
   RESULT_LINE=$(grep "ORE_COUNT_DONE:" "$RESULTS_DIR/server-$SEED.log" | head -1)
   if [ -n "$RESULT_LINE" ]; then
     echo ""
-    echo "=== RESULTS: seed=$SEED radius=$RADIUS water=$WATER ==="
+    echo "=== RESULTS: seed=$SEED radius=$RADIUS water=$WATER freq=$IRON_FREQ size=$IRON_SIZE rich=$IRON_RICH ==="
     echo "$RESULT_LINE" | sed 's/.*ORE_COUNT_DONE: //' | python3 -m json.tool
-    echo "$RESULT_LINE" | sed 's/.*ORE_COUNT_DONE: //' > "$RESULTS_DIR/seed-$SEED.json"
+    echo "$RESULT_LINE" | sed 's/.*ORE_COUNT_DONE: //' > "$SAVE_AS"
     echo ""
-    echo "Saved to $RESULTS_DIR/seed-$SEED.json"
+    echo "Saved to $SAVE_AS"
   else
     echo "ERROR: No results file. Server log tail:"
     tail -30 "$RESULTS_DIR/server-$SEED.log"

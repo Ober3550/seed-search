@@ -136,6 +136,12 @@ pub fn main(init: std.process.Init) !void {
         }
         var zi: u32 = 0;
         for (universe.zones.items[calidus_zi..zone_end]) |z| {
+            // Nauvis uses map-gen UI settings, not universe generation
+            if (std.mem.eql(u8, z.name, "Nauvis")) continue;
+            // Orbits carry no resource data
+            if (z.ztype == .orbit) continue;
+            // Stars carry no resource data
+            if (z.ztype == .star) continue;
             if (zi > 0) {
                 buf[pos] = ',';
                 pos += 1;
@@ -151,31 +157,31 @@ pub fn main(init: std.process.Init) !void {
             if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
                 const tags = gen.computeTags(z.seed, z.name, bodyMap);
                 if (tags.temperature) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"g\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"temperature\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.water) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"w\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"water\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.moisture) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"m\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"moisture\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.trees) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"tr\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"trees\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.aux) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"a\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"aux\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.cliff) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"c\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"cliff\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 if (tags.enemy) |v| {
-                    const t = std.fmt.bufPrint(buf[pos..], ",\"e\":\"{s}\"", .{v.tagStr()}) catch unreachable;
+                    const t = std.fmt.bufPrint(buf[pos..], ",\"enemy\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
                 const primary = primaries.get(z.name);

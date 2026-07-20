@@ -20,3 +20,17 @@ __pycache__/
 tmp/
 seedgen
 generator/zig/seedgen.native
+node_modules/
+# Calibration artifacts
+calibration/seed-search.db
+calibration/results/seed-*.json
+calibration/saves/calib-*.zip
+calibration/saves/map-gen-settings-*.json
+calibration/saves/mods/
+calibration/saves/config/
+calibration/saves/docker-bundle/
+# Generated build artifacts
+generator/zig/seedgen
+generator/zig/seedgen2
+generator/zig/test_primaries
+calibration/calibrate-batch.sh

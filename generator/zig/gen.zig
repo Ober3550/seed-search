@@ -546,6 +546,41 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_re
     return scores;
 }
 
+const PrimaryCandidate = struct { ri: u32, name: []const u8, count: u32 };
+const ZoneBiasInfo = struct {
+    zi: usize,
+    tags: Tags,
+    biases: [18]f64,
+    assigned_primary: ?[]const u8,
+    assigned_special: bool,
+};
+
+/// Returns true if zone tags meet presence requirements for a special resource (strong claim).
+fn hasStrongClaim(ri: u32, tags: Tags) bool {
+    if (ri == @intFromEnum(data.Resource.se_cryonite)) {
+        return tags.temperature != null and
+            (tags.temperature.? == .extreme or tags.temperature.? == .cool or
+             tags.temperature.? == .cold or tags.temperature.? == .vcold or
+             tags.temperature.? == .frozen);
+    }
+    if (ri == @intFromEnum(data.Resource.se_vitamelange)) {
+        return tags.moisture != null and
+            (tags.moisture.? == .med or tags.moisture.? == .high or tags.moisture.? == .max);
+    }
+    if (ri == @intFromEnum(data.Resource.se_vulcanite)) {
+        return tags.temperature != null and
+            (tags.temperature.? == .extreme or tags.temperature.? == .warm or
+             tags.temperature.? == .hot or tags.temperature.? == .vhot or
+             tags.temperature.? == .volcanic);
+    }
+    if (ri == @intFromEnum(data.Resource.kr_mineral_water)) {
+        return tags.water != null and
+            (tags.water.? == .low or tags.water.? == .med or
+             tags.water.? == .high or tags.water.? == .max);
+    }
+    return false;
+}
+
 /// Resolve primary resources for all planet/moon zones.
 /// Returns a map from zone name to primary resource name.
 /// Handles prototype primary, special types, and the claiming algorithm.
@@ -572,85 +607,249 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
 pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMap: std.StringHashMapUnmanaged(data.Body)) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
 
-    // First pass: assign from prototype or special type
-    for (zones.items) |z| {
+    // ---- Phase 0: Gather zone info ----
+    var infos = ArrayList(ZoneBiasInfo).init(alloc);
+    defer infos.deinit();
+
+    for (zones.items, 0..) |z, zi| {
         if (z.ztype != .planet and z.ztype != .moon) continue;
 
-        var assigned: ?[]const u8 = null;
-        if (lookupBodyFast(bodyMap, z.name)) |p| {
-            if (p.primary_resource) |pr| assigned = pr;
-        }
-
-        // Hardcoded special types (TODO: track during generation)
-        if (assigned == null) {
-            if (std.mem.eql(u8, z.name, "Agni")) assigned = "se-vulcanite";
-            if (std.mem.eql(u8, z.name, "Koskomino")) assigned = "kr-imersite";
-            if (std.mem.eql(u8, z.name, "Buttercup")) assigned = "se-vitamelange";
-            if (std.mem.eql(u8, z.name, "Seker")) assigned = "se-iridium-ore";
-            if (std.mem.eql(u8, z.name, "Shu")) assigned = "se-holmium-ore";
-            if (std.mem.eql(u8, z.name, "Snowdrop")) assigned = "se-cryonite";
-            if (std.mem.eql(u8, z.name, "Erebus")) assigned = "crude-oil";
-            if (std.mem.eql(u8, z.name, "Nauvis")) assigned = "stone";
-        }
-
-        if (assigned) |a| {
-            try map.put(z.name, a);
-        }
-    }
-
-    // Second pass: uncontested strong claims
-    for (zones.items) |z| {
-        if (z.ztype != .planet and z.ztype != .moon) continue;
-        if (map.contains(z.name)) continue;
-
-        const ztags = computeTags(z.seed, z.name, bodyMap);
-        var match_count: u32 = 0;
-        var matched_resource: ?[]const u8 = null;
-
-        inline for (.{ @intFromEnum(data.Resource.se_cryonite), @intFromEnum(data.Resource.se_vitamelange), @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.kr_mineral_water) }) |ri| {
-            if (isPrimaryEligible(ri, ztags)) {
-                match_count += 1;
-                matched_resource = resource_order[ri];
-            }
-        }
-
-        if (match_count == 1) {
-            if (matched_resource) |rn| {
-                try map.put(z.name, rn);
-            }
-        }
-    }
-
-    // Third pass: greedy claiming for remaining unassigned zones
-    for (zones.items) |z| {
-        if (z.ztype != .planet and z.ztype != .moon) continue;
-        if (map.contains(z.name)) continue;
-
-        // Compute tags ONCE per zone (was inside the inner loop!)
-        const ztags = computeTags(z.seed, z.name, bodyMap);
-
+        const tags = computeTags(z.seed, z.name, bodyMap);
         var bias_rng = Rng.initFactorio(z.seed);
         var biases: [18]f64 = undefined;
-        var indices: [18]u32 = undefined;
-        for (0..18) |ri| { biases[ri] = bias_rng.float(); indices[ri] = @intCast(ri); }
-        var si: usize = 0;
-        while (si < 18) : (si += 1) {
-            var sj: usize = si + 1;
-            while (sj < 18) : (sj += 1) {
-                if (biases[indices[sj]] > biases[indices[si]]) {
-                    const t = indices[si]; indices[si] = indices[sj]; indices[sj] = t;
+        for (0..18) |ri| { biases[ri] = bias_rng.float(); }
+
+        var assigned_primary: ?[]const u8 = null;
+        var assigned_special = false;
+
+        if (std.mem.eql(u8, z.name, "Nauvis")) { assigned_primary = "stone"; }
+        if (assigned_primary == null) {
+            if (lookupBodyFast(bodyMap, z.name)) |p| {
+                if (p.primary_resource) |pr| assigned_primary = pr;
+            }
+        }
+        if (assigned_primary == null) {
+            if (std.mem.eql(u8, z.name, "Agni")) assigned_primary = "se-vulcanite";
+            if (std.mem.eql(u8, z.name, "Koskomino")) { assigned_primary = "kr-imersite"; assigned_special = true; }
+            if (std.mem.eql(u8, z.name, "Buttercup")) { assigned_primary = "se-vitamelange"; assigned_special = true; }
+            if (std.mem.eql(u8, z.name, "Seker")) { assigned_primary = "se-iridium-ore"; assigned_special = true; }
+            if (std.mem.eql(u8, z.name, "Shu")) { assigned_primary = "se-holmium-ore"; assigned_special = true; }
+            if (std.mem.eql(u8, z.name, "Snowdrop")) { assigned_primary = "se-cryonite"; assigned_special = true; }
+            if (std.mem.eql(u8, z.name, "Erebus")) assigned_primary = "crude-oil";
+        }
+
+        try infos.append(.{ .zi = zi, .tags = tags, .biases = biases,
+            .assigned_primary = assigned_primary, .assigned_special = assigned_special });
+    }
+
+    // ---- Phase 1: Quotas ----
+    const eligible_primaries = [_]u32{
+        @intFromEnum(data.Resource.iron_ore), @intFromEnum(data.Resource.copper_ore),
+        @intFromEnum(data.Resource.uranium_ore), @intFromEnum(data.Resource.coal),
+        @intFromEnum(data.Resource.crude_oil), @intFromEnum(data.Resource.stone),
+        @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.se_cryonite),
+        @intFromEnum(data.Resource.se_vitamelange), @intFromEnum(data.Resource.se_beryllium_ore),
+        @intFromEnum(data.Resource.se_iridium_ore), @intFromEnum(data.Resource.se_holmium_ore),
+        @intFromEnum(data.Resource.kr_imersite), @intFromEnum(data.Resource.kr_mineral_water),
+        @intFromEnum(data.Resource.kr_rare_metal_ore),
+    };
+    var primary_options = ArrayList(PrimaryCandidate).init(alloc);
+    defer primary_options.deinit();
+    for (eligible_primaries) |ri| {
+        try primary_options.append(.{ .ri = ri, .name = resource_order[ri], .count = 0 });
+    }
+    const normal_count = @as(u32, @intCast(infos.items.len));
+    const opt_count = @as(u32, @intCast(primary_options.items.len));
+    const per_min: u32 = if (opt_count > 0) normal_count / opt_count else 0;
+    const rem: u32 = if (opt_count > 0) normal_count % opt_count else 0;
+    for (primary_options.items, 0..) |*opt, oi| {
+        opt.count = per_min + if (oi < rem) @as(u32, 1) else @as(u32, 0);
+    }
+
+    // ---- Phase 2: Fixed primaries ----
+    var unassigned = ArrayList(usize).init(alloc);
+    defer unassigned.deinit();
+    for (infos.items, 0..) |*info, ii| {
+        if (info.assigned_primary) |pr| {
+            try map.put(zones.items[info.zi].name, pr);
+            if (!info.assigned_special) {
+                for (primary_options.items, 0..) |opt, opt_i| {
+                    if (std.mem.eql(u8, opt.name, pr)) {
+                        primary_options.items[opt_i].count -= 1;
+                        break;
+                    }
+                }
+            }
+        } else { try unassigned.append(ii); }
+    }
+
+    // ---- Phase 3: Uncontested strong claims (ordered_bias sorted) ----
+    var sc_per_resource = ArrayList(ArrayList(usize)).init(alloc);
+    defer sc_per_resource.deinit();
+    for (0..primary_options.items.len) |_| { try sc_per_resource.append(ArrayList(usize).init(alloc)); }
+    var still_unassigned = ArrayList(usize).init(alloc);
+    defer still_unassigned.deinit();
+
+    for (unassigned.items) |ii| {
+        const info = infos.items[ii];
+        var count: u32 = 0;
+        var matched_ri: ?u32 = null;
+        inline for (.{ @intFromEnum(data.Resource.se_cryonite), @intFromEnum(data.Resource.se_vitamelange),
+                       @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.kr_mineral_water) }) |ri| {
+            if (isPrimaryEligible(@intCast(ri), info.tags)) { count += 1; matched_ri = ri; }
+        }
+        if (count == 1) {
+            if (matched_ri) |ri| {
+                for (primary_options.items, 0..) |opt, oi| {
+                    if (opt.ri == ri) { try sc_per_resource.items[oi].append(ii); break; }
+                }
+            }
+        } else { try still_unassigned.append(ii); }
+    }
+
+    // Sort per resource by ordered_bias, assign up to quota
+    for (primary_options.items, 0..) |opt, oi| {
+        var candidates = sc_per_resource.items[oi];
+        if (candidates.items.len == 0) continue;
+        const n: usize = candidates.items.len;
+        var ob = try alloc.alloc(f64, n);
+        defer alloc.free(ob);
+        for (candidates.items, 0..) |ii, ci| {
+            const info = infos.items[ii];
+            var pos1: u32 = 0;
+            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
+            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+        }
+        var ci: usize = 0;
+        while (ci < n) : (ci += 1) {
+            var cj: usize = ci + 1;
+            while (cj < n) : (cj += 1) {
+                if (ob[cj] > ob[ci]) {
+                    const t = candidates.items[ci]; candidates.items[ci] = candidates.items[cj]; candidates.items[cj] = t;
+                    const tf = ob[ci]; ob[ci] = ob[cj]; ob[cj] = tf;
                 }
             }
         }
-        var best_val: f64 = -1;
-        var best_ri: u32 = 0;
-        for (indices, 0..) |ri, pos| {
-            if (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice)) continue;
-            if (!isPrimaryEligible(ri, ztags)) continue;
-            const ordered = 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos + 1))) / 18.0;
-            if (ordered > best_val) { best_val = ordered; best_ri = ri; }
+        for (candidates.items) |ii| {
+            if (primary_options.items[oi].count == 0) break;
+            primary_options.items[oi].count -= 1;
+            infos.items[ii].assigned_primary = opt.name;
+            try map.put(zones.items[infos.items[ii].zi].name, opt.name);
         }
-        try map.put(z.name, resource_order[best_ri]);
+    }
+
+    for (unassigned.items) |ii| {
+        if (infos.items[ii].assigned_primary != null) continue;
+        var was_sc = false;
+        for (sc_per_resource.items) |scl| {
+            for (scl.items) |si| { if (si == ii) { was_sc = true; break; } }
+            if (was_sc) break;
+        }
+        if (was_sc) try still_unassigned.append(ii);
+    }
+
+    // ---- Phase 4: Bias winners using ordered_bias (SE formula) ----
+    // ordered_bias = 1 + (base_bias - position_1indexed) / 18
+    // This is what SE uses — coal at pos 4 beats stone at pos 5 even if stone has higher base_bias
+    var bw_per_resource = ArrayList(ArrayList(usize)).init(alloc);
+    defer bw_per_resource.deinit();
+    for (0..primary_options.items.len) |_| {
+        try bw_per_resource.append(ArrayList(usize).init(alloc));
+    }
+
+    for (still_unassigned.items) |ii| {
+        const info = infos.items[ii];
+        // Find resource with highest ordered_bias (SE: 1 + (base_bias - pos1) / 18)
+        var best_ob: f64 = -999;
+        var best_ri: usize = 0;
+        for (0..18) |ri| {
+            if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
+                ri == @intFromEnum(data.Resource.se_methane_ice) or
+                ri == @intFromEnum(data.Resource.se_water_ice)) continue;
+            if (!isPrimaryEligible(@intCast(ri), info.tags)) continue;
+            var pos1: u32 = 0;
+            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
+            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            if (ob > best_ob) { best_ob = ob; best_ri = ri; }
+        }
+        for (primary_options.items, 0..) |opt, oi| {
+            if (opt.ri == best_ri) { try bw_per_resource.items[oi].append(ii); break; }
+        }
+    }
+
+    // For each resource, sort zones by ordered_bias, assign up to quota
+    for (primary_options.items, 0..) |opt, oi| {
+        var candidates = bw_per_resource.items[oi];
+        if (candidates.items.len == 0) continue;
+        const n: usize = candidates.items.len;
+        var ob = try alloc.alloc(f64, n);
+        defer alloc.free(ob);
+        for (candidates.items, 0..) |ii, ci| {
+            const info = infos.items[ii];
+            var pos1: u32 = 0;
+            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
+            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+        }
+        var ci: usize = 0;
+        while (ci < n) : (ci += 1) {
+            var cj: usize = ci + 1;
+            while (cj < n) : (cj += 1) {
+                if (ob[cj] > ob[ci]) {
+                    const t = candidates.items[ci]; candidates.items[ci] = candidates.items[cj]; candidates.items[cj] = t;
+                    const tf = ob[ci]; ob[ci] = ob[cj]; ob[cj] = tf;
+                }
+            }
+        }
+        for (candidates.items) |ii| {
+            if (primary_options.items[oi].count == 0) break;
+            primary_options.items[oi].count -= 1;
+            infos.items[ii].assigned_primary = opt.name;
+            try map.put(zones.items[infos.items[ii].zi].name, opt.name);
+        }
+    }
+
+    // Remaining zones: greedy fallback by ordered_bias
+    for (still_unassigned.items) |ii| {
+        if (infos.items[ii].assigned_primary != null) continue;
+        const info = infos.items[ii];
+        var best_ob2: f64 = -999;
+        var best_ri2: usize = 0;
+        for (0..18) |ri| {
+            if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
+                ri == @intFromEnum(data.Resource.se_methane_ice) or
+                ri == @intFromEnum(data.Resource.se_water_ice)) continue;
+            if (!isPrimaryEligible(@intCast(ri), info.tags)) continue;
+            var pos1: u32 = 0;
+            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
+            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            if (ob > best_ob2) { best_ob2 = ob; best_ri2 = ri; }
+        }
+        try map.put(zones.items[info.zi].name, resource_order[best_ri2]);
+    }
+
+    // ---- Phase 5: Final fallback ----
+    for (infos.items) |info| {
+        const zname = zones.items[info.zi].name;
+        if (map.contains(zname)) continue;
+        var sorted: [18]u32 = undefined;
+        for (0..18) |ri| sorted[ri] = @intCast(ri);
+        var si2: usize = 0;
+        while (si2 < 18) : (si2 += 1) {
+            var sj2: usize = si2 + 1;
+            while (sj2 < 18) : (sj2 += 1) {
+                if (info.biases[sorted[sj2]] > info.biases[sorted[si2]]) {
+                    const t = sorted[si2]; sorted[si2] = sorted[sj2]; sorted[sj2] = t;
+                }
+            }
+        }
+        for (sorted) |ri| {
+            if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
+                ri == @intFromEnum(data.Resource.se_methane_ice) or
+                ri == @intFromEnum(data.Resource.se_water_ice)) continue;
+            if (!isPrimaryEligible(@intCast(ri), info.tags)) continue;
+            try map.put(zname, resource_order[ri]);
+            break;
+        }
     }
 
     return map;
