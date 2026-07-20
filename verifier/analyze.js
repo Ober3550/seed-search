@@ -197,16 +197,18 @@ function evalPairs(seedOld) {
     });
     const results = [];
     for (const c of combos) {
-        const match = bodies.find(b => {
+        // First try: find body where the primary resource is at 1.0
+        let match = bodies.find(b => {
             const rs = b.resource || {};
-            if (!c.want.every(r => (rs[r] || 0) > 0)) return false;
-            // If primary is specified, ensure it's the highest-scoring resource
-            if (c.primary) {
-                const sorted = Object.keys(rs).sort((a,b) => rs[b] - rs[a]);
-                if (sorted[0] !== c.primary) return false;
-            }
-            return true;
+            return (rs[c.want[0]] || 0) >= 0.9999 && c.want.every(r => (rs[r] || 0) > 0);
         });
+        // Fallback: any body with all resources present
+        if (!match) {
+            match = bodies.find(b => {
+                const rs = b.resource || {};
+                return c.want.every(r => (rs[r] || 0) > 0);
+            });
+        }
         if (match) results.push({ ...c, body: match });
     }
 
