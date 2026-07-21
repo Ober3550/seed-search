@@ -49,6 +49,7 @@ pub fn main(init: std.process.Init) !void {
     var resource_name: []const u8 = "all";
     var radius: f64 = 200;
     var bmp_filename: ?[]const u8 = null;
+    var jsonl_filename: ?[]const u8 = null;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -68,6 +69,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--bmp")) {
             i += 1;
             if (i < args.len) bmp_filename = args[i];
+        } else if (std.mem.eql(u8, args[i], "--jsonl")) {
+            i += 1;
+            if (i < args.len) jsonl_filename = args[i];
         } else if (!std.mem.startsWith(u8, args[i], "--")) {
             resource_name = args[i];
         }
@@ -76,7 +80,7 @@ pub fn main(init: std.process.Init) !void {
     var configs: std.ArrayList(surfacegen.ore.ResourceAutoplaceConfig) = .empty;
     var names: std.ArrayList([]const u8) = .empty;
 
-    inline for (.{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" }) |rname| {
+    inline for (.{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" }) |rname| {
         if (std.mem.eql(u8, resource_name, "all") or std.mem.eql(u8, resource_name, rname)) {
             const cfg = if (std.mem.eql(u8, rname, "iron-ore")) surfacegen.ore.iron_ore_default
                 else if (std.mem.eql(u8, rname, "copper-ore")) surfacegen.ore.copper_ore_default
@@ -138,13 +142,27 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // Count by resource
-    const resources_list = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" };
+    const resources_list = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" };
     for (resources_list) |rname| {
         var count: u32 = 0;
         for (ores.items) |ore| {
             if (std.mem.eql(u8, ore.resource_name, rname)) count += 1;
         }
         if (count > 0) std.debug.print("#   {s}: {d}\n", .{ rname, count });
+    }
+
+    // JSONL output
+    if (jsonl_filename) |filename| {
+        var buf: std.ArrayList(u8) = .empty;
+        for (ores.items) |ore| {
+            var line: [256]u8 = undefined;
+            const s = try std.fmt.bufPrint(&line, "{{\"x\":{d},\"y\":{d},\"n\":\"{s}\",\"a\":{d}}}\n", .{ ore.x, ore.y, ore.resource_name, ore.amount });
+            try buf.appendSlice(a, s);
+        }
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, filename, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, buf.items, 0);
+        std.debug.print("# Wrote JSONL: {s}\n", .{filename});
     }
 
     const sample_count = @min(ores.items.len, 20);

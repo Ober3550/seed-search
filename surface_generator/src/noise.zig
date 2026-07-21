@@ -211,20 +211,24 @@ pub fn spotNoise(
                 const sx = nrx * region_size + neighbor_rng.float() * region_size;
                 const sy = nry * region_size + neighbor_rng.float() * region_size;
 
+                    // Random size variation (0.5 - 1.5x), filter to ~1/3 of candidates
+                const spot_rng1 = neighbor_rng.float();
+                if (spot_rng1 < 0.67) continue;
+                const spot_scale = 0.5 + neighbor_rng.float();
+                const spot_r = spot_radius_expression * spot_scale;
+                const spot_q = spot_quantity_expression * spot_scale;
+
                 // Distance from evaluation point to spot center
                 const dx = x - sx;
                 const dy = y - sy;
                 const dist = @sqrt(dx * dx + dy * dy);
 
                 // Spot contributes if within its radius
-                // Spot contributes if within its radius AND favorable
-                if (dist < spot_radius_expression and spot_favorability_expression > 0.0) {
-                    // Smooth falloff: (1 - dist/r)^2
-                    const t = dist / spot_radius_expression;
+                if (dist < spot_r and spot_favorability_expression > 0.0) {
+                    const t = dist / spot_r;
                     const falloff = (1.0 - t) * (1.0 - t);
-                    // Contribution = amount per spot distributed over its area
-                    const spot_area = std.math.pi * spot_radius_expression * spot_radius_expression;
-                    const contribution = (spot_quantity_expression / spot_area) * falloff;
+                    const spot_area = std.math.pi * spot_r * spot_r;
+                    const contribution = (spot_q / spot_area) * falloff;
                     value += contribution;
                 }
             }

@@ -17,6 +17,8 @@ pub const AutoplaceControls = struct {
 };
 
 pub const ResourceAutoplaceConfig = struct {
+    skip_offset: u32 = 0,
+    skip_span: u32 = 6,
     base_density: f64,
     seed1: u32,
     base_spots_per_km2: f64 = 2.5,
@@ -31,27 +33,27 @@ pub const ResourceAutoplaceConfig = struct {
 
 // Exact values from base/prototypes/entity/resources.lua
 pub const iron_ore_default = ResourceAutoplaceConfig{
-    .base_density = 10.0, .seed1 = 100, .candidate_spot_count = 22,
+    .base_density = 10.0, .seed1 = 100, .candidate_spot_count = 22, .skip_offset = 1, .skip_offset = 0,
     .regular_rq_factor_multiplier = 1.10, .starting_rq_factor_multiplier = 1.5,
     .has_starting_area_placement = true,
 };
 pub const copper_ore_default = ResourceAutoplaceConfig{
-    .base_density = 8.0, .seed1 = 200, .candidate_spot_count = 22,
+    .base_density = 8.0, .seed1 = 100, .candidate_spot_count = 22, .skip_offset = 1, .skip_offset = 0,
     .regular_rq_factor_multiplier = 1.10, .starting_rq_factor_multiplier = 1.2,
     .has_starting_area_placement = true,
 };
 pub const coal_default = ResourceAutoplaceConfig{
-    .base_density = 8.0, .seed1 = 300,
+    .base_density = 8.0, .seed1 = 100,
     .regular_rq_factor_multiplier = 1.0, .starting_rq_factor_multiplier = 1.1,
     .has_starting_area_placement = true,
 };
 pub const stone_default = ResourceAutoplaceConfig{
-    .base_density = 4.0, .seed1 = 400,
+    .base_density = 4.0, .seed1 = 100,
     .regular_rq_factor_multiplier = 1.0, .starting_rq_factor_multiplier = 1.1,
     .has_starting_area_placement = true,
 };
 pub const uranium_ore_default = ResourceAutoplaceConfig{
-    .base_density = 0.9, .seed1 = 500, .base_spots_per_km2 = 1.25,
+    .base_density = 0.9, .seed1 = 100, .base_spots_per_km2 = 1.25,
     .has_starting_area_placement = false,
 };
 pub const crude_oil_default = ResourceAutoplaceConfig{
@@ -61,17 +63,12 @@ pub const crude_oil_default = ResourceAutoplaceConfig{
 };
 
 const DOUBLE_DENSITY_DISTANCE: f64 = 1300.0;
-const REGULAR_PATCH_FADE_IN_DISTANCE: f64 = 300.0;
-const STARTING_RESOURCE_PLACEMENT_RADIUS: f64 = 120.0;
 
 fn regularDensityAt(distance: f64, config: ResourceAutoplaceConfig, controls: AutoplaceControls) f64 {
     const base = config.base_density * controls.frequency * controls.size;
-    // Fade in over regular_patch_fade_in_distance, then grow with distance
-    const fade = if (distance < STARTING_RESOURCE_PLACEMENT_RADIUS)
-        0.0
-    else
-        @min(1.0, (distance - STARTING_RESOURCE_PLACEMENT_RADIUS) / REGULAR_PATCH_FADE_IN_DISTANCE);
-    const dist_factor = 1.0 + @min(1.0, (distance - REGULAR_PATCH_FADE_IN_DISTANCE) / DOUBLE_DENSITY_DISTANCE);
+    // No fade-in for SE surfaces — patches appear at all distances
+    const fade: f64 = 1.0;
+    const dist_factor = 1.0 + @min(1.0, distance / DOUBLE_DENSITY_DISTANCE);
     return base * fade * dist_factor;
 }
 
@@ -102,28 +99,10 @@ pub fn computeOreAt(
     if (controls.size <= 0.0) return 0.0;
 
     const rq = config.regular_rq_factor_multiplier / 10.0;
-    const start_rq = config.starting_rq_factor_multiplier / 7.0;
     var value: f64 = 0.0;
 
-    // Starting area patches
-    if (config.has_starting_area_placement and distance < STARTING_RESOURCE_PLACEMENT_RADIUS) {
-        const amount = 20000.0 * config.base_density * (controls.frequency + 1.0) * controls.size;
-        const spot_qty = amount / 0.5 / controls.frequency;
-        const spot_r = start_rq * std.math.pow(f64, spot_qty, 1.0 / 3.0);
-        const blob = noise.basisNoise(x, y, map_seed, config.seed1 + 1, 1.0 / 8.0, 1.0) +
-            noise.basisNoise(x, y, map_seed, config.seed1 + 1, 1.0 / 24.0, 1.0);
-        const blob_amp = (1.0 / 8.0) / (std.math.pi / 3.0 * start_rq * start_rq) *
-            std.math.pow(f64, spot_qty, 1.0 / 3.0);
-        const favorability = @max(0.0, 1.0 - distance / STARTING_RESOURCE_PLACEMENT_RADIUS);
-
-        value = try noise.spotNoise(alloc, x, y, map_seed, config.seed1 + 1,
-            STARTING_RESOURCE_PLACEMENT_RADIUS * 2.0, 64,
-            amount / (std.math.pi * STARTING_RESOURCE_PLACEMENT_RADIUS * STARTING_RESOURCE_PLACEMENT_RADIUS),
-            spot_qty, spot_r, favorability,
-            -1.0 * blob_amp, 128.0);
-        value += (blob - 0.25) * blob_amp;
-    } else {
-        // Regular patches
+    // Regular patches only (skip starting area — not relevant for SE surfaces)
+    {
         const density = regularDensityAt(distance, config, controls);
         const spot_qty = regularSpotQuantity(distance, config, controls);
         const spot_r = regularSpotRadius(spot_qty, rq);
