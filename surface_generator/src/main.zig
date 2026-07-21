@@ -49,7 +49,6 @@ pub fn main(init: std.process.Init) !void {
     var resource_name: []const u8 = "all";
     var radius: f64 = 200;
     var bmp_filename: ?[]const u8 = null;
-    var red_test: bool = false;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -69,8 +68,6 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--bmp")) {
             i += 1;
             if (i < args.len) bmp_filename = args[i];
-        } else if (std.mem.eql(u8, args[i], "--red")) {
-            red_test = true;
         } else if (!std.mem.startsWith(u8, args[i], "--")) {
             resource_name = args[i];
         }
@@ -95,25 +92,6 @@ pub fn main(init: std.process.Init) !void {
     const r: i32 = @intFromFloat(radius);
     std.debug.print("# Seed {d}, radius {d}, resources: {s}\n", .{ seed, r, resource_name });
     std.debug.print("# Controls: freq={d:.1} size={d:.1} rich={d:.1}\n", .{ controls.frequency, controls.size, controls.richness });
-
-    // --red test: fill entire image with red
-    if (red_test and bmp_filename != null) {
-        const ir: i32 = @intFromFloat(radius);
-        const sz: u32 = @intCast(ir * 2 * 3);
-        const pixels = try a.alloc(u8, sz * sz * 3);
-        for (0..pixels.len / 3) |pi| {
-            pixels[pi * 3] = 255;
-            pixels[pi * 3 + 1] = 0;
-            pixels[pi * 3 + 2] = 0;
-        }
-        var bmp_buf: std.ArrayList(u8) = .empty;
-        try surfacegen.bmp.writeBmp(a, &bmp_buf, sz, sz, pixels);
-        const file = try std.Io.Dir.createFile(.cwd(), init.io, bmp_filename.?, .{});
-        defer file.close(init.io);
-        try file.writePositionalAll(init.io, bmp_buf.items, 0);
-        std.debug.print("# Wrote red test PNG: {s} ({d}x{d})\n", .{ bmp_filename.?, sz, sz });
-        return;
-    }
 
     var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls);
     defer ores.deinit(a);
