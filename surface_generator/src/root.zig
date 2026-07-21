@@ -17,6 +17,7 @@ pub const chunk = @import("chunk.zig");
 pub const autoplace = @import("autoplace.zig");
 pub const ore = @import("ore_placement.zig");
 pub const bmp = @import("bmp_writer.zig");
+pub const sha1 = @import("sha1.zig");
 
 test {
     _ = rng;

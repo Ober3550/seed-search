@@ -10,6 +10,7 @@
 
 const std = @import("std");
 const rng = @import("rng.zig");
+const sha1 = @import("sha1.zig");
 
 // ============================================================
 // Hash function for noise permutations
@@ -183,6 +184,8 @@ pub fn spotNoise(
     skip_span: u32,
     skip_offset: u32,
 ) !f64 {
+    _ = seed0;
+    _ = seed1;
     // Determine which region this position falls in
     const rx = @floor(x / region_size);
     const ry = @floor(y / region_size);
@@ -202,10 +205,14 @@ pub fn spotNoise(
             const nrx = rx + @as(f64, @floatFromInt(drx));
             const nry = ry + @as(f64, @floatFromInt(dry));
 
-            // Hash-based RNG seeding (matches Factorio's region RNG)
-            const neighbor_seed: u32 = (@as(u32, @bitCast(@as(i32, @intFromFloat(nrx)))) ^
-                (@as(u32, @bitCast(@as(i32, @intFromFloat(nry)))) << 16));
-            var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
+            // SHA-1 based RNG seeding: SHA1(int64_le(rx), int64_le(ry)) -> first 4 bytes
+            var sha_buf: [16]u8 = undefined;
+            std.mem.writeInt(i64, sha_buf[0..8], @as(i64, @intFromFloat(nrx)), .little);
+            std.mem.writeInt(i64, sha_buf[8..16], @as(i64, @intFromFloat(nry)), .little);
+            var digest: [20]u8 = undefined;
+            sha1.hash16(&sha_buf, &digest);
+            const neighbor_seed = std.mem.readInt(u32, digest[0..4], .little);
+            var neighbor_rng = rng.Rng.init(neighbor_seed);
 
             const spots_per_region = candidate_spot_count;
 
