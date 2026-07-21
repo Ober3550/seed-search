@@ -6,7 +6,7 @@ const MapColors = struct {
     // RGBA (0-255)
     const iron_ore = [4]u8{ 106, 134, 148, 255 }; // {0.415, 0.525, 0.580}
     const copper_ore = [4]u8{ 205, 99, 55, 255 }; // {0.803, 0.388, 0.215}
-    const coal = [4]u8{ 0, 0, 0, 255 }; // {0, 0, 0}
+    const coal = [4]u8{ 60, 60, 60, 255 }; // {0, 0, 0} visual — use dark gray for visibility
     const stone = [4]u8{ 176, 156, 109, 255 }; // {0.690, 0.611, 0.427}
     const uranium_ore = [4]u8{ 0, 179, 0, 255 }; // {0, 0.7, 0}
     const crude_oil = [4]u8{ 199, 51, 196, 255 }; // {0.78, 0.2, 0.77}
@@ -100,26 +100,28 @@ pub fn main(init: std.process.Init) !void {
 
     // PNG output
     if (png_filename) |filename| {
+        const scale: u32 = 3; // each tile = 3×3 pixels for visibility
         const size: u32 = @intCast(r * 2);
+        const img_size: u32 = size * scale;
 
-        // Build a spatial index: grid[y*size + x] = index into ores, or max
-        // Simple: for each ore, write to pixel grid
-        var pixels = try a.alloc(u8, size * size * 4);
-        @memset(pixels, 0); // black background
+        // Build pixel grid at 1x first, then scale up
+        var pixels = try a.alloc(u8, img_size * img_size * 4);
+        @memset(pixels, 30); // dark gray background (not black, so coal is visible)
 
         for (ores.items) |ore| {
-            const px: u32 = @intCast(ore.x + r);
-            const py: u32 = @intCast(ore.y + r);
-            if (px < size and py < size) {
-                const idx: usize = @intCast((py * size + px) * 4);
+            const px: i32 = ore.x + r;
+            const py: i32 = ore.y + r;
+            if (px >= 0 and px < size and py >= 0 and py < size) {
                 const color = MapColors.get(ore.resource_name);
-                // Blend: use max brightness (multiple ores can overlap)
-                if (pixels[idx + 3] == 0) {
-                    @memcpy(pixels[idx..][0..4], &color);
-                } else {
-                    // Blend: take max of each channel
-                    for (0..3) |ch| {
-                        if (color[ch] > pixels[idx + ch]) pixels[idx + ch] = color[ch];
+                // Fill a scale×scale block
+                var dy: u32 = 0;
+                while (dy < scale) : (dy += 1) {
+                    var dx: u32 = 0;
+                    while (dx < scale) : (dx += 1) {
+                        const sx: u32 = @as(u32, @intCast(px)) * scale + dx;
+                        const sy: u32 = @as(u32, @intCast(py)) * scale + dy;
+                        const idx: usize = @intCast((sy * img_size + sx) * 4);
+                        @memcpy(pixels[idx..][0..4], &color);
                     }
                 }
             }
@@ -130,9 +132,9 @@ pub fn main(init: std.process.Init) !void {
 
         // Write PNG directly to a buffer then write to file
         var png_buf: std.ArrayList(u8) = .empty;
-        try surfacegen.png.writePng(a, &png_buf, size, size, pixels);
+        try surfacegen.png.writePng(a, &png_buf, img_size, img_size, pixels);
         try file.writePositionalAll(init.io, png_buf.items, 0);
-        std.debug.print("# Wrote PNG: {s} ({d}x{d})\n", .{ filename, size, size });
+        std.debug.print("# Wrote PNG: {s} ({d}x{d})\n", .{ filename, img_size, img_size });
     }
 
     // Count by resource
