@@ -188,6 +188,7 @@ pub fn spotNoise(
     const ry = @floor(y / region_size);
 
     _ = alloc;
+    _ = density_expression;
     _ = maximum_spot_basement_radius;
 
     // We need to check spots in this region AND neighboring regions
@@ -207,8 +208,6 @@ pub fn spotNoise(
             var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
 
             const spots_per_region = candidate_spot_count;
-            const density_cap: f64 = @max(1.0, density_expression);
-            const keep_fraction: f64 = @min(1.0, density_cap / 8.0);
 
             var si: u32 = 0;
             while (si < spots_per_region) : (si += 1) {
@@ -218,8 +217,6 @@ pub fn spotNoise(
 
                 if (si % skip_span != skip_offset) continue;
 
-                // Candidate filtering: only keep fraction of candidates
-                if (neighbor_rng.float() >= keep_fraction) continue;
 
                 const spot_scale = 0.5 + neighbor_rng.float();
                 const spot_r = spot_radius_expression * spot_scale;
