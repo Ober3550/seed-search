@@ -130,8 +130,8 @@ pub fn multioctaveNoise(
 /// Returns source * random if random > amplitude, else source.
 /// Uses a deterministic RNG seeded by position.
 pub fn randomPenalty(x: f64, y: f64, source: f64, amplitude: f64) f64 {
-    const ix: u32 = @intCast(@as(i64, @intFromFloat(@floor(x))));
-    const iy: u32 = @intCast(@as(i64, @intFromFloat(@floor(y))));
+    const ix: u32 = @bitCast(@as(i32, @intFromFloat(@floor(x))));
+    const iy: u32 = @bitCast(@as(i32, @intFromFloat(@floor(y))));
     var rr = rng.Rng.init(ix ^ (iy << 16));
     const r = rr.float();
     if (r > amplitude) {

@@ -16,6 +16,7 @@ pub const noise = @import("noise.zig");
 pub const chunk = @import("chunk.zig");
 pub const autoplace = @import("autoplace.zig");
 pub const ore = @import("ore_placement.zig");
+pub const png = @import("png_writer.zig");
 
 test {
     _ = rng;
@@ -23,4 +24,5 @@ test {
     _ = chunk;
     _ = autoplace;
     _ = ore;
+    _ = png;
 }
