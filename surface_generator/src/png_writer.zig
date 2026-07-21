@@ -1,28 +1,29 @@
-//! Minimal PNG writer — writes uncompressed RGBA PNG to an ArrayList buffer.
+//! Minimal PNG writer — writes uncompressed RGB PNG to an ArrayList buffer.
 
 const std = @import("std");
 
-/// Write a PNG to buffer.
+/// Write a PNG to buffer. Pixels are RGB (3 bytes per pixel, row-major).
 pub fn writePng(
     alloc: std.mem.Allocator,
     buf: *std.ArrayList(u8),
     width: u32,
     height: u32,
-    pixels: []const u8, // RGBA, length = width * height * 4
+    pixels: []const u8, // RGB, length = width * height * 3
 ) !void {
-    const scanline: u32 = 1 + width * 4;
+    const bpp: u32 = 3;
+    const scanline: u32 = 1 + width * bpp;
     const raw_len: u32 = scanline * height;
 
-    // Build raw filtered scanlines in a temp buffer
+    // Build raw filtered scanlines
     var raw = try std.ArrayList(u8).initCapacity(alloc, raw_len);
     var y: u32 = 0;
     while (y < height) : (y += 1) {
         raw.appendAssumeCapacity(0); // filter: None
-        const src: usize = @intCast(y * width * 4);
-        raw.appendSliceAssumeCapacity(pixels[src .. src + width * 4]);
+        const src: usize = @intCast(y * width * bpp);
+        raw.appendSliceAssumeCapacity(pixels[src .. src + width * bpp]);
     }
 
-    // Build IDAT content: deflate blocks interleaved with data
+    // Build IDAT: deflate blocks interleaved with data
     const max_block: u32 = 65535;
     var idat = try std.ArrayList(u8).initCapacity(alloc, raw_len + (raw_len / max_block + 1) * 5);
     var offset: u32 = 0;
@@ -34,16 +35,15 @@ pub fn writePng(
         offset += block_len;
     }
 
-    // Calculate total IDAT chunk size
     const idat_data_len: u32 = @intCast(idat.items.len);
 
+    // IHDR: color type 2 = RGB
     const ihdr = [_]u8{
         @truncate(width >> 24), @truncate(width >> 16), @truncate(width >> 8), @truncate(width),
         @truncate(height >> 24), @truncate(height >> 16), @truncate(height >> 8), @truncate(height),
-        8, 6, 0, 0, 0,
+        8, 2, 0, 0, 0,
     };
 
-    // Reserve space
     const total = 8 + 12 + 13 + 4 + 12 + idat_data_len + 4 + 12;
     try buf.ensureTotalCapacity(alloc, buf.items.len + total);
 

@@ -3,22 +3,22 @@ const surfacegen = @import("surface_generator");
 
 /// Map colors from Factorio's base/prototypes/entity/resources.lua
 const MapColors = struct {
-    // RGBA (0-255)
-    const iron_ore = [4]u8{ 106, 134, 148, 255 }; // {0.415, 0.525, 0.580}
-    const copper_ore = [4]u8{ 205, 99, 55, 255 }; // {0.803, 0.388, 0.215}
-    const coal = [4]u8{ 60, 60, 60, 255 }; // {0, 0, 0} visual — use dark gray for visibility
-    const stone = [4]u8{ 176, 156, 109, 255 }; // {0.690, 0.611, 0.427}
-    const uranium_ore = [4]u8{ 0, 179, 0, 255 }; // {0, 0.7, 0}
-    const crude_oil = [4]u8{ 199, 51, 196, 255 }; // {0.78, 0.2, 0.77}
+    // RGB (0-255)
+    const iron_ore = [3]u8{ 106, 134, 148 }; // {0.415, 0.525, 0.580}
+    const copper_ore = [3]u8{ 205, 99, 55 }; // {0.803, 0.388, 0.215}
+    const coal = [3]u8{ 60, 60, 60 }; // {0, 0, 0} visual — use dark gray
+    const stone = [3]u8{ 176, 156, 109 }; // {0.690, 0.611, 0.427}
+    const uranium_ore = [3]u8{ 0, 179, 0 }; // {0, 0.7, 0}
+    const crude_oil = [3]u8{ 199, 51, 196 }; // {0.78, 0.2, 0.77}
 
-    fn get(name: []const u8) [4]u8 {
+    fn get(name: []const u8) [3]u8 {
         if (std.mem.eql(u8, name, "iron-ore")) return iron_ore;
         if (std.mem.eql(u8, name, "copper-ore")) return copper_ore;
         if (std.mem.eql(u8, name, "coal")) return coal;
         if (std.mem.eql(u8, name, "stone")) return stone;
         if (std.mem.eql(u8, name, "uranium-ore")) return uranium_ore;
         if (std.mem.eql(u8, name, "crude-oil")) return crude_oil;
-        return .{ 128, 128, 128, 255 };
+        return .{ 128, 128, 128 };
     }
 };
 
@@ -49,6 +49,7 @@ pub fn main(init: std.process.Init) !void {
     var resource_name: []const u8 = "all";
     var radius: f64 = 200;
     var png_filename: ?[]const u8 = null;
+    var red_test: bool = false;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -68,6 +69,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--png")) {
             i += 1;
             if (i < args.len) png_filename = args[i];
+        } else if (std.mem.eql(u8, args[i], "--red")) {
+            red_test = true;
         } else if (!std.mem.startsWith(u8, args[i], "--")) {
             resource_name = args[i];
         }
@@ -93,6 +96,25 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("# Seed {d}, radius {d}, resources: {s}\n", .{ seed, r, resource_name });
     std.debug.print("# Controls: freq={d:.1} size={d:.1} rich={d:.1}\n", .{ controls.frequency, controls.size, controls.richness });
 
+    // --red test: fill entire image with red
+    if (red_test and png_filename != null) {
+        const ir: i32 = @intFromFloat(radius);
+        const sz: u32 = @intCast(ir * 2 * 3);
+        const pixels = try a.alloc(u8, sz * sz * 3);
+        for (0..pixels.len / 4) |pi| {
+            pixels[pi * 3] = 255;
+            pixels[pi * 3 + 1] = 0;
+            pixels[pi * 3 + 2] = 0;
+        }
+        var png_buf: std.ArrayList(u8) = .empty;
+        try surfacegen.png.writePng(a, &png_buf, sz, sz, pixels);
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, png_filename.?, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, png_buf.items, 0);
+        std.debug.print("# Wrote red test PNG: {s} ({d}x{d})\n", .{ png_filename.?, sz, sz });
+        return;
+    }
+
     var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls);
     defer ores.deinit(a);
 
@@ -105,7 +127,7 @@ pub fn main(init: std.process.Init) !void {
         const img_size: u32 = size * scale;
 
         // Build pixel grid at 1x first, then scale up
-        var pixels = try a.alloc(u8, img_size * img_size * 4);
+        var pixels = try a.alloc(u8, img_size * img_size * 3);
         @memset(pixels, 30); // dark gray background (not black, so coal is visible)
 
         for (ores.items) |ore| {
@@ -120,8 +142,8 @@ pub fn main(init: std.process.Init) !void {
                     while (dx < scale) : (dx += 1) {
                         const sx: u32 = @as(u32, @intCast(px)) * scale + dx;
                         const sy: u32 = @as(u32, @intCast(py)) * scale + dy;
-                        const idx: usize = @intCast((sy * img_size + sx) * 4);
-                        @memcpy(pixels[idx..][0..4], &color);
+                        const idx: usize = @intCast((sy * img_size + sx) * 3);
+                        @memcpy(pixels[idx..][0..3], &color);
                     }
                 }
             }
