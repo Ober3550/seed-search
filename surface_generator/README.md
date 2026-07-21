@@ -41,14 +41,21 @@ output to the captured test chunks.
 
 ## Implementation Plan
 
-1. [ ] Load Factorio binary into Ghidra, identify map generation pipeline
-2. [ ] Extract and document the noise expression tree (noise layers)
-3. [ ] Extract autoplace probability functions per resource
+1. [x] Load Factorio binary into Ghidra, identify map generation pipeline
+2. [x] Extract and document the noise expression tree (noise layers)
+3. [x] Extract autoplace probability functions per resource
 4. [ ] Implement RNG + noise in Zig
 5. [ ] Implement tile generation (terrain, water)
-6. [ ] Implement resource autoplace
+6. [ ] Implement resource autoplace (ore-first approach)
 7. [ ] Validate against captured test data
 8. [ ] Build CLI tool: `surfacegen --seed N --preset default --ores iron-ore,copper-ore`
+
+## RE Documentation
+
+Detailed findings from Ghidra analysis:
+- [Architecture overview](docs/architecture.md)
+- [Noise expression system](docs/noise-system.md)
+- [Autoplace & collision system](docs/autoplace-system.md)
 
 ## Dependencies
 

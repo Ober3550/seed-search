@@ -15,10 +15,12 @@ pub const rng = @import("rng.zig");
 pub const noise = @import("noise.zig");
 pub const chunk = @import("chunk.zig");
 pub const autoplace = @import("autoplace.zig");
+pub const ore = @import("ore_placement.zig");
 
 test {
     _ = rng;
     _ = noise;
     _ = chunk;
     _ = autoplace;
+    _ = ore;
 }
