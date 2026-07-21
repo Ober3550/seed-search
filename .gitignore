@@ -32,6 +32,9 @@ calibration/saves/docker-bundle/
 # Generated build artifacts
 .zig-cache/
 zig-out/
+*.bmp
+ghidra/project/
+.DS_Store
 generator/zig/seedgen
 generator/zig/seedgen2
 generator/zig/test_primaries
