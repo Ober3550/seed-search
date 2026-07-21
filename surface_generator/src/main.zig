@@ -86,8 +86,7 @@ pub fn main(init: std.process.Init) !void {
                 else if (std.mem.eql(u8, rname, "copper-ore")) surfacegen.ore.copper_ore_default
                 else if (std.mem.eql(u8, rname, "coal")) surfacegen.ore.coal_default
                 else if (std.mem.eql(u8, rname, "stone")) surfacegen.ore.stone_default
-                else if (std.mem.eql(u8, rname, "uranium-ore")) surfacegen.ore.uranium_ore_default
-                else surfacegen.ore.crude_oil_default;
+                else surfacegen.ore.uranium_ore_default;
             try configs.append(a, cfg);
             try names.append(a, rname);
         }

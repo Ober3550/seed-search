@@ -213,7 +213,7 @@ pub fn spotNoise(
 
                     // Random size variation (0.5 - 1.5x), filter to ~1/3 of candidates
                 const spot_rng1 = neighbor_rng.float();
-                if (spot_rng1 < 0.67) continue;
+                if (spot_rng1 < 0.0) continue;
                 const spot_scale = 0.5 + neighbor_rng.float();
                 const spot_r = spot_radius_expression * spot_scale;
                 const spot_q = spot_quantity_expression * spot_scale;
@@ -236,9 +236,7 @@ pub fn spotNoise(
     }
 
     return value;
-}
-
-// ============================================================
+}// ============================================================
 // Tests
 // ============================================================
 
@@ -259,3 +257,4 @@ test "multioctaveNoise produces finite values" {
     try std.testing.expect(!std.math.isNan(val));
     try std.testing.expect(!std.math.isInf(val));
 }
+
