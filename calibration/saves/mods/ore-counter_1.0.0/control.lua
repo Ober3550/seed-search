@@ -1,5 +1,5 @@
 -- Count resources and write JSON on startup
-local RADIUS = 300
+local RADIUS = 738
 script.on_event(defines.events.on_tick, function(event)
   if global and global.done then return end
   if game.tick < 120 then return end
@@ -24,6 +24,10 @@ script.on_event(defines.events.on_tick, function(event)
   local result = {
     seed = surface.map_gen_settings.seed,
     radius = RADIUS,
+    water = "none",
+    freq = 1.0,
+    size = 1.0,
+    rich = 1.0,
     total_tiles = total_tiles,
     water_tiles = water_tiles,
     land_tiles = land_tiles,
