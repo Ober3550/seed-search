@@ -12,8 +12,9 @@ pub fn writePng(
 ) !void {
     const scanline: u32 = 1 + width * 4;
     const raw_len: u32 = scanline * height;
-    const deflate_hdr = [_]u8{ 0x01, @truncate(raw_len), @truncate(raw_len >> 8), @truncate(~raw_len), @truncate(~raw_len >> 8) };
-    const idat_data_len: u32 = @intCast(deflate_hdr.len + raw_len);
+    const max_block: u32 = 65535;
+    const num_blocks: u32 = (raw_len + max_block - 1) / max_block;
+    const idat_data_len: u32 = num_blocks * 5 + raw_len;
 
     const ihdr = [_]u8{
         @truncate(width >> 24), @truncate(width >> 16), @truncate(width >> 8), @truncate(width),
@@ -45,13 +46,23 @@ pub fn writePng(
     };
     try ChunkWriter.write(buf, alloc, "IHDR", &ihdr);
 
-    // IDAT
+    // IDAT — may need multiple deflate blocks if raw_len > 65535
     {
+        // Write IDAT chunk header (length + type)
         const len: u32 = idat_data_len;
         buf.appendSliceAssumeCapacity(&[_]u8{ @truncate(len >> 24), @truncate(len >> 16), @truncate(len >> 8), @truncate(len) });
         buf.appendSliceAssumeCapacity("IDAT");
-        buf.appendSliceAssumeCapacity(&deflate_hdr);
 
+        var remaining: u32 = raw_len;
+        var blocks: u32 = 0;
+        while (remaining > 0) : (blocks += 1) {
+            const block_len: u16 = @intCast(@min(remaining, max_block));
+            const is_final: u8 = if (remaining <= max_block) 0x01 else 0x00;
+            buf.appendSliceAssumeCapacity(&[_]u8{ is_final, @truncate(block_len), @truncate(block_len >> 8), @truncate(~block_len), @truncate(~block_len >> 8) });
+            remaining -= block_len;
+        }
+
+        // Write all scanlines
         var y: u32 = 0;
         while (y < height) : (y += 1) {
             buf.appendAssumeCapacity(0);
@@ -59,10 +70,16 @@ pub fn writePng(
             buf.appendSliceAssumeCapacity(pixels[src .. src + width * 4]);
         }
 
-        // CRC over "IDAT" + deflate + scanlines
-        var crc_in = try std.ArrayList(u8).initCapacity(alloc, 4 + deflate_hdr.len + raw_len);
+        // CRC over "IDAT" + all deflate blocks + scanlines
+        var crc_in = try std.ArrayList(u8).initCapacity(alloc, 4 + @as(usize, blocks * 5) + raw_len);
         crc_in.appendSliceAssumeCapacity("IDAT");
-        crc_in.appendSliceAssumeCapacity(&deflate_hdr);
+        remaining = raw_len;
+        while (remaining > 0) {
+            const block_len: u16 = @intCast(@min(remaining, max_block));
+            const is_final: u8 = if (remaining <= max_block) 0x01 else 0x00;
+            crc_in.appendSliceAssumeCapacity(&[_]u8{ is_final, @truncate(block_len), @truncate(block_len >> 8), @truncate(~block_len), @truncate(~block_len >> 8) });
+            remaining -= block_len;
+        }
         y = 0;
         while (y < height) : (y += 1) {
             crc_in.appendAssumeCapacity(0);
