@@ -207,7 +207,7 @@ pub fn spotNoise(
             const spots_per_region = candidate_spot_count;
             // Use density to determine how many candidates survive
             const density_cap: f64 = @max(1.0, density_expression);
-            const keep_fraction: f64 = @min(1.0, density_cap / 50.0); // scale: density 10 -> 20% keep
+            const keep_fraction: f64 = @min(1.0, density_cap / 8.0); // scale: density 10 -> 20% keep
 
             var si: u32 = 0;
             while (si < spots_per_region) : (si += 1) {
