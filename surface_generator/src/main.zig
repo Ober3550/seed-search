@@ -32,10 +32,10 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print(
             \\surfacegen — Factorio ore placement map generator
             \\
-            \\Usage: surfacegen <seed> [resource] [--radius R] [--freq F] [--size S] [--rich R] [--png FILE]
+            \\Usage: surfacegen <seed> [resource] [--radius R] [--freq F] [--size S] [--rich R] [--bmp FILE]
             \\
             \\Resources: iron-ore, copper-ore, coal, stone, uranium-ore, crude-oil, all
-            \\--png writes a PNG map using Factorio's exact map colors
+            \\--bmp writes a BMP map using Factorio's exact map colors
             \\
         , .{});
         return;
@@ -48,7 +48,7 @@ pub fn main(init: std.process.Init) !void {
 
     var resource_name: []const u8 = "all";
     var radius: f64 = 200;
-    var png_filename: ?[]const u8 = null;
+    var bmp_filename: ?[]const u8 = null;
     var red_test: bool = false;
     var controls = surfacegen.ore.AutoplaceControls{};
 
@@ -66,9 +66,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--rich")) {
             i += 1;
             if (i < args.len) controls.richness = try std.fmt.parseFloat(f64, args[i]);
-        } else if (std.mem.eql(u8, args[i], "--png")) {
+        } else if (std.mem.eql(u8, args[i], "--bmp")) {
             i += 1;
-            if (i < args.len) png_filename = args[i];
+            if (i < args.len) bmp_filename = args[i];
         } else if (std.mem.eql(u8, args[i], "--red")) {
             red_test = true;
         } else if (!std.mem.startsWith(u8, args[i], "--")) {
@@ -97,21 +97,21 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("# Controls: freq={d:.1} size={d:.1} rich={d:.1}\n", .{ controls.frequency, controls.size, controls.richness });
 
     // --red test: fill entire image with red
-    if (red_test and png_filename != null) {
+    if (red_test and bmp_filename != null) {
         const ir: i32 = @intFromFloat(radius);
         const sz: u32 = @intCast(ir * 2 * 3);
         const pixels = try a.alloc(u8, sz * sz * 3);
-        for (0..pixels.len / 4) |pi| {
+        for (0..pixels.len / 3) |pi| {
             pixels[pi * 3] = 255;
             pixels[pi * 3 + 1] = 0;
             pixels[pi * 3 + 2] = 0;
         }
-        var png_buf: std.ArrayList(u8) = .empty;
-        try surfacegen.png.writePng(a, &png_buf, sz, sz, pixels);
-        const file = try std.Io.Dir.createFile(.cwd(), init.io, png_filename.?, .{});
+        var bmp_buf: std.ArrayList(u8) = .empty;
+        try surfacegen.bmp.writeBmp(a, &bmp_buf, sz, sz, pixels);
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, bmp_filename.?, .{});
         defer file.close(init.io);
-        try file.writePositionalAll(init.io, png_buf.items, 0);
-        std.debug.print("# Wrote red test PNG: {s} ({d}x{d})\n", .{ png_filename.?, sz, sz });
+        try file.writePositionalAll(init.io, bmp_buf.items, 0);
+        std.debug.print("# Wrote red test PNG: {s} ({d}x{d})\n", .{ bmp_filename.?, sz, sz });
         return;
     }
 
@@ -121,7 +121,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("# Found {} ore entities\n", .{ores.items.len});
 
     // PNG output
-    if (png_filename) |filename| {
+    if (bmp_filename) |filename| {
         const scale: u32 = 3; // each tile = 3×3 pixels for visibility
         const size: u32 = @intCast(r * 2);
         const img_size: u32 = size * scale;
@@ -153,10 +153,10 @@ pub fn main(init: std.process.Init) !void {
         defer file.close(init.io);
 
         // Write PNG directly to a buffer then write to file
-        var png_buf: std.ArrayList(u8) = .empty;
-        try surfacegen.png.writePng(a, &png_buf, img_size, img_size, pixels);
-        try file.writePositionalAll(init.io, png_buf.items, 0);
-        std.debug.print("# Wrote PNG: {s} ({d}x{d})\n", .{ filename, img_size, img_size });
+        var bmp_buf: std.ArrayList(u8) = .empty;
+        try surfacegen.bmp.writeBmp(a, &bmp_buf, img_size, img_size, pixels);
+        try file.writePositionalAll(init.io, bmp_buf.items, 0);
+        std.debug.print("# Wrote BMP: {s} ({d}x{d})\n", .{ filename, img_size, img_size });
     }
 
     // Count by resource
