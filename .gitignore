@@ -30,6 +30,8 @@ calibration/saves/mods/
 calibration/saves/config/
 calibration/saves/docker-bundle/
 # Generated build artifacts
+.zig-cache/
+zig-out/
 generator/zig/seedgen
 generator/zig/seedgen2
 generator/zig/test_primaries
