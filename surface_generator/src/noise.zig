@@ -186,7 +186,6 @@ pub fn spotNoise(
     const ry = @floor(y / region_size);
 
     _ = alloc;
-    _ = density_expression;
     _ = maximum_spot_basement_radius;
 
     // We need to check spots in this region AND neighboring regions
@@ -200,20 +199,24 @@ pub fn spotNoise(
             const nrx = rx + @as(f64, @floatFromInt(drx));
             const nry = ry + @as(f64, @floatFromInt(dry));
 
-            // Re-seed RNG for this neighboring region
+            // Hash-based RNG seeding (matches Factorio's region RNG)
             const neighbor_seed: u32 = (@as(u32, @bitCast(@as(i32, @intFromFloat(nrx)))) ^
                 (@as(u32, @bitCast(@as(i32, @intFromFloat(nry)))) << 16));
             var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
 
             const spots_per_region = candidate_spot_count;
+            // Use density to determine how many candidates survive
+            const density_cap: f64 = @max(1.0, density_expression);
+            const keep_fraction: f64 = @min(1.0, density_cap / 50.0); // scale: density 10 -> 20% keep
+
             var si: u32 = 0;
             while (si < spots_per_region) : (si += 1) {
                 const sx = nrx * region_size + neighbor_rng.float() * region_size;
                 const sy = nry * region_size + neighbor_rng.float() * region_size;
 
-                    // Random size variation (0.5 - 1.5x), filter to ~1/3 of candidates
-                const spot_rng1 = neighbor_rng.float();
-                if (spot_rng1 < 0.0) continue;
+                // Candidate filtering: only keep fraction of candidates
+                if (neighbor_rng.float() >= keep_fraction) continue;
+
                 const spot_scale = 0.5 + neighbor_rng.float();
                 const spot_r = spot_radius_expression * spot_scale;
                 const spot_q = spot_quantity_expression * spot_scale;
