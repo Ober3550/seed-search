@@ -64,18 +64,24 @@ const DOUBLE_DENSITY_DISTANCE: f64 = 1300.0;
 const REGULAR_PATCH_FADE_IN_DISTANCE: f64 = 300.0;
 const STARTING_RESOURCE_PLACEMENT_RADIUS: f64 = 120.0;
 
-fn regularDensityAt(distance: f64, base_density: f64, frequency: f64, size: f64, spots_per_km2: f64) f64 {
-    const base = base_density * frequency * spots_per_km2 / 1000.0;
-    const dist_factor = if (distance < REGULAR_PATCH_FADE_IN_DISTANCE)
-        distance / REGULAR_PATCH_FADE_IN_DISTANCE
+fn regularDensityAt(distance: f64, config: ResourceAutoplaceConfig, controls: AutoplaceControls) f64 {
+    const base = config.base_density * controls.frequency * controls.size;
+    // Fade in over regular_patch_fade_in_distance, then grow with distance
+    const fade = if (distance < STARTING_RESOURCE_PLACEMENT_RADIUS)
+        0.0
     else
-        1.0 + (distance - REGULAR_PATCH_FADE_IN_DISTANCE) / (DOUBLE_DENSITY_DISTANCE - REGULAR_PATCH_FADE_IN_DISTANCE);
-    return base * dist_factor * size;
+        @min(1.0, (distance - STARTING_RESOURCE_PLACEMENT_RADIUS) / REGULAR_PATCH_FADE_IN_DISTANCE);
+    const dist_factor = 1.0 + @min(1.0, (distance - REGULAR_PATCH_FADE_IN_DISTANCE) / DOUBLE_DENSITY_DISTANCE);
+    return base * fade * dist_factor;
 }
 
 fn regularSpotQuantity(distance: f64, config: ResourceAutoplaceConfig, controls: AutoplaceControls) f64 {
-    const density = regularDensityAt(distance, config.base_density, controls.frequency, controls.size, config.base_spots_per_km2);
-    return density * 1024.0 * 1024.0 / @as(f64, @floatFromInt(config.candidate_spot_count));
+    // 1,000,000 / base_spots_per_km2 / frequency * regular_density
+    const base_qty = 1_000_000.0 / config.base_spots_per_km2 / controls.frequency;
+    const density = regularDensityAt(distance, config, controls);
+    // random_spot_size defaults: min=0.25, max=2.0
+    const avg_size: f64 = 1.125; // (0.25 + 2.0) / 2
+    return avg_size * base_qty * density;
 }
 
 fn regularSpotRadius(quantity: f64, rq_factor: f64) f64 {
@@ -118,7 +124,7 @@ pub fn computeOreAt(
         value += (blob - 0.25) * blob_amp;
     } else {
         // Regular patches
-        const density = regularDensityAt(distance, config.base_density, controls.frequency, controls.size, config.base_spots_per_km2);
+        const density = regularDensityAt(distance, config, controls);
         const spot_qty = regularSpotQuantity(distance, config, controls);
         const spot_r = regularSpotRadius(spot_qty, rq);
         const blob = noise.basisNoise(x, y, map_seed, config.seed1, 1.0 / 8.0, 1.0) +

@@ -100,7 +100,7 @@ pub fn main(init: std.process.Init) !void {
 
     // PNG output
     if (bmp_filename) |filename| {
-        const scale: u32 = 3; // each tile = 3×3 pixels for visibility
+        const scale: u32 = 1; // 1:1 pixel mapping
         const size: u32 = @intCast(r * 2);
         const img_size: u32 = size * scale;
 
