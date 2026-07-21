@@ -180,6 +180,8 @@ pub fn spotNoise(
     spot_favorability_expression: f64,
     basement_value: f64,
     maximum_spot_basement_radius: f64,
+    skip_span: u32,
+    skip_offset: u32,
 ) !f64 {
     // Determine which region this position falls in
     const rx = @floor(x / region_size);
@@ -205,14 +207,16 @@ pub fn spotNoise(
             var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
 
             const spots_per_region = candidate_spot_count;
-            // Use density to determine how many candidates survive
             const density_cap: f64 = @max(1.0, density_expression);
-            const keep_fraction: f64 = @min(1.0, density_cap / 8.0); // scale: density 10 -> 20% keep
+            const keep_fraction: f64 = @min(1.0, density_cap / 8.0);
 
             var si: u32 = 0;
             while (si < spots_per_region) : (si += 1) {
+                // Always generate the position (consumes RNG), but only evaluate if it matches our offset
                 const sx = nrx * region_size + neighbor_rng.float() * region_size;
                 const sy = nry * region_size + neighbor_rng.float() * region_size;
+
+                if (si % skip_span != skip_offset) continue;
 
                 // Candidate filtering: only keep fraction of candidates
                 if (neighbor_rng.float() >= keep_fraction) continue;

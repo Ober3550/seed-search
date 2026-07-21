@@ -19,24 +19,31 @@ pub const ResourceAutoplaceConfig = struct {
     random_probability: f64 = 1.0,
     additional_richness: f64 = 0.0,
     richness_post_multiplier: f64 = 1.0,
+    /// Which subset of candidates this resource gets (0..skip_span-1)
+    skip_offset: u32 = 0,
+    /// Total number of resource patch sets (6 in base game)
+    skip_span: u32 = 6,
 };
 
 pub const iron_ore_default = ResourceAutoplaceConfig{
     .base_density = 10.0, .candidate_spot_count = 22,
-    .regular_rq_factor_multiplier = 1.10,
+    .regular_rq_factor_multiplier = 1.10, .skip_offset = 0,
 };
 pub const copper_ore_default = ResourceAutoplaceConfig{
     .base_density = 8.0, .candidate_spot_count = 22,
-    .regular_rq_factor_multiplier = 1.10,
+    .regular_rq_factor_multiplier = 1.10, .skip_offset = 1,
 };
 pub const coal_default = ResourceAutoplaceConfig{
     .base_density = 8.0, .regular_rq_factor_multiplier = 1.0,
+    .skip_offset = 2,
 };
 pub const stone_default = ResourceAutoplaceConfig{
     .base_density = 4.0, .regular_rq_factor_multiplier = 1.0,
+    .skip_offset = 3,
 };
 pub const uranium_ore_default = ResourceAutoplaceConfig{
     .base_density = 0.9, .base_spots_per_km2 = 1.25,
+    .skip_offset = 5,
 };
 
 const DOUBLE_DENSITY_DISTANCE: f64 = 1300.0;
@@ -81,7 +88,7 @@ pub fn computeOreAt(
     var value = try noise.spotNoise(alloc, x, y, map_seed, config.seed1,
         1024.0, config.candidate_spot_count,
         density, spot_qty, spot_r, 1.0,
-        -1.0 * blob_amp, 128.0);
+        -1.0 * blob_amp, 128.0, config.skip_span, config.skip_offset);
     value += (blob - 0.25) * blob_amp;
 
     if (config.random_probability < 1.0) {
