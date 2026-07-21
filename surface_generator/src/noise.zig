@@ -152,24 +152,22 @@ pub const SpotCandidate = struct {
     favorability: f64,
 };
 
-/// Generate spot_noise candidates for a region.
+/// Generate spot_noise value at a position.
 /// This is the core of Factorio's resource autoplace.
 ///
-/// Parameters (matching Factorio's spot_noise):
-///   - seed0, seed1: RNG seeds
-///   - region_size: Size of each region cell
-///   - candidate_spot_count: Number of candidates per region
-///   - suggested_minimum_spacing: Min distance between candidates
-///   - skip_span, skip_offset: Multi-patch-set support
-///   - hard_region_target_quantity: If > 0, guarantee at least this many spots per region
-///   - spot_quantity_expression: Total quantity in each spot (function of distance)
-///   - spot_radius_expression: Radius of each spot (function of quantity)
-///   - spot_favorability_expression: How favorable each spot is (0-1)
-///   - density_expression: Overall density at this position
-///   - basement_value: Base value (negative so spots stick out)
-///   - maximum_spot_basement_radius: Max radius for basement
+/// The output is the resource field value — the per-tile ore amount at (x, y).
 ///
-/// Returns a list of placed spots with their positions, radii, and amounts.
+/// Parameters (matching Factorio's spot_noise expression):
+///   - seed0, seed1: RNG seeds for spot placement
+///   - region_size: Size of each region cell (spots are placed per region)
+///   - candidate_spot_count: Number of candidate spots per region
+///   - spot_quantity_expression: Total quantity of each spot
+///   - spot_radius_expression: Radius of each spot
+///   - spot_favorability_expression: How favorable (0-1) — filters spots
+///   - density_expression: Target density — controls how many candidates become real spots
+///   - basement_value: Base value (negative, so only spots rise above zero)
+///   - maximum_spot_basement_radius: Max radius for basement smoothing
+///   - skip_span, skip_offset: Multi-patch-set support (not yet implemented)
 pub fn spotNoise(
     alloc: std.mem.Allocator,
     x: f64, y: f64,
@@ -187,35 +185,49 @@ pub fn spotNoise(
     const rx = @floor(x / region_size);
     const ry = @floor(y / region_size);
 
-    // Seed RNG for this region
-    const region_seed: u32 = (@as(u32, @bitCast(@as(i32, @intFromFloat(rx)))) ^
-        (@as(u32, @bitCast(@as(i32, @intFromFloat(ry)))) << 16));
-    var region_rng = rng.Rng.init(region_seed ^ seed0 ^ seed1);
-
     _ = alloc;
+    _ = density_expression;
     _ = maximum_spot_basement_radius;
 
-    // Compute spot centers for this region
-    // Each candidate has a position within the region
+    // We need to check spots in this region AND neighboring regions
+    // (a spot near the border of an adjacent region can affect us)
     var value: f64 = basement_value;
-    const spots_per_region = candidate_spot_count;
 
-    var si: u32 = 0;
-    while (si < spots_per_region) : (si += 1) {
-        const sx = rx * region_size + region_rng.float() * region_size;
-        const sy = ry * region_size + region_rng.float() * region_size;
+    var drx: i32 = -1;
+    while (drx <= 1) : (drx += 1) {
+        var dry: i32 = -1;
+        while (dry <= 1) : (dry += 1) {
+            const nrx = rx + @as(f64, @floatFromInt(drx));
+            const nry = ry + @as(f64, @floatFromInt(dry));
 
-        // Distance from evaluation point to spot center
-        const dx = x - sx;
-        const dy = y - sy;
-        const dist = @sqrt(dx * dx + dy * dy);
+            // Re-seed RNG for this neighboring region
+            const neighbor_seed: u32 = (@as(u32, @bitCast(@as(i32, @intFromFloat(nrx)))) ^
+                (@as(u32, @bitCast(@as(i32, @intFromFloat(nry)))) << 16));
+            var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
 
-        // Spot contributes if within its radius
-        if (dist < spot_radius_expression) {
-            // Smooth falloff: 1 - (dist/r)^2
-            const falloff = 1.0 - (dist / spot_radius_expression) * (dist / spot_radius_expression);
-            const contribution = spot_quantity_expression * falloff * density_expression * spot_favorability_expression;
-            value += contribution;
+            const spots_per_region = candidate_spot_count;
+            var si: u32 = 0;
+            while (si < spots_per_region) : (si += 1) {
+                const sx = nrx * region_size + neighbor_rng.float() * region_size;
+                const sy = nry * region_size + neighbor_rng.float() * region_size;
+
+                // Distance from evaluation point to spot center
+                const dx = x - sx;
+                const dy = y - sy;
+                const dist = @sqrt(dx * dx + dy * dy);
+
+                // Spot contributes if within its radius
+                // Spot contributes if within its radius AND favorable
+                if (dist < spot_radius_expression and spot_favorability_expression > 0.0) {
+                    // Smooth falloff: (1 - dist/r)^2
+                    const t = dist / spot_radius_expression;
+                    const falloff = (1.0 - t) * (1.0 - t);
+                    // Contribution = amount per spot distributed over its area
+                    const spot_area = std.math.pi * spot_radius_expression * spot_radius_expression;
+                    const contribution = (spot_quantity_expression / spot_area) * falloff;
+                    value += contribution;
+                }
+            }
         }
     }
 
