@@ -186,6 +186,8 @@ pub fn spotNoise(
 ) !f64 {
     _ = seed0;
     _ = seed1;
+    _ = skip_span;
+    _ = skip_offset;
     // Determine which region this position falls in
     const rx = @floor(x / region_size);
     const ry = @floor(y / region_size);
@@ -221,9 +223,6 @@ pub fn spotNoise(
                 // Always generate the position (consumes RNG), but only evaluate if it matches our offset
                 const sx = nrx * region_size + neighbor_rng.float() * region_size;
                 const sy = nry * region_size + neighbor_rng.float() * region_size;
-
-                if (si % skip_span != skip_offset) continue;
-
 
                 const spot_scale = 0.5 + neighbor_rng.float();
                 const spot_r = spot_radius_expression * spot_scale;
