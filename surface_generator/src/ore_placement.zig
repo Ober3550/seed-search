@@ -66,6 +66,31 @@ fn regularSpotRadius(quantity: f64, rq_factor: f64) f64 {
     return radius;
 }
 
+pub fn computeRawNoise(
+    alloc: std.mem.Allocator,
+    map_seed: u32,
+    x: f64, y: f64,
+    distance: f64,
+    config: ResourceAutoplaceConfig,
+    controls: AutoplaceControls,
+) !f64 {
+    if (controls.size <= 0.0) return 0.0;
+    const rq = config.regular_rq_factor_multiplier / 10.0;
+    const density = regularDensityAt(distance, config, controls);
+    const spot_qty = regularSpotQuantity(distance, config, controls);
+    const spot_r = regularSpotRadius(spot_qty, rq);
+    const blob = noise.basisNoise(x, y, map_seed, config.seed1, 1.0 / 8.0, 1.0) +
+        noise.basisNoise(x, y, map_seed, config.seed1, 1.0 / 24.0, 1.0);
+    const blob_amp = (1.0 / 8.0) / (std.math.pi / 3.0 * rq * rq) *
+        std.math.pow(f64, spot_qty, 1.0 / 3.0);
+    var value = try noise.spotNoise(alloc, x, y, map_seed, config.seed1,
+        1024.0, config.candidate_spot_count,
+        density, spot_qty, spot_r,
+        -1.0 * blob_amp);
+    value += (blob - 0.25) * blob_amp;
+    return value;
+}
+
 pub fn computeOreAt(
     alloc: std.mem.Allocator,
     map_seed: u32,
@@ -87,8 +112,8 @@ pub fn computeOreAt(
 
     var value = try noise.spotNoise(alloc, x, y, map_seed, config.seed1,
         1024.0, config.candidate_spot_count,
-        density, spot_qty, spot_r, 1.0,
-        -1.0 * blob_amp, 128.0, config.skip_span, config.skip_offset);
+        density, spot_qty, spot_r,
+        -1.0 * blob_amp);
     value += (blob - 0.25) * blob_amp;
 
     if (config.random_probability < 1.0) {

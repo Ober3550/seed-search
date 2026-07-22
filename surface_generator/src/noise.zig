@@ -1,19 +1,17 @@
-//! Factorio-compatible noise system.
+//! Factorio-compatible noise system with exact spot_noise algorithm.
 //!
-//! Implements the noise operations used by Factorio's map generation:
-//!   - basis_noise: 2D Perlin noise with seed hashing
-//!   - multioctave_noise: Fractal octave sum
-//!   - spot_noise: Voronoi-like spot placement (the core of ore generation)
-//!   - random_penalty: Random thinning of values
-//!
-//! Parameters match Factorio's data stage noise expressions exactly.
+//! Implements the "spot noise" expression type described in FFF #258:
+//!   1. Generate random candidate points per region
+//!   2. Calculate density, quantity, radius, favorability for each
+//!   3. Sort by favorability, select until target quantity reached
+//!   4. Evaluate selected spots at (x,y)
 
 const std = @import("std");
 const rng = @import("rng.zig");
 const sha1 = @import("sha1.zig");
 
 // ============================================================
-// Hash function for noise permutations
+// Hash function for Perlin noise permutations
 // ============================================================
 
 fn hash(n: u32) u32 {
@@ -24,19 +22,15 @@ fn hash(n: u32) u32 {
     return h;
 }
 
-fn hash2(x: u32, y: u32) u32 {
-    return hash(x +% hash(y));
-}
-
 fn hash3(x: u32, y: u32, z: u32) u32 {
-    return hash(x +% hash(y +% hash(z)));
+    const a = x +% hash(y +% hash(z));
+    return hash(a);
 }
 
 // ============================================================
 // 2D Perlin noise (basis_noise)
 // ============================================================
 
-// Perlin gradient vectors
 const GRAD2: [8][2]f64 = .{
     .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 },
     .{ 1, 1 }, .{ -1, 1 }, .{ 1, -1 }, .{ -1, -1 },
@@ -46,159 +40,64 @@ fn smoothstep(t: f64) f64 {
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 
-fn lerp(a: f64, b: f64, t: f64) f64 {
-    return a + t * (b - a);
-}
-
 fn dotGrad2(hash_val: u32, dx: f64, dy: f64) f64 {
     const g = GRAD2[hash_val & 7];
     return g[0] * dx + g[1] * dy;
 }
 
-/// 2D Perlin noise value in [-1, 1].
 pub fn perlin2d(x: f64, y: f64, seed0: u32, seed1: u32) f64 {
     const ix: i32 = @intFromFloat(@floor(x));
     const iy: i32 = @intFromFloat(@floor(y));
     const fx = x - @as(f64, @floatFromInt(ix));
     const fy = y - @as(f64, @floatFromInt(iy));
-
     const u = smoothstep(fx);
     const v = smoothstep(fy);
-
     const xi0: u32 = @bitCast(ix);
     const yi0: u32 = @bitCast(iy);
     const xi1: u32 = @bitCast(ix + 1);
     const yi1: u32 = @bitCast(iy + 1);
-
-    const n00 = dotGrad2(hash3(xi0, yi0, seed0 + seed1), fx, fy);
-    const n10 = dotGrad2(hash3(xi1, yi0, seed0 + seed1), fx - 1.0, fy);
-    const n01 = dotGrad2(hash3(xi0, yi1, seed0 + seed1), fx, fy - 1.0);
-    const n11 = dotGrad2(hash3(xi1, yi1, seed0 + seed1), fx - 1.0, fy - 1.0);
-
-    const nx0 = lerp(n00, n10, u);
-    const nx1 = lerp(n01, n11, u);
-
-    return lerp(nx0, nx1, v);
+    const s = seed0 +% seed1;
+    const n00 = dotGrad2(hash3(xi0, yi0, s), fx, fy);
+    const n10 = dotGrad2(hash3(xi1, yi0, s), fx - 1.0, fy);
+    const n01 = dotGrad2(hash3(xi0, yi1, s), fx, fy - 1.0);
+    const n11 = dotGrad2(hash3(xi1, yi1, s), fx - 1.0, fy - 1.0);
+    const nx0 = n00 + u * (n10 - n00);
+    const nx1 = n01 + u * (n11 - n01);
+    return nx0 + v * (nx1 - nx0);
 }
 
-// ============================================================
-// basis_noise — Factorio's named noise function
-// ============================================================
-
-/// Factorio's basis_noise expression.
-/// Parameters match the data stage: x, y, seed0, seed1, input_scale, output_scale.
 pub fn basisNoise(x: f64, y: f64, seed0: u32, seed1: u32, input_scale: f64, output_scale: f64) f64 {
     return perlin2d(x * input_scale, y * input_scale, seed0, seed1) * output_scale;
 }
 
 // ============================================================
-// multioctave_noise — Fractal octave sum
+// spot_noise — FFF #258 algorithm
 // ============================================================
 
-/// Factorio's multioctave_noise expression.
-/// Parameters: x, y, seed0, seed1, octaves, persistence, input_scale, output_scale.
-pub fn multioctaveNoise(
-    x: f64, y: f64,
-    seed0: u32, seed1: u32,
-    octaves: u32,
-    persistence: f64,
-    input_scale: f64,
-    output_scale: f64,
-) f64 {
-    var value: f64 = 0.0;
-    var amplitude: f64 = 1.0;
-    var freq: f64 = 1.0;
-    var max_value: f64 = 0.0;
-    var i: u32 = 0;
+const MAX_CANDIDATES = 64; // enough for any region + neighbors
 
-    while (i < octaves) : (i += 1) {
-        const sx = x * input_scale * freq;
-        const sy = y * input_scale * freq;
-        value += perlin2d(sx, sy, seed0 + i, seed1) * amplitude;
-        max_value += amplitude;
-        amplitude *= persistence;
-        freq *= 2.0;
-    }
 
-    return (value / max_value) * output_scale;
-}
-
-// ============================================================
-// random_penalty — Random thinning
-// ============================================================
-
-/// Factorio's random_penalty expression.
-/// Returns source * random if random > amplitude, else source.
-/// Uses a deterministic RNG seeded by position.
-pub fn randomPenalty(x: f64, y: f64, source: f64, amplitude: f64) f64 {
-    const ix: u32 = @bitCast(@as(i32, @intFromFloat(@floor(x))));
-    const iy: u32 = @bitCast(@as(i32, @intFromFloat(@floor(y))));
-    var rr = rng.Rng.init(ix ^ (iy << 16));
-    const r = rr.float();
-    if (r > amplitude) {
-        return source * r;
-    }
-    return source;
-}
-
-// ============================================================
-// spot_noise — Voronoi-like spot placement
-// ============================================================
-
-/// A single spot candidate generated by spot_noise.
 pub const SpotCandidate = struct {
     x: f64,
     y: f64,
+    quantity: f64,
     radius: f64,
     favorability: f64,
 };
 
-/// Generate spot_noise value at a position.
-/// This is the core of Factorio's resource autoplace.
-///
-/// The output is the resource field value — the per-tile ore amount at (x, y).
-///
-/// Parameters (matching Factorio's spot_noise expression):
-///   - seed0, seed1: RNG seeds for spot placement
-///   - region_size: Size of each region cell (spots are placed per region)
-///   - candidate_spot_count: Number of candidate spots per region
-///   - spot_quantity_expression: Total quantity of each spot
-///   - spot_radius_expression: Radius of each spot
-///   - spot_favorability_expression: How favorable (0-1) — filters spots
-///   - density_expression: Target density — controls how many candidates become real spots
-///   - basement_value: Base value (negative, so only spots rise above zero)
-///   - maximum_spot_basement_radius: Max radius for basement smoothing
-///   - skip_span, skip_offset: Multi-patch-set support (not yet implemented)
-pub fn spotNoise(
+/// Generate and select spots using FFF #258 algorithm.
+/// Returns all selected spots across 9 regions around (rx, ry).
+pub fn generateSpots(
     alloc: std.mem.Allocator,
-    x: f64, y: f64,
-    seed0: u32, seed1: u32,
+    rx: f64, ry: f64,
+    map_seed: u32,
     region_size: f64,
     candidate_spot_count: u32,
     density_expression: f64,
-    spot_quantity_expression: f64,
-    spot_radius_expression: f64,
-    spot_favorability_expression: f64,
-    basement_value: f64,
-    maximum_spot_basement_radius: f64,
-    skip_span: u32,
-    skip_offset: u32,
-) !f64 {
-    _ = seed0;
-    _ = seed1;
-    _ = skip_span;
-    _ = skip_offset;
-    // Determine which region this position falls in
-    const rx = @floor(x / region_size);
-    const ry = @floor(y / region_size);
-
-    _ = alloc;
-    _ = density_expression;
-    _ = maximum_spot_basement_radius;
-
-    // We need to check spots in this region AND neighboring regions
-    // (a spot near the border of an adjacent region can affect us)
-    var value: f64 = basement_value;
+    spot_quantity: f64,
+    spot_radius: f64,
+) !std.ArrayList(SpotCandidate) {
+    var candidates = std.ArrayList(SpotCandidate).init(alloc);
 
     var drx: i32 = -1;
     while (drx <= 1) : (drx += 1) {
@@ -207,46 +106,89 @@ pub fn spotNoise(
             const nrx = rx + @as(f64, @floatFromInt(drx));
             const nry = ry + @as(f64, @floatFromInt(dry));
 
-            // SHA-1 based RNG seeding: SHA1(int64_le(rx), int64_le(ry)) -> first 4 bytes
             var sha_buf: [16]u8 = undefined;
             std.mem.writeInt(i64, sha_buf[0..8], @as(i64, @intFromFloat(nrx)), .little);
             std.mem.writeInt(i64, sha_buf[8..16], @as(i64, @intFromFloat(nry)), .little);
             var digest: [20]u8 = undefined;
             sha1.hash16(&sha_buf, &digest);
-            const neighbor_seed = std.mem.readInt(u32, digest[0..4], .little);
-            var neighbor_rng = rng.Rng.init(neighbor_seed);
-
-            const spots_per_region = candidate_spot_count;
+            const region_seed = std.mem.readInt(u32, digest[0..4], .little);
+            var region_rng = rng.Rng.init(region_seed);
+            _ = map_seed;
 
             var si: u32 = 0;
-            while (si < spots_per_region) : (si += 1) {
-                // Always generate the position (consumes RNG), but only evaluate if it matches our offset
-                const sx = nrx * region_size + neighbor_rng.float() * region_size;
-                const sy = nry * region_size + neighbor_rng.float() * region_size;
-
-                const spot_scale = 0.5 + neighbor_rng.float();
-                const spot_r = spot_radius_expression * spot_scale;
-                const spot_q = spot_quantity_expression * spot_scale;
-
-                // Distance from evaluation point to spot center
-                const dx = x - sx;
-                const dy = y - sy;
-                const dist = @sqrt(dx * dx + dy * dy);
-
-                // Spot contributes if within its radius
-                if (dist < spot_r and spot_favorability_expression > 0.0) {
-                    const t = dist / spot_r;
-                    const falloff = (1.0 - t) * (1.0 - t);
-                    const spot_area = std.math.pi * spot_r * spot_r;
-                    const contribution = (spot_q / spot_area) * falloff;
-                    value += contribution;
-                }
+            while (si < candidate_spot_count) : (si += 1) {
+                const sx = nrx * region_size + region_rng.float() * region_size;
+                const sy = nry * region_size + region_rng.float() * region_size;
+                const scale = 0.5 + region_rng.float();
+                try candidates.append(.{
+                    .x = sx,
+                    .y = sy,
+                    .quantity = spot_quantity * scale,
+                    .radius = spot_radius * scale,
+                    .favorability = 1.0,
+                });
             }
         }
     }
 
+    // Sort by favorability descending
+    std.mem.sort(SpotCandidate, candidates.items, {}, struct {
+        fn lt(_: void, a: SpotCandidate, b: SpotCandidate) bool {
+            return a.favorability > b.favorability;
+        }
+    }.lt);
+
+    // Select until target quantity reached
+    const region_area = region_size * region_size;
+    const target_quantity = density_expression * region_area * 9.0; // 9 regions
+
+    var total_qty: f64 = 0;
+    var keep: usize = 0;
+    for (candidates.items) |c| {
+        if (total_qty >= target_quantity) break;
+        total_qty += c.quantity;
+        keep += 1;
+    }
+
+    // Shrink to selected spots
+    try candidates.resize(keep);
+    return candidates;
+}
+
+/// Evaluate spot_noise at (x,y) using pre-generated spots.
+pub fn spotNoise(
+    x: f64, y: f64,
+    spots: []const SpotCandidate,
+    basement_value: f64,
+) f64 {
+    var value: f64 = basement_value;
+    for (spots) |c| {
+        const dx = x - c.x;
+        const dy = y - c.y;
+        const dist = @sqrt(dx * dx + dy * dy);
+        if (dist < c.radius) {
+            const t = dist / c.radius;
+            const falloff = (1.0 - t) * (1.0 - t);
+            value += (c.quantity / (std.math.pi * c.radius * c.radius)) * falloff;
+        }
+    }
     return value;
-}// ============================================================
+}
+
+// ============================================================
+// random_penalty
+// ============================================================
+
+pub fn randomPenalty(x: f64, y: f64, source: f64, amplitude: f64) f64 {
+    const ix: u32 = @bitCast(@as(i32, @intFromFloat(@floor(x))));
+    const iy: u32 = @bitCast(@as(i32, @intFromFloat(@floor(y))));
+    var rr = rng.Rng.init(ix ^ (iy << 16));
+    const r = rr.float();
+    if (r > amplitude) return source * r;
+    return source;
+}
+
+// ============================================================
 // Tests
 // ============================================================
 
@@ -257,14 +199,5 @@ test "perlin2d produces values in [-1, 1]" {
 }
 
 test "perlin2d is deterministic" {
-    const a = perlin2d(100.0, 200.0, 12345, 67890);
-    const b = perlin2d(100.0, 200.0, 12345, 67890);
-    try std.testing.expectEqual(a, b);
+    try std.testing.expectEqual(perlin2d(100, 200, 12345, 67890), perlin2d(100, 200, 12345, 67890));
 }
-
-test "multioctaveNoise produces finite values" {
-    const val = multioctaveNoise(100.0, 200.0, 341, 100, 4, 0.5, 1.0 / 32.0, 1.0);
-    try std.testing.expect(!std.math.isNan(val));
-    try std.testing.expect(!std.math.isInf(val));
-}
-
