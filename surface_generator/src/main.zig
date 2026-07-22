@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
                 const fx: f64 = @floatFromInt(px);
                 const fy: f64 = @floatFromInt(py);
                 const d = @sqrt(fx * fx + fy * fy);
-                const v = try surfacegen.ore.computeRawNoise(a, seed, fx, fy, d, config, controls);
+                const v = try surfacegen.ore.computeOreAt(a, seed, fx, fy, d, config, controls);
                 if (v < min_val) min_val = v;
                 if (v > max_val) max_val = v;
             }
@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
                 const fx: f64 = @floatFromInt(px);
                 const fy: f64 = @floatFromInt(py);
                 const d = @sqrt(fx * fx + fy * fy);
-                const v = try surfacegen.ore.computeRawNoise(a, seed, fx, fy, d, config, controls);
+                const v = try surfacegen.ore.computeOreAt(a, seed, fx, fy, d, config, controls);
                 const b: u8 = @intFromFloat(@min(255, @max(0, (v - min_val) / range * 255)));
                 const idx: usize = @intCast((@as(u32, @intCast(py + r)) * size + @as(u32, @intCast(px + r))) * 3);
                 pixels[idx] = b;

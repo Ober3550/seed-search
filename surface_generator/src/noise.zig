@@ -97,7 +97,7 @@ pub fn generateSpots(
     spot_quantity: f64,
     spot_radius: f64,
 ) !std.ArrayList(SpotCandidate) {
-    var candidates = std.ArrayList(SpotCandidate).init(alloc);
+    var candidates: std.ArrayList(SpotCandidate) = .empty;
 
     var drx: i32 = -1;
     while (drx <= 1) : (drx += 1) {
@@ -120,7 +120,7 @@ pub fn generateSpots(
                 const sx = nrx * region_size + region_rng.float() * region_size;
                 const sy = nry * region_size + region_rng.float() * region_size;
                 const scale = 0.5 + region_rng.float();
-                try candidates.append(.{
+                try candidates.append(alloc, .{
                     .x = sx,
                     .y = sy,
                     .quantity = spot_quantity * scale,
@@ -151,7 +151,7 @@ pub fn generateSpots(
     }
 
     // Shrink to selected spots
-    try candidates.resize(keep);
+    try candidates.resize(alloc, keep);
     return candidates;
 }
 
