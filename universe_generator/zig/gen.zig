@@ -303,6 +303,20 @@ pub const resource_order = [_][]const u8{
     "kr-imersite", "kr-mineral-water", "kr-rare-metal-ore",
 };
 
+/// Per-resource, per-zone autoplace controls (indexed by `resource_order`).
+/// These are the raw map-gen control values SE feeds into the resource autoplace
+/// expressions as `control:<name>:frequency/size/richness`. Downstream, SE raises
+/// each to the power 0.8 (setting_scale) inside the noise expression, and
+/// `Zone.apply_controls_to_mapgen` multiplies `frequency` by the zone-level
+/// `Zone.get_frequency_multiplier(zone)` and clamps size/richness to >= 0.
+pub const ResourceControl = struct {
+    present: bool = false, // resource is placed on this zone
+    frequency: f64 = 0,
+    size: f64 = 0,
+    richness: f64 = 0,
+    fsr_score: f64 = 0, // normalized freq*size*richness (legacy computeZoneResources value)
+};
+
 const RESOURCE_PRIMARY_BOOST: f64 = 0.5;
 const RESOURCE_SECONDARY_IRREGULARITY: f64 = 0.75;
 const RESOURCE_POWER: f64 = 1.5;
@@ -379,8 +393,11 @@ pub fn formatYield(yield_m: f64, buf: []u8) []const u8 {
 /// Compute resource scores for a single planet or moon.
 /// primary_resource must be known (from prototype, special_type, or claiming).
 /// Returns scores indexed by resource_order (0..17). Score = FSR / norm.
-pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
-    var scores: [18]f64 = @splat(0.0);
+/// Full per-resource controls (freq/size/richness) for a zone. Same computation
+/// as `computeZoneResources`, but returns the individual control values needed to
+/// drive resource autoplace, not just the collapsed FSR score.
+pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, primary_resource: ?[]const u8, tags: Tags) [18]ResourceControl {
+    var controls: [18]ResourceControl = @splat(.{});
 
     // Per-zone RNG for bias generation
     var bias_rng = Rng.initFactorio(zone_seed);
@@ -540,9 +557,24 @@ pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_re
         const size = size_lo + resource_value * (size_hi - size_lo);
         const richness = rich_lo + resource_value * (rich_hi - rich_lo);
         const fsr = freq * size * richness;
-        scores[ri] = fsr / norm;
+        controls[ri] = .{
+            .present = true,
+            .frequency = freq,
+            .size = size,
+            .richness = richness,
+            .fsr_score = fsr / norm,
+        };
     }
 
+    return controls;
+}
+
+/// Legacy: normalized FSR score per resource (indexed by `resource_order`).
+/// Thin wrapper over `computeZoneResourceControls` for existing callers.
+pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
+    const controls = computeZoneResourceControls(zone_seed, zone_type, primary_resource, tags);
+    var scores: [18]f64 = undefined;
+    for (controls, 0..) |c, ri| scores[ri] = c.fsr_score;
     return scores;
 }
 

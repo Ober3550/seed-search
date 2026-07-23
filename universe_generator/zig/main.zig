@@ -54,6 +54,12 @@ pub fn main(init: std.process.Init) !void {
     var last_seed = start_seed;
     var last_passed: u32 = 0;
 
+    // Single stdout writer for the whole run (creating one per seed resets the
+    // file offset to 0 and clobbers previous seeds when stdout is a regular file).
+    var stdout_buf: [1 << 16]u8 = undefined;
+    var stdout_fw = std.Io.File.stdout().writer(io, &stdout_buf);
+    const stdout_w = &stdout_fw.interface;
+
     while (seed <= end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
@@ -337,14 +343,10 @@ pub fn main(init: std.process.Init) !void {
         pos += 1;
 
         // Write JSONL to stdout (shell redirects to file)
-        {
-            var stdout_buf: [4096]u8 = [_]u8{0} ** 4096;
-            var fw = std.Io.File.stdout().writer(io, &stdout_buf);
-            _ = try fw.interface.writeSplat(&.{buf[0..pos]}, 1);
-            try fw.interface.flush();
-        }
+        _ = try stdout_w.writeSplat(&.{buf[0..pos]}, 1);
         passed += 1;
 
         // loop advances seed
     }
+    try stdout_w.flush();
 }
