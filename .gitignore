@@ -33,6 +33,8 @@ calibration/saves/docker-bundle/
 .zig-cache/
 zig-out/
 *.bmp
+*.jsonl
+.mcp.json
 ghidra/project/
 .DS_Store
 generator/zig/seedgen
