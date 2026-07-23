@@ -1,0 +1,4 @@
+=== gradient_table DAT_103350164 (256 x [gx,gy] floats) ===
+grad read error: ghidra.program.model.mem.MemoryAccessException: Unable to read bytes at ram:103350164
+=== defaultNoise @ 0x10334ff5c ===
+dn read error: ghidra.program.model.mem.MemoryAccessException: Attempted to read from uninitialized block

@@ -1,0 +1,10 @@
+# Extracted binary slice (regenerate with: lipo ... -thin arm64)
+factorio-arm64
+# Ghidra project database (large, regenerate via run-headless.sh)
+project/
+# Headless run logs
+headless.log
+headless-script.log
+headless-process.log
+headless-stdout.log
+# Keep: scripts/, run-headless.sh, export/*.c (decompiled reference)
