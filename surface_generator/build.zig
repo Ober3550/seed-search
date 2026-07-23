@@ -29,6 +29,25 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
+    // SE surface generator (Space Exploration zones).
+    const se_exe = b.addExecutable(.{
+        .name = "segen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/se_main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "surface_generator", .module = mod },
+            },
+        }),
+    });
+    b.installArtifact(se_exe);
+    const se_run_step = b.step("segen", "Run SE surface generator");
+    const se_run_cmd = b.addRunArtifact(se_exe);
+    se_run_step.dependOn(&se_run_cmd.step);
+    se_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| se_run_cmd.addArgs(args);
+
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 

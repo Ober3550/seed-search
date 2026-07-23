@@ -32,62 +32,127 @@ fn hash3(x: u32, y: u32, z: u32) u32 {
 }
 
 // ============================================================
-// 2D Perlin noise (basis_noise)
+// basis_noise — exact port of Factorio's surflet gradient noise
+// (Noise::noise @ 0x1015db970, Noise::setSeed @ 0x1015dae7c,
+//  Noise::Noise ctor @ 0x1015daca8). See ghidra/export/spot_noise.c.
+//
+// NOT classic Perlin: value = sum over the 4 grid corners of
+//   (grad_c . offset_c) * max(0, 1 - |offset_c|^2)^3  * output_scale
+// with gradients chosen by a double-permutation hash. The 256 base gradients
+// are ~4.2*(cos,sin) around a circle via Factorio's fast-sin polynomial;
+// setSeed then Fisher-Yates-shuffles the two 256 permutation tables and the
+// gradient table with a taus88 RNG seeded by seed0, and picks a seed byte.
 // ============================================================
 
-// Perlin gradient vectors
-const GRAD2: [8][2]f64 = .{
-    .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 },
-    .{ 1, 1 }, .{ -1, 1 }, .{ 1, -1 }, .{ -1, -1 },
+/// One base gradient component: Factorio's fast-sin polynomial of `phase`.
+fn gradPoly(phase: f64) f32 {
+    const r: f64 = if (phase > 0.0) @trunc(phase + 0.5) else @trunc(phase - 0.5);
+    const t = 0.25 - @abs(phase - r);
+    const t2 = t * t;
+    const t4 = t2 * t2;
+    const t8 = t4 * t4;
+    const poly = t8 * 39.65735524898863 + t2 * (-41.34167506665737) +
+        6.283185269630412 + t4 * (t2 * (-76.56887678023256) + 81.60201529595571);
+    return @floatCast(t * poly * 4.2);
+}
+
+/// Base gradient vector i (before shuffling): ~4.2*(cos,sin) at angle 2*pi*i/256.
+fn baseGradient(i: usize) [2]f32 {
+    const ang_f32: f32 = @floatCast(@as(f64, @floatFromInt(i)) * 0.02454369260617026); // *2pi/256
+    const phase_x: f64 = @as(f64, ang_f32) * 0.15915494309189535; // /2pi
+    const phase_y: f64 = phase_x - 0.25;
+    return .{ gradPoly(phase_x), gradPoly(phase_y) };
+}
+
+/// A seeded Noise instance (perm tables + gradient table), reusable across
+/// input/output scales. Build once per (seed0, seed1); cheap to evaluate.
+pub const BasisNoiseGen = struct {
+    perm1: [256]u8,
+    perm2: [256]u8,
+    grad: [256][2]f32,
+    seed_byte: u8,
+
+    fn shufflePerm(arr: *[256]u8, prng: *rng.Rng) void {
+        var i: usize = 255;
+        while (i >= 1) : (i -= 1) {
+            const j = prng.next() % @as(u32, @intCast(i + 1));
+            const tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+            if (i == 1) break;
+        }
+    }
+
+    pub fn init(seed0: u32, seed1: u32) BasisNoiseGen {
+        var self: BasisNoiseGen = undefined;
+        var identity: [256]u8 = undefined;
+        for (0..256) |i| {
+            identity[i] = @intCast(i);
+            self.perm1[i] = @intCast(i);
+            self.perm2[i] = @intCast(i);
+            self.grad[i] = baseGradient(i);
+        }
+
+        // setSeed: seed clamped >=341 (rng.Rng.init re-clamps <341), taus88 (s,s,s).
+        const s: u32 = if (seed0 < 342) 341 else seed0;
+        var prng = rng.Rng.init(s);
+
+        // 1) temp shuffle of an identity copy -> seed_byte = temp[seed1]
+        var temp = identity;
+        shufflePerm(&temp, &prng);
+        self.seed_byte = temp[seed1 & 0xff];
+
+        // 2) shuffle perm1, 3) perm2, 4) gradient table (RNG continues in order).
+        shufflePerm(&self.perm1, &prng);
+        shufflePerm(&self.perm2, &prng);
+        var gi: usize = 255;
+        while (gi >= 1) : (gi -= 1) {
+            const j = prng.next() % @as(u32, @intCast(gi + 1));
+            const tmp = self.grad[gi];
+            self.grad[gi] = self.grad[j];
+            self.grad[j] = tmp;
+            if (gi == 1) break;
+        }
+        return self;
+    }
+
+    /// Evaluate basis_noise at (x, y) with the given input/output scale.
+    /// offset_x/offset_y default to 0 for plain basis_noise.
+    pub fn eval(self: *const BasisNoiseGen, x: f64, y: f64, input_scale: f64, output_scale: f64) f64 {
+        const scale: f32 = @floatCast(input_scale);
+        const X: f32 = @as(f32, @floatCast(x)) * scale;
+        const Y: f32 = @as(f32, @floatCast(y)) * scale;
+        const ix: i32 = @intFromFloat(@floor(X));
+        const iy: i32 = @intFromFloat(@floor(Y));
+        const fx: f32 = X - @as(f32, @floatFromInt(ix));
+        const fy: f32 = Y - @as(f32, @floatFromInt(iy));
+
+        var sum: f32 = 0.0;
+        var cy: i32 = 0;
+        while (cy <= 1) : (cy += 1) {
+            var cx: i32 = 0;
+            while (cx <= 1) : (cx += 1) {
+                const p1: u8 = self.perm1[@as(u8, @truncate(@as(u32, @bitCast(iy + cy))))];
+                const p2: u8 = self.perm2[@as(u8, @truncate(@as(u32, @bitCast(ix + cx))))];
+                const g = self.grad[p1 ^ self.seed_byte ^ p2];
+                const dx: f32 = fx - @as(f32, @floatFromInt(cx));
+                const dy: f32 = fy - @as(f32, @floatFromInt(cy));
+                const d2 = dx * dx + dy * dy;
+                if (d2 < 1.0) {
+                    const w = 1.0 - d2;
+                    sum += (g[0] * dx + g[1] * dy) * w * w * w;
+                }
+            }
+        }
+        return @as(f64, sum) * output_scale;
+    }
 };
 
-fn smoothstep(t: f64) f64 {
-    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
-
-fn lerp(a: f64, b: f64, t: f64) f64 {
-    return a + t * (b - a);
-}
-
-fn dotGrad2(hash_val: u32, dx: f64, dy: f64) f64 {
-    const g = GRAD2[hash_val & 7];
-    return g[0] * dx + g[1] * dy;
-}
-
-/// 2D Perlin noise value in [-1, 1].
-pub fn perlin2d(x: f64, y: f64, seed0: u32, seed1: u32) f64 {
-    const ix: i32 = @intFromFloat(@floor(x));
-    const iy: i32 = @intFromFloat(@floor(y));
-    const fx = x - @as(f64, @floatFromInt(ix));
-    const fy = y - @as(f64, @floatFromInt(iy));
-
-    const u = smoothstep(fx);
-    const v = smoothstep(fy);
-
-    const xi0: u32 = @bitCast(ix);
-    const yi0: u32 = @bitCast(iy);
-    const xi1: u32 = @bitCast(ix + 1);
-    const yi1: u32 = @bitCast(iy + 1);
-
-    const n00 = dotGrad2(hash3(xi0, yi0, seed0 + seed1), fx, fy);
-    const n10 = dotGrad2(hash3(xi1, yi0, seed0 + seed1), fx - 1.0, fy);
-    const n01 = dotGrad2(hash3(xi0, yi1, seed0 + seed1), fx, fy - 1.0);
-    const n11 = dotGrad2(hash3(xi1, yi1, seed0 + seed1), fx - 1.0, fy - 1.0);
-
-    const nx0 = lerp(n00, n10, u);
-    const nx1 = lerp(n01, n11, u);
-
-    return lerp(nx0, nx1, v);
-}
-
-// ============================================================
-// basis_noise — Factorio's named noise function
-// ============================================================
-
-/// Factorio's basis_noise expression.
-/// Parameters match the data stage: x, y, seed0, seed1, input_scale, output_scale.
+/// Convenience wrapper (builds a Gen per call — do NOT use in hot loops; use a
+/// cached BasisNoiseGen). Kept for tests / one-off evaluation.
 pub fn basisNoise(x: f64, y: f64, seed0: u32, seed1: u32, input_scale: f64, output_scale: f64) f64 {
-    return perlin2d(x * input_scale, y * input_scale, seed0, seed1) * output_scale;
+    const gen = BasisNoiseGen.init(seed0, seed1);
+    return gen.eval(x, y, input_scale, output_scale);
 }
 
 // ============================================================
@@ -111,9 +176,8 @@ pub fn multioctaveNoise(
     var i: u32 = 0;
 
     while (i < octaves) : (i += 1) {
-        const sx = x * input_scale * freq;
-        const sy = y * input_scale * freq;
-        value += perlin2d(sx, sy, seed0 + i, seed1) * amplitude;
+        const gen = BasisNoiseGen.init(seed0 + i, seed1);
+        value += gen.eval(x, y, input_scale * freq, 1.0) * amplitude;
         max_value += amplitude;
         amplitude *= persistence;
         freq *= 2.0;
@@ -144,115 +208,246 @@ pub fn randomPenalty(x: f64, y: f64, source: f64, amplitude: f64) f64 {
 // spot_noise — Voronoi-like spot placement
 // ============================================================
 
-/// A single spot candidate generated by spot_noise.
-pub const SpotCandidate = struct {
-    x: f64,
-    y: f64,
-    radius: f64,
-    favorability: f64,
-};
+// Exact port of Factorio's SpotNoise op, decompiled from the arm64 binary
+// (ThreadSafeSpotNoiseCache::SpotListGenerator). See ghidra/export/spot_noise.c.
+//
+// Pipeline per region:
+//   1. seed = ((ry*7907 + rx*7919 + seed1*7927 + 0x3fbe2c) ^ map_seed), >=341
+//   2. generatePoints: candidate_spot_count*skip_span Poisson-disk points,
+//      integer coords in a region CENTERED on (rx,ry)*region_size (±size/2).
+//   3. stride from skip_offset by skip_span -> this resource's candidates.
+//   4. evaluate density/quantity/radius/favorability at each candidate.
+//   5. region_target = mean(density) * region_size^2.
+//   6. sort by favorability desc; select accumulating quantity until >= target
+//      (hard: clamp last spot's quantity, shrink radius by (q'/q)^(1/3)).
+//   7. each spot is a CONE: peak = 3q/(pi r^2), slope = peak/r, r=min(radius,128).
+//   field value = max(basement_value, max over spots within 128 of peak-dist*slope)
 
-/// Generate spot_noise value at a position.
-/// This is the core of Factorio's resource autoplace.
-///
-/// The output is the resource field value — the per-tile ore amount at (x, y).
-///
-/// Parameters (matching Factorio's spot_noise expression):
-///   - seed0, seed1: RNG seeds for spot placement
-///   - region_size: Size of each region cell (spots are placed per region)
-///   - candidate_spot_count: Number of candidate spots per region
-///   - spot_quantity_expression: Total quantity of each spot
-///   - spot_radius_expression: Radius of each spot
-///   - spot_favorability_expression: How favorable (0-1) — filters spots
-///   - density_expression: Target density — controls how many candidates become real spots
-///   - basement_value: Base value (negative, so only spots rise above zero)
-///   - maximum_spot_basement_radius: Max radius for basement smoothing
-///   - skip_span, skip_offset: Multi-patch-set support (not yet implemented)
-pub fn spotNoise(
-    alloc: std.mem.Allocator,
-    x: f64, y: f64,
-    seed0: u32, seed1: u32,
-    region_size: f64,
-    candidate_spot_count: u32,
-    density_expression: f64,
-    spot_quantity_expression: f64,
-    spot_radius_expression: f64,
-    spot_favorability_expression: f64,
-    basement_value: f64,
-    maximum_spot_basement_radius: f64,
-) !f64 {
-    // Determine which region this position falls in
-    const rx = @floor(x / region_size);
-    const ry = @floor(y / region_size);
+/// A finalized spot: a cone value = peak - dist*slope for dist in [0, radius].
+pub const Spot = struct { x: f64, y: f64, peak: f64, slope: f64 };
 
-    _ = alloc;
-    _ = maximum_spot_basement_radius;
+const RegionKey = struct { x: i32, y: i32 };
 
-    // We need to check spots in this region AND neighboring regions
-    // (a spot near the border of an adjacent region can affect us)
-    var value: f64 = basement_value;
+const MAX_POINTS: usize = 256; // candidate_spot_count*skip_span (regular 22*6=132)
 
-    var drx: i32 = -1;
-    while (drx <= 1) : (drx += 1) {
-        var dry: i32 = -1;
-        while (dry <= 1) : (dry += 1) {
-            const nrx = rx + @as(f64, @floatFromInt(drx));
-            const nry = ry + @as(f64, @floatFromInt(dry));
+fn cbrt(v: f64) f64 {
+    return std.math.pow(f64, v, 1.0 / 3.0);
+}
 
-            // Hash-based RNG seeding (matches Factorio's region RNG)
-            const neighbor_seed: u32 = (@as(u32, @bitCast(@as(i32, @intFromFloat(nrx)))) ^
-                (@as(u32, @bitCast(@as(i32, @intFromFloat(nry)))) << 16));
-            var neighbor_rng = rng.Rng.init(neighbor_seed ^ seed0 ^ seed1);
+/// Exact per-region seed hash (generatePoints @ 0x1015e67f4).
+pub fn regionSeed(seed0: u32, seed1: u32, region_x: i32, region_y: i32) u32 {
+    const rx: u32 = @bitCast(region_x);
+    const ry: u32 = @bitCast(region_y);
+    // 32-bit wrapping arithmetic (C int math), then XOR map_seed.
+    var h: u32 = (ry *% 7907) +% (rx *% 7919) +% (seed1 *% 7927) +% 0x3fbe2c;
+    h ^= seed0;
+    if (h < 342) h = 341;
+    return h;
+}
 
-            const spots_per_region = candidate_spot_count;
-            // Use density to determine how many candidates survive
-            const density_cap: f64 = @max(1.0, density_expression);
-            const keep_fraction: f64 = @min(1.0, density_cap / 8.0); // scale: density 10 -> 20% keep
+/// Stateful spot field with per-region caching, generic over the expression
+/// evaluator `F`, which must expose:
+///   spotDensityAt(x,y)  spotQuantityAt(x,y)  spotRadius(q)  favorability(x,y)
+pub fn SpotNoiseField(comptime F: type) type {
+    return struct {
+        const Self = @This();
 
-            var si: u32 = 0;
-            while (si < spots_per_region) : (si += 1) {
-                const sx = nrx * region_size + neighbor_rng.float() * region_size;
-                const sy = nry * region_size + neighbor_rng.float() * region_size;
+        alloc: std.mem.Allocator,
+        field: F,
+        seed0: u32,
+        seed1: u32,
+        region_size: f64,
+        candidate_spot_count: u32,
+        skip_span: u32,
+        skip_offset: u32,
+        hard_region_target_quantity: bool,
+        basement_value: f64,
+        maximum_spot_basement_radius: f64,
+        min_candidate_spacing: f64,
+        cache: std.AutoHashMapUnmanaged(RegionKey, []Spot) = .empty,
 
-                // Candidate filtering: only keep fraction of candidates
-                if (neighbor_rng.float() >= keep_fraction) continue;
+        pub fn deinit(self: *Self) void {
+            var it = self.cache.valueIterator();
+            while (it.next()) |slice| self.alloc.free(slice.*);
+            self.cache.deinit(self.alloc);
+        }
 
-                const spot_scale = 0.5 + neighbor_rng.float();
-                const spot_r = spot_radius_expression * spot_scale;
-                const spot_q = spot_quantity_expression * spot_scale;
+        fn spotsForRegion(self: *Self, rx: i32, ry: i32) ![]Spot {
+            const key = RegionKey{ .x = rx, .y = ry };
+            if (self.cache.get(key)) |s| return s;
+            const spots = try self.computeRegion(rx, ry);
+            try self.cache.put(self.alloc, key, spots);
+            return spots;
+        }
 
-                // Distance from evaluation point to spot center
-                const dx = x - sx;
-                const dy = y - sy;
-                const dist = @sqrt(dx * dx + dy * dy);
+        fn computeRegion(self: *Self, rx: i32, ry: i32) ![]Spot {
+            const rsize_i: i32 = @intFromFloat(self.region_size);
+            if (rsize_i <= 0) return &[_]Spot{};
+            const rsize_u: u32 = @intCast(rsize_i);
+            const half = @divTrunc(rsize_i, 2);
+            const base_x: i32 = rx *% rsize_i -% half;
+            const base_y: i32 = ry *% rsize_i -% half;
 
-                // Spot contributes if within its radius
-                if (dist < spot_r and spot_favorability_expression > 0.0) {
-                    const t = dist / spot_r;
-                    const falloff = (1.0 - t) * (1.0 - t);
-                    const spot_area = std.math.pi * spot_r * spot_r;
-                    const contribution = (spot_q / spot_area) * falloff;
-                    value += contribution;
+            var prng = rng.Rng.init(regionSeed(self.seed0, self.seed1, rx, ry));
+
+            const point_count: usize = @min(
+                @as(usize, self.candidate_spot_count) * @as(usize, self.skip_span),
+                MAX_POINTS,
+            );
+
+            // --- generatePoints: Poisson-disk sampled integer points ---
+            var px: [MAX_POINTS]f64 = undefined;
+            var py: [MAX_POINTS]f64 = undefined;
+            var spacing2 = self.min_candidate_spacing * self.min_candidate_spacing;
+            var i: usize = 0;
+            while (i < point_count) : (i += 1) {
+                while (true) {
+                    const fx: f64 = @floatFromInt(base_x +% @as(i32, @bitCast(prng.next() % rsize_u)));
+                    const fy: f64 = @floatFromInt(base_y +% @as(i32, @bitCast(prng.next() % rsize_u)));
+                    var ok = true;
+                    var j: usize = 0;
+                    while (j < i) : (j += 1) {
+                        const ddx = fx - px[j];
+                        const ddy = fy - py[j];
+                        if (ddx * ddx + ddy * ddy < spacing2) {
+                            spacing2 *= 0.9375; // shrink threshold and retry this point
+                            ok = false;
+                            break;
+                        }
+                    }
+                    if (ok) {
+                        px[i] = fx;
+                        py[i] = fy;
+                        break;
+                    }
                 }
             }
-        }
-    }
 
-    return value;
+            // --- stride this resource's candidates and evaluate expressions ---
+            // spot_quantity_expression = random_penalty_between(min,max,1) * base.
+            // RandomPenalty (op run @ 0x1015f0384): per-point uniform draw applied
+            // in candidate (stride) order, seeded from the FIRST candidate's
+            // position: seed = int(x0)*7919 + int(y0+1)*7907 + 0x3fbe2c (>=341),
+            // triple-LFSR; value = to - r*(to-from), r = rng*2^-32.
+            const smin = self.field.randomSpotSizeMinimum();
+            const smax = self.field.randomSpotSizeMaximum();
+            var rp_rng = blk: {
+                if (self.skip_offset >= point_count) break :blk rng.Rng.init(341);
+                const xi: i32 = @intFromFloat(px[self.skip_offset]);
+                const yi1: i32 = @intFromFloat(py[self.skip_offset] + 1.0);
+                var rp: u32 = (@as(u32, @bitCast(xi)) *% 7919) +%
+                    (@as(u32, @bitCast(yi1)) *% 7907) +% 0x3fbe2c;
+                if (rp < 342) rp = 341;
+                break :blk rng.Rng.init(rp);
+            };
+
+            const Candidate = struct { x: f64, y: f64, density: f64, quantity: f64, radius: f64, fav: f64 };
+            var cands: [MAX_POINTS]Candidate = undefined;
+            var nc: usize = 0;
+            var idx: usize = self.skip_offset;
+            while (idx < point_count) : (idx += self.skip_span) {
+                const cx = px[idx];
+                const cy = py[idx];
+                const rand_factor = smax - rp_rng.float() * (smax - smin);
+                const q = rand_factor * self.field.spotQuantityBaseAt(cx, cy);
+                cands[nc] = .{
+                    .x = cx,
+                    .y = cy,
+                    .density = self.field.spotDensityAt(cx, cy),
+                    .quantity = q,
+                    .radius = self.field.spotRadius(q),
+                    .fav = self.field.favorability(cx, cy),
+                };
+                nc += 1;
+            }
+            if (nc == 0) return &[_]Spot{};
+
+            // region_target = mean(density over candidates) * region_size^2
+            var dsum: f64 = 0.0;
+            for (cands[0..nc]) |c| dsum += c.density;
+            const region_target = (dsum / @as(f64, @floatFromInt(nc))) * self.region_size * self.region_size;
+
+            // sort by favorability descending
+            const lessThan = struct {
+                fn f(_: void, a: Candidate, b: Candidate) bool {
+                    return a.fav > b.fav;
+                }
+            }.f;
+            std.mem.sort(Candidate, cands[0..nc], {}, lessThan);
+
+            // select accumulating quantity until region_target reached
+            var out = try self.alloc.alloc(Spot, nc);
+            var no: usize = 0;
+            var accumulated: f64 = 0.0;
+            for (cands[0..nc]) |c| {
+                if (accumulated >= region_target) break;
+                var q = c.quantity;
+                var r = @min(c.radius, self.maximum_spot_basement_radius);
+                if (q <= 0.0 or r <= 0.0) continue;
+                if (self.hard_region_target_quantity) {
+                    const qc = @min(q, region_target - accumulated);
+                    r *= cbrt(qc / q);
+                    q = qc;
+                }
+                const peak = 3.0 * q / (std.math.pi * r * r);
+                out[no] = .{ .x = c.x, .y = c.y, .peak = peak, .slope = peak / r };
+                no += 1;
+                accumulated += q;
+            }
+            if (self.alloc.resize(out, no)) {
+                out.len = no;
+            } else {
+                out = self.alloc.realloc(out, no) catch out[0..no];
+            }
+            return out[0..no];
+        }
+
+        /// Field value at (x, y): max(basement, max cone over nearby spots).
+        pub fn evalAt(self: *Self, x: f64, y: f64) !f64 {
+            var value = self.basement_value;
+            const cxr: i32 = @intFromFloat(@round(x / self.region_size));
+            const cyr: i32 = @intFromFloat(@round(y / self.region_size));
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                var dy: i32 = -1;
+                while (dy <= 1) : (dy += 1) {
+                    const spots = try self.spotsForRegion(cxr + dx, cyr + dy);
+                    for (spots) |s| {
+                        const ddx = x - s.x;
+                        const ddy = y - s.y;
+                        const dist = @sqrt(ddx * ddx + ddy * ddy);
+                        if (dist <= self.maximum_spot_basement_radius) {
+                            const v = s.peak - dist * s.slope;
+                            if (v > value) value = v;
+                        }
+                    }
+                }
+            }
+            return value;
+        }
+    };
 }// ============================================================
 // Tests
 // ============================================================
 
-test "perlin2d produces values in [-1, 1]" {
-    const val = perlin2d(42.5, 13.7, 341, 100);
-    try std.testing.expect(val >= -1.0);
-    try std.testing.expect(val <= 1.0);
+test "basisNoise is deterministic" {
+    const a = basisNoise(100.0, 200.0, 341, 100, 1.0 / 8.0, 1.0);
+    const b = basisNoise(100.0, 200.0, 341, 100, 1.0 / 8.0, 1.0);
+    try std.testing.expectEqual(a, b);
 }
 
-test "perlin2d is deterministic" {
-    const a = perlin2d(100.0, 200.0, 12345, 67890);
-    const b = perlin2d(100.0, 200.0, 12345, 67890);
-    try std.testing.expectEqual(a, b);
+test "basisNoise gen matches wrapper" {
+    const gen = BasisNoiseGen.init(341, 100);
+    try std.testing.expectEqual(
+        basisNoise(50.0, 60.0, 341, 100, 1.0 / 24.0, 1.5),
+        gen.eval(50.0, 60.0, 1.0 / 24.0, 1.5),
+    );
+}
+
+test "base gradients are ~magnitude 4.2" {
+    const g = baseGradient(0);
+    const mag = @sqrt(@as(f64, g[0]) * g[0] + @as(f64, g[1]) * g[1]);
+    try std.testing.expect(mag > 4.0 and mag < 4.4);
 }
 
 test "multioctaveNoise produces finite values" {

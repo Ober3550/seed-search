@@ -47,9 +47,9 @@ pub const Rng = struct {
 
 test "Rng produces known values" {
     var r = Rng.init(341);
-    // These are the first 5 values from the Factorio RNG at seed 341.
-    // TODO: Confirm with Factorio binary analysis.
-    try std.testing.expectEqual(@as(u32, 0), r.next());
+    // First raw value at seed 341, confirmed against the validated
+    // universe_generator RNG (same triple-LFSR seeded (s,s,s)).
+    try std.testing.expectEqual(@as(u32, 45438212), r.next());
 }
 
 test "Rng is deterministic" {
