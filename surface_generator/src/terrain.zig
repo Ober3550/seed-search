@@ -145,11 +145,12 @@ pub const Elevation = struct {
             .water_level = 10.0 * std.math.log2(water_size),
             .gen500 = noise.BasisNoiseGen.init(map_seed, 500),
             .gen600 = noise.BasisNoiseGen.init(map_seed, 600),
+            // octave_seed0_shift=1 increments SEED0 (map_seed), keeping seed1=14.
             .slake_gens = .{
                 noise.BasisNoiseGen.init(map_seed, 14),
-                noise.BasisNoiseGen.init(map_seed, 15),
-                noise.BasisNoiseGen.init(map_seed, 16),
-                noise.BasisNoiseGen.init(map_seed, 17),
+                noise.BasisNoiseGen.init(map_seed +% 1, 14),
+                noise.BasisNoiseGen.init(map_seed +% 2, 14),
+                noise.BasisNoiseGen.init(map_seed +% 3, 14),
             },
         };
     }
@@ -221,14 +222,22 @@ pub const Elevation = struct {
     pub fn nauvisDetailPub(self: *const Elevation, x: f64, y: f64) f64 {
         return self.nauvisDetail(x, y);
     }
+    pub fn startingLakePub(self: *const Elevation, x: f64, y: f64) f64 {
+        return self.startingLake(x, y);
+    }
+    pub fn startingLakeNoisePub(self: *const Elevation, x: f64, y: f64) f64 {
+        return self.startingLakeNoise(x, y);
+    }
     pub fn nauvisPersistancePub(self: *const Elevation, x: f64, y: f64) f64 {
         return self.nauvisPersistance(x, y);
     }
 
     pub fn at(self: *const Elevation, x0: f64, y0: f64) f64 {
-        // Factorio evaluates map-gen noise at the TILE CENTER, not the corner.
-        const x = x0 + 0.5;
-        const y = y0 + 0.5;
+        // Factorio determines a tile's water at the TILE CORNER (tx,ty): verified
+        // vs real generated tiles (collides_with water_tile) — corner matches
+        // 2099/2107, center only 2054/2107. So sample every term at (x0,y0).
+        const x = x0;
+        const y = y0;
         const nsm = self.nsm;
         // nauvis_hills / plateaus
         const nauvis_hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));

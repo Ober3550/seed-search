@@ -226,14 +226,14 @@ pub fn main(init: std.process.Init) !void {
     if (nauvis_diag) {
         // Verify starting_lake_noise (quick_multioctave_noise_persistence{seed1=14,
         // is=1/8, os=0.8, oct=4, oism=0.5, persistence=0.68}) vs game probe.
-        // Verify full elevation (incl. starting_lake) vs game near the lake (45,-59).
+        // Dump starting_lake_noise + starting_lake + elevation across the lake
+        // boundary (corner coords, matching the game) for point-by-point diff.
         var el = surfacegen.terrain.Elevation.init(123456, 1.0, 1.0);
         el.addStartingLake(45, -59);
-        const pts = [_][2]f64{ .{ 45, -59 }, .{ 0, 0 }, .{ 50, -60 }, .{ 60, -40 }, .{ 30, -80 }, .{ 100, -100 }, .{ 0, -100 }, .{ 20, -30 } };
-        std.debug.print("# x y elevation(raw coords)\n", .{});
+        const pts = [_][2]f64{ .{ 30, -70 }, .{ 33, -70 }, .{ 36, -70 }, .{ 28, -60 }, .{ 31, -60 }, .{ 34, -60 }, .{ 45, -80 }, .{ 45, -83 }, .{ 60, -70 }, .{ 62, -50 } };
+        std.debug.print("# x y slake_noise starting_lake elevation\n", .{});
         for (pts) |p| {
-            // game elevation is evaluated at the exact position, so undo at()'s +0.5.
-            std.debug.print("{d:.0} {d:.0} {d:.4}\n", .{ p[0], p[1], el.at(p[0] - 0.5, p[1] - 0.5) });
+            std.debug.print("{d:.0} {d:.0} {d:.4} {d:.4} {d:.4}\n", .{ p[0], p[1], el.startingLakeNoisePub(p[0], p[1]), el.startingLakePub(p[0], p[1]), el.at(p[0], p[1]) });
         }
         return;
     }
