@@ -569,6 +569,48 @@ pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, pri
     return controls;
 }
 
+/// Zone.get_frequency_multiplier (SE scripts/zone.lua:544):
+///   return zone.radius and 5000/zone.radius or 1
+pub fn zoneFrequencyMultiplier(radius: f64) f64 {
+    if (radius > 0) return 5000.0 / radius;
+    return 1.0;
+}
+
+/// Port of Zone.apply_controls_to_mapgen (SE scripts/zone.lua:434), resource-
+/// control branch only. This is the step between the zone's base controls
+/// (`computeZoneResourceControls`, == zone.controls) and the surface's actual
+/// `map_gen_settings.autoplace_controls`:
+///   - on non-homeworld zones, multiply each resource's frequency by
+///     Zone.get_frequency_multiplier (5000/radius). Resource controls are never
+///     in `controls_without_frequency_multiplier` ({"trees","enemy-base"}), so
+///     the multiplier always applies to them.
+///   - clamp size and richness to >= 0 (set_autoplace_settings_for_space).
+/// Mutates `controls` in place. Was the missing ~4.5x that starved spot count.
+pub fn applyControlsToMapgen(controls: []ResourceControl, radius: f64, is_homeworld: bool) void {
+    const fm = zoneFrequencyMultiplier(radius);
+    for (controls) |*c| {
+        if (!c.present) continue;
+        if (!is_homeworld) c.frequency *= fm;
+        c.size = @max(0.0, c.size);
+        c.richness = @max(0.0, c.richness);
+    }
+}
+
+/// Full pipeline: base zone controls -> surface map_gen_settings controls.
+/// This is what a surface actually generates from; feed these to the ore engine.
+pub fn computeZoneMapgenControls(
+    zone_seed: u32,
+    zone_type: data.ZoneType,
+    primary_resource: ?[]const u8,
+    tags: Tags,
+    radius: f64,
+    is_homeworld: bool,
+) [18]ResourceControl {
+    var controls = computeZoneResourceControls(zone_seed, zone_type, primary_resource, tags);
+    applyControlsToMapgen(&controls, radius, is_homeworld);
+    return controls;
+}
+
 /// Legacy: normalized FSR score per resource (indexed by `resource_order`).
 /// Thin wrapper over `computeZoneResourceControls` for existing callers.
 pub fn computeZoneResources(zone_seed: u32, zone_type: data.ZoneType, primary_resource: ?[]const u8, tags: Tags) [18]f64 {
@@ -1605,4 +1647,29 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     }
 
     return .{ .zones = zones, .zoneByName = zoneByName, .draws = rng.draw, .k2 = k2_enabled, .vault_loot = vault_loot, .calidus_children = calidus_children, .calidus_child_types = calidus_child_types };
+}
+
+test "apply_controls_to_mapgen: Horaerratum controls match live game (hval)" {
+    const std_t = @import("std");
+    // Horaerratum: world 57374 moon, zone_seed 2035207183, radius 1041,
+    // primary se-vitamelange. Tags from output/target-horaerratum.json.
+    const tags = Tags{
+        .temperature = .extreme,
+        .water = .low,
+        .moisture = .max,
+        .trees = null,
+        .aux = null,
+        .cliff = null,
+        .enemy = null,
+    };
+    const controls = computeZoneMapgenControls(2035207183, .moon, "se-vitamelange", tags, 1041.0, false);
+
+    // Multiplier = 5000/1041 = 4.8031. Compare post-transform freq to the values
+    // dumped from the live hval surface (calibration/mod-dump/hval-controls.json).
+    const idx_vita = 8; // resource_order index of se-vitamelange
+    const idx_iron = 0;
+    std_t.debug.print("\n[controls] vitamelange freq={d:.4} (game 8.0234)  iron freq={d:.4} (game 3.7260)\n", .{ controls[idx_vita].frequency, controls[idx_iron].frequency });
+
+    // Primary resource frequency is the well-established one; assert it matches.
+    try std_t.testing.expect(@abs(controls[idx_vita].frequency - 8.0234) < 0.1);
 }

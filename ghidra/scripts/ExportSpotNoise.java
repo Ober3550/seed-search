@@ -32,7 +32,15 @@ import java.util.*;
 public class ExportSpotNoise extends GhidraScript {
 
     private static final long[] TARGETS = {
-        0x1015daca8L, // Noise::Noise default ctor (builds base gradient table)
+        // The spot-list generator internals — the per-spot quantity/selection
+        // logic that is NOT in the data-stage Lua and is where SE overshoots
+        // (game places ~40 small spots per region; our port ~7 large ones).
+        0x1015e66ecL, // generateSpotList
+        0x1015e6be4L, // placeSpots
+        0x1015e67f4L, // generatePoints
+        0x1015dccf0L, // computeRegionBounds
+        0x101610ac0L, // SpotNoise run / evaluate
+        0x10160f924L, // SpotNoise ctor
     };
 
     private static final String[] SYMBOL_SUBSTRINGS = {
@@ -57,7 +65,7 @@ public class ExportSpotNoise extends GhidraScript {
     private static final long TEXT_LO = 0x100000000L;
     private static final long TEXT_HI = 0x103000000L;
 
-    private static final int CALLEE_DEPTH = 1;
+    private static final int CALLEE_DEPTH = 2;
     private static final String OUT_PATH =
         "/Users/olivermainey/Workspace/seed-search/ghidra/export/spot_noise.c";
 

@@ -93,11 +93,15 @@ pub const BasisNoiseGen = struct {
             self.grad[i] = baseGradient(i);
         }
 
-        // setSeed: seed clamped >=341 (rng.Rng.init re-clamps <341), taus88 (s,s,s).
-        const s: u32 = if (seed0 < 342) 341 else seed0;
+        // setSeed(seed0 + ((seed1>>8)&0xffffff)*7, seed1 & 0xff) per BasisNoise ctor
+        // (ghidra 0x1015ff718): the high bytes of seed1 fold into the RNG seed,
+        // the low byte selects the seed_byte. For seed1<256 (ore=100, moisture=6)
+        // the fold is 0 and this reduces to the old behavior.
+        const folded: u32 = seed0 +% (((seed1 >> 8) & 0xffffff) *% 7);
+        const s: u32 = if (folded < 342) 341 else folded;
         var prng = rng.Rng.init(s);
 
-        // 1) temp shuffle of an identity copy -> seed_byte = temp[seed1]
+        // 1) temp shuffle of an identity copy -> seed_byte = temp[seed1 & 0xff]
         var temp = identity;
         shufflePerm(&temp, &prng);
         self.seed_byte = temp[seed1 & 0xff];
@@ -119,9 +123,16 @@ pub const BasisNoiseGen = struct {
     /// Evaluate basis_noise at (x, y) with the given input/output scale.
     /// offset_x/offset_y default to 0 for plain basis_noise.
     pub fn eval(self: *const BasisNoiseGen, x: f64, y: f64, input_scale: f64, output_scale: f64) f64 {
+        return self.evalOffset(x, y, input_scale, output_scale, 0.0, 0.0);
+    }
+
+    /// basis_noise with an offset added in the pre-scale coordinate space:
+    /// sample = ((x + offset_x) * input_scale, (y + offset_y) * input_scale).
+    /// Matches quick_multioctave_noise's offset handling (BasisNoise op).
+    pub fn evalOffset(self: *const BasisNoiseGen, x: f64, y: f64, input_scale: f64, output_scale: f64, offset_x: f64, offset_y: f64) f64 {
         const scale: f32 = @floatCast(input_scale);
-        const X: f32 = @as(f32, @floatCast(x)) * scale;
-        const Y: f32 = @as(f32, @floatCast(y)) * scale;
+        const X: f32 = (@as(f32, @floatCast(x)) + @as(f32, @floatCast(offset_x))) * scale;
+        const Y: f32 = (@as(f32, @floatCast(y)) + @as(f32, @floatCast(offset_y))) * scale;
         const ix: i32 = @intFromFloat(@floor(X));
         const iy: i32 = @intFromFloat(@floor(Y));
         const fx: f32 = X - @as(f32, @floatFromInt(ix));
@@ -169,21 +180,80 @@ pub fn multioctaveNoise(
     input_scale: f64,
     output_scale: f64,
 ) f64 {
+    const gen = BasisNoiseGen.init(seed0, seed1);
+    return multioctaveNoisePrebuilt(&gen, x, y, octaves, persistence, input_scale, output_scale);
+}
+
+/// multioctave_noise with a caller-supplied generator (built once per (seed0,
+/// seed1) — building it dominates cost, so hoist out of hot loops). Factorio's
+/// MultioctaveNoise op (fastVectorMultioctaveNoise @ 0x1015dc590) reuses ONE
+/// Noise (single seed) for every octave, scaling only the coordinate: successive
+/// octaves get COARSER (input_scale *= 0.5) with amplitude *= persistence.
+/// Normalized by the amplitude sum so output_scale controls the final range.
+pub fn multioctaveNoisePrebuilt(
+    gen: *const BasisNoiseGen,
+    x: f64, y: f64,
+    octaves: u32,
+    persistence: f64,
+    input_scale: f64,
+    output_scale: f64,
+) f64 {
+    // EXACT (fit to game raw-multioctave probes, mse=0.0): single shared seed;
+    // per octave k the basis samples at
+    //   (x*input_scale*0.5^k + k*C,  y*input_scale*0.5^k)   with C=17.17
+    // octaves COARSER (coordmul*=0.5); per-octave x-offset k*C added in noise
+    // space; amplitude GROWS by 1/persistence each octave (coarse-dominated);
+    // RMS-normalized (÷sqrt(Σ amp²)). The game uses the vectorized path
+    // fastVectorMultioctaveNoise @0x1015dc590 (C=17.17). fVar7=1/persistence is
+    // the amplitude multiplier — grow, not decay. Verified via a noise-probe mod
+    // on a vanilla Nauvis surface (see se-terrain-generation memory).
+    const ampmul = 1.0 / persistence;
     var value: f64 = 0.0;
     var amplitude: f64 = 1.0;
-    var freq: f64 = 1.0;
-    var max_value: f64 = 0.0;
+    var coordmul: f64 = 1.0;
+    var sumsq: f64 = 0.0;
+    var k: f64 = 0.0;
     var i: u32 = 0;
-
     while (i < octaves) : (i += 1) {
-        const gen = BasisNoiseGen.init(seed0 + i, seed1);
-        value += gen.eval(x, y, input_scale * freq, 1.0) * amplitude;
-        max_value += amplitude;
-        amplitude *= persistence;
-        freq *= 2.0;
+        const x_arg = (k * 17.17) / input_scale + x * coordmul;
+        value += gen.eval(x_arg, y * coordmul, input_scale, 1.0) * amplitude;
+        sumsq += amplitude * amplitude;
+        coordmul *= 0.5;
+        amplitude *= ampmul;
+        k += 1.0;
     }
+    return (value / @sqrt(sumsq)) * output_scale;
+}
 
-    return (value / max_value) * output_scale;
+/// variable_persistence_multioctave_noise (VariablePersistenceMultioctaveNoise op
+/// @0x1015f1c54, ctor @0x101611c50). Exact port of run(): a HORNER accumulation
+///   acc = 0; for k in 0..octaves:  acc = acc*persistence + basis(is_k)
+/// where is_0 = input_scale*0.5 (the ctor stores input_scale halved) and halves
+/// each octave, so the coarsest octave (k=0) gets the smallest weight
+/// persistence^(octaves-1) and the finest (k=octaves-1) weight 1. The offset is
+/// added in TILE space ((x+offset)*is, via evalOffset) and is constant across
+/// octaves. Final result is scaled by output_scale * 2^octaves (the ctor stores
+/// output_scale * 2^octaves). `persistence` is a per-tile scalar (may itself be a
+/// noise field, e.g. nauvis_detail feeds nauvis_persistance here). Verified vs the
+/// game probe probe_vp500_p7 to 5 decimals across 10 points.
+pub fn variablePersistence(
+    gen: *const BasisNoiseGen,
+    x: f64, y: f64,
+    octaves: u32,
+    input_scale: f64,
+    output_scale: f64,
+    offset_x: f64,
+    offset_y: f64,
+    persistence: f64,
+) f64 {
+    var is_k: f64 = input_scale * 0.5;
+    var acc: f64 = 0.0;
+    var k: u32 = 0;
+    while (k < octaves) : (k += 1) {
+        acc = acc * persistence + gen.evalOffset(x, y, is_k, 1.0, offset_x, offset_y);
+        is_k *= 0.5;
+    }
+    return acc * output_scale * std.math.pow(f64, 2.0, @floatFromInt(octaves));
 }
 
 // ============================================================
@@ -228,7 +298,11 @@ pub const Spot = struct { x: f64, y: f64, peak: f64, slope: f64 };
 
 const RegionKey = struct { x: i32, y: i32 };
 
-const MAX_POINTS: usize = 256; // candidate_spot_count*skip_span (regular 22*6=132)
+// Upper bound on generatePoints' candidate_point_count = candidate_spot_count *
+// skip_span. Must be >= the largest configuration or point_count is silently
+// truncated and each resource loses candidate spots (positions stop matching
+// the game). Vanilla: 22*6=132. SE regular: 64*18=1152. Sized for SE.
+const MAX_POINTS: usize = 1152;
 
 fn cbrt(v: f64) f64 {
     return std.math.pow(f64, v, 1.0 / 3.0);
@@ -272,7 +346,7 @@ pub fn SpotNoiseField(comptime F: type) type {
             self.cache.deinit(self.alloc);
         }
 
-        fn spotsForRegion(self: *Self, rx: i32, ry: i32) ![]Spot {
+        pub fn spotsForRegion(self: *Self, rx: i32, ry: i32) ![]Spot {
             const key = RegionKey{ .x = rx, .y = ry };
             if (self.cache.get(key)) |s| return s;
             const spots = try self.computeRegion(rx, ry);
