@@ -161,13 +161,21 @@ pub const ZoneTerrain = struct {
         return lerp(self.moisture_bias, self.starting_moisture_bias, region);
     }
 
-    /// moisture ~ moisture_main = clamp(0.4 + moisture_adjusted_bias + moisture_noise
-    /// - 0.08*(nauvis_plateaus - 0.6), 0, 1). NOTE: the real `moisture` property is
-    /// moisture_nauvis, which additionally lowers moisture by up to 0.2 outside forest
-    /// paths (trees_forest_path_cutout) — not yet ported (dirt-trail cosmetic effect).
-    pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+    /// moisture_main = clamp(0.4 + moisture_adjusted_bias + moisture_noise
+    /// - 0.08*(nauvis_plateaus - 0.6), 0, 1).
+    pub fn moistureMain(self: *const ZoneTerrain, x: f64, y: f64) f64 {
         const plateaus = self.elev.nauvisPlateaus(x, y);
         return clamp(0.4 + self.moistureAdjustedBias(x, y) + self.moistureNoise(x, y) - 0.08 * (plateaus - 0.6), 0.0, 1.0);
+    }
+
+    /// moisture = moisture_nauvis = max(min(moisture_main, 0.45),
+    ///   moisture_main - 0.2 * max(0, 1 - trees_forest_path_cutout * 1.5)).
+    /// The dirt-trail term only lowers moisture where moisture_main > 0.45.
+    pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+        const main = self.moistureMain(x, y);
+        const cutout = self.elev.treesForestPathCutout(x, y);
+        const factor = @max(0.0, 1.0 - cutout * 1.5);
+        return @max(@min(main, 0.45), main - 0.2 * factor);
     }
 };
 
@@ -284,6 +292,20 @@ pub const Elevation = struct {
     }
     pub fn startingLakeNoisePub(self: *const Elevation, x: f64, y: f64) f64 {
         return self.startingLakeNoise(x, y);
+    }
+
+    /// trees_forest_path_cutout = min(nauvis_bridge_paths, nauvis_hills_paths,
+    /// forest_paths), each = (abs(multioctave_noise{...}) - c) * k. Carves dirt
+    /// trails; used by moisture_nauvis to lower moisture along forest paths.
+    pub fn treesForestPathCutout(self: *const Elevation, x: f64, y: f64) f64 {
+        const nsm = self.nsm;
+        const bridge_billows = @abs(self.mo(x, y, 700, 4, 0.5, nsm / 150.0));
+        const hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));
+        const fp_billows = @abs(self.mo(x, y, 1800, 4, 0.5, nsm / 100.0));
+        const bridge_paths = (bridge_billows - 0.07) * 5.0;
+        const hills_paths = (hills - 0.1) * 3.0;
+        const forest_paths = (fp_billows - 0.07) * 3.0;
+        return @min(bridge_paths, @min(hills_paths, forest_paths));
     }
 
     /// nauvis_plateaus = 0.5 + clamp((nauvis_hills - nauvis_hills_cliff_level)*10,

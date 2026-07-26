@@ -115,6 +115,7 @@ pub fn main(init: std.process.Init) !void {
     var mo_fit: bool = false;
     var nauvis_elev: bool = false;
     var nauvis_diag: bool = false;
+    var nauvis_biome: bool = false;
     var water_exclude: bool = false;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -146,6 +147,8 @@ pub fn main(init: std.process.Init) !void {
             nauvis_elev = true;
         } else if (std.mem.eql(u8, args[i], "--nauvis-diag")) {
             nauvis_diag = true;
+        } else if (std.mem.eql(u8, args[i], "--nauvis-biome")) {
+            nauvis_biome = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
             water_exclude = true;
         }
@@ -220,6 +223,52 @@ pub fn main(init: std.process.Init) !void {
             }
             std.debug.print("r={d:.1} off={d:>5.2} amp={d:.1} norm={d}: mse={d:.4}\n", .{ r, off, ampm, nk, mse });
         };
+        return;
+    }
+
+    if (nauvis_biome) {
+        // Dump temperature/moisture/aux over [-512,512) for a visual compare vs
+        // the game. Each field: 1024 rows of 1024 chars; char = 33 + level(0..93),
+        // level = round(clamp((v-lo)/(hi-lo),0,1)*93). Fields separated by a "=name"
+        // header line. Ranges: temperature -20..50, moisture 0..1, aux 0..1.
+        const zt = surfacegen.terrain.ZoneTerrain.init(.{
+            .map_seed = 123456,
+            .moisture_frequency = 1.0, .moisture_bias = 0.0,
+            .aux_frequency = 1.0, .aux_bias = 0.0,
+            .temperature_frequency = 1.0, .temperature_bias = 0.0,
+            .cold_size = 1.0, .hot_size = 1.0, .cold_frequency = 1.0, .hot_frequency = 1.0,
+            .water_frequency = 1.0, .water_size = 1.0,
+            .starting_moisture_bias = 0.0, .starting_moisture_frequency = 1.0,
+        });
+        const R: i32 = 512;
+        const Field = struct { name: []const u8, lo: f64, hi: f64 };
+        const fields = [_]Field{
+            .{ .name = "temperature", .lo = -20.0, .hi = 50.0 },
+            .{ .name = "moisture", .lo = 0.0, .hi = 1.0 },
+            .{ .name = "aux", .lo = 0.0, .hi = 1.0 },
+        };
+        for (fields) |fl| {
+            std.debug.print("={s}\n", .{fl.name});
+            var row: [1024]u8 = undefined;
+            var iy: i32 = -R;
+            while (iy < R) : (iy += 1) {
+                var ix: i32 = -R;
+                while (ix < R) : (ix += 1) {
+                    const fx: f64 = @floatFromInt(ix);
+                    const fy: f64 = @floatFromInt(iy);
+                    const v = if (std.mem.eql(u8, fl.name, "temperature"))
+                        zt.temperature(fx, fy)
+                    else if (std.mem.eql(u8, fl.name, "moisture"))
+                        zt.moisture(fx, fy)
+                    else
+                        zt.aux(fx, fy);
+                    const t = std.math.clamp((v - fl.lo) / (fl.hi - fl.lo), 0.0, 1.0);
+                    const lvl: u8 = @intFromFloat(@round(t * 93.0));
+                    row[@intCast(ix + R)] = 33 + lvl;
+                }
+                std.debug.print("{s}\n", .{row[0..]});
+            }
+        }
         return;
     }
 
