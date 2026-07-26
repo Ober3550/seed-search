@@ -101,6 +101,7 @@ pub const stone_default = ResourceAutoplaceConfig{
 pub const uranium_ore_default = ResourceAutoplaceConfig{
     .base_density = 0.9, .base_spots_per_km2 = 1.25,
     .candidate_spot_count = 21, .regular_rq_factor_multiplier = 1.0,
+    .random_spot_size_minimum = 2.0, .random_spot_size_maximum = 4.0,
     .has_starting_area_placement = .no, .regular_patch_set_index = 5,
 };
 
@@ -349,6 +350,20 @@ fn computeOreAt(field: Field, spot: *RegularSpotField, basis: *const noise.Basis
     if (placementRoll(ix, iy, salt) >= probability) return 0.0;
 
     return richnessAt(field, x, y, value);
+}
+
+/// Raw all_patches values at arbitrary positions — for calibration against the
+/// game's `default-<name>-patches` named noise expression evaluated via
+/// surface.calculate_tile_properties (see calibration/vanilla-sweep/probe_field.py).
+pub fn probeAllPatches(alloc: std.mem.Allocator, map_seed: u32, config: ResourceAutoplaceConfig, controls: AutoplaceControls, xs: []const f64, ys: []const f64, out: []f64) !void {
+    const field = Field{ .config = config, .controls = controls, .map_seed = map_seed };
+    var spot = makeRegularSpotField(alloc, field);
+    defer spot.deinit();
+    const basis = noise.BasisNoiseGen.init(map_seed, config.seed1);
+    for (xs, ys, out) |x, y, *o| {
+        const sv = try spot.evalAt(x, y);
+        o.* = allPatchesValue(field, &basis, x, y, sv);
+    }
 }
 
 /// The probability_expression value at a tile: clamp(all_patches, 0, 1) *

@@ -343,6 +343,18 @@ pub fn regionSeed(seed0: u32, seed1: u32, region_x: i32, region_y: i32) u32 {
     return h;
 }
 
+/// Per-spot size (random_penalty_between) draw-stream variant, selectable at
+/// runtime for calibration against ground truth:
+///   0 = seed from first STRIDED candidate, draws forward over strided
+///   1 = seed from first strided candidate, draws REVERSED over strided
+///       (RandomPenalty::run iterates its column last->first)
+///   2 = seed from px[0] of the FULL point list, draws reversed over all points
+///   3 = seed from px[0], draws forward over all points
+/// Default 1 — verified EXACT against the game's `default-iron-ore-patches`
+/// field via calculate_tile_properties (cone apexes match to float32 precision;
+/// see calibration/vanilla-sweep/probe_field.py).
+pub var spot_size_rng_variant: u8 = 1;
+
 /// Stateful spot field with per-region caching, generic over the expression
 /// evaluator `F`, which must expose:
 ///   spotDensityAt(x,y)  spotQuantityAt(x,y)  spotRadius(q)  favorability(x,y)
@@ -423,21 +435,38 @@ pub fn SpotNoiseField(comptime F: type) type {
 
             // --- stride this resource's candidates and evaluate expressions ---
             // spot_quantity_expression = random_penalty_between(min,max,1) * base.
-            // RandomPenalty (op run @ 0x1015f0384): per-point uniform draw applied
-            // in candidate (stride) order, seeded from the FIRST candidate's
-            // position: seed = int(x0)*7919 + int(y0+1)*7907 + 0x3fbe2c (>=341),
-            // triple-LFSR; value = to - r*(to-from), r = rng*2^-32.
+            // RandomPenalty (op run @ 0x1015f0384): ONE rng seeded from the first
+            // element of its x/y column: seed = int(x0)*7919 + int(y0+1)*7907
+            // + 0x3fbe2c (>=341), taus88; the op iterates its column from the
+            // LAST element to the FIRST, one draw per element with source>0;
+            // value = to - r*(to-from), r = draw*2^-32. Which column the game
+            // evaluates (strided candidates vs all points) is selected by
+            // spot_size_rng_variant for calibration.
             const smin = self.field.randomSpotSizeMinimum();
             const smax = self.field.randomSpotSizeMaximum();
-            var rp_rng = blk: {
-                if (self.skip_offset >= point_count) break :blk rng.Rng.init(341);
-                const xi: i32 = @intFromFloat(px[self.skip_offset]);
-                const yi1: i32 = @intFromFloat(py[self.skip_offset] + 1.0);
-                var rp: u32 = (@as(u32, @bitCast(xi)) *% 7919) +%
-                    (@as(u32, @bitCast(yi1)) *% 7907) +% 0x3fbe2c;
-                if (rp < 342) rp = 341;
-                break :blk rng.Rng.init(rp);
-            };
+            const strided_n: usize = if (self.skip_offset >= point_count)
+                0
+            else
+                (point_count - 1 - self.skip_offset) / self.skip_span + 1;
+            const col_n: usize = if (spot_size_rng_variant >= 2) point_count else strided_n;
+            const seed_idx: usize = if (spot_size_rng_variant >= 2) 0 else self.skip_offset;
+            var draws: [MAX_POINTS]f64 = undefined;
+            {
+                var rp_rng = blk: {
+                    if (seed_idx >= point_count) break :blk rng.Rng.init(341);
+                    const xi: i32 = @intFromFloat(px[seed_idx]);
+                    const yi1: i32 = @intFromFloat(py[seed_idx] + 1.0);
+                    var rp: u32 = (@as(u32, @bitCast(xi)) *% 7919) +%
+                        (@as(u32, @bitCast(yi1)) *% 7907) +% 0x3fbe2c;
+                    if (rp < 342) rp = 341;
+                    break :blk rng.Rng.init(rp);
+                };
+                var d: usize = 0;
+                while (d < col_n) : (d += 1) draws[d] = rp_rng.float();
+            }
+            // draw index for column element i (reversed variants: op iterates
+            // its column last->first, so element i consumes draw col_n-1-i).
+            const reversed = spot_size_rng_variant == 1 or spot_size_rng_variant == 2;
 
             const Candidate = struct { x: f64, y: f64, density: f64, quantity: f64, radius: f64, fav: f64 };
             var cands: [MAX_POINTS]Candidate = undefined;
@@ -446,7 +475,9 @@ pub fn SpotNoiseField(comptime F: type) type {
             while (idx < point_count) : (idx += self.skip_span) {
                 const cx = px[idx];
                 const cy = py[idx];
-                const rand_factor = smax - rp_rng.float() * (smax - smin);
+                const elem: usize = if (spot_size_rng_variant >= 2) idx else nc;
+                const di: usize = if (reversed) col_n - 1 - elem else elem;
+                const rand_factor = smax - draws[di] * (smax - smin);
                 const q = rand_factor * self.field.spotQuantityBaseAt(cx, cy);
                 cands[nc] = .{
                     .x = cx,

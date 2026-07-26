@@ -50,6 +50,8 @@ pub fn main(init: std.process.Init) !void {
     var radius: f64 = 200;
     var bmp_filename: ?[]const u8 = null;
     var jsonl_filename: ?[]const u8 = null;
+    var probe_in: ?[]const u8 = null;
+    var probe_out: ?[]const u8 = null;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -72,6 +74,14 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--jsonl")) {
             i += 1;
             if (i < args.len) jsonl_filename = args[i];
+        } else if (std.mem.eql(u8, args[i], "--spot-rng")) {
+            i += 1;
+            if (i < args.len) surfacegen.noise.spot_size_rng_variant = try std.fmt.parseInt(u8, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--probe")) {
+            i += 1;
+            probe_in = args[i];
+            i += 1;
+            probe_out = args[i];
         } else if (!std.mem.startsWith(u8, args[i], "--")) {
             resource_name = args[i];
         }
@@ -91,6 +101,36 @@ pub fn main(init: std.process.Init) !void {
             try configs.append(a, cfg);
             try names.append(a, rname);
         }
+    }
+
+    // --probe <in> <out>: evaluate raw all_patches at "x y" lines for a single
+    // resource, one value per output line (oracle comparison, see
+    // calibration/vanilla-sweep/probe_field.py).
+    if (probe_in) |pin| {
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, pin, a, .unlimited);
+        var xs: std.ArrayList(f64) = .empty;
+        var ys: std.ArrayList(f64) = .empty;
+        var it = std.mem.tokenizeAny(u8, raw, "\r\n");
+        while (it.next()) |line| {
+            var ft = std.mem.tokenizeAny(u8, line, " \t");
+            const sx = ft.next() orelse continue;
+            const sy = ft.next() orelse continue;
+            try xs.append(a, try std.fmt.parseFloat(f64, sx));
+            try ys.append(a, try std.fmt.parseFloat(f64, sy));
+        }
+        const vals = try a.alloc(f64, xs.items.len);
+        try surfacegen.ore.probeAllPatches(a, seed, configs.items[0], controls, xs.items, ys.items, vals);
+        var buf: std.ArrayList(u8) = .empty;
+        for (vals) |v| {
+            var line: [64]u8 = undefined;
+            const s = try std.fmt.bufPrint(&line, "{d:.9}\n", .{v});
+            try buf.appendSlice(a, s);
+        }
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, probe_out.?, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, buf.items, 0);
+        std.debug.print("# Probed {d} positions -> {s}\n", .{ vals.len, probe_out.? });
+        return;
     }
 
     const r: i32 = @intFromFloat(radius);

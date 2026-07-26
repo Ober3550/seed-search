@@ -31,3 +31,25 @@ every setting incl. freq4). Patch positions match GT to <5 tiles.
    verify against a tile dump.)
 
 Plus crude-oil (28 vs 7, 0% overlap) — see ghidra/export/random_penalty.c.
+
+## Per-spot size RNG — SOLVED (oracle-verified)
+
+The game registers a named noise expression per resource
+(`default-<name>-patches`); `surface.calculate_tile_properties` evaluates it at
+arbitrary positions (probe_field.py) — an exact oracle for the all_patches
+field. Testing 4 draw-stream variants against it:
+
+random_penalty_between draws are seeded from the FIRST STRIDED candidate's
+position and consumed in REVERSE candidate order (RandomPenalty::run iterates
+its column last->first). With this (spot_size_rng_variant=1, now default) the
+cone apexes match the oracle to float32 precision and the placement-relevant
+field (value>0) matches to <0.22 abs.
+
+Also fixed: uranium random_spot_size 2..4 (was defaulting 0.25..2).
+
+Result on base-341: 7 of 10 matched patches at ratio exactly 1.00;
+exact tile overlap: uranium 100.0%, copper 83% (GEN tiles 100% inside GT,
+missing = its starting patch exactly), iron 75%, coal 78%, stone 77%.
+ALL residual mismatch = the two known gaps (starting patches, water clipping).
+The remaining oracle diff is only in the deep basement (value<0, no placement)
+where the vanilla startingPatches stub returns a constant floor.
