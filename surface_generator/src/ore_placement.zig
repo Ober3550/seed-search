@@ -409,13 +409,30 @@ fn probabilityAt(field: Field, spot: *RegularSpotField, sspot: ?*StartingSpotFie
     const spot_value = try spot.evalAt(x, y);
     const ssv: ?f64 = if (sspot) |ss| try ss.evalAt(x, y) else null;
     const value = allPatchesValue(field, basis, x, y, spot_value, ssv);
-    var probability = clamp01(value);
-    if (probability <= 0.0) return 0.0;
-    if (field.config.random_probability < 1.0) {
-        probability *= noise.randomPenalty(x, y, 1.0, 1.0 / field.config.random_probability);
-        if (probability < 0.0) probability = 0.0;
-    }
-    return probability;
+    return clamp01(value);
+    // NOTE: the fluid random_penalty (random_probability < 1) is applied by the
+    // caller from the per-chunk penalty column — the game evaluates the
+    // probability expression over the whole 32x32 chunk as ONE noise column, so
+    // RandomPenalty seeds once from the chunk's first tile and consumes one
+    // draw per tile in reverse column order (same semantics proven for the
+    // spot-quantity draws). Not a per-tile-seeded value.
+}
+
+/// Per-chunk fluid penalty draw column. RandomPenalty::run over the chunk's
+/// tile column: seed = int(x0)*7919 + int(y0+seed_param)*7907 + 0x3fbe2c from
+/// the FIRST column element (chunk origin, row-major), one taus88 draw per
+/// element, element i consuming draw (N-1-i). Seed has no resource term, so
+/// every fluid shares this column; penalty = 1 - r*amplitude.
+pub fn chunkPenaltyColumn(cx0: i32, cy0: i32, draws: *[32 * 32]f64) void {
+    // seed param of random_penalty DEFAULTS TO 1 (verified via the rp-probe
+    // oracle: unique linear solve gave c = 0x3fbe2c + 7907, i.e. y+1), so the
+    // seed is int(x0)*7919 + int(y0+1)*7907 + 0x3fbe2c. Verified EXACT against
+    // 4041/4041 probe dots over 256 chunks (calibration/vanilla-sweep,
+    // rp-probe mod, probe-341 world).
+    var seed: u32 = @bitCast(cx0 *% 7919 +% (cy0 +% 1) *% 7907 +% 0x3fbe2c);
+    if (seed < 342) seed = 341;
+    var prng = rng.Rng.init(seed);
+    for (draws) |*d| d.* = prng.float();
 }
 
 pub const OreEntity = struct {
@@ -486,6 +503,8 @@ pub fn computeOresInRect(
         var cx: i32 = cx0;
         while (cx <= cx1) : (cx += 1) {
             // PASS 1: winner per tile (row-major i = ly*32 + lx).
+            var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
+            var penalty_done = false;
             var i: usize = 0;
             while (i < CHUNK * CHUNK) : (i += 1) {
                 win_res[i] = -1;
@@ -507,9 +526,19 @@ pub fn computeOresInRect(
                         if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
                         if (water[@intCast(ly * CHUNK + lx)]) continue;
                         const sspot_ptr: ?*StartingSpotField = if (rs.sspot) |*ss| ss else null;
-                        const p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
+                        var p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
                         if (p <= 0.0) continue;
                         const idx: usize = @intCast(ly * CHUNK + lx);
+                        if (rs.field.config.random_probability < 1.0) {
+                            if (!penalty_done) {
+                                chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
+                                penalty_done = true;
+                            }
+                            // element idx consumes draw (N-1-idx) (reverse order)
+                            const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
+                            p *= 1.0 - r_draw / rs.field.config.random_probability;
+                            if (p <= 0.0) continue;
+                        }
                         // generateEntities pass 1: replace when probability is
                         // strictly higher, OR equal with strictly higher
                         // richness (probability saturates to 1 in patch cores,

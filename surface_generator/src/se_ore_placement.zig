@@ -18,6 +18,7 @@ const noise = @import("noise.zig");
 const terrain = @import("terrain.zig");
 const biome = @import("biome.zig");
 const rng = @import("rng.zig");
+const ore = @import("ore_placement.zig");
 
 /// Per-tile placement probability roll. Factorio places a resource on a tile
 /// only if a per-tile uniform draw < probability_expression = clamp(all_patches,
@@ -527,6 +528,8 @@ const Worker = struct {
             while (cx <= cx1) : (cx += 1) {
                 // PASS 1 (generateEntities): winner per tile = highest
                 // probability, ties broken by higher richness.
+                var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
+                var penalty_done = false;
                 @memset(win_res[0..], -1);
                 @memset(win_prob[0..], 0.0);
                 @memset(elev_done[0..], false);
@@ -548,11 +551,16 @@ const Worker = struct {
                             };
                             var p = clamp01(value);
                             if (p <= 0.0) continue;
+                            const idx: usize = @intCast(ly * CHUNK + lx);
                             if (st.config.random_probability < 1.0) {
-                                p *= noise.randomPenalty(fx, fy, 1.0, 1.0 / st.config.random_probability);
+                                if (!penalty_done) {
+                                    ore.chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
+                                    penalty_done = true;
+                                }
+                                const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
+                                p *= 1.0 - r_draw / st.config.random_probability;
                                 if (p <= 0.0) continue;
                             }
-                            const idx: usize = @intCast(ly * CHUNK + lx);
                             // water gate (lazy per tile)
                             if (self.water) |w| {
                                 if (!elev_done[idx]) {

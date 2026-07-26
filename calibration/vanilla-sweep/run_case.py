@@ -73,13 +73,18 @@ def main():
     os.makedirs(MODS, exist_ok=True)
     os.makedirs(os.path.join(FDATA, "saves"), exist_ok=True)
     # mod-list with only base enabled (quality/space-age/elevated-rails DLC mods off)
+    mods = [
+        {"name": "base", "enabled": True},
+        {"name": "quality", "enabled": False},
+        {"name": "space-age", "enabled": False},
+        {"name": "elevated-rails", "enabled": False},
+    ]
+    # include any probe mods present in the mods dir
+    for d in os.listdir(MODS):
+        if "_" in d and os.path.isdir(os.path.join(MODS, d)):
+            mods.append({"name": d.rsplit("_", 1)[0], "enabled": True})
     with open(os.path.join(MODS, "mod-list.json"), "w") as f:
-        json.dump({"mods": [
-            {"name": "base", "enabled": True},
-            {"name": "quality", "enabled": False},
-            {"name": "space-age", "enabled": False},
-            {"name": "elevated-rails", "enabled": False},
-        ]}, f)
+        json.dump({"mods": mods}, f)
 
     # map-gen-settings: default everything, explicit seed + per-resource controls
     controls = {}
