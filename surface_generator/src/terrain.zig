@@ -23,11 +23,14 @@ fn clamp(v: f64, lo: f64, hi: f64) f64 {
     return std.math.clamp(v, lo, hi);
 }
 
-/// quick_multioctave_noise. `gen` must be BasisNoiseGen.init(seed0, seed1)
-/// (octave_seed0_shift defaults to 0, so every octave uses the same generator;
-/// octaves decorrelate purely through their differing input_scale).
+/// quick_multioctave_noise (QuickMultioctaveNoise::run @0x1015edd54). Each octave
+/// uses a FRESH generator: octave_seed0_shift defaults to 1, so octave k is seeded
+/// (seed0+k, seed1). Offset is in tile space (evalOffset). Pass `gens[k]` =
+/// BasisNoiseGen.init(seed0+k, seed1). input_scale *= oism, output_scale *= oosm
+/// per octave; results accumulate. Verified exact vs moisture_noise/aux_noise/
+/// temperature on vanilla Nauvis.
 pub fn quickMultioctave(
-    gen: *const noise.BasisNoiseGen,
+    gens: []const noise.BasisNoiseGen,
     x: f64,
     y: f64,
     octaves: u32,
@@ -43,11 +46,19 @@ pub fn quickMultioctave(
     var outscale = output_scale;
     var i: u32 = 0;
     while (i < octaves) : (i += 1) {
-        result += gen.evalOffset(x, y, inscale, outscale, offset_x, offset_y);
+        result += gens[i].evalOffset(x, y, inscale, outscale, offset_x, offset_y);
         inscale *= oism;
         outscale *= oosm;
     }
     return result;
+}
+
+/// Build `octaves` generators for a quick_multioctave call: (seed0+k, seed1).
+pub fn qmoGens(comptime octaves: usize, seed0: u32, seed1: u32) [octaves]noise.BasisNoiseGen {
+    var gens: [octaves]noise.BasisNoiseGen = undefined;
+    var k: u32 = 0;
+    while (k < octaves) : (k += 1) gens[k] = noise.BasisNoiseGen.init(seed0 +% k, seed1);
+    return gens;
 }
 
 /// Per-zone control values that parameterize the terrain expressions. Dumped
@@ -59,15 +70,23 @@ pub const ZoneTerrain = struct {
     moisture_bias: f64,
     aux_frequency: f64,
     aux_bias: f64,
+    temperature_frequency: f64,
+    temperature_bias: f64,
     cold_size: f64,
     hot_size: f64,
     cold_frequency: f64,
     hot_frequency: f64,
+    // starting-area moisture bias (var control:starting_area_moisture:*)
+    starting_moisture_bias: f64, // starting_bias, applied within starting_bias_region
+    starting_moisture_frequency: f64,
 
-    // Cached basis generators (one per property; seed1 differs per property).
-    gen5: noise.BasisNoiseGen, // temperature (seed1=5)
-    gen6: noise.BasisNoiseGen, // moisture    (seed1=6)
-    gen7: noise.BasisNoiseGen, // aux         (seed1=7)
+    // 4 fresh generators per property (quick_multioctave octave_seed0_shift=1):
+    // gens[k] = BasisNoiseGen.init(map_seed+k, seed1).
+    temp_gens: [4]noise.BasisNoiseGen, // seed1=5
+    moist_gens: [4]noise.BasisNoiseGen, // seed1=6
+    aux_gens: [4]noise.BasisNoiseGen, // seed1=7
+    // Elevation for nauvis_plateaus (aux_nauvis / moisture_nauvis depend on it).
+    elev: Elevation,
 
     pub fn init(cfg: Config) ZoneTerrain {
         return .{
@@ -76,13 +95,18 @@ pub const ZoneTerrain = struct {
             .moisture_bias = cfg.moisture_bias,
             .aux_frequency = cfg.aux_frequency,
             .aux_bias = cfg.aux_bias,
+            .temperature_frequency = cfg.temperature_frequency,
+            .temperature_bias = cfg.temperature_bias,
             .cold_size = cfg.cold_size,
             .hot_size = cfg.hot_size,
             .cold_frequency = cfg.cold_frequency,
             .hot_frequency = cfg.hot_frequency,
-            .gen5 = noise.BasisNoiseGen.init(cfg.map_seed, 5),
-            .gen6 = noise.BasisNoiseGen.init(cfg.map_seed, 6),
-            .gen7 = noise.BasisNoiseGen.init(cfg.map_seed, 7),
+            .starting_moisture_bias = cfg.starting_moisture_bias,
+            .starting_moisture_frequency = cfg.starting_moisture_frequency,
+            .temp_gens = qmoGens(4, cfg.map_seed, 5),
+            .moist_gens = qmoGens(4, cfg.map_seed, 6),
+            .aux_gens = qmoGens(4, cfg.map_seed, 7),
+            .elev = Elevation.init(cfg.map_seed, cfg.water_frequency, cfg.water_size),
         };
     }
 
@@ -92,25 +116,58 @@ pub const ZoneTerrain = struct {
         moisture_bias: f64,
         aux_frequency: f64,
         aux_bias: f64,
+        temperature_frequency: f64 = 1.0,
+        temperature_bias: f64 = 0.0,
         cold_size: f64,
         hot_size: f64,
         cold_frequency: f64,
         hot_frequency: f64,
+        water_frequency: f64 = 1.0,
+        water_size: f64 = 1.0,
+        starting_moisture_bias: f64 = 0.0,
+        starting_moisture_frequency: f64 = 1.0,
     };
 
-    /// moisture = clamp(0.5 + 2.2*bias + 2.5*qmn{...}, 0, 1)
-    pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        return self.moistureF(x, y, self.moisture_frequency);
-    }
-    pub fn moistureF(self: *const ZoneTerrain, x: f64, y: f64, freq: f64) f64 {
-        const q = quickMultioctave(&self.gen6, x * freq, y * freq, 8, 1.0 / 2000.0, 1.0 / 8.0, 3.0, 0.5, 30000.0, 0.0);
-        return clamp(0.5 + 2.2 * self.moisture_bias + 2.5 * q, 0.0, 1.0);
+    /// temperature = clamp(15 + bias + quick_multioctave_noise{seed1=5, oct4,
+    /// is=freq/32, os=1/20, offset_x=40000/freq, oosm=3, oism=1/3}, -20, 50).
+    pub fn temperature(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+        const f = self.temperature_frequency;
+        const q = quickMultioctave(&self.temp_gens, x, y, 4, f / 32.0, 1.0 / 20.0, 1.0 / 3.0, 3.0, 40000.0 / f, 0.0);
+        return clamp(15.0 + self.temperature_bias + q, -20.0, 50.0);
     }
 
-    /// aux = clamp(0.45 + 2.2*bias + 2.2*qmn{...}, 0, 1)
+    /// aux_nauvis = clamp(0.5 + bias + 0.06*(nauvis_plateaus - 0.4) + aux_noise, 0, 1);
+    /// aux_noise = quick_multioctave_noise{seed1=7, oct4, is=freq/2048, os=0.25,
+    /// offset_x=20000/freq, oosm=0.5, oism=3}.
     pub fn aux(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const q = quickMultioctave(&self.gen7, x * self.aux_frequency, y * self.aux_frequency, 8, 1.0 / 5000.0, 1.0 / 4.0, 3.0, 0.5, 20000.0, 0.0);
-        return clamp(0.45 + 2.2 * self.aux_bias + 2.2 * q, 0.0, 1.0);
+        const f = self.aux_frequency;
+        const q = quickMultioctave(&self.aux_gens, x, y, 4, f / 2048.0, 0.25, 3.0, 0.5, 20000.0 / f, 0.0);
+        const plateaus = self.elev.nauvisPlateaus(x, y);
+        return clamp(0.5 + self.aux_bias + 0.06 * (plateaus - 0.4) + q, 0.0, 1.0);
+    }
+
+    /// moisture_noise = quick_multioctave_noise{seed1=6, oct4, is=freq/256,
+    /// os=0.125, offset_x=30000/freq, oosm=1.5, oism=1/3}.
+    pub fn moistureNoise(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+        const f = self.moisture_frequency;
+        return quickMultioctave(&self.moist_gens, x, y, 4, f / 256.0, 0.125, 1.0 / 3.0, 1.5, 30000.0 / f, 0.0);
+    }
+
+    /// moisture_adjusted_bias = lerp(base_bias, starting_bias, starting_bias_region),
+    /// starting_bias_region = clamp(2 - starting_area_moisture_freq/400 * distance, 0, 1).
+    fn moistureAdjustedBias(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+        const dist = @sqrt(x * x + y * y);
+        const region = clamp(2.0 - self.starting_moisture_frequency / 400.0 * dist, 0.0, 1.0);
+        return lerp(self.moisture_bias, self.starting_moisture_bias, region);
+    }
+
+    /// moisture ~ moisture_main = clamp(0.4 + moisture_adjusted_bias + moisture_noise
+    /// - 0.08*(nauvis_plateaus - 0.6), 0, 1). NOTE: the real `moisture` property is
+    /// moisture_nauvis, which additionally lowers moisture by up to 0.2 outside forest
+    /// paths (trees_forest_path_cutout) — not yet ported (dirt-trail cosmetic effect).
+    pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
+        const plateaus = self.elev.nauvisPlateaus(x, y);
+        return clamp(0.4 + self.moistureAdjustedBias(x, y) + self.moistureNoise(x, y) - 0.08 * (plateaus - 0.6), 0.0, 1.0);
     }
 };
 
@@ -228,6 +285,15 @@ pub const Elevation = struct {
     pub fn startingLakeNoisePub(self: *const Elevation, x: f64, y: f64) f64 {
         return self.startingLakeNoise(x, y);
     }
+
+    /// nauvis_plateaus = 0.5 + clamp((nauvis_hills - nauvis_hills_cliff_level)*10,
+    /// -0.5, 0.5). Corner coords (matches the game). Used by aux_nauvis / moisture_nauvis.
+    pub fn nauvisPlateaus(self: *const Elevation, x: f64, y: f64) f64 {
+        const nsm = self.nsm;
+        const hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));
+        const cliff_level = std.math.clamp(0.65 + noise.basisNoise(x, y, self.map_seed, 99584, nsm / 500.0, 0.6), 0.15, 1.15);
+        return 0.5 + std.math.clamp((hills - cliff_level) * 10.0, -0.5, 0.5);
+    }
     pub fn nauvisPersistancePub(self: *const Elevation, x: f64, y: f64) f64 {
         return self.nauvisPersistance(x, y);
     }
@@ -295,4 +361,6 @@ pub const HORAERRATUM = ZoneTerrain.Config{
     .hot_size = 6.0,
     .cold_frequency = 4.8053212165833,
     .hot_frequency = 4.8053212165833,
+    .water_frequency = 1.0,
+    .water_size = 1.5,
 };
