@@ -55,6 +55,7 @@ pub fn main(init: std.process.Init) !void {
     var lake_x: ?f64 = null;
     var lake_y: ?f64 = null;
     var water_threshold: f64 = -0.012; // calibrated water-boundary (see TerrainCtx)
+    var extras_file: ?[]const u8 = null;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -80,6 +81,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--spot-rng")) {
             i += 1;
             if (i < args.len) surfacegen.noise.spot_size_rng_variant = try std.fmt.parseInt(u8, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--extras")) {
+            i += 1;
+            extras_file = args[i];
         } else if (std.mem.eql(u8, args[i], "--water-threshold")) {
             i += 1;
             water_threshold = try std.fmt.parseFloat(f64, args[i]);
@@ -171,7 +175,26 @@ pub fn main(init: std.process.Init) !void {
         elev_gate.addStartingLake(lx, lake_y.?);
         lakes_gate.addStartingLake(lx, lake_y.?);
     }
-    const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate, .water_threshold = water_threshold };
+    // Optional per-chunk jitter extras (placed trees/rocks/fish before group
+    // "b" and enemies between "b" and "c"; each consumes 2 placement-RNG draws).
+    var extras_map: std.AutoHashMapUnmanaged(u64, [2]u32) = .empty;
+    if (extras_file) |ef| {
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, ef, a, .unlimited);
+        var it = std.mem.tokenizeAny(u8, raw, "\r\n");
+        while (it.next()) |line| {
+            var ft = std.mem.tokenizeAny(u8, line, " \t");
+            const scx = ft.next() orelse continue;
+            const scy = ft.next() orelse continue;
+            const se0 = ft.next() orelse continue;
+            const se1 = ft.next() orelse continue;
+            const cxv = try std.fmt.parseInt(i32, scx, 10);
+            const cyv = try std.fmt.parseInt(i32, scy, 10);
+            const k = (@as(u64, @as(u32, @bitCast(cxv))) << 32) | @as(u64, @as(u32, @bitCast(cyv)));
+            try extras_map.put(a, k, .{ try std.fmt.parseInt(u32, se0, 10), try std.fmt.parseInt(u32, se1, 10) });
+        }
+        std.debug.print("# Loaded extras for {d} chunks\n", .{extras_map.count()});
+    }
+    const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate, .water_threshold = water_threshold, .extras = &extras_map };
 
     var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls, tctx);
     defer ores.deinit(a);

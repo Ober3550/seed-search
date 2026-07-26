@@ -66,6 +66,11 @@ pub const ResourceAutoplaceConfig = struct {
     additional_richness: f64 = 0.0,
     minimum_richness: f64 = 0.0,
     richness_post_multiplier: f64 = 1.0,
+    /// Autoplace order group: entities are placed group-by-group in ASCII order
+    /// of AutoplaceSpecification.order; each group consumes the shared per-chunk
+    /// RNG. Vanilla: group 0 = order "b" (iron/copper/coal/stone), group 1 =
+    /// order "c" (uranium, crude-oil).
+    order_group: u8 = 0,
 };
 
 pub const iron_ore_default = ResourceAutoplaceConfig{
@@ -97,6 +102,7 @@ pub const uranium_ore_default = ResourceAutoplaceConfig{
     .candidate_spot_count = 21, .regular_rq_factor_multiplier = 1.0,
     .random_spot_size_minimum = 2.0, .random_spot_size_maximum = 4.0,
     .has_starting_area_placement = .no, .regular_patch_set_index = 5,
+    .order_group = 1,
 };
 
 // Base-game crude-oil (base/prototypes/entity/resources.lua). A fluid resource:
@@ -110,6 +116,7 @@ pub const crude_oil_default = ResourceAutoplaceConfig{
     .random_probability = 1.0 / 48.0,
     .random_spot_size_minimum = 1.0, .random_spot_size_maximum = 1.0,
     .additional_richness = 220000.0,
+    .order_group = 1,
 };
 
 fn clamp01(v: f64) f64 {
@@ -448,6 +455,14 @@ pub const OreEntity = struct {
 pub const TerrainCtx = struct {
     elev: ?*const terrain.Elevation = null,
     lakes: ?*const terrain.ElevationLakes = null,
+    /// Land-eligible order groups BEFORE resource group "b" (vanilla: huge-rock,
+    /// big-rock, 20 tree groups = 22). fish ('' order) sweeps WATER tiles.
+    land_groups_before_b: u32 = 22,
+    /// Land groups between "b" and "c" (vanilla: 2 enemy groups).
+    land_groups_b_to_c: u32 = 2,
+    /// Per-chunk jitter-placement extras (each placed tree/rock/fish consumes 2
+    /// extra draws): map key = (cx<<32)|cy packed, value = [before_b, b_to_c].
+    extras: ?*const std.AutoHashMapUnmanaged(u64, [2]u32) = null,
     /// Water gate threshold. The game picks tiles by autoplace competition:
     /// water_base(0,100) = 100*(-elev) must beat the best LAND tile probability
     /// (plateau ~1 + per-tile noise_layer_noise), so the effective water
@@ -502,74 +517,110 @@ pub fn computeOresInRect(
     while (cy <= cy1) : (cy += 1) {
         var cx: i32 = cx0;
         while (cx <= cx1) : (cx += 1) {
-            // PASS 1: winner per tile (row-major i = ly*32 + lx).
-            var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
-            var penalty_done = false;
+            // Per-chunk water mask + counts (fish sweeps water; land groups
+            // sweep every land tile regardless of probability — winner best is
+            // initialized/reset to -inf, so any eligible tile rolls).
+            var water_count: u32 = 0;
             var i: usize = 0;
             while (i < CHUNK * CHUNK) : (i += 1) {
-                win_res[i] = -1;
-                win_prob[i] = 0.0;
-                // Water tiles collide with the resource layer: elevation < 0
-                // blocks every resource (tile-corner sample, matching the game).
                 water[i] = if (ctx.elev) |el| el.at(
                     @floatFromInt(cx * CHUNK + @as(i32, @intCast(@mod(i, CHUNK)))),
                     @floatFromInt(cy * CHUNK + @as(i32, @intCast(@divTrunc(i, CHUNK)))),
                 ) < ctx.water_threshold else false;
+                if (water[i]) water_count += 1;
             }
-            for (rstates, 0..) |*rs, ri| {
-                var ly: i32 = 0;
-                while (ly < CHUNK) : (ly += 1) {
-                    var lx: i32 = 0;
-                    while (lx < CHUNK) : (lx += 1) {
-                        const tx = cx * CHUNK + lx;
-                        const ty = cy * CHUNK + ly;
-                        if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
-                        if (water[@intCast(ly * CHUNK + lx)]) continue;
-                        const sspot_ptr: ?*StartingSpotField = if (rs.sspot) |*ss| ss else null;
-                        var p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
-                        if (p <= 0.0) continue;
-                        const idx: usize = @intCast(ly * CHUNK + lx);
-                        if (rs.field.config.random_probability < 1.0) {
-                            if (!penalty_done) {
-                                chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
-                                penalty_done = true;
-                            }
-                            // element idx consumes draw (N-1-idx) (reverse order)
-                            const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
-                            p *= 1.0 - r_draw / rs.field.config.random_probability;
-                            if (p <= 0.0) continue;
-                        }
-                        // generateEntities pass 1: replace when probability is
-                        // strictly higher, OR equal with strictly higher
-                        // richness (probability saturates to 1 in patch cores,
-                        // so overlapping patches tie and richness decides).
-                        const tie = p == win_prob[idx] and win_res[idx] >= 0;
-                        if (p > win_prob[idx] or tie) {
-                            const ssv: ?f64 = if (sspot_ptr) |ss| try ss.evalAt(@floatFromInt(tx), @floatFromInt(ty)) else null;
-                            const rich = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty)), ssv));
-                            if (tie and rich <= win_rich[idx]) continue;
-                            win_prob[idx] = p;
-                            win_res[idx] = @intCast(ri);
-                            win_rich[idx] = rich;
-                        }
-                    }
-                }
-            }
-            // PASS 2: per-chunk RNG, reverse tile order.
+            const land_count: u32 = @as(u32, CHUNK * CHUNK) - water_count;
+            const extras: [2]u32 = if (ctx.extras) |ex| blk: {
+                const k = (@as(u64, @as(u32, @bitCast(cx))) << 32) | @as(u64, @as(u32, @bitCast(cy)));
+                break :blk ex.get(k) orelse .{ 0, 0 };
+            } else .{ 0, 0 };
+
+            // Shared per-chunk placement RNG, seeded once; consumed by every
+            // order group in sequence.
             var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
             if (seed < 342) seed = 341;
             var prng = rng.Rng.init(seed);
-            var ii: i32 = CHUNK * CHUNK - 1;
-            while (ii >= 0) : (ii -= 1) {
-                const idx: usize = @intCast(ii);
-                if (win_res[idx] < 0) continue;
-                const draw = @as(f64, @floatFromInt(prng.next())) * 2.3283064365386963e-10;
-                if (draw < win_prob[idx]) {
-                    const amount: u32 = @intFromFloat(@floor(win_rich[idx]));
-                    if (amount > 0) {
-                        const lx = @mod(ii, CHUNK);
-                        const ly = @divFloor(ii, CHUNK);
-                        try results.append(alloc, .{ .x = cx * CHUNK + lx, .y = cy * CHUNK + ly, .resource_name = rstates[@intCast(win_res[idx])].name, .amount = amount });
+            // fish ('' order): one draw per WATER tile + 2 per placed fish;
+            // then the pre-"b" land groups (rocks + trees): one draw per land
+            // tile each + 2 per placed jitter entity.
+            var skip: u64 = water_count + 2 * @as(u64, extras[0]) +
+                @as(u64, ctx.land_groups_before_b) * land_count;
+            while (skip > 0) : (skip -= 1) _ = prng.next();
+
+            var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
+            var penalty_done = false;
+
+            var group: u8 = 0;
+            while (group < 2) : (group += 1) {
+                if (group == 1) {
+                    // between "b" and "c": enemy groups sweep land + extras.
+                    var skip2: u64 = @as(u64, ctx.land_groups_b_to_c) * land_count + 2 * @as(u64, extras[1]);
+                    while (skip2 > 0) : (skip2 -= 1) _ = prng.next();
+                }
+                // PASS 1: winner per tile among THIS group's resources.
+                i = 0;
+                while (i < CHUNK * CHUNK) : (i += 1) {
+                    win_res[i] = -1;
+                    win_prob[i] = 0.0;
+                }
+                for (rstates, 0..) |*rs, ri| {
+                    if (rs.field.config.order_group != group) continue;
+                    var ly: i32 = 0;
+                    while (ly < CHUNK) : (ly += 1) {
+                        var lx: i32 = 0;
+                        while (lx < CHUNK) : (lx += 1) {
+                            const tx = cx * CHUNK + lx;
+                            const ty = cy * CHUNK + ly;
+                            if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                            if (water[@intCast(ly * CHUNK + lx)]) continue;
+                            const sspot_ptr: ?*StartingSpotField = if (rs.sspot) |*ss| ss else null;
+                            var p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
+                            if (p < 0.0) p = 0.0;
+                            const idx: usize = @intCast(ly * CHUNK + lx);
+                            if (rs.field.config.random_probability < 1.0) {
+                                if (!penalty_done) {
+                                    chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
+                                    penalty_done = true;
+                                }
+                                const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
+                                p *= 1.0 - r_draw / rs.field.config.random_probability;
+                                if (p < 0.0) p = 0.0;
+                            }
+                            const tie = p == win_prob[idx] and win_res[idx] >= 0;
+                            if (p > win_prob[idx] or tie or win_res[idx] < 0) {
+                                var rich: f64 = 0.0;
+                                if (p > 0.0) {
+                                    const spot_value = try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty));
+                                    const ssv2: ?f64 = if (sspot_ptr) |ss| try ss.evalAt(@floatFromInt(tx), @floatFromInt(ty)) else null;
+                                    rich = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), spot_value, ssv2));
+                                }
+                                if (tie and rich <= win_rich[idx]) continue;
+                                win_prob[idx] = p;
+                                win_res[idx] = @intCast(ri);
+                                win_rich[idx] = rich;
+                            }
+                        }
+                    }
+                }
+                // PASS 2: reverse tile order; EVERY land tile in the rect
+                // consumes one draw (winner exists at any eligible tile in the
+                // game — our group members are all land resources).
+                var ii: i32 = CHUNK * CHUNK - 1;
+                while (ii >= 0) : (ii -= 1) {
+                    const idx: usize = @intCast(ii);
+                    const lx = @mod(ii, CHUNK);
+                    const ly = @divFloor(ii, CHUNK);
+                    const tx = cx * CHUNK + lx;
+                    const ty = cy * CHUNK + ly;
+                    if (water[idx]) continue; // no eligible entity -> no draw
+                    const draw = @as(f64, @floatFromInt(prng.next())) * 2.3283064365386963e-10;
+                    if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                    if (win_res[idx] < 0) continue;
+                    if (draw < win_prob[idx]) {
+                        const amount: u32 = @intFromFloat(@floor(@max(win_rich[idx], 0.0)));
+                        if (amount > 0) {
+                            try results.append(alloc, .{ .x = tx, .y = ty, .resource_name = rstates[@intCast(win_res[idx])].name, .amount = amount });
+                        }
                     }
                 }
             }
