@@ -17,6 +17,21 @@ const std = @import("std");
 const noise = @import("noise.zig");
 const terrain = @import("terrain.zig");
 const biome = @import("biome.zig");
+const rng = @import("rng.zig");
+
+/// Per-tile placement probability roll. Factorio places a resource on a tile
+/// only if a per-tile uniform draw < probability_expression = clamp(all_patches,
+/// 0, 1) [* random_penalty for random_probability<1]. This thins the soft patch
+/// edge (0<prob<1) instead of filling the whole >0 footprint. `salt` makes the
+/// draw independent per resource. (Statistical/count match; exact tile identity
+/// would need the game's per-chunk RNG in chunk-scan order.)
+fn placementRoll(x: i32, y: i32, salt: u32) f64 {
+    const ix: u32 = @bitCast(x);
+    const iy: u32 = @bitCast(y);
+    var rr = rng.Rng.init((ix *% 73856093) ^ (iy *% 19349663) ^ salt);
+    _ = rr.next(); // discard first (LFSR warmup)
+    return rr.float();
+}
 
 const pi = std.math.pi;
 
@@ -151,6 +166,7 @@ const ResourceState = struct {
     name: []const u8,
     config: SEResourceConfig,
     controls: Controls,
+    roll_salt: u32 = 0, // per-resource salt for the placement roll (hash of name)
     map_seed: u32,
     freq_mult: f64,
     size_mult: f64,
@@ -231,10 +247,15 @@ pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const 
         .min_candidate_spacing = SE_MIN_CANDIDATE_SPACING,
     };
 
+    // FNV-1a hash of the resource name for an independent placement-roll stream.
+    var salt: u32 = 2166136261;
+    for (name) |c| salt = (salt ^ c) *% 16777619;
+
     return .{
         .name = name,
         .config = cfg,
         .controls = ctrl,
+        .roll_salt = salt,
         .map_seed = map_seed,
         .freq_mult = freq_mult,
         .size_mult = size_mult,
@@ -302,7 +323,17 @@ const RICHNESS_DISTANCE: f64 = @max(1.0, (SE_BASE_DISTANCE + (SE_BASE_DISTANCE -
 /// concurrently from multiple threads on shared ResourceStates.
 fn evalTileForState(st: *ResourceState, x: i32, y: i32, fx: f64, fy: f64) !?OreEntity {
     const value = try allPatchesValue(st, fx, fy);
-    if (clamp01(value) <= 0.0) return null;
+    var probability = clamp01(value);
+    if (probability <= 0.0) return null;
+    // random_probability<1 (e.g. crude-oil 1/48) multiplies probability by a
+    // per-tile random_penalty before the roll.
+    if (st.config.random_probability < 1.0) {
+        probability *= noise.randomPenalty(fx, fy, 1.0, 1.0 / st.config.random_probability);
+        if (probability <= 0.0) return null;
+    }
+    // Per-tile placement roll: place only if uniform < probability. Thins the
+    // soft patch edge instead of filling the whole value>0 footprint.
+    if (placementRoll(x, y, st.roll_salt) >= probability) return null;
 
     var richness = value;
     if (st.config.random_probability < 1.0) richness /= st.config.random_probability;

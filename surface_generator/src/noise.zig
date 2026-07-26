@@ -277,18 +277,25 @@ pub fn variablePersistence(
 // random_penalty — Random thinning
 // ============================================================
 
-/// Factorio's random_penalty expression.
-/// Returns source * random if random > amplitude, else source.
-/// Uses a deterministic RNG seeded by position.
+/// Factorio's random_penalty op (RandomPenalty run @ 0x1015f0384). Per-tile
+/// deterministic uniform draw r; returns `source - r*amplitude`. Seed from the
+/// tile position, matching the spot-quantity port in computeRegion:
+///   seed = int(x)*7919 + int(y+seed_const)*7907 + 0x3fbe2c  (>=341), triple-LFSR.
+/// Used for random_probability<1 (fluid) resources: with source=1,
+/// amplitude=1/random_probability the value is <0 on ~(1-rp) of tiles, so the
+/// probability_expression clamps to 0 there → the patch becomes sparse dots.
 pub fn randomPenalty(x: f64, y: f64, source: f64, amplitude: f64) f64 {
-    const ix: u32 = @bitCast(@as(i32, @intFromFloat(@floor(x))));
-    const iy: u32 = @bitCast(@as(i32, @intFromFloat(@floor(y))));
-    var rr = rng.Rng.init(ix ^ (iy << 16));
+    return randomPenaltySeeded(x, y, source, amplitude, 0);
+}
+
+pub fn randomPenaltySeeded(x: f64, y: f64, source: f64, amplitude: f64, seed_const: i32) f64 {
+    const xi: i32 = @intFromFloat(@floor(x));
+    const yi: i32 = @intFromFloat(@floor(y) + @as(f64, @floatFromInt(seed_const)));
+    var s: u32 = (@as(u32, @bitCast(xi)) *% 7919) +% (@as(u32, @bitCast(yi)) *% 7907) +% 0x3fbe2c;
+    if (s < 342) s = 341;
+    var rr = rng.Rng.init(s);
     const r = rr.float();
-    if (r > amplitude) {
-        return source * r;
-    }
-    return source;
+    return source - r * amplitude;
 }
 
 // ============================================================
