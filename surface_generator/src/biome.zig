@@ -77,3 +77,23 @@ pub const Classifier = struct {
 /// Water tile colors keyed by depth (Horaerratum legend values).
 pub const deepwater: [3]u8 = .{ 38, 64, 73 };
 pub const water: [3]u8 = .{ 51, 83, 95 };
+
+/// True if the resource is biome-restricted (needs a tile classify to gate).
+/// Only se-vulcanite/cryonite/vitamelange restrict; every other ore places on
+/// any land tile (water is excluded separately by the resource collision mask).
+pub fn isBiomeRestricted(resource_name: []const u8) bool {
+    return std.mem.eql(u8, resource_name, "se-vulcanite") or
+        std.mem.eql(u8, resource_name, "se-cryonite") or
+        std.mem.eql(u8, resource_name, "se-vitamelange");
+}
+
+/// Whether `resource_name` may place on the winning biome at `biome_index`.
+/// Uses the tile_restriction bits baked into biome_table (1=vulcanite,
+/// 2=cryonite, 4=vitamelange). Non-restricted resources return true.
+pub fn oreAllowedOnBiome(resource_name: []const u8, biome_index: usize) bool {
+    const r = biomes[biome_index].restrict;
+    if (std.mem.eql(u8, resource_name, "se-vulcanite")) return (r & 1) != 0;
+    if (std.mem.eql(u8, resource_name, "se-cryonite")) return (r & 2) != 0;
+    if (std.mem.eql(u8, resource_name, "se-vitamelange")) return (r & 4) != 0;
+    return true;
+}

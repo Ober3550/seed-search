@@ -16,6 +16,7 @@
 const std = @import("std");
 const noise = @import("noise.zig");
 const terrain = @import("terrain.zig");
+const biome = @import("biome.zig");
 
 const pi = std.math.pi;
 
@@ -322,6 +323,12 @@ const Worker = struct {
     yb: i32,
     sample_step: i32,
     water: ?*const terrain.Elevation,
+    // Terrain gating: classify the biome tile ONLY at positions where an ore
+    // actually exists (ore is sparse, terrain classify is expensive). Water
+    // exclusion applies to every ore; the biome tile_restriction only to
+    // se-vulcanite/cryonite/vitamelange.
+    zone_terrain: ?*const terrain.ZoneTerrain,
+    classifier: ?*const biome.Classifier,
     out: std.ArrayList(OreEntity) = .empty,
     err: ?anyerror = null,
 
@@ -334,14 +341,43 @@ const Worker = struct {
                 const fx: f64 = @floatFromInt(x);
                 const fy: f64 = @floatFromInt(y);
                 if (dist0(fx, fy) > self.zone_radius) continue; // outside the surface
-                // No entity can sit on water; skip water tiles (elevation < 0).
-                if (self.water) |w| if (w.isWater(fx, fy)) continue;
+                // Per-tile terrain is resolved lazily: only when an ore candidate
+                // is found here, and the biome classify only when a biome-
+                // restricted resource has a candidate. Most of the surface (no
+                // ore) never touches the terrain generator.
+                var water_done = false;
+                var is_water = false;
+                var biome_done = false;
+                var biome_idx: usize = 0;
+                var elev: f64 = 0;
                 for (self.states) |*st| {
                     const oe = evalTileForState(st, x, y, fx, fy) catch |e| {
                         self.err = e;
                         return;
                     };
-                    if (oe) |o| self.out.append(a, o) catch |e| {
+                    const o = oe orelse continue;
+                    // water gate (applies to every ore) — compute elevation once
+                    if (self.water) |w| {
+                        if (!water_done) {
+                            elev = w.at(fx, fy);
+                            is_water = elev < 0.0;
+                            water_done = true;
+                        }
+                        if (is_water) continue;
+                    }
+                    // biome tile_restriction gate (restricted resources only)
+                    if (self.classifier) |c| {
+                        if (self.zone_terrain) |zt| {
+                            if (biome.isBiomeRestricted(st.name)) {
+                                if (!biome_done) {
+                                    biome_idx = c.classifyIndex(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), elev);
+                                    biome_done = true;
+                                }
+                                if (!biome.oreAllowedOnBiome(st.name, biome_idx)) continue;
+                            }
+                        }
+                    }
+                    self.out.append(a, o) catch |e| {
                         self.err = e;
                         return;
                     };
@@ -368,6 +404,8 @@ pub fn computeSEOresInRect(
     resources: []const ResourceInput,
     sample_step: i32,
     water: ?*const terrain.Elevation,
+    zone_terrain: ?*const terrain.ZoneTerrain,
+    classifier: ?*const biome.Classifier,
 ) !std.ArrayList(OreEntity) {
     var results: std.ArrayList(OreEntity) = .empty;
     if (x1 <= x0 or y1 <= y0) return results;
@@ -422,6 +460,8 @@ pub fn computeSEOresInRect(
             .yb = yb,
             .sample_step = sample_step,
             .water = water,
+            .zone_terrain = zone_terrain,
+            .classifier = classifier,
         };
     }
 

@@ -453,9 +453,16 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, 1.0, 1.5);
+    const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+    const zt_gate = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
+    const classifier_gate = surfacegen.biome.Classifier.init(surfacegen.terrain.HORAERRATUM.map_seed);
+    // `--water` turns on terrain gating: exclude ore on water and restrict
+    // se-vulcanite/cryonite/vitamelange to their biome tiles. Terrain is only
+    // evaluated where an ore candidate exists (ore is sparse).
     const water_pred: ?*const surfacegen.terrain.Elevation = if (water_exclude) &elev else null;
-    var ores = try se.computeSEOresInRect(a, HORAERRATUM_SEED, zone_r, -r, -r, r, r, &inputs, sample_step, water_pred);
+    const zt_ptr: ?*const surfacegen.terrain.ZoneTerrain = if (water_exclude) &zt_gate else null;
+    const cls_ptr: ?*const surfacegen.biome.Classifier = if (water_exclude) &classifier_gate else null;
+    var ores = try se.computeSEOresInRect(a, HORAERRATUM_SEED, zone_r, -r, -r, r, r, &inputs, sample_step, water_pred, zt_ptr, cls_ptr);
     defer ores.deinit(a);
     std.debug.print("# Found {} ore entities\n", .{ores.items.len});
 
