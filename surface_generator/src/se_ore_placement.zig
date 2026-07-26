@@ -35,25 +35,27 @@ fn placementRoll(x: i32, y: i32, salt: u32) f64 {
 
 const pi = std.math.pi;
 
-// ---- SE constants (SE resource-autoplace.lua, prototypes/phase-1/entity) ----
-pub const SE_DOUBLE_DENSITY: f64 = 1300.0; // double_density_distance
-pub const SE_REGULAR_FADE_IN: f64 = 300.0; // regular_patch_fade_in_distance
-pub const SE_STARTING_RADIUS: f64 = 120.0; // starting_resource_placement_radius
-// regular_blob_amplitude_maximum_distance = spot_enlargement_maximum_distance.
-// = double_density_distance, + fade_in when has_starting_area_placement is set
-// (all our resources set it 0 or 1, never nil) -> 1600.
+// ---- SE constants — AUTHORITATIVE: se_resource_autoplace_all_patches
+// (prototypes/resource_autoplace_overrides.lua), confirmed byte-for-byte from
+// the LIVE game (prototypes.named_noise_expression['default-iron-ore-patches'],
+// calibration/mod-dump/live-autoplace-expressions.json). SE's own function IS
+// the active path — NOT the base-game resource_autoplace_all_patches.
+pub const SE_DOUBLE_DENSITY: f64 = 5000.0; // base_distance / double_density_distance
+pub const SE_REGULAR_FADE_IN: f64 = 320.0; // regular_patch_fade_in_distance
+pub const SE_STARTING_RADIUS: f64 = 140.0; // starting_resource_placement_radius
+// regular_blob_amplitude_maximum_distance = ddd (+ fade when has_starting != nil).
 pub const SE_SPOT_ENLARGE_MAX: f64 = SE_DOUBLE_DENSITY + SE_REGULAR_FADE_IN;
-// Base-game candidate_spot_count (21-22) + spacing — the active path is the
-// base-game resource_autoplace, not SE's phase-1 (which used 64/128).
-pub const SE_CANDIDATE_SPOT_COUNT: u32 = 22;
-pub const SE_MIN_CANDIDATE_SPACING: f64 = 45.254833995939045;
-pub const SE_MAX_BASEMENT_RADIUS: f64 = 128.0; // regular
-pub const SE_STARTING_AMOUNT: f64 = 20000.0; // starting_amount coefficient
-pub const SE_STARTING_SPLIT: f64 = 0.5; // starting_patches_split
-pub const SE_STARTING_CANDIDATE_COUNT: u32 = 32; // starting candidate_spot_count
-pub const SE_STARTING_CANDIDATE_SPACING: f64 = 32.0; // suggested_minimum_candidate_point_spacing
+pub const SE_CANDIDATE_SPOT_COUNT: u32 = 64;
+pub const SE_MIN_CANDIDATE_SPACING: f64 = 128.0; // rs_suggested_minimum_candidate_point_spacing
+pub const SE_SIZE_BOOST: f64 = 4.0; // additive spot radius boost (regular; starting uses /2)
+pub const SE_MAX_BASEMENT_RADIUS: f64 = 128.0; // regular spot_noise
+pub const SE_STARTING_MAX_BASEMENT_RADIUS: f64 = 64.0; // starting spot_noise
+pub const SE_STARTING_AMOUNT: f64 = 100000.0; // starting_amount coefficient
+pub const SE_STARTING_SPLIT: f64 = 0.25; // starting_patches_split = 1/4
+pub const SE_STARTING_CANDIDATE_COUNT: u32 = 64; // candidate_spot_count param
+pub const SE_STARTING_CANDIDATE_SPACING: f64 = 128.0; // suggested_minimum_candidate_point_spacing
 pub const SE_REGION_SIZE: f64 = 1024.0;
-pub const VEIN_OCTAVES: usize = 6; // multioctave_noise octaves for the vein term
+pub const VEIN_OCTAVES: usize = 6; // multioctave_noise octaves for the vein terms
 
 fn cbrt(v: f64) f64 {
     return std.math.pow(f64, v, 1.0 / 3.0);
@@ -143,11 +145,10 @@ const SEField = struct {
         const spots_per_km2 = self.base_spots_per_km2 * self.freq_mult;
         return self.regularDensityAt(seDistance(x, y)) * 1_000_000.0 / spots_per_km2;
     }
-    /// spot_radius_expression = min(32, rq * q^(1/3)). No size boost — SE's and
-    /// the base-game formula are exactly this (the earlier SE_SIZE_BOOST=4 was
-    /// fabricated and inflated every spot).
+    /// spot_radius_expression = size_boost + min(32, rq * q^(1/3)) — SE adds a
+    /// flat +4 to every regular spot radius (live-confirmed).
     pub fn spotRadius(self: SEField, q: f64) f64 {
-        return @min(32.0, self.rq * cbrt(q));
+        return SE_SIZE_BOOST + @min(32.0, self.rq * cbrt(q));
     }
 
     /// regular_spot_height_typical_at(distance).
@@ -179,19 +180,18 @@ const SEField = struct {
 
 const SESpotField = noise.SpotNoiseField(SEField);
 
-/// Starting-area guaranteed patches (base-game resource_autoplace_all_patches
-/// starting_patches). Placed near spawn (dist < starting_radius) with a hard
-/// region-target quantity. density = starting_density inside the radius (step),
-/// spot quantity constant, favorability gates to land (elevation > 1) and
-/// prefers the center. Needs elevation for the feasibility term.
+/// SE starting patches (se_resource_autoplace_all_patches starting_patches).
+/// UNLIKE the base game, SE's spot_favorability_expression is the CONSTANT 1
+/// (the elevation_lakes/random_penalty favorability is commented out in SE),
+/// radius gets a flat +size_boost/2, and quantity is constant (no
+/// random_penalty_between). No elevation needed.
 const StartingField = struct {
     starting_density: f64,
     spot_quantity: f64, // starting_area_spot_quantity (constant)
-    rq_factor: f64, // starting_rq_factor
-    elev: *const terrain.Elevation,
+    rq_factor: f64, // starting_rq_factor = srq_mult / 8 (SE divides by 8, core by 7)
 
     fn modulation(x: f64, y: f64) f64 {
-        // starting_modulation = starting_resource_placement_radius > distance
+        // starting_modulation = clamp((radius - se_distance) * inf, 0, 1) = step
         return if (dist0(x, y) < SE_STARTING_RADIUS) 1.0 else 0.0;
     }
     pub fn spotDensityAt(self: StartingField, x: f64, y: f64) f64 {
@@ -203,15 +203,14 @@ const StartingField = struct {
         return self.spot_quantity;
     }
     pub fn spotRadius(self: StartingField, q: f64) f64 {
-        // starting_rq_factor * starting_area_spot_quantity^(1/3) (no min(32)/boost)
-        return self.rq_factor * cbrt(q);
+        // size_boost/2 + starting_rq_factor * q^(1/3)
+        return SE_SIZE_BOOST / 2.0 + self.rq_factor * cbrt(q);
     }
     pub fn favorability(self: StartingField, x: f64, y: f64) f64 {
-        const mod = modulation(x, y);
-        const feasibility = clamp01((self.elev.at(x, y) - 1.0) / 10.0) * mod;
-        // random_penalty_at(0.5, seed=1) = 0.5 - r*0.5, r per-tile uniform.
-        const rp = noise.randomPenaltySeeded(x, y, 0.5, 0.5, 1);
-        return feasibility * 2.0 - dist0(x, y) / SE_STARTING_RADIUS + rp;
+        _ = self;
+        _ = x;
+        _ = y;
+        return 1.0;
     }
     pub fn randomSpotSizeMinimum(self: StartingField) f64 {
         _ = self;
@@ -263,8 +262,8 @@ pub fn makeResourceStateElev(alloc: std.mem.Allocator, map_seed: u32, name: []co
     const size_mult = slider(ctrl.size);
     const richness_mult = slider(ctrl.richness);
 
-    // Reference density at regular_blob_amplitude_maximum_distance (=1600):
-    //   fade=1, size_eff = clamp(1600-300,0,1600)=1300 -> doubling = 1+1300/1300 = 2.
+    // Reference density at regular_blob_amplitude_maximum_distance (=5320):
+    //   fade=1, size_eff = 5320-320 = 5000 -> doubling = 1 + 5000/5000 = 2.
     const density_max = cfg.base_density * freq_mult * size_mult * 2.0;
     const density = density_max;
 
@@ -279,14 +278,14 @@ pub fn makeResourceStateElev(alloc: std.mem.Allocator, map_seed: u32, name: []co
     const th_max = ResourceState.typicalHeightAt(density_max, rq, cfg.random_spot_size_minimum, cfg.random_spot_size_maximum, cfg.base_spots_per_km2, freq_mult);
     const blob_amp = (1.0 / 8.0) * th_max;
     const reg_amp_max = blob_amp;
-    // Starting-area values (base-game resource_autoplace_all_patches):
-    //   starting_amount = 20000 * base_density * (freq+1) * size
-    //   starting_area_spot_quantity = starting_amount / 0.5 / freq
-    //   starting_rq_factor = starting_rq_factor_multiplier / 7
+    // SE starting values (se_resource_autoplace_all_patches, live-confirmed):
+    //   starting_amount = 100000 * base_density * ((freq-1)*0.25 + 1) * size
+    //   starting_area_spot_quantity = starting_amount / (1/4) / freq
+    //   starting_rq_factor = starting_rq_factor_multiplier / 8 (core divides by 7)
     //   starting_blob_amplitude = (1/8) / (pi/3 * srq^2) * ssq^(1/3)
-    const starting_rq = cfg.starting_rq_factor_multiplier / 7.0;
+    const starting_rq = cfg.starting_rq_factor_multiplier / 8.0;
     const starting_amount = SE_STARTING_AMOUNT * cfg.base_density *
-        (freq_mult + 1.0) * size_mult;
+        ((freq_mult - 1.0) * 0.25 + 1.0) * size_mult;
     const starting_area_spot_quantity = starting_amount / SE_STARTING_SPLIT / freq_mult;
     const starting_blob_amplitude = (1.0 / 8.0) / (pi / 3.0 * starting_rq * starting_rq) *
         cbrt(starting_area_spot_quantity);
@@ -316,33 +315,31 @@ pub fn makeResourceStateElev(alloc: std.mem.Allocator, map_seed: u32, name: []co
         .min_candidate_spacing = SE_MIN_CANDIDATE_SPACING,
     };
 
-    // Guaranteed starting patches (only when the resource has them AND we have
-    // elevation for the feasibility term). region_size = 2*starting_radius, hard
-    // target, seed1+1, its own starting patch-set stride.
+    // Guaranteed starting patches (SE): region 280, hard target, seed1+1,
+    // starting patch-set stride, basement radius 64, favorability constant 1
+    // (no elevation dependency in SE).
+    _ = elev;
     var starting_spot: ?StartingSpotField = null;
     if (cfg.has_starting_area_placement) {
-        if (elev) |e| {
-            const starting_density = starting_amount / (pi * SE_STARTING_RADIUS * SE_STARTING_RADIUS);
-            starting_spot = StartingSpotField{
-                .alloc = alloc,
-                .field = StartingField{
-                    .starting_density = starting_density,
-                    .spot_quantity = starting_area_spot_quantity,
-                    .rq_factor = starting_rq,
-                    .elev = e,
-                },
-                .seed0 = map_seed,
-                .seed1 = cfg.seed1 + 1,
-                .region_size = SE_STARTING_RADIUS * 2.0,
-                .candidate_spot_count = SE_STARTING_CANDIDATE_COUNT,
-                .skip_span = cfg.starting_patch_set_count,
-                .skip_offset = cfg.starting_patch_set_index,
-                .hard_region_target_quantity = true,
-                .basement_value = basement_value,
-                .maximum_spot_basement_radius = SE_MAX_BASEMENT_RADIUS,
-                .min_candidate_spacing = SE_STARTING_CANDIDATE_SPACING,
-            };
-        }
+        const starting_density = starting_amount / (pi * SE_STARTING_RADIUS * SE_STARTING_RADIUS);
+        starting_spot = StartingSpotField{
+            .alloc = alloc,
+            .field = StartingField{
+                .starting_density = starting_density,
+                .spot_quantity = starting_area_spot_quantity,
+                .rq_factor = starting_rq,
+            },
+            .seed0 = map_seed,
+            .seed1 = cfg.seed1 + 1,
+            .region_size = SE_STARTING_RADIUS * 2.0,
+            .candidate_spot_count = SE_STARTING_CANDIDATE_COUNT,
+            .skip_span = cfg.starting_patch_set_count,
+            .skip_offset = cfg.starting_patch_set_index,
+            .hard_region_target_quantity = true,
+            .basement_value = basement_value,
+            .maximum_spot_basement_radius = SE_STARTING_MAX_BASEMENT_RADIUS,
+            .min_candidate_spacing = SE_STARTING_CANDIDATE_SPACING,
+        };
     }
 
     // FNV-1a hash of the resource name for an independent placement-roll stream.
@@ -391,19 +388,24 @@ pub fn probeAt(st: *ResourceState, x: f64, y: f64) !Probe {
 
 /// all_patches value at (x,y) for a resource. Regular patches only (non-home).
 fn allPatchesValue(st: *ResourceState, x: f64, y: f64) !f64 {
-    // SE regular_patches = regular_spots + blobs1f * regular_blob_amplitude,
-    // blobs1f = basis(1/8) + basis(1/24) + basis(1/64,1.5) - 1/3. There is NO
-    // extra vein/high-frequency term — random_probability applies a multiplicative
-    // random_penalty to PROBABILITY (see evalTileForState), not to the blob.
+    // SE regular_patches = regular_spots +
+    //   (1*(blobs0 + basis(1/64,1.5) - 1/3) + 0.8*vein*random_probability) * amp,
+    // where the noise-function's random_probability param is HARDCODED to 1 by
+    // SE's resource_autoplace_settings (the fluid thinning random_penalty is
+    // applied to the PROBABILITY expression instead). vein =
+    // 1 - 10*|multioctave{is=1/4, oct 6, persistence 0.5, seed1}|.
     const spot_v = try st.spot.evalAt(x, y);
     const blobs0 = st.basis.eval(x, y, 1.0 / 8.0, 1.0) + st.basis.eval(x, y, 1.0 / 24.0, 1.0);
     const blob = blobs0 + st.basis.eval(x, y, 1.0 / 64.0, 1.5) - 1.0 / 3.0;
-    const regular = spot_v + blob * st.spot.field.blobAmplitudeAt(x, y);
+    const vein_v = 1.0 - 10.0 * @abs(noise.multioctaveNoisePrebuilt(&st.basis, x, y, VEIN_OCTAVES, 0.5, 1.0 / 4.0, 1.0));
+    const regular = spot_v + (blob + 0.8 * vein_v) * st.spot.field.blobAmplitudeAt(x, y);
     // all_patches = max(starting_patches, regular_patches). starting_patches =
-    // starting_spots + (blobs0 - 0.25) * starting_blob_amplitude.
+    // starting_spots + (0.4*(blobs0 - 1/4) + 0.2*start_vein) * starting_blob_amp,
+    // start_vein = 1 - 10*|multioctave{is=1 (!), oct 6, persistence 0.5, seed1}|.
     if (st.starting_spot) |*ss| {
         const start_spot_v = try ss.evalAt(x, y);
-        const starting = start_spot_v + (blobs0 - 0.25) * st.starting_blob_amplitude;
+        const start_vein = 1.0 - 10.0 * @abs(noise.multioctaveNoisePrebuilt(&st.basis, x, y, VEIN_OCTAVES, 0.5, 1.0, 1.0));
+        const starting = start_spot_v + (0.4 * (blobs0 - 0.25) + 0.2 * start_vein) * st.starting_blob_amplitude;
         return @max(regular, starting);
     }
     return regular;
@@ -426,14 +428,30 @@ pub const ResourceInput = struct {
 /// plateau. = max(1, (ddd + sed)/(ddd + semd)), sed = size_effective distance
 /// (dist - fade_in). On this moon sed < semd so it stays 1, but keep it correct.
 fn richnessDistance(x: f64, y: f64) f64 {
-    const dist = @sqrt(x * x + y * y);
+    // max(1, (ddd + sed)/(ddd + semd)) with semd = spot_enlargement_maximum
+    // _distance = double_density_distance = 5000 (NOT +fade_in), sed =
+    // se_distance - fade_in. Confirmed from the live richness_expression:
+    // max(1, (5000 + clamp(...) - 320)/(5000 + 5000)).
+    const dist = @min(@sqrt(x * x + y * y), SE_DOUBLE_DENSITY);
     const sed = dist - SE_REGULAR_FADE_IN;
-    return @max(1.0, (SE_DOUBLE_DENSITY + sed) / (SE_DOUBLE_DENSITY + SE_SPOT_ENLARGE_MAX));
+    return @max(1.0, (SE_DOUBLE_DENSITY + sed) / (SE_DOUBLE_DENSITY + SE_DOUBLE_DENSITY));
 }
 
 /// Evaluate one resource at one tile. Read-only w.r.t. `st` once its spot cache
 /// has been pre-populated (see computeSEOresInRect), so this is safe to call
 /// concurrently from multiple threads on shared ResourceStates.
+/// Raw all_patches values at arbitrary positions — oracle comparison against
+/// the live game's `default-<name>-patches` via calculate_tile_properties
+/// (calibration/vanilla-sweep/probe_live.py).
+pub fn probeSEAllPatches(alloc: std.mem.Allocator, map_seed: u32, name: []const u8, cfg: SEResourceConfig, ctrl: Controls, elev: ?*const terrain.Elevation, xs: []const f64, ys: []const f64, out: []f64) !void {
+    var st = makeResourceStateElev(alloc, map_seed, name, cfg, ctrl, elev);
+    defer {
+        st.spot.deinit();
+        if (st.starting_spot) |*ss| ss.deinit();
+    }
+    for (xs, ys, out) |x, y, *o| o.* = try allPatchesValue(&st, x, y);
+}
+
 fn evalTileForState(st: *ResourceState, x: i32, y: i32, fx: f64, fy: f64) !?OreEntity {
     const value = try allPatchesValue(st, fx, fy);
     var probability = clamp01(value);

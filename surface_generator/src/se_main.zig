@@ -95,11 +95,11 @@ const N_BASE_RESOURCES = 9;
 // live from Horaerratum.
 const RESOURCE_ENTRIES = [_]Entry{
     mkEntry("iron-ore", 0, 14, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.72599, 1.43847, 1.46655, 0, 1.5),
-    mkEntry("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 2.08951, 0.58708, 0.65773, 1, 1.2),
+    mkEntry("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 2.08951, 0.58708, 0.65773, 1, 1.5),
     mkEntry("uranium-ore", 5, 1, 2.0, 1.1, 1.0, 0, 2.0, 4.0, 3.45809, 1.29909, 1.33414, -1, 1.0),
-    mkEntry("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.46945, 0.26449, 0.35127, 2, 1.1),
+    mkEntry("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.46945, 0.26449, 0.35127, 2, 1.5),
     mkEntry("crude-oil", 4, 8, 2.5, 1.2, 1.0 / 24.0, 220000, 1.0, 1.0, 2.50998, 0.80584, 0.86554, 4, 1.5),
-    mkEntry("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.04810, 1.08579, 1.13150, 3, 1.1),
+    mkEntry("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.04810, 1.08579, 1.13150, 3, 1.5),
     mkEntry("se-vulcanite", 16, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.36720, 1.77206, 1.78346, 12, 1.0),
     mkEntry("se-cryonite", 12, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.52532, 1.85433, 1.86161, 8, 1.0),
     mkEntry("se-vitamelange", 17, 10, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 8.02342, 3.67423, 3.59052, 13, 1.0),
@@ -136,6 +136,10 @@ pub fn main(init: std.process.Init) !void {
     var water_exclude: bool = false;
     var biome_bg: bool = false;
     var k2_enable: bool = false;
+    var field_probe_res: ?[]const u8 = null;
+    var field_probe_in: ?[]const u8 = null;
+    var field_probe_out: ?[]const u8 = null;
+    var ctrl_override: ?se.Controls = null;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--bmp")) {
@@ -154,6 +158,21 @@ pub fn main(init: std.process.Init) !void {
             spot_stats = true;
         } else if (std.mem.eql(u8, args[i], "--probe")) {
             probe = true;
+        } else if (std.mem.eql(u8, args[i], "--ctrl")) {
+            i += 1;
+            const cf = try std.fmt.parseFloat(f64, args[i]);
+            i += 1;
+            const cs = try std.fmt.parseFloat(f64, args[i]);
+            i += 1;
+            const cr = try std.fmt.parseFloat(f64, args[i]);
+            ctrl_override = .{ .frequency = cf, .size = cs, .richness = cr };
+        } else if (std.mem.eql(u8, args[i], "--field-probe")) {
+            i += 1;
+            field_probe_res = args[i];
+            i += 1;
+            field_probe_in = args[i];
+            i += 1;
+            field_probe_out = args[i];
         } else if (std.mem.eql(u8, args[i], "--terrain-probe")) {
             terrain_probe = true;
         } else if (std.mem.eql(u8, args[i], "--elev-grid")) {
@@ -439,6 +458,45 @@ pub fn main(init: std.process.Init) !void {
     const r: i32 = if (override_radius) |or2| or2 else @intFromFloat(HORAERRATUM_RADIUS);
     const zone_r: f64 = if (override_radius) |or2| @floatFromInt(or2) else HORAERRATUM_RADIUS;
     std.debug.print("# SE zone Horaerratum (world 57374), map_seed={d}, radius={d}, sample={d}\n", .{ HORAERRATUM_SEED, r, sample_step });
+
+    // --field-probe <resource> <in> <out>: raw all_patches at "x y" lines, for
+    // oracle comparison vs the live game (probe_live.py, default-<res>-patches).
+    if (field_probe_res) |rname| {
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, field_probe_in.?, a, .unlimited);
+        var xs: std.ArrayList(f64) = .empty;
+        var ys: std.ArrayList(f64) = .empty;
+        var it = std.mem.tokenizeAny(u8, raw, "\r\n");
+        while (it.next()) |line| {
+            var ft = std.mem.tokenizeAny(u8, line, " \t");
+            const sx = ft.next() orelse continue;
+            const sy = ft.next() orelse continue;
+            try xs.append(a, try std.fmt.parseFloat(f64, sx));
+            try ys.append(a, try std.fmt.parseFloat(f64, sy));
+        }
+        var entry: ?Entry = null;
+        for (es) |e| {
+            if (std.mem.eql(u8, e.name, rname)) entry = e;
+        }
+        const e = entry orelse {
+            std.debug.print("unknown resource {s}\n", .{rname});
+            return;
+        };
+        const elev_p = surfacegen.terrain.Elevation.init(HORAERRATUM_SEED, 1.0, 1.42);
+        const vals = try a.alloc(f64, xs.items.len);
+        const use_ctrl = ctrl_override orelse e.ctrl;
+        try se.probeSEAllPatches(a, HORAERRATUM_SEED, e.name, e.cfg, use_ctrl, &elev_p, xs.items, ys.items, vals);
+        var buf: std.ArrayList(u8) = .empty;
+        for (vals) |v| {
+            var line: [64]u8 = undefined;
+            const sl = try std.fmt.bufPrint(&line, "{d:.9}\n", .{v});
+            try buf.appendSlice(a, sl);
+        }
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, field_probe_out.?, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, buf.items, 0);
+        std.debug.print("# Probed {d} -> {s}\n", .{ vals.len, field_probe_out.? });
+        return;
+    }
 
     if (spot_stats) {
         // Just print spot-level statistics without tile evaluation.
