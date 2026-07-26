@@ -198,6 +198,22 @@ pub fn multioctaveNoisePrebuilt(
     input_scale: f64,
     output_scale: f64,
 ) f64 {
+    return multioctaveNoiseOffset(gen, x, y, octaves, persistence, input_scale, output_scale, 0.0, 0.0);
+}
+
+/// multioctave_noise with offset_x/offset_y. Verified (mse=0 vs game probe): the
+/// offset is added in NOISE space, the same constant every octave — noise-space
+/// coord = 17.17*k + offset + coord*coordmul*input_scale.
+pub fn multioctaveNoiseOffset(
+    gen: *const BasisNoiseGen,
+    x: f64, y: f64,
+    octaves: u32,
+    persistence: f64,
+    input_scale: f64,
+    output_scale: f64,
+    offset_x: f64,
+    offset_y: f64,
+) f64 {
     // EXACT (fit to game raw-multioctave probes, mse=0.0): single shared seed;
     // per octave k the basis samples at
     //   (x*input_scale*0.5^k + k*C,  y*input_scale*0.5^k)   with C=17.17
@@ -215,8 +231,9 @@ pub fn multioctaveNoisePrebuilt(
     var k: f64 = 0.0;
     var i: u32 = 0;
     while (i < octaves) : (i += 1) {
-        const x_arg = (k * 17.17) / input_scale + x * coordmul;
-        value += gen.eval(x_arg, y * coordmul, input_scale, 1.0) * amplitude;
+        const x_arg = (k * 17.17 + offset_x) / input_scale + x * coordmul;
+        const y_arg = offset_y / input_scale + y * coordmul;
+        value += gen.eval(x_arg, y_arg, input_scale, 1.0) * amplitude;
         sumsq += amplitude * amplitude;
         coordmul *= 0.5;
         amplitude *= ampmul;

@@ -285,6 +285,7 @@ pub fn main(init: std.process.Init) !void {
         const zt = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
         // Use the moon's calibrated water_size (~40.9% water on the live surface).
         const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+        const classifier = surfacegen.biome.Classifier.init(surfacegen.terrain.HORAERRATUM.map_seed);
 
         const size: u32 = @intCast(r * 2);
         var pixels = try a.alloc(u8, size * size * 3);
@@ -302,7 +303,7 @@ pub fn main(init: std.process.Init) !void {
                 const color: [3]u8 = if (e < 0.0)
                     (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
                 else
-                    surfacegen.biome.classifyColor(zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                    classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
                 // Orientation matches the tile-dump mod's BMP after bmp2png.
                 const x_arr: usize = @intCast(ix + r);
                 const y_arr: usize = @intCast((r - 1) - iy);
