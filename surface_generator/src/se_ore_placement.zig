@@ -270,10 +270,13 @@ pub fn probeAt(st: *ResourceState, x: f64, y: f64) !Probe {
 
 /// all_patches value at (x,y) for a resource. Regular patches only (non-home).
 fn allPatchesValue(st: *ResourceState, x: f64, y: f64) !f64 {
+    // SE regular_patches = regular_spots + blobs1f * regular_blob_amplitude,
+    // blobs1f = basis(1/8) + basis(1/24) + basis(1/64,1.5) - 1/3. There is NO
+    // extra vein/high-frequency term — random_probability applies a multiplicative
+    // random_penalty to PROBABILITY (see evalTileForState), not to the blob.
     const spot_v = try st.spot.evalAt(x, y);
     const blobs0 = st.basis.eval(x, y, 1.0 / 8.0, 1.0) + st.basis.eval(x, y, 1.0 / 24.0, 1.0);
-    const blob = blobs0 + st.basis.eval(x, y, 1.0 / 64.0, 1.5) - 1.0 / 3.0 +
-        0.8 * vein(&st.basis, x, y) * st.config.random_probability;
+    const blob = blobs0 + st.basis.eval(x, y, 1.0 / 64.0, 1.5) - 1.0 / 3.0;
     return spot_v + blob * st.spot.field.blobAmplitudeAt(x, y);
 }
 
