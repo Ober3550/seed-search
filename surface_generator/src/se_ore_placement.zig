@@ -43,9 +43,10 @@ pub const SE_STARTING_RADIUS: f64 = 120.0; // starting_resource_placement_radius
 // = double_density_distance, + fade_in when has_starting_area_placement is set
 // (all our resources set it 0 or 1, never nil) -> 1600.
 pub const SE_SPOT_ENLARGE_MAX: f64 = SE_DOUBLE_DENSITY + SE_REGULAR_FADE_IN;
-pub const SE_CANDIDATE_SPOT_COUNT: u32 = 64;
-pub const SE_MIN_CANDIDATE_SPACING: f64 = 128.0; // rs_suggested_minimum_candidate_point_spacing
-pub const SE_SIZE_BOOST: f64 = 4.0;
+// Base-game candidate_spot_count (21-22) + spacing — the active path is the
+// base-game resource_autoplace, not SE's phase-1 (which used 64/128).
+pub const SE_CANDIDATE_SPOT_COUNT: u32 = 22;
+pub const SE_MIN_CANDIDATE_SPACING: f64 = 45.254833995939045;
 pub const SE_MAX_BASEMENT_RADIUS: f64 = 128.0; // regular
 pub const SE_STARTING_AMOUNT: f64 = 20000.0; // starting_amount coefficient
 pub const SE_STARTING_SPLIT: f64 = 0.5; // starting_patches_split
@@ -142,9 +143,11 @@ const SEField = struct {
         const spots_per_km2 = self.base_spots_per_km2 * self.freq_mult;
         return self.regularDensityAt(seDistance(x, y)) * 1_000_000.0 / spots_per_km2;
     }
-    /// spot_radius_expression = size_boost + min(32, rq * q^(1/3))
+    /// spot_radius_expression = min(32, rq * q^(1/3)). No size boost — SE's and
+    /// the base-game formula are exactly this (the earlier SE_SIZE_BOOST=4 was
+    /// fabricated and inflated every spot).
     pub fn spotRadius(self: SEField, q: f64) f64 {
-        return SE_SIZE_BOOST + @min(32.0, self.rq * cbrt(q));
+        return @min(32.0, self.rq * cbrt(q));
     }
 
     /// regular_spot_height_typical_at(distance).
