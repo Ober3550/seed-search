@@ -1,0 +1,2213 @@
+{
+"default_enable_all_autoplace_controls": false,
+"autoplace_controls": {
+"coal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"cold": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"copper-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crude-oil": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"enemy-base": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hot": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"iron-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"kr-imersite": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"kr-mineral-water": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"kr-rare-metal-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"nauvis_cliff": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"planet-size": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"rocks": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"se-beryllium-ore": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-cryonite": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-holmium-ore": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-iridium-ore": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-methane-ice": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-naquium-ore": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-vitamelange": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-vulcanite": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"se-water-ice": {
+"frequency": 1,
+"size": 0,
+"richness": 0
+},
+"starting_area_moisture": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"trees": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"uranium-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"water": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+}
+},
+"autoplace_settings": {
+"decorative": {
+"treat_missing_as_default": true,
+"settings": {
+"asterisk-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-mini-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"asterisk-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-asterisk": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-asterisk-mini": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-carpet-grass": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-fluff": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-fluff-dry": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"brown-hairy-grass": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"bush-mini-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"cane-cluster": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"cane-single": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"carpet-grass-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"cracked-mud-decal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crater1-large": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crater1-large-rare": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crater2-medium": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crater3-huge": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crater4-small": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"croton-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"dark-mud-decal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"desert-bush-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"flower-bush-blue-pink": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"flower-bush-green-pink": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"flower-bush-green-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"flower-bush-red-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"garballo": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"garballo-mini-dry": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"hairy-grass-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"lava-decal-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"lava-decal-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"lava-decal-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"lava-decal-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"medium-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-mini-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"pita-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"puddle-decal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"red-asterisk": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"red-croton": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"red-desert-bush": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"red-pita": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-decal-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-dune-decal-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-medium-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-medium-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-medium-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-medium-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-medium-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-small-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-small-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-small-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-small-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-small-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-blue": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-green": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-mauve": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-olive": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-orange": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-turquoise": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-grass-yellow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"small-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone-decal-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"tiny-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"wetland-decal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"white-desert-bush": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+}
+}
+},
+"entity": {
+"treat_missing_as_default": true,
+"settings": {
+"big-rock-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"big-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"coal": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"copper-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"crude-oil": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"fish": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-aubergine": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-beige": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-brown": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-cream": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-dustyrose": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-grey": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-violet": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-volcanic": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"huge-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"iron-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"kr-imersite": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"kr-mineral-water": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"kr-rare-metal-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-big-rock-black": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-big-rock-purple": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-big-rock-red": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-big-rock-tan": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"sand-big-rock-white": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"stone": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"uranium-ore": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+}
+}
+},
+"tile": {
+"treat_missing_as_default": true,
+"settings": {
+"deepwater": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-0": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-7": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-8": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"frozen-snow-9": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-aubergine-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-beige-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-black-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-brown-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-cream-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-dustyrose-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-grey-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-purple-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-red-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-tan-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-violet-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-5": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-dirt-6": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-sand-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-sand-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"mineral-white-sand-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"out-of-map": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-blue-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-blue-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-green-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-green-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-green-grass-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-green-grass-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-mauve-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-mauve-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-olive-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-olive-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-orange-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-orange-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-purple-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-purple-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-red-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-red-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-turquoise-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-turquoise-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-violet-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-violet-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-yellow-grass-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"vegetation-yellow-grass-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-blue-heat-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-blue-heat-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-blue-heat-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-blue-heat-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-green-heat-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-green-heat-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-green-heat-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-green-heat-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-orange-heat-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-orange-heat-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-orange-heat-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-orange-heat-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-purple-heat-1": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-purple-heat-2": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-purple-heat-3": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"volcanic-purple-heat-4": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"water": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"water-mud": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+},
+"water-shallow": {
+"frequency": 1,
+"size": 1,
+"richness": 1
+}
+}
+}
+},
+"property_expression_names": {},
+"starting_points": [
+{
+"x": 0,
+"y": 0
+}
+],
+"seed": null,
+"width": 0,
+"height": 0,
+"starting_area": 1,
+"peaceful_mode": false,
+"no_enemies_mode": false,
+"cliff_settings": {
+"name": "cliff",
+"control": "nauvis_cliff",
+"cliff_elevation_0": 10,
+"cliff_elevation_interval": 40,
+"cliff_smoothing": 0,
+"richness": 1
+}
+}

@@ -23,12 +23,16 @@ def bmp_to_png(bmp_path, png_path=None):
         bits = struct.unpack("<H", f.read(2))[0]
         assert bits == 24, f"only 24-bit BMP supported, got {bits}"
 
-        # Read pixel rows (bottom-up in BMP)
+        # Read pixel rows (bottom-up in BMP). 24-bit BMP pixels are stored BGR;
+        # PNG wants RGB, so swap the R and B channels per row.
         row_size = ((w * 3 + 3) // 4) * 4  # padded to 4 bytes
         rows = []
         for y in range(h):
             f.seek(data_offset + y * row_size)
-            rows.append(f.read(w * 3))
+            ba = bytearray(f.read(w * 3))
+            b_ch, r_ch = bytes(ba[0::3]), bytes(ba[2::3])
+            ba[0::3], ba[2::3] = r_ch, b_ch
+            rows.append(bytes(ba))
 
     # PNG signature
     png_sig = b"\x89PNG\r\n\x1a\n"

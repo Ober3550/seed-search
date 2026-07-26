@@ -41,3 +41,5 @@ generator/zig/seedgen
 generator/zig/seedgen2
 generator/zig/test_primaries
 calibration/calibrate-batch.sh
+# Large local GUI app (sqlite + node_modules)
+space_explorer_gui/
