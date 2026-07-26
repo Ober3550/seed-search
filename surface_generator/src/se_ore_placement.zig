@@ -35,10 +35,14 @@ fn placementRoll(x: i32, y: i32, salt: u32) f64 {
 
 const pi = std.math.pi;
 
-// ---- SE constants (resource_autoplace_overrides.lua) ----
-pub const SE_BASE_DISTANCE: f64 = 5000.0; // == double_density_distance
-pub const SE_REGULAR_FADE_IN: f64 = 320.0;
-pub const SE_STARTING_RADIUS: f64 = 140.0;
+// ---- SE constants (SE resource-autoplace.lua, prototypes/phase-1/entity) ----
+pub const SE_DOUBLE_DENSITY: f64 = 1300.0; // double_density_distance
+pub const SE_REGULAR_FADE_IN: f64 = 300.0; // regular_patch_fade_in_distance
+pub const SE_STARTING_RADIUS: f64 = 120.0; // starting_resource_placement_radius
+// regular_blob_amplitude_maximum_distance = spot_enlargement_maximum_distance.
+// = double_density_distance, + fade_in when has_starting_area_placement is set
+// (all our resources set it 0 or 1, never nil) -> 1600.
+pub const SE_SPOT_ENLARGE_MAX: f64 = SE_DOUBLE_DENSITY + SE_REGULAR_FADE_IN;
 pub const SE_CANDIDATE_SPOT_COUNT: u32 = 64;
 pub const SE_MIN_CANDIDATE_SPACING: f64 = 128.0; // rs_suggested_minimum_candidate_point_spacing
 pub const SE_SIZE_BOOST: f64 = 4.0;
@@ -104,19 +108,22 @@ const SEField = struct {
     smin: f64,
     smax: f64,
 
-    /// se_distance = min(distance_from_center, base_distance).
+    /// SE uses the raw distance from center (no clamp; the density plateau is on
+    /// the size-effective distance, clamped inside regularDensityAt).
     fn seDistance(x: f64, y: f64) f64 {
-        return @min(@sqrt(x * x + y * y), SE_BASE_DISTANCE);
+        return @sqrt(x * x + y * y);
     }
 
     /// regular_density_at(distance). has_starting_area_placement is 0 or 1 for
-    /// every resource here (never -1), so the fade and size_effective_distance
-    /// both use the "else" branch: fade over [starting_radius, +fade_in],
-    /// size_effective = distance - fade_in.
+    /// every resource here (never nil), so the fade and size_effective_distance
+    /// both use the "else" branch:
+    ///   fade = clamp((dist - starting_radius)/fade_in, 0, 1)
+    ///   size_eff = clamp(dist - fade_in, 0, spot_enlargement_max)
+    ///   doubling = 1 + size_eff/double_density_distance
     fn regularDensityAt(self: SEField, dist: f64) f64 {
         const fade = clamp01((dist - SE_STARTING_RADIUS) / SE_REGULAR_FADE_IN);
-        const size_eff = dist - SE_REGULAR_FADE_IN;
-        const doubling = 1.0 + clamp01(size_eff / SE_BASE_DISTANCE);
+        const size_eff = std.math.clamp(dist - SE_REGULAR_FADE_IN, 0.0, SE_SPOT_ENLARGE_MAX);
+        const doubling = 1.0 + size_eff / SE_DOUBLE_DENSITY;
         return self.base_density * self.freq_mult * self.size_mult * fade * doubling;
     }
 
@@ -142,7 +149,7 @@ const SEField = struct {
     /// Position-dependent (was frozen at the 5000 value), so the blob-noise term
     /// scales down with the spots toward the zone center.
     pub fn blobAmplitudeAt(self: SEField, x: f64, y: f64) f64 {
-        const max_dist = SE_BASE_DISTANCE + SE_REGULAR_FADE_IN; // regular_blob_amplitude_maximum_distance = 5320
+        const max_dist = SE_SPOT_ENLARGE_MAX; // regular_blob_amplitude_maximum_distance = 1600
         return (1.0 / 8.0) * @min(self.typicalHeightAt(max_dist), self.typicalHeightAt(seDistance(x, y)));
     }
     pub fn favorability(self: SEField, x: f64, y: f64) f64 {
@@ -191,29 +198,22 @@ pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const 
     const size_mult = slider(ctrl.size);
     const richness_mult = slider(ctrl.richness);
 
-    // regular_density_at(se_distance=5000):
-    //   base_density * freq * size * fade(=1) * (1 + clamp(size_eff/5000))
-    //   size_eff = 5000 - 320 = 4680 -> clamp(4680/5000)=0.936
-    const size_eff = SE_BASE_DISTANCE - SE_REGULAR_FADE_IN;
-    const density = cfg.base_density * freq_mult * size_mult *
-        (1.0 + clamp01(size_eff / SE_BASE_DISTANCE));
+    // Reference density at regular_blob_amplitude_maximum_distance (=1600):
+    //   fade=1, size_eff = clamp(1600-300,0,1600)=1300 -> doubling = 1+1300/1300 = 2.
+    const density_max = cfg.base_density * freq_mult * size_mult * 2.0;
+    const density = density_max;
 
-    // regular_spot_quantity_base_at(5000) = density * 1e6 / (base_spots_per_km2 * freq)
+    // regular_spot_quantity_base = density * 1e6 / (base_spots_per_km2 * freq)
     const spots_per_km2 = cfg.base_spots_per_km2 * freq_mult;
     const quantity_base = density * 1_000_000.0 / spots_per_km2;
 
     const rq = cfg.regular_rq_factor_multiplier / 10.0;
 
-    // regular_blob_amplitude_at(5000) = (1/8) * min(typical(5320), typical(5000))
-    // density(5320): size_eff=5000 -> (1+1)=2; density(5000): (1+0.936)=1.936
-    const density_5320 = cfg.base_density * freq_mult * size_mult * 2.0;
-    const th_5000 = ResourceState.typicalHeightAt(density, rq, cfg.random_spot_size_minimum, cfg.random_spot_size_maximum, cfg.base_spots_per_km2, freq_mult);
-    const th_5320 = ResourceState.typicalHeightAt(density_5320, rq, cfg.random_spot_size_minimum, cfg.random_spot_size_maximum, cfg.base_spots_per_km2, freq_mult);
-    const blob_amp = (1.0 / 8.0) * @min(th_5000, th_5320);
-
-    // basement_value = -6 * max(regular_blob_amplitude_at(5320), starting_blob_amplitude)
-    // regular_blob_amplitude_at(5320) = (1/8)*typical(5320)
-    const reg_amp_max = (1.0 / 8.0) * th_5320;
+    // regular_blob_amplitude_maximum = (1/8)*typical(max_dist) (typical at max is the
+    // max, so min(typical(max), typical(max)) = typical(max)).
+    const th_max = ResourceState.typicalHeightAt(density_max, rq, cfg.random_spot_size_minimum, cfg.random_spot_size_maximum, cfg.base_spots_per_km2, freq_mult);
+    const blob_amp = (1.0 / 8.0) * th_max;
+    const reg_amp_max = blob_amp;
     // starting_blob_amplitude (starting_rq_factor = starting_rq_mult/8, default mult 1 -> 1/8)
     const starting_rq = 1.0 / 8.0;
     const starting_amount = SE_STARTING_AMOUNT * cfg.base_density *
@@ -314,9 +314,14 @@ pub const ResourceInput = struct {
     controls: Controls,
 };
 
-// richness distance multiplier = max(1, (5000 + (5000-320)) / 10000) = 1 (constant,
-// because se_distance is a constant 5000 on non-home zones).
-const RICHNESS_DISTANCE: f64 = @max(1.0, (SE_BASE_DISTANCE + (SE_BASE_DISTANCE - SE_REGULAR_FADE_IN)) / (SE_BASE_DISTANCE * 2.0));
+/// post_semd_richness_distance_multiplier_at: richness rises past the density
+/// plateau. = max(1, (ddd + sed)/(ddd + semd)), sed = size_effective distance
+/// (dist - fade_in). On this moon sed < semd so it stays 1, but keep it correct.
+fn richnessDistance(x: f64, y: f64) f64 {
+    const dist = @sqrt(x * x + y * y);
+    const sed = dist - SE_REGULAR_FADE_IN;
+    return @max(1.0, (SE_DOUBLE_DENSITY + sed) / (SE_DOUBLE_DENSITY + SE_SPOT_ENLARGE_MAX));
+}
 
 /// Evaluate one resource at one tile. Read-only w.r.t. `st` once its spot cache
 /// has been pre-populated (see computeSEOresInRect), so this is safe to call
@@ -338,7 +343,7 @@ fn evalTileForState(st: *ResourceState, x: i32, y: i32, fx: f64, fy: f64) !?OreE
     var richness = value;
     if (st.config.random_probability < 1.0) richness /= st.config.random_probability;
     if (st.config.additional_richness > 0.0) richness += st.config.additional_richness;
-    richness *= RICHNESS_DISTANCE * st.richness_mult;
+    richness *= richnessDistance(fx, fy) * st.richness_mult;
 
     const amount: u32 = @intFromFloat(@floor(richness));
     if (amount == 0) return null;
