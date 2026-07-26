@@ -25,7 +25,13 @@ def bmp_to_png(bmp_path, png_path=None):
 
         # Read pixel rows (bottom-up in BMP). 24-bit BMP pixels are stored BGR;
         # PNG wants RGB, so swap the R and B channels per row.
-        row_size = ((w * 3 + 3) // 4) * 4  # padded to 4 bytes
+        # Derive the actual row stride from the file size: standard BMPs pad rows
+        # to 4 bytes, but the ore-counter mod writes unpadded rows (w*3). Pick the
+        # stride that the pixel data actually uses.
+        import os as _os
+        avail = _os.path.getsize(bmp_path) - data_offset
+        padded = ((w * 3 + 3) // 4) * 4
+        row_size = padded if avail >= padded * h else (w * 3)
         rows = []
         for y in range(h):
             f.seek(data_offset + y * row_size)

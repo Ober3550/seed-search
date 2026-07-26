@@ -8,17 +8,18 @@ const se = surfacegen.se_ore;
 /// its base resource's color.
 const MapColors = struct {
     fn get(name: []const u8) [3]u8 {
+        // Authoritative resource map_color (dumped live -> calibration/mod-dump/ore-colors.json).
         // Vanilla
-        if (std.mem.eql(u8, name, "iron-ore")) return .{ 106, 134, 148 };
-        if (std.mem.eql(u8, name, "copper-ore")) return .{ 205, 99, 55 };
-        if (std.mem.eql(u8, name, "coal")) return .{ 50, 50, 50 };
-        if (std.mem.eql(u8, name, "stone")) return .{ 176, 156, 109 };
-        if (std.mem.eql(u8, name, "uranium-ore")) return .{ 0, 179, 0 };
-        if (std.mem.eql(u8, name, "crude-oil")) return .{ 199, 51, 196 };
+        if (std.mem.eql(u8, name, "iron-ore")) return .{ 105, 133, 147 };
+        if (std.mem.eql(u8, name, "copper-ore")) return .{ 204, 98, 54 };
+        if (std.mem.eql(u8, name, "coal")) return .{ 0, 0, 0 };
+        if (std.mem.eql(u8, name, "stone")) return .{ 175, 155, 108 };
+        if (std.mem.eql(u8, name, "uranium-ore")) return .{ 0, 178, 0 };
+        if (std.mem.eql(u8, name, "crude-oil")) return .{ 255, 153, 0 };
         // Krastorio 2
-        if (std.mem.eql(u8, name, "kr-rare-metal-ore")) return .{ 153, 77, 255 };
-        if (std.mem.eql(u8, name, "kr-imersite")) return .{ 255, 128, 255 };
-        if (std.mem.eql(u8, name, "kr-mineral-water")) return .{ 89, 128, 191 };
+        if (std.mem.eql(u8, name, "kr-rare-metal-ore")) return .{ 153, 76, 255 };
+        if (std.mem.eql(u8, name, "kr-imersite")) return .{ 255, 127, 255 };
+        if (std.mem.eql(u8, name, "kr-mineral-water")) return .{ 89, 127, 191 };
         // Space Exploration
         if (std.mem.eql(u8, name, "se-water-ice")) return .{ 198, 241, 245 };
         if (std.mem.eql(u8, name, "se-methane-ice")) return .{ 245, 231, 198 };
@@ -478,10 +479,11 @@ pub fn main(init: std.process.Init) !void {
     if (bmp_filename) |filename| {
         const size: u32 = @intCast(r * 2);
         var pixels = try a.alloc(u8, size * size * 3);
-        @memset(pixels, 0x1e); // background 30,30,30 — matches calibration/mod-dump/convert_dump.py
+        @memset(pixels, 20); // background — matches ore-counter dump
         for (ores.items) |ore| {
             const px: i32 = ore.x + r;
-            const py: i32 = ore.y + r;
+            // Orientation matches the ore-counter / tile-dump BMP after bmp2png.
+            const py: i32 = (r - 1) - ore.y;
             if (px >= 0 and px < size and py >= 0 and py < size) {
                 const color = MapColors.get(ore.resource_name);
                 const idx: usize = @intCast((@as(i32, @intCast(size)) * py + px) * 3);
