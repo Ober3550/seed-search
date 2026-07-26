@@ -35,6 +35,12 @@ fn placementRoll(x: i32, y: i32, salt: u32) f64 {
 
 const pi = std.math.pi;
 
+/// Water gate threshold for the per-chunk placement (see vanilla ore_placement
+/// TerrainCtx.water_threshold — tiles come from an autoplace competition, so the
+/// effective water boundary sits slightly below elevation 0; calibrate per
+/// tileset). 0.0 until calibrated for the alien-biomes tile competition.
+pub var se_water_threshold: f64 = 0.0;
+
 // ---- SE constants — AUTHORITATIVE: se_resource_autoplace_all_patches
 // (prototypes/resource_autoplace_overrides.lua), confirmed byte-for-byte from
 // the LIVE game (prototypes.named_noise_expression['default-iron-ore-patches'],
@@ -498,6 +504,121 @@ const Worker = struct {
     err: ?anyerror = null,
 
     fn run(self: *Worker) void {
+        if (self.sample_step != 1) return self.runLegacy();
+        const a = std.heap.page_allocator;
+        const CHUNK: i32 = 32;
+        const cx0 = @divFloor(self.x0, CHUNK);
+        const cx1 = @divFloor(self.x1 - 1, CHUNK);
+        // Bands are whole chunk rows (ya/yb are chunk-aligned by the caller).
+        const cy0 = @divFloor(self.ya, CHUNK);
+        const cy1 = @divFloor(self.yb - 1, CHUNK);
+
+        var win_prob: [CHUNK * CHUNK]f64 = undefined;
+        var win_res: [CHUNK * CHUNK]i32 = undefined;
+        var win_rich: [CHUNK * CHUNK]f64 = undefined;
+        var elev_val: [CHUNK * CHUNK]f64 = undefined;
+        var elev_done: [CHUNK * CHUNK]bool = undefined;
+        var biome_idx: [CHUNK * CHUNK]usize = undefined;
+        var biome_done: [CHUNK * CHUNK]bool = undefined;
+
+        var cy: i32 = cy0;
+        while (cy <= cy1) : (cy += 1) {
+            var cx: i32 = cx0;
+            while (cx <= cx1) : (cx += 1) {
+                // PASS 1 (generateEntities): winner per tile = highest
+                // probability, ties broken by higher richness.
+                @memset(win_res[0..], -1);
+                @memset(win_prob[0..], 0.0);
+                @memset(elev_done[0..], false);
+                @memset(biome_done[0..], false);
+                for (self.states, 0..) |*st, ri| {
+                    var ly: i32 = 0;
+                    while (ly < CHUNK) : (ly += 1) {
+                        var lx: i32 = 0;
+                        while (lx < CHUNK) : (lx += 1) {
+                            const tx = cx * CHUNK + lx;
+                            const ty = cy * CHUNK + ly;
+                            if (tx < self.x0 or tx >= self.x1 or ty < self.ya or ty >= self.yb) continue;
+                            const fx: f64 = @floatFromInt(tx);
+                            const fy: f64 = @floatFromInt(ty);
+                            if (dist0(fx, fy) > self.zone_radius) continue;
+                            const value = allPatchesValue(st, fx, fy) catch |e| {
+                                self.err = e;
+                                return;
+                            };
+                            var p = clamp01(value);
+                            if (p <= 0.0) continue;
+                            if (st.config.random_probability < 1.0) {
+                                p *= noise.randomPenalty(fx, fy, 1.0, 1.0 / st.config.random_probability);
+                                if (p <= 0.0) continue;
+                            }
+                            const idx: usize = @intCast(ly * CHUNK + lx);
+                            // water gate (lazy per tile)
+                            if (self.water) |w| {
+                                if (!elev_done[idx]) {
+                                    elev_val[idx] = w.at(fx, fy);
+                                    elev_done[idx] = true;
+                                }
+                                if (elev_val[idx] < se_water_threshold) continue;
+                            }
+                            // biome tile_restriction gate (restricted ores only)
+                            if (self.classifier) |c| {
+                                if (self.zone_terrain) |zt| {
+                                    if (biome.isBiomeRestricted(st.name)) {
+                                        if (!biome_done[idx]) {
+                                            const ev = if (elev_done[idx]) elev_val[idx] else 0.0;
+                                            biome_idx[idx] = c.classifyIndex(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), ev);
+                                            biome_done[idx] = true;
+                                        }
+                                        if (!biome.oreAllowedOnBiome(st.name, biome_idx[idx])) continue;
+                                    }
+                                }
+                            }
+                            const tie = p == win_prob[idx] and win_res[idx] >= 0;
+                            if (p > win_prob[idx] or tie) {
+                                var rich = value;
+                                if (st.config.random_probability < 1.0) rich /= st.config.random_probability;
+                                if (st.config.additional_richness > 0.0) rich += st.config.additional_richness;
+                                rich *= richnessDistance(fx, fy) * st.richness_mult;
+                                if (tie and rich <= win_rich[idx]) continue;
+                                win_prob[idx] = p;
+                                win_res[idx] = @intCast(ri);
+                                win_rich[idx] = rich;
+                            }
+                        }
+                    }
+                }
+                // PASS 2: shared per-chunk RNG, reverse tile order.
+                var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
+                if (seed < 342) seed = 341;
+                var prng = rng.Rng.init(seed);
+                var ii: i32 = CHUNK * CHUNK - 1;
+                while (ii >= 0) : (ii -= 1) {
+                    const idx: usize = @intCast(ii);
+                    if (win_res[idx] < 0) continue;
+                    const draw = @as(f64, @floatFromInt(prng.next())) * 2.3283064365386963e-10;
+                    if (draw < win_prob[idx]) {
+                        const amount: u32 = @intFromFloat(@floor(@max(win_rich[idx], 0.0)));
+                        if (amount > 0) {
+                            const lx = @mod(ii, CHUNK);
+                            const ly = @divFloor(ii, CHUNK);
+                            self.out.append(a, .{
+                                .x = cx * CHUNK + lx,
+                                .y = cy * CHUNK + ly,
+                                .resource_name = self.states[@intCast(win_res[idx])].name,
+                                .amount = amount,
+                            }) catch |e| {
+                                self.err = e;
+                                return;
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn runLegacy(self: *Worker) void {
         const a = std.heap.page_allocator;
         var y: i32 = self.ya;
         while (y < self.yb) : (y += self.sample_step) {
@@ -625,16 +746,27 @@ pub fn computeSEOresInRect(
         }
     }
 
-    // Decide worker count from the row (step) budget and CPU cores.
+    // Decide worker count from the row (step) budget and CPU cores. For the
+    // per-chunk path (sample_step==1) bands are whole 32-row chunk rows so a
+    // chunk is never split across workers (its RNG stream must be sequential).
     const total_steps: usize = @intCast(@divTrunc(y1 - y0 - 1, sample_step) + 1);
     const cores = std.Thread.getCpuCount() catch 1;
     const nthreads = @max(@as(usize, 1), @min(cores, total_steps));
 
     const workers = try alloc.alloc(Worker, nthreads);
     const steps_per = (total_steps + nthreads - 1) / nthreads; // ceil
+    const crow0 = @divFloor(y0, 32);
+    const crow1 = @divFloor(y1 - 1, 32);
+    const crows: usize = @intCast(crow1 - crow0 + 1);
+    const crows_per = (crows + nthreads - 1) / nthreads;
     for (workers, 0..) |*w, k| {
-        const ya = y0 + @as(i32, @intCast(k * steps_per)) * sample_step;
+        var ya = y0 + @as(i32, @intCast(k * steps_per)) * sample_step;
         var yb = y0 + @as(i32, @intCast((k + 1) * steps_per)) * sample_step;
+        if (sample_step == 1) {
+            ya = @max(y0, (crow0 + @as(i32, @intCast(k * crows_per))) * 32);
+            yb = @min(y1, (crow0 + @as(i32, @intCast((k + 1) * crows_per))) * 32);
+            if (ya > yb) ya = yb;
+        }
         if (yb > y1) yb = y1;
         w.* = .{
             .states = states,
