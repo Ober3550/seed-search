@@ -88,26 +88,25 @@ fn mkEntry(name: []const u8, idx: u32, bd: f64, bspk: f64, rqm: f64, rp: f64, ad
 const N_BASE_RESOURCES = 9;
 // Each resource strides the shared candidate list from its data-load index
 // (regular_patch_set_index, from patchset-dump.json) by SE_REGULAR_PATCH_SET_COUNT.
-// Controls (last 3 args) are the ZONE control values (z.controls, dumped live).
-// The resource autoplace density uses the ZONE frequency, NOT the surface-
-// multiplied one: SE multiplies zone freq by a per-moon factor (~4.806) for the
-// surface map_gen, but the resource generation uses the zone control. Using the
-// surface freq overcounts ore ~4.8x (iron 34077 vs GT 9136 -> 0.775 gives ~7700).
-// Size/richness are identical zone vs surface. K2 (last 3) gated behind --k2.
+// Controls (last 3 args) are the ACTUAL post-zone-modifier values the game
+// applied (SE multiplies zone-control frequency by a per-moon factor ~4.8x).
+// The last 3 (Krastorio 2) are gated behind --k2. K2 params from SE's K2 compat
+// (prototypes/phase-1/compatibility/krastorio2/resource-gen.lua); controls dumped
+// live from Horaerratum.
 const RESOURCE_ENTRIES = [_]Entry{
-    mkEntry("iron-ore", 0, 14, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0.77539, 1.43847, 1.46655, 0, 1.5),
-    mkEntry("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0.43483, 0.58708, 0.65773, 1, 1.5),
-    mkEntry("uranium-ore", 5, 1, 2.0, 1.1, 1.0, 0, 2.0, 4.0, 0.71964, 1.29909, 1.33414, -1, 1.0),
-    mkEntry("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0.30580, 0.26449, 0.35127, 2, 1.5),
-    mkEntry("crude-oil", 4, 8, 2.5, 1.2, 1.0 / 24.0, 220000, 1.0, 1.0, 0.52232, 0.80584, 0.86554, 4, 1.5),
-    mkEntry("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0.63432, 1.08579, 1.13150, 3, 1.5),
-    mkEntry("se-vulcanite", 16, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 0.90883, 1.77206, 1.78346, 12, 1.0),
-    mkEntry("se-cryonite", 12, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 0.94173, 1.85433, 1.86161, 8, 1.0),
-    mkEntry("se-vitamelange", 17, 10, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.66969, 3.67423, 3.59052, 13, 1.0),
+    mkEntry("iron-ore", 0, 14, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.72599, 1.43847, 1.46655, 0, 1.5),
+    mkEntry("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 2.08951, 0.58708, 0.65773, 1, 1.5),
+    mkEntry("uranium-ore", 5, 1, 2.0, 1.1, 1.0, 0, 2.0, 4.0, 3.45809, 1.29909, 1.33414, -1, 1.0),
+    mkEntry("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.46945, 0.26449, 0.35127, 2, 1.5),
+    mkEntry("crude-oil", 4, 8, 2.5, 1.2, 1.0 / 24.0, 220000, 1.0, 1.0, 2.50998, 0.80584, 0.86554, 4, 1.5),
+    mkEntry("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.04810, 1.08579, 1.13150, 3, 1.5),
+    mkEntry("se-vulcanite", 16, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.36720, 1.77206, 1.78346, 12, 1.0),
+    mkEntry("se-cryonite", 12, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.52532, 1.85433, 1.86161, 8, 1.0),
+    mkEntry("se-vitamelange", 17, 10, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 8.02342, 3.67423, 3.59052, 13, 1.0),
     // --- Krastorio 2 (--k2) --- (has_starting_area_placement = false)
-    mkEntry("kr-rare-metal-ore", 8, 8, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0.82761, 1.56903, 1.59058, -1, 1.5),
-    mkEntry("kr-mineral-water", 7, 8, 2.0, 1.0, 1.0 / 24.0, 120000, 1.0, 1.0, 0.69300, 1.23251, 1.27089, -1, 1.0),
-    mkEntry("kr-imersite", 6, 1, 0.05, 1.0, 1.0 / 4.0, 250000, 0.01, 0.1, 0.74834, 1.37084, 1.40230, -1, 1.0),
+    mkEntry("kr-rare-metal-ore", 8, 8, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.97694, 1.56903, 1.59058, -1, 1.5),
+    mkEntry("kr-mineral-water", 7, 8, 2.0, 1.0, 1.0 / 24.0, 120000, 1.0, 1.0, 3.33011, 1.23251, 1.27089, -1, 1.0),
+    mkEntry("kr-imersite", 6, 1, 0.05, 1.0, 1.0 / 4.0, 250000, 0.01, 0.1, 3.59600, 1.37084, 1.40230, -1, 1.0),
 };
 
 fn entries(k2: bool) []const Entry {

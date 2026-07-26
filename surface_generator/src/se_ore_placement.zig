@@ -95,10 +95,9 @@ pub const SEResourceConfig = struct {
     starting_rq_factor_multiplier: f64 = 1.0,
 };
 
-/// Control multipliers (frequency/size/richness) are used DIRECTLY in the noise
-/// expressions (var('control:X:frequency') etc.) — no ^0.8 transform.
+/// setting_scale(v) = v^0.8 applied to control sliders.
 fn slider(v: f64) f64 {
-    return v;
+    return std.math.pow(f64, v, 0.8);
 }
 
 /// Position-dependent SE resource evaluator. On these surfaces
