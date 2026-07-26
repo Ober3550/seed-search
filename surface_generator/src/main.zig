@@ -80,13 +80,14 @@ pub fn main(init: std.process.Init) !void {
     var configs: std.ArrayList(surfacegen.ore.ResourceAutoplaceConfig) = .empty;
     var names: std.ArrayList([]const u8) = .empty;
 
-    inline for (.{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" }) |rname| {
+    inline for (.{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" }) |rname| {
         if (std.mem.eql(u8, resource_name, "all") or std.mem.eql(u8, resource_name, rname)) {
             const cfg = if (std.mem.eql(u8, rname, "iron-ore")) surfacegen.ore.iron_ore_default
                 else if (std.mem.eql(u8, rname, "copper-ore")) surfacegen.ore.copper_ore_default
                 else if (std.mem.eql(u8, rname, "coal")) surfacegen.ore.coal_default
                 else if (std.mem.eql(u8, rname, "stone")) surfacegen.ore.stone_default
-                else surfacegen.ore.uranium_ore_default;
+                else if (std.mem.eql(u8, rname, "uranium-ore")) surfacegen.ore.uranium_ore_default
+                else surfacegen.ore.crude_oil_default;
             try configs.append(a, cfg);
             try names.append(a, rname);
         }
@@ -141,7 +142,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     // Count by resource
-    const resources_list = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" };
+    const resources_list = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" };
     for (resources_list) |rname| {
         var count: u32 = 0;
         for (ores.items) |ore| {

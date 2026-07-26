@@ -19,6 +19,19 @@
 
 const std = @import("std");
 const noise = @import("noise.zig");
+const rng = @import("rng.zig");
+
+/// Per-tile placement roll. Factorio places a resource only if a per-tile uniform
+/// draw < probability_expression = clamp(all_patches,0,1) [* random_penalty for
+/// random_probability<1]. This thins fluid patches (crude-oil rp=1/48) to sparse
+/// individual wells. `salt` makes the draw independent per resource.
+fn placementRoll(x: i32, y: i32, salt: u32) f64 {
+    const ix: u32 = @bitCast(x);
+    const iy: u32 = @bitCast(y);
+    var rr = rng.Rng.init((ix *% 73856093) ^ (iy *% 19349663) ^ salt);
+    _ = rr.next();
+    return rr.float();
+}
 
 const pi = std.math.pi;
 
@@ -89,6 +102,19 @@ pub const uranium_ore_default = ResourceAutoplaceConfig{
     .base_density = 0.9, .base_spots_per_km2 = 1.25,
     .candidate_spot_count = 21, .regular_rq_factor_multiplier = 1.0,
     .has_starting_area_placement = .no, .regular_patch_set_index = 5,
+};
+
+// Base-game crude-oil (base/prototypes/entity/resources.lua). A fluid resource:
+// random_probability 1/48 thins each spot's cone to sparse individual oil wells
+// (not a solid patch); random_spot_size fixed at 1; additional_richness 220000
+// makes each well a large deposit. No starting-area placement.
+pub const crude_oil_default = ResourceAutoplaceConfig{
+    .base_density = 8.2, .base_spots_per_km2 = 1.8,
+    .candidate_spot_count = 21, .regular_rq_factor_multiplier = 1.0,
+    .has_starting_area_placement = .no, .regular_patch_set_index = 4,
+    .random_probability = 1.0 / 48.0,
+    .random_spot_size_minimum = 1.0, .random_spot_size_maximum = 1.0,
+    .additional_richness = 220000.0,
 };
 
 fn clamp01(v: f64) f64 {
@@ -303,14 +329,24 @@ fn richnessAt(field: Field, x: f64, y: f64, value: f64) f64 {
 /// to clamp(value,0,1); tiles with 0<probability<1 are placed probabilistically.
 /// That placement-layer roll is not yet modelled — we place wherever
 /// probability > 0, which over-fills soft patch edges.
-fn computeOreAt(field: Field, spot: *RegularSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64) !f64 {
+fn computeOreAt(field: Field, spot: *RegularSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64, salt: u32) !f64 {
     if (field.controls.size <= 0.0) return 0.0; // (var('control:X:size') > 0) gate
 
     const spot_value = try spot.evalAt(x, y);
     const value = allPatchesValue(field, basis, x, y, spot_value);
 
-    const probability = clamp01(value);
+    var probability = clamp01(value);
     if (probability <= 0.0) return 0.0;
+    // Fluid resources (random_probability<1, e.g. crude-oil 1/48): multiply the
+    // probability by a per-tile random_penalty, then roll. random_penalty{source=1,
+    // amplitude=1/rp} is <0 on ~(1-rp) of tiles, so the cone becomes sparse wells.
+    if (field.config.random_probability < 1.0) {
+        probability *= noise.randomPenalty(x, y, 1.0, 1.0 / field.config.random_probability);
+        if (probability <= 0.0) return 0.0;
+    }
+    const ix: i32 = @intFromFloat(x);
+    const iy: i32 = @intFromFloat(y);
+    if (placementRoll(ix, iy, salt) >= probability) return 0.0;
 
     return richnessAt(field, x, y, value);
 }
@@ -340,12 +376,15 @@ pub fn computeOresInRect(
         defer spot.deinit();
         // One seeded basis_noise generator per resource, reused across all tiles.
         const basis = noise.BasisNoiseGen.init(map_seed, config.seed1);
+        // FNV-1a hash of the resource name for an independent placement-roll stream.
+        var salt: u32 = 2166136261;
+        for (name) |c| salt = (salt ^ c) *% 16777619;
 
         var y: i32 = y0;
         while (y < y1) : (y += 1) {
             var x: i32 = x0;
             while (x < x1) : (x += 1) {
-                const richness = try computeOreAt(field, &spot, &basis, @floatFromInt(x), @floatFromInt(y));
+                const richness = try computeOreAt(field, &spot, &basis, @floatFromInt(x), @floatFromInt(y), salt);
                 if (richness > 0.0) {
                     const amount: u32 = @intFromFloat(@floor(richness));
                     if (amount > 0) {
