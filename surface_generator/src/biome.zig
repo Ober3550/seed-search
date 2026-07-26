@@ -78,6 +78,27 @@ pub const Classifier = struct {
 pub const deepwater: [3]u8 = .{ 38, 64, 73 };
 pub const water: [3]u8 = .{ 51, 83, 95 };
 
+/// Simplified biome-category background colors for the ore map. Deliberately
+/// dark/muted so the bright ore colors (vulcanite red, cryonite blue,
+/// vitamelange yellow-green, etc.) stand out on top — e.g. volcanic is a dark
+/// warm brown, NOT red, so red vulcanite ore is visible.
+pub const CatBg = struct {
+    pub const water: [3]u8 = .{ 34, 58, 104 }; // blue (no ore here)
+    pub const ice: [3]u8 = .{ 198, 208, 220 }; // light grey (cryonite=frozen)
+    pub const volcanic: [3]u8 = .{ 92, 44, 37 }; // dark red-brown (vulcanite)
+    pub const vita: [3]u8 = .{ 44, 78, 51 }; // dark green (vitamelange)
+    pub const other: [3]u8 = .{ 70, 64, 60 }; // neutral grey (common ores)
+};
+
+/// Map a winning biome index to its simplified ore-relevant category background.
+pub fn categoryBg(i: usize) [3]u8 {
+    const b = biomes[i];
+    if (std.mem.eql(u8, b.group, "frozen")) return CatBg.ice;
+    if (std.mem.eql(u8, b.group, "volcanic")) return CatBg.volcanic;
+    if ((b.restrict & 4) != 0) return CatBg.vita; // se-vitamelange-allowed set
+    return CatBg.other;
+}
+
 /// True if the resource is biome-restricted (needs a tile classify to gate).
 /// Only se-vulcanite/cryonite/vitamelange restrict; every other ore places on
 /// any land tile (water is excluded separately by the resource collision mask).

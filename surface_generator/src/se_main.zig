@@ -119,6 +119,7 @@ pub fn main(init: std.process.Init) !void {
     var nauvis_biome: bool = false;
     var horaerratum_biome: bool = false;
     var water_exclude: bool = false;
+    var biome_bg: bool = false;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--bmp")) {
@@ -153,6 +154,8 @@ pub fn main(init: std.process.Init) !void {
             nauvis_biome = true;
         } else if (std.mem.eql(u8, args[i], "--horaerratum-biome")) {
             horaerratum_biome = true;
+        } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
+            biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
             water_exclude = true;
         }
@@ -480,6 +483,30 @@ pub fn main(init: std.process.Init) !void {
         const size: u32 = @intCast(r * 2);
         var pixels = try a.alloc(u8, size * size * 3);
         @memset(pixels, 20); // background — matches ore-counter dump
+        if (biome_bg) {
+            // Fill each disk tile with its simplified biome-category color so the
+            // ore patches show which terrain they sit on. Same orientation as ore.
+            var iy: i32 = -r;
+            while (iy < r) : (iy += 1) {
+                var ix: i32 = -r;
+                while (ix < r) : (ix += 1) {
+                    const bx: f64 = @floatFromInt(ix);
+                    const by: f64 = @floatFromInt(iy);
+                    if (bx * bx + by * by > zone_r * zone_r) continue;
+                    const e = elev.at(bx, by);
+                    const color: [3]u8 = if (e < 0.0)
+                        surfacegen.biome.CatBg.water
+                    else
+                        surfacegen.biome.categoryBg(classifier_gate.classifyIndex(bx, by, zt_gate.temperature(bx, by), zt_gate.moisture(bx, by), zt_gate.aux(bx, by), e));
+                    const bpx: usize = @intCast(ix + r);
+                    const bpy: usize = @intCast((r - 1) - iy);
+                    const bidx: usize = (bpy * size + bpx) * 3;
+                    pixels[bidx] = color[0];
+                    pixels[bidx + 1] = color[1];
+                    pixels[bidx + 2] = color[2];
+                }
+            }
+        }
         for (ores.items) |ore| {
             const px: i32 = ore.x + r;
             // Orientation matches the ore-counter / tile-dump BMP after bmp2png.
