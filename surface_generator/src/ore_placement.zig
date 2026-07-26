@@ -351,6 +351,22 @@ fn computeOreAt(field: Field, spot: *RegularSpotField, basis: *const noise.Basis
     return richnessAt(field, x, y, value);
 }
 
+/// The probability_expression value at a tile: clamp(all_patches, 0, 1) *
+/// (random_probability<1 ? random_penalty : 1). No placement roll — that is the
+/// per-chunk RNG in computeOresInRect. Returns 0 if not part of any patch.
+fn probabilityAt(field: Field, spot: *RegularSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64) !f64 {
+    if (field.controls.size <= 0.0) return 0.0;
+    const spot_value = try spot.evalAt(x, y);
+    const value = allPatchesValue(field, basis, x, y, spot_value);
+    var probability = clamp01(value);
+    if (probability <= 0.0) return 0.0;
+    if (field.config.random_probability < 1.0) {
+        probability *= noise.randomPenalty(x, y, 1.0, 1.0 / field.config.random_probability);
+        if (probability < 0.0) probability = 0.0;
+    }
+    return probability;
+}
+
 pub const OreEntity = struct {
     x: i32, y: i32,
     resource_name: []const u8,
@@ -368,27 +384,76 @@ pub fn computeOresInRect(
 ) !std.ArrayList(OreEntity) {
     var results: std.ArrayList(OreEntity) = .empty;
 
-    // Build one cached spot field per resource (regions computed lazily, reused
-    // across all tiles — mirrors Factorio's ThreadSafeSpotNoiseCache).
-    for (resources, resource_names) |config, name| {
+    // Per-resource state (spot cache + basis gen), built once.
+    const RState = struct { field: Field, spot: RegularSpotField, basis: noise.BasisNoiseGen, name: []const u8 };
+    const rstates = try alloc.alloc(RState, resources.len);
+    defer alloc.free(rstates);
+    for (resources, resource_names, 0..) |config, name, i| {
         const field = Field{ .config = config, .controls = controls, .map_seed = map_seed };
-        var spot = makeRegularSpotField(alloc, field);
-        defer spot.deinit();
-        // One seeded basis_noise generator per resource, reused across all tiles.
-        const basis = noise.BasisNoiseGen.init(map_seed, config.seed1);
-        // FNV-1a hash of the resource name for an independent placement-roll stream.
-        var salt: u32 = 2166136261;
-        for (name) |c| salt = (salt ^ c) *% 16777619;
+        rstates[i] = .{ .field = field, .spot = makeRegularSpotField(alloc, field), .basis = noise.BasisNoiseGen.init(map_seed, config.seed1), .name = name };
+    }
+    defer for (rstates) |*rs| rs.spot.deinit();
 
-        var y: i32 = y0;
-        while (y < y1) : (y += 1) {
-            var x: i32 = x0;
-            while (x < x1) : (x += 1) {
-                const richness = try computeOreAt(field, &spot, &basis, @floatFromInt(x), @floatFromInt(y), salt);
-                if (richness > 0.0) {
-                    const amount: u32 = @intFromFloat(@floor(richness));
+    // Per-chunk two-pass placement (EntityMapGenerationTask::generateEntities,
+    // ghidra/export/entity_placement.c). PASS 1: pick the winning resource per
+    // tile (max probability). PASS 2: reverse tile order, roll the shared
+    // per-chunk RNG once per winning tile, place if rng*2^-32 < probability.
+    const CHUNK: i32 = 32;
+    const cx0 = @divFloor(x0, CHUNK);
+    const cx1 = @divFloor(x1 - 1, CHUNK);
+    const cy0 = @divFloor(y0, CHUNK);
+    const cy1 = @divFloor(y1 - 1, CHUNK);
+
+    var win_prob: [CHUNK * CHUNK]f64 = undefined;
+    var win_res: [CHUNK * CHUNK]i32 = undefined; // index into rstates, -1 = none
+    var win_rich: [CHUNK * CHUNK]f64 = undefined;
+
+    var cy: i32 = cy0;
+    while (cy <= cy1) : (cy += 1) {
+        var cx: i32 = cx0;
+        while (cx <= cx1) : (cx += 1) {
+            // PASS 1: winner per tile (row-major i = ly*32 + lx).
+            var i: usize = 0;
+            while (i < CHUNK * CHUNK) : (i += 1) {
+                win_res[i] = -1;
+                win_prob[i] = 0.0;
+            }
+            for (rstates, 0..) |*rs, ri| {
+                var ly: i32 = 0;
+                while (ly < CHUNK) : (ly += 1) {
+                    var lx: i32 = 0;
+                    while (lx < CHUNK) : (lx += 1) {
+                        const tx = cx * CHUNK + lx;
+                        const ty = cy * CHUNK + ly;
+                        if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                        const p = try probabilityAt(rs.field, &rs.spot, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
+                        if (p <= 0.0) continue;
+                        const idx: usize = @intCast(ly * CHUNK + lx);
+                        // Higher probability wins; ties keep the earlier resource
+                        // (order matters — oil is low priority, order "c").
+                        if (p > win_prob[idx]) {
+                            win_prob[idx] = p;
+                            win_res[idx] = @intCast(ri);
+                            win_rich[idx] = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty))));
+                        }
+                    }
+                }
+            }
+            // PASS 2: per-chunk RNG, reverse tile order.
+            var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
+            if (seed < 342) seed = 341;
+            var prng = rng.Rng.init(seed);
+            var ii: i32 = CHUNK * CHUNK - 1;
+            while (ii >= 0) : (ii -= 1) {
+                const idx: usize = @intCast(ii);
+                if (win_res[idx] < 0) continue;
+                const draw = @as(f64, @floatFromInt(prng.next())) * 2.3283064365386963e-10;
+                if (draw < win_prob[idx]) {
+                    const amount: u32 = @intFromFloat(@floor(win_rich[idx]));
                     if (amount > 0) {
-                        try results.append(alloc, .{ .x = x, .y = y, .resource_name = name, .amount = amount });
+                        const lx = @mod(ii, CHUNK);
+                        const ly = @divFloor(ii, CHUNK);
+                        try results.append(alloc, .{ .x = cx * CHUNK + lx, .y = cy * CHUNK + ly, .resource_name = rstates[@intCast(win_res[idx])].name, .amount = amount });
                     }
                 }
             }
