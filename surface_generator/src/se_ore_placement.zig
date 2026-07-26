@@ -47,8 +47,10 @@ pub const SE_CANDIDATE_SPOT_COUNT: u32 = 64;
 pub const SE_MIN_CANDIDATE_SPACING: f64 = 128.0; // rs_suggested_minimum_candidate_point_spacing
 pub const SE_SIZE_BOOST: f64 = 4.0;
 pub const SE_MAX_BASEMENT_RADIUS: f64 = 128.0; // regular
-pub const SE_STARTING_AMOUNT: f64 = 100000.0;
-pub const SE_STARTING_SPLIT: f64 = 0.25;
+pub const SE_STARTING_AMOUNT: f64 = 20000.0; // starting_amount coefficient
+pub const SE_STARTING_SPLIT: f64 = 0.5; // starting_patches_split
+pub const SE_STARTING_CANDIDATE_COUNT: u32 = 32; // starting candidate_spot_count
+pub const SE_STARTING_CANDIDATE_SPACING: f64 = 32.0; // suggested_minimum_candidate_point_spacing
 pub const SE_REGION_SIZE: f64 = 1024.0;
 pub const VEIN_OCTAVES: usize = 6; // multioctave_noise octaves for the vein term
 
@@ -85,6 +87,12 @@ pub const SEResourceConfig = struct {
     // captured. Counts/sizes are unaffected.
     regular_patch_set_index: u32 = 0,
     regular_patch_set_count: u32 = 8,
+    // Starting-area (guaranteed near-spawn) patches. has_starting_area_placement
+    // false -> no starting patches (uranium, K2). Indices/count from patchset-dump.
+    has_starting_area_placement: bool = false,
+    starting_patch_set_index: u32 = 0,
+    starting_patch_set_count: u32 = 14,
+    starting_rq_factor_multiplier: f64 = 1.0,
 };
 
 /// setting_scale(v) = v^0.8 applied to control sliders.
@@ -122,8 +130,8 @@ const SEField = struct {
     ///   doubling = 1 + size_eff/double_density_distance
     fn regularDensityAt(self: SEField, dist: f64) f64 {
         const fade = clamp01((dist - SE_STARTING_RADIUS) / SE_REGULAR_FADE_IN);
-        const size_eff = std.math.clamp(dist - SE_REGULAR_FADE_IN, 0.0, SE_SPOT_ENLARGE_MAX);
-        const doubling = 1.0 + size_eff / SE_DOUBLE_DENSITY;
+        const size_eff = dist - SE_REGULAR_FADE_IN;
+        const doubling = 1.0 + clamp01(size_eff / SE_DOUBLE_DENSITY);
         return self.base_density * self.freq_mult * self.size_mult * fade * doubling;
     }
 
@@ -168,6 +176,52 @@ const SEField = struct {
 
 const SESpotField = noise.SpotNoiseField(SEField);
 
+/// Starting-area guaranteed patches (base-game resource_autoplace_all_patches
+/// starting_patches). Placed near spawn (dist < starting_radius) with a hard
+/// region-target quantity. density = starting_density inside the radius (step),
+/// spot quantity constant, favorability gates to land (elevation > 1) and
+/// prefers the center. Needs elevation for the feasibility term.
+const StartingField = struct {
+    starting_density: f64,
+    spot_quantity: f64, // starting_area_spot_quantity (constant)
+    rq_factor: f64, // starting_rq_factor
+    elev: *const terrain.Elevation,
+
+    fn modulation(x: f64, y: f64) f64 {
+        // starting_modulation = starting_resource_placement_radius > distance
+        return if (dist0(x, y) < SE_STARTING_RADIUS) 1.0 else 0.0;
+    }
+    pub fn spotDensityAt(self: StartingField, x: f64, y: f64) f64 {
+        return self.starting_density * modulation(x, y);
+    }
+    pub fn spotQuantityBaseAt(self: StartingField, x: f64, y: f64) f64 {
+        _ = x;
+        _ = y;
+        return self.spot_quantity;
+    }
+    pub fn spotRadius(self: StartingField, q: f64) f64 {
+        // starting_rq_factor * starting_area_spot_quantity^(1/3) (no min(32)/boost)
+        return self.rq_factor * cbrt(q);
+    }
+    pub fn favorability(self: StartingField, x: f64, y: f64) f64 {
+        const mod = modulation(x, y);
+        const feasibility = clamp01((self.elev.at(x, y) - 1.0) / 10.0) * mod;
+        // random_penalty_at(0.5, seed=1) = 0.5 - r*0.5, r per-tile uniform.
+        const rp = noise.randomPenaltySeeded(x, y, 0.5, 0.5, 1);
+        return feasibility * 2.0 - dist0(x, y) / SE_STARTING_RADIUS + rp;
+    }
+    pub fn randomSpotSizeMinimum(self: StartingField) f64 {
+        _ = self;
+        return 1.0;
+    }
+    pub fn randomSpotSizeMaximum(self: StartingField) f64 {
+        _ = self;
+        return 1.0;
+    }
+};
+
+const StartingSpotField = noise.SpotNoiseField(StartingField);
+
 /// Precomputed per-resource state for a zone.
 const ResourceState = struct {
     name: []const u8,
@@ -184,6 +238,10 @@ const ResourceState = struct {
     blob_amplitude: f64, // regular_blob_amplitude_at(5000)
     basement_value: f64,
     spot: SESpotField,
+    // Guaranteed starting-area patches (null when has_starting_area_placement is
+    // false or no elevation was provided). all_patches = max(regular, starting).
+    starting_spot: ?StartingSpotField = null,
+    starting_blob_amplitude: f64 = 0,
     basis: noise.BasisNoiseGen,
 
     fn typicalHeightAt(self_density: f64, rq: f64, smin: f64, smax: f64, base_spots_per_km2: f64, freq_mult: f64) f64 {
@@ -194,6 +252,10 @@ const ResourceState = struct {
 };
 
 pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const u8, cfg: SEResourceConfig, ctrl: Controls) ResourceState {
+    return makeResourceStateElev(alloc, map_seed, name, cfg, ctrl, null);
+}
+
+pub fn makeResourceStateElev(alloc: std.mem.Allocator, map_seed: u32, name: []const u8, cfg: SEResourceConfig, ctrl: Controls, elev: ?*const terrain.Elevation) ResourceState {
     const freq_mult = slider(ctrl.frequency);
     const size_mult = slider(ctrl.size);
     const richness_mult = slider(ctrl.richness);
@@ -214,10 +276,14 @@ pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const 
     const th_max = ResourceState.typicalHeightAt(density_max, rq, cfg.random_spot_size_minimum, cfg.random_spot_size_maximum, cfg.base_spots_per_km2, freq_mult);
     const blob_amp = (1.0 / 8.0) * th_max;
     const reg_amp_max = blob_amp;
-    // starting_blob_amplitude (starting_rq_factor = starting_rq_mult/8, default mult 1 -> 1/8)
-    const starting_rq = 1.0 / 8.0;
+    // Starting-area values (base-game resource_autoplace_all_patches):
+    //   starting_amount = 20000 * base_density * (freq+1) * size
+    //   starting_area_spot_quantity = starting_amount / 0.5 / freq
+    //   starting_rq_factor = starting_rq_factor_multiplier / 7
+    //   starting_blob_amplitude = (1/8) / (pi/3 * srq^2) * ssq^(1/3)
+    const starting_rq = cfg.starting_rq_factor_multiplier / 7.0;
     const starting_amount = SE_STARTING_AMOUNT * cfg.base_density *
-        (((freq_mult - 1.0) * 0.25) + 1.0) * size_mult;
+        (freq_mult + 1.0) * size_mult;
     const starting_area_spot_quantity = starting_amount / SE_STARTING_SPLIT / freq_mult;
     const starting_blob_amplitude = (1.0 / 8.0) / (pi / 3.0 * starting_rq * starting_rq) *
         cbrt(starting_area_spot_quantity);
@@ -247,6 +313,35 @@ pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const 
         .min_candidate_spacing = SE_MIN_CANDIDATE_SPACING,
     };
 
+    // Guaranteed starting patches (only when the resource has them AND we have
+    // elevation for the feasibility term). region_size = 2*starting_radius, hard
+    // target, seed1+1, its own starting patch-set stride.
+    var starting_spot: ?StartingSpotField = null;
+    if (cfg.has_starting_area_placement) {
+        if (elev) |e| {
+            const starting_density = starting_amount / (pi * SE_STARTING_RADIUS * SE_STARTING_RADIUS);
+            starting_spot = StartingSpotField{
+                .alloc = alloc,
+                .field = StartingField{
+                    .starting_density = starting_density,
+                    .spot_quantity = starting_area_spot_quantity,
+                    .rq_factor = starting_rq,
+                    .elev = e,
+                },
+                .seed0 = map_seed,
+                .seed1 = cfg.seed1 + 1,
+                .region_size = SE_STARTING_RADIUS * 2.0,
+                .candidate_spot_count = SE_STARTING_CANDIDATE_COUNT,
+                .skip_span = cfg.starting_patch_set_count,
+                .skip_offset = cfg.starting_patch_set_index,
+                .hard_region_target_quantity = true,
+                .basement_value = basement_value,
+                .maximum_spot_basement_radius = SE_MAX_BASEMENT_RADIUS,
+                .min_candidate_spacing = SE_STARTING_CANDIDATE_SPACING,
+            };
+        }
+    }
+
     // FNV-1a hash of the resource name for an independent placement-roll stream.
     var salt: u32 = 2166136261;
     for (name) |c| salt = (salt ^ c) *% 16777619;
@@ -266,6 +361,8 @@ pub fn makeResourceState(alloc: std.mem.Allocator, map_seed: u32, name: []const 
         .blob_amplitude = blob_amp,
         .basement_value = basement_value,
         .spot = spot,
+        .starting_spot = starting_spot,
+        .starting_blob_amplitude = starting_blob_amplitude,
         .basis = noise.BasisNoiseGen.init(map_seed, cfg.seed1),
     };
 }
@@ -298,7 +395,15 @@ fn allPatchesValue(st: *ResourceState, x: f64, y: f64) !f64 {
     const spot_v = try st.spot.evalAt(x, y);
     const blobs0 = st.basis.eval(x, y, 1.0 / 8.0, 1.0) + st.basis.eval(x, y, 1.0 / 24.0, 1.0);
     const blob = blobs0 + st.basis.eval(x, y, 1.0 / 64.0, 1.5) - 1.0 / 3.0;
-    return spot_v + blob * st.spot.field.blobAmplitudeAt(x, y);
+    const regular = spot_v + blob * st.spot.field.blobAmplitudeAt(x, y);
+    // all_patches = max(starting_patches, regular_patches). starting_patches =
+    // starting_spots + (blobs0 - 0.25) * starting_blob_amplitude.
+    if (st.starting_spot) |*ss| {
+        const start_spot_v = try ss.evalAt(x, y);
+        const starting = start_spot_v + (blobs0 - 0.25) * st.starting_blob_amplitude;
+        return @max(regular, starting);
+    }
+    return regular;
 }
 
 pub const OreEntity = struct {
@@ -455,11 +560,14 @@ pub fn computeSEOresInRect(
     var ns: usize = 0;
     for (resources) |res| {
         if (res.controls.size <= 0.0) continue; // (control:X:size > 0) gate
-        states_buf[ns] = makeResourceState(alloc, map_seed, res.name, res.config, res.controls);
+        states_buf[ns] = makeResourceStateElev(alloc, map_seed, res.name, res.config, res.controls, water);
         ns += 1;
     }
     const states = states_buf[0..ns];
-    defer for (states) |*st| st.spot.deinit();
+    defer for (states) |*st| {
+        st.spot.deinit();
+        if (st.starting_spot) |*ss| ss.deinit();
+    };
     if (ns == 0) return results;
 
     // Precompute every region a tile in the rect can request. evalAt looks at
@@ -475,6 +583,23 @@ pub fn computeSEOresInRect(
             var ry: i32 = rminy;
             while (ry <= rmaxy) : (ry += 1) {
                 _ = try st.spot.spotsForRegion(rx, ry);
+            }
+        }
+        // Starting patches use a small region (2*starting_radius=240) near the
+        // origin; precompute the regions any tile can request so the threaded
+        // eval sees a read-only cache. round(coord/240)±1 over the rect.
+        if (st.starting_spot) |*ss| {
+            const srs = SE_STARTING_RADIUS * 2.0;
+            const sminx: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(x0)) / srs))) - 1;
+            const smaxx: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(x1 - 1)) / srs))) + 1;
+            const sminy: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(y0)) / srs))) - 1;
+            const smaxy: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(y1 - 1)) / srs))) + 1;
+            var srx: i32 = sminx;
+            while (srx <= smaxx) : (srx += 1) {
+                var sry: i32 = sminy;
+                while (sry <= smaxy) : (sry += 1) {
+                    _ = try ss.spotsForRegion(srx, sry);
+                }
             }
         }
     }
