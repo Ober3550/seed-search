@@ -73,3 +73,21 @@ seed 341 r=512, all controls default, lake (74,4):
   all 14 patches matched (none missing, none extra), 12/14 ratio exactly 1.00,
   RMS-log2 0.021. Exact tile overlap: copper 100.0%, coal 100.0%,
   uranium 100.0%, iron 99.9%, stone 98.6% — TOTAL 99.8%.
+
+## Last-mile accuracy: tie-break + water boundary — 99.976%
+
+1. Winner tie-break (12 tiles): where iron & stone starting patches overlap,
+   both probabilities saturate to 1; the game (generateEntities pass 1) breaks
+   the tie by HIGHER RICHNESS. Implemented -> all 12 swap tiles fixed.
+2. Water boundary (7 tiles): the game's tile is NOT elevation<0 — tiles come
+   from an autoplace COMPETITION: water_base(0,100) = 100*(-elev) vs each land
+   tile's plateau+noise_layer_noise probability. Verified with the oracle: all
+   6 "missing" tiles are grass with corner elevation in (-0.014,-0.005), and
+   the 1 "extra" is a water tile with POSITIVE elevation (engine correction
+   pass — unreachable by autoplace at all). Effective water boundary sits at
+   elevation ~ -0.012; calibrated TerrainCtx.water_threshold=-0.012.
+
+Final: seed 341 r=512 -> 8188/8190 = 99.976% exact; copper/coal/uranium 100%,
+iron 99.97%, stone 99.90%. Remaining 3 tiles need the full vanilla tile
+classifier (expression_in_range_base + noise_layer_noise per land tile) and
+the engine tile-correction pass.

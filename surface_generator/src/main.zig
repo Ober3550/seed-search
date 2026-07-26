@@ -54,6 +54,7 @@ pub fn main(init: std.process.Init) !void {
     var probe_out: ?[]const u8 = null;
     var lake_x: ?f64 = null;
     var lake_y: ?f64 = null;
+    var water_threshold: f64 = -0.012; // calibrated water-boundary (see TerrainCtx)
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -79,6 +80,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--spot-rng")) {
             i += 1;
             if (i < args.len) surfacegen.noise.spot_size_rng_variant = try std.fmt.parseInt(u8, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--water-threshold")) {
+            i += 1;
+            water_threshold = try std.fmt.parseFloat(f64, args[i]);
         } else if (std.mem.eql(u8, args[i], "--lake")) {
             i += 1;
             lake_x = try std.fmt.parseFloat(f64, args[i]);
@@ -167,7 +171,7 @@ pub fn main(init: std.process.Init) !void {
         elev_gate.addStartingLake(lx, lake_y.?);
         lakes_gate.addStartingLake(lx, lake_y.?);
     }
-    const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate };
+    const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate, .water_threshold = water_threshold };
 
     var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls, tctx);
     defer ores.deinit(a);

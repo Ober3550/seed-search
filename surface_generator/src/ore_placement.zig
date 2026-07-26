@@ -431,6 +431,13 @@ pub const OreEntity = struct {
 pub const TerrainCtx = struct {
     elev: ?*const terrain.Elevation = null,
     lakes: ?*const terrain.ElevationLakes = null,
+    /// Water gate threshold. The game picks tiles by autoplace competition:
+    /// water_base(0,100) = 100*(-elev) must beat the best LAND tile probability
+    /// (plateau ~1 + per-tile noise_layer_noise), so the effective water
+    /// boundary sits slightly BELOW elevation 0. -0.012 calibrated against
+    /// seed-341 ground truth (3 wrong tiles / 8190; exact boundary needs the
+    /// full tile-autoplace competition + the engine correction pass).
+    water_threshold: f64 = -0.012,
 };
 
 pub fn computeOresInRect(
@@ -488,7 +495,7 @@ pub fn computeOresInRect(
                 water[i] = if (ctx.elev) |el| el.at(
                     @floatFromInt(cx * CHUNK + @as(i32, @intCast(@mod(i, CHUNK)))),
                     @floatFromInt(cy * CHUNK + @as(i32, @intCast(@divTrunc(i, CHUNK)))),
-                ) < 0.0 else false;
+                ) < ctx.water_threshold else false;
             }
             for (rstates, 0..) |*rs, ri| {
                 var ly: i32 = 0;
@@ -503,13 +510,18 @@ pub fn computeOresInRect(
                         const p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
                         if (p <= 0.0) continue;
                         const idx: usize = @intCast(ly * CHUNK + lx);
-                        // Higher probability wins; ties keep the earlier resource
-                        // (order matters — oil is low priority, order "c").
-                        if (p > win_prob[idx]) {
+                        // generateEntities pass 1: replace when probability is
+                        // strictly higher, OR equal with strictly higher
+                        // richness (probability saturates to 1 in patch cores,
+                        // so overlapping patches tie and richness decides).
+                        const tie = p == win_prob[idx] and win_res[idx] >= 0;
+                        if (p > win_prob[idx] or tie) {
+                            const ssv: ?f64 = if (sspot_ptr) |ss| try ss.evalAt(@floatFromInt(tx), @floatFromInt(ty)) else null;
+                            const rich = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty)), ssv));
+                            if (tie and rich <= win_rich[idx]) continue;
                             win_prob[idx] = p;
                             win_res[idx] = @intCast(ri);
-                            const ssv: ?f64 = if (sspot_ptr) |ss| try ss.evalAt(@floatFromInt(tx), @floatFromInt(ty)) else null;
-                            win_rich[idx] = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty)), ssv));
+                            win_rich[idx] = rich;
                         }
                     }
                 }
