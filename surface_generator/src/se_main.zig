@@ -116,6 +116,7 @@ pub fn main(init: std.process.Init) !void {
     var nauvis_elev: bool = false;
     var nauvis_diag: bool = false;
     var nauvis_biome: bool = false;
+    var horaerratum_biome: bool = false;
     var water_exclude: bool = false;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
@@ -149,6 +150,8 @@ pub fn main(init: std.process.Init) !void {
             nauvis_diag = true;
         } else if (std.mem.eql(u8, args[i], "--nauvis-biome")) {
             nauvis_biome = true;
+        } else if (std.mem.eql(u8, args[i], "--horaerratum-biome")) {
+            horaerratum_biome = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
             water_exclude = true;
         }
@@ -269,6 +272,53 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("{s}\n", .{row[0..]});
             }
         }
+        return;
+    }
+
+    if (horaerratum_biome) {
+        // Classify every tile of Horaerratum via the alien-biomes tile placement
+        // (temperature/moisture/aux/elevation -> winning tile -> map_color) and
+        // render to a BMP to diff against the ground truth
+        // (calibration/mod-dump/tile-bmp-Horaerratum.bmp). Water where elevation<0.
+        const r: i32 = if (override_radius) |or2| or2 else @intFromFloat(HORAERRATUM_RADIUS);
+        const zone_r: f64 = @floatFromInt(r);
+        const zt = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
+        // Use the moon's calibrated water_size (~40.9% water on the live surface).
+        const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+
+        const size: u32 = @intCast(r * 2);
+        var pixels = try a.alloc(u8, size * size * 3);
+        @memset(pixels, 20); // disk background (matches the mod)
+        var iy: i32 = -r;
+        while (iy < r) : (iy += 1) {
+            var ix: i32 = -r;
+            while (ix < r) : (ix += 1) {
+                const dx: f64 = @floatFromInt(ix);
+                const dy: f64 = @floatFromInt(iy);
+                if (dx * dx + dy * dy > zone_r * zone_r) continue;
+                const fx: f64 = @floatFromInt(ix);
+                const fy: f64 = @floatFromInt(iy);
+                const e = elev.at(fx, fy);
+                const color: [3]u8 = if (e < 0.0)
+                    (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
+                else
+                    surfacegen.biome.classifyColor(zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                // Orientation matches the tile-dump mod's BMP after bmp2png.
+                const x_arr: usize = @intCast(ix + r);
+                const y_arr: usize = @intCast((r - 1) - iy);
+                const idx: usize = (y_arr * size + x_arr) * 3;
+                pixels[idx] = color[0];
+                pixels[idx + 1] = color[1];
+                pixels[idx + 2] = color[2];
+            }
+        }
+        const filename = bmp_filename orelse "horaerratum-biome.bmp";
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, filename, .{});
+        defer file.close(init.io);
+        var buf: std.ArrayList(u8) = .empty;
+        try surfacegen.bmp.writeBmp(a, &buf, size, size, pixels);
+        try file.writePositionalAll(init.io, buf.items, 0);
+        std.debug.print("# Wrote biome BMP: {s} ({d}x{d})\n", .{ filename, size, size });
         return;
     }
 

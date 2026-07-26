@@ -80,11 +80,12 @@ pub const ZoneTerrain = struct {
     starting_moisture_bias: f64, // starting_bias, applied within starting_bias_region
     starting_moisture_frequency: f64,
 
-    // 4 fresh generators per property (quick_multioctave octave_seed0_shift=1):
-    // gens[k] = BasisNoiseGen.init(map_seed+k, seed1).
-    temp_gens: [4]noise.BasisNoiseGen, // seed1=5
-    moist_gens: [4]noise.BasisNoiseGen, // seed1=6
-    aux_gens: [4]noise.BasisNoiseGen, // seed1=7
+    // Fresh generators per property (quick_multioctave octave_seed0_shift=1):
+    // gens[k] = BasisNoiseGen.init(map_seed+k, seed1). alien-biomes temperature
+    // uses up to 11 octaves (seed1=5), moisture/aux 8 octaves (seed1=6/7).
+    temp_gens: [11]noise.BasisNoiseGen, // seed1=5
+    moist_gens: [8]noise.BasisNoiseGen, // seed1=6
+    aux_gens: [8]noise.BasisNoiseGen, // seed1=7
     // Elevation for nauvis_plateaus (aux_nauvis / moisture_nauvis depend on it).
     elev: Elevation,
 
@@ -103,9 +104,9 @@ pub const ZoneTerrain = struct {
             .hot_frequency = cfg.hot_frequency,
             .starting_moisture_bias = cfg.starting_moisture_bias,
             .starting_moisture_frequency = cfg.starting_moisture_frequency,
-            .temp_gens = qmoGens(4, cfg.map_seed, 5),
-            .moist_gens = qmoGens(4, cfg.map_seed, 6),
-            .aux_gens = qmoGens(4, cfg.map_seed, 7),
+            .temp_gens = qmoGens(11, cfg.map_seed, 5),
+            .moist_gens = qmoGens(8, cfg.map_seed, 6),
+            .aux_gens = qmoGens(8, cfg.map_seed, 7),
             .elev = Elevation.init(cfg.map_seed, cfg.water_frequency, cfg.water_size),
         };
     }
@@ -128,54 +129,48 @@ pub const ZoneTerrain = struct {
         starting_moisture_frequency: f64 = 1.0,
     };
 
-    /// temperature = clamp(15 + bias + quick_multioctave_noise{seed1=5, oct4,
-    /// is=freq/32, os=1/20, offset_x=40000/freq, oosm=3, oism=1/3}, -20, 50).
+    /// alien-biomes `temperature` (prototypes/noise-programs.lua): cold/hot spot
+    /// bands + volcanic hotspots. cold=control:cold:size, hot=control:hot:size.
+    /// All sub-noises are quick_multioctave with seed1=5.
     pub fn temperature(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const f = self.temperature_frequency;
-        const q = quickMultioctave(&self.temp_gens, x, y, 4, f / 32.0, 1.0 / 20.0, 1.0 / 3.0, 3.0, 40000.0 / f, 0.0);
-        return clamp(15.0 + self.temperature_bias + q, -20.0, 50.0);
+        const cold = self.cold_size;
+        const hot = self.hot_size;
+        const cf = self.cold_frequency;
+        const hf = self.hot_frequency;
+        const average = 50.0 - 125.0 * cold / 6.0 + 125.0 * hot / 6.0;
+        const range = 50.0 * (clamp(cold, 0, 1) / 2.0 + cold / 10.0) + 50.0 * (clamp(hot, 0, 1) / 2.0 + hot / 10.0);
+
+        const bfreq = (cf + hf) / 2.0;
+        const main_noise = quickMultioctave(self.temp_gens[0..11], x * bfreq, y * bfreq, 11, 1.0 / 32.0, 1.0 / 20.0, 0.5, 1.4, 0.0, 40000.0);
+        const base = average + range * clamp(0.25 * main_noise, -1, 1);
+
+        const hotspots_noise = quickMultioctave(self.temp_gens[0..10], x * hf, y * hf, 10, 1.0 / 8.0, 1.0 / 20.0, 0.5, 1.5, 40000.0, 0.0);
+        const hotspots = (clamp(hot, 0, 1) / 2.0 + hot / 10.0) * 40.0 * clamp(-0.45 + hot / 6.0 + hotspots_noise, 0, 4);
+
+        const coldspots_noise = quickMultioctave(self.temp_gens[0..10], x * cf, y * cf, 10, 1.0 / 30.0, 1.0 / 20.0, 0.5, 1.5, -40000.0, 0.0);
+        const coldspots = (clamp(cold, 0, 1) / 2.0 + cold / 10.0) * 40.0 * clamp(-0.45 + cold / 6.0 + coldspots_noise, 0, 4);
+
+        const combined = clamp(base - coldspots + hotspots, -50, 110); // slice off lava peaks
+        const volcanic_area = clamp(combined - 100.0, 0, 10);
+        const vhn = quickMultioctave(self.temp_gens[0..6], x, y, 6, 1.0, 1.0 / 20.0, 0.5, 1.5, 0.0, 0.0);
+        const volcanic_hotspots = clamp(0.5 + vhn, 0, 10) * volcanic_area * 4.0;
+        return clamp(combined + volcanic_hotspots, -20, 150);
     }
 
-    /// aux_nauvis = clamp(0.5 + bias + 0.06*(nauvis_plateaus - 0.4) + aux_noise, 0, 1);
-    /// aux_noise = quick_multioctave_noise{seed1=7, oct4, is=freq/2048, os=0.25,
-    /// offset_x=20000/freq, oosm=0.5, oism=3}.
+    /// alien-biomes `aux` = clamp(0.45 + 2.2*bias + 2.2*qmn{seed1=7, oct8,
+    /// is=1/5000, os=1/4, oism=3, oosm=0.5, offset_x=20000}, 0, 1).
     pub fn aux(self: *const ZoneTerrain, x: f64, y: f64) f64 {
         const f = self.aux_frequency;
-        const q = quickMultioctave(&self.aux_gens, x, y, 4, f / 2048.0, 0.25, 3.0, 0.5, 20000.0 / f, 0.0);
-        const plateaus = self.elev.nauvisPlateaus(x, y);
-        return clamp(0.5 + self.aux_bias + 0.06 * (plateaus - 0.4) + q, 0.0, 1.0);
+        const q = quickMultioctave(self.aux_gens[0..8], x * f, y * f, 8, 1.0 / 5000.0, 1.0 / 4.0, 3.0, 0.5, 20000.0, 0.0);
+        return clamp(0.45 + 2.2 * self.aux_bias + 2.2 * q, 0.0, 1.0);
     }
 
-    /// moisture_noise = quick_multioctave_noise{seed1=6, oct4, is=freq/256,
-    /// os=0.125, offset_x=30000/freq, oosm=1.5, oism=1/3}.
-    pub fn moistureNoise(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const f = self.moisture_frequency;
-        return quickMultioctave(&self.moist_gens, x, y, 4, f / 256.0, 0.125, 1.0 / 3.0, 1.5, 30000.0 / f, 0.0);
-    }
-
-    /// moisture_adjusted_bias = lerp(base_bias, starting_bias, starting_bias_region),
-    /// starting_bias_region = clamp(2 - starting_area_moisture_freq/400 * distance, 0, 1).
-    fn moistureAdjustedBias(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const dist = @sqrt(x * x + y * y);
-        const region = clamp(2.0 - self.starting_moisture_frequency / 400.0 * dist, 0.0, 1.0);
-        return lerp(self.moisture_bias, self.starting_moisture_bias, region);
-    }
-
-    /// moisture_main = clamp(0.4 + moisture_adjusted_bias + moisture_noise
-    /// - 0.08*(nauvis_plateaus - 0.6), 0, 1).
-    pub fn moistureMain(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const plateaus = self.elev.nauvisPlateaus(x, y);
-        return clamp(0.4 + self.moistureAdjustedBias(x, y) + self.moistureNoise(x, y) - 0.08 * (plateaus - 0.6), 0.0, 1.0);
-    }
-
-    /// moisture = moisture_nauvis = max(min(moisture_main, 0.45),
-    ///   moisture_main - 0.2 * max(0, 1 - trees_forest_path_cutout * 1.5)).
-    /// The dirt-trail term only lowers moisture where moisture_main > 0.45.
+    /// alien-biomes `moisture` = clamp(0.5 + 2.2*bias + 2.5*qmn{seed1=6, oct8,
+    /// is=1/2000, os=1/8, oism=3, oosm=0.5, offset_x=30000}, 0, 1).
     pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const main = self.moistureMain(x, y);
-        const cutout = self.elev.treesForestPathCutout(x, y);
-        const factor = @max(0.0, 1.0 - cutout * 1.5);
-        return @max(@min(main, 0.45), main - 0.2 * factor);
+        const f = self.moisture_frequency;
+        const q = quickMultioctave(self.moist_gens[0..8], x * f, y * f, 8, 1.0 / 2000.0, 1.0 / 8.0, 3.0, 0.5, 30000.0, 0.0);
+        return clamp(0.5 + 2.2 * self.moisture_bias + 2.5 * q, 0.0, 1.0);
     }
 };
 
@@ -374,8 +369,11 @@ pub const Elevation = struct {
 pub const HORAERRATUM = ZoneTerrain.Config{
     .map_seed = 2035207183,
     // control-setting bias sliders read 0.5 (neutral); the noise var
-    // `control:moisture:bias` is that slider re-centered to 0 at neutral.
-    .moisture_frequency = 2.0,
+    // `control:moisture:bias`/`control:aux:bias` is re-centered to 0 at neutral.
+    // Frequency noise-vars are 1 here (the map-gen "multiplier" of 2 for moisture
+    // does NOT reach the alien-biomes noise var): freq=1 reproduces the live
+    // surface's moisture oracle exactly (0.5498, 0.5982), freq=2 does not.
+    .moisture_frequency = 1.0,
     .moisture_bias = 0.0,
     .aux_frequency = 1.0,
     .aux_bias = 0.0,
@@ -384,5 +382,7 @@ pub const HORAERRATUM = ZoneTerrain.Config{
     .cold_frequency = 4.8053212165833,
     .hot_frequency = 4.8053212165833,
     .water_frequency = 1.0,
-    .water_size = 1.5,
+    // water=nil in map_gen_settings, but the live surface has ~40.9% water; that
+    // matches water_level≈5 (water_size≈1.42), NOT the naive default 1.0 (21%).
+    .water_size = 1.42,
 };

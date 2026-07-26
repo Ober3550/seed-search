@@ -18,6 +18,7 @@ pub const autoplace = @import("autoplace.zig");
 pub const ore = @import("ore_placement.zig");
 pub const se_ore = @import("se_ore_placement.zig");
 pub const terrain = @import("terrain.zig");
+pub const biome = @import("biome.zig");
 pub const bmp = @import("bmp_writer.zig");
 pub const sha1 = @import("sha1.zig");
 
