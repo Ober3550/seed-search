@@ -19,19 +19,8 @@
 
 const std = @import("std");
 const noise = @import("noise.zig");
+const terrain = @import("terrain.zig");
 const rng = @import("rng.zig");
-
-/// Per-tile placement roll. Factorio places a resource only if a per-tile uniform
-/// draw < probability_expression = clamp(all_patches,0,1) [* random_penalty for
-/// random_probability<1]. This thins fluid patches (crude-oil rp=1/48) to sparse
-/// individual wells. `salt` makes the draw independent per resource.
-fn placementRoll(x: i32, y: i32, salt: u32) f64 {
-    const ix: u32 = @bitCast(x);
-    const iy: u32 = @bitCast(y);
-    var rr = rng.Rng.init((ix *% 73856093) ^ (iy *% 19349663) ^ salt);
-    _ = rr.next();
-    return rr.float();
-}
 
 const pi = std.math.pi;
 
@@ -72,6 +61,7 @@ pub const ResourceAutoplaceConfig = struct {
     seed1: u32 = 100,
     has_starting_area_placement: HasStarting = .yes,
     regular_patch_set_index: u32 = 0,
+    starting_patch_set_index: u32 = 0,
     random_probability: f64 = 1.0,
     additional_richness: f64 = 0.0,
     minimum_richness: f64 = 0.0,
@@ -80,23 +70,27 @@ pub const ResourceAutoplaceConfig = struct {
 
 pub const iron_ore_default = ResourceAutoplaceConfig{
     .base_density = 10.0, .regular_rq_factor_multiplier = 1.10,
+    .starting_rq_factor_multiplier = 1.5,
     .candidate_spot_count = 22, .has_starting_area_placement = .yes,
-    .regular_patch_set_index = 0,
+    .regular_patch_set_index = 0, .starting_patch_set_index = 0,
 };
 pub const copper_ore_default = ResourceAutoplaceConfig{
     .base_density = 8.0, .regular_rq_factor_multiplier = 1.10,
+    .starting_rq_factor_multiplier = 1.2,
     .candidate_spot_count = 22, .has_starting_area_placement = .yes,
-    .regular_patch_set_index = 1,
+    .regular_patch_set_index = 1, .starting_patch_set_index = 1,
 };
 pub const coal_default = ResourceAutoplaceConfig{
     .base_density = 8.0, .regular_rq_factor_multiplier = 1.0,
+    .starting_rq_factor_multiplier = 1.1,
     .candidate_spot_count = 21, .has_starting_area_placement = .yes,
-    .regular_patch_set_index = 2,
+    .regular_patch_set_index = 2, .starting_patch_set_index = 2,
 };
 pub const stone_default = ResourceAutoplaceConfig{
     .base_density = 4.0, .regular_rq_factor_multiplier = 1.0,
+    .starting_rq_factor_multiplier = 1.1,
     .candidate_spot_count = 21, .has_starting_area_placement = .yes,
-    .regular_patch_set_index = 3,
+    .regular_patch_set_index = 3, .starting_patch_set_index = 3,
 };
 pub const uranium_ore_default = ResourceAutoplaceConfig{
     .base_density = 0.9, .base_spots_per_km2 = 1.25,
@@ -282,24 +276,89 @@ fn regularPatches(field: Field, basis: *const noise.BasisNoiseGen, x: f64, y: f6
     return spot_value + blob * field.regularBlobAmplitudeAt(distance);
 }
 
-/// starting_patches expression (noise-functions.lua:211-229).
-///
-/// GHIDRA/TERRAIN-PENDING: the favorability term uses elevation_lakes, which
-/// requires terrain generation not yet implemented, and it uses a *hard*
-/// target-quantity spot_noise. Until both exist, this returns a value that can
-/// never win the max() below, so near-spawn output is "regular only" (which is
-/// wrong inside ~r=120..420 — the guaranteed spawn patches are missing).
-fn startingPatches(field: Field, x: f64, y: f64) f64 {
-    _ = x;
-    _ = y;
-    return field.basementValue(); // sentinel: max(starting, regular) == regular for now
+/// Starting-patch spot evaluator (noise-functions.lua:211-229). density is a
+/// step inside r<120 (starting_modulation = 120 > distance); quantity and
+/// radius are CONSTANT (no random_penalty_between); favorability =
+/// clamp((elevation_lakes - 1)/10, 0, 1)*modulation*2 - distance/120
+/// + random_penalty_at(0.5, 1) [the penalty term is applied by SpotNoiseField
+/// via favorabilityPenalty()].
+pub const StartingField = struct {
+    field: Field,
+    lakes: ?*const terrain.ElevationLakes,
+
+    fn modulation(x: f64, y: f64) f64 {
+        return if (distanceFromOrigin(x, y) < STARTING_RESOURCE_PLACEMENT_RADIUS) 1.0 else 0.0;
+    }
+    pub fn spotDensityAt(self: StartingField, x: f64, y: f64) f64 {
+        const r = STARTING_RESOURCE_PLACEMENT_RADIUS;
+        return self.field.startingAmount() / (pi * r * r) * modulation(x, y);
+    }
+    pub fn spotQuantityBaseAt(self: StartingField, x: f64, y: f64) f64 {
+        _ = x;
+        _ = y;
+        return self.field.startingAreaSpotQuantity();
+    }
+    pub fn spotRadius(self: StartingField, quantity: f64) f64 {
+        return self.field.startingRqFactor() * cbrt(quantity);
+    }
+    pub fn favorability(self: StartingField, x: f64, y: f64) f64 {
+        const elev_term: f64 = if (self.lakes) |lk|
+            clamp01((lk.at(x, y) - 1.0) / 10.0)
+        else
+            1.0;
+        return elev_term * modulation(x, y) * 2.0 -
+            distanceFromOrigin(x, y) / STARTING_RESOURCE_PLACEMENT_RADIUS;
+    }
+    /// random_penalty_at(0.5, 1) in the favorability expression.
+    pub fn favorabilityPenalty(self: StartingField) ?noise.FavorabilityPenalty {
+        _ = self;
+        return .{ .source = 0.5, .amplitude = 0.5, .seed = 1.0 };
+    }
+    pub fn randomSpotSizeMinimum(self: StartingField) f64 {
+        _ = self;
+        return 1.0; // constant spot quantity (no random_penalty_between)
+    }
+    pub fn randomSpotSizeMaximum(self: StartingField) f64 {
+        _ = self;
+        return 1.0;
+    }
+};
+
+pub const StartingSpotField = noise.SpotNoiseField(StartingField);
+
+/// Build the starting-patch spot field (noise-functions.lua:211-229): seed1+1,
+/// region 240, hard target, candidate_spot_count 32, spacing 32, starting set stride.
+fn makeStartingSpotField(alloc: std.mem.Allocator, field: Field, lakes: ?*const terrain.ElevationLakes) StartingSpotField {
+    return .{
+        .alloc = alloc,
+        .field = StartingField{ .field = field, .lakes = lakes },
+        .seed0 = field.map_seed,
+        .seed1 = field.config.seed1 + 1,
+        .region_size = STARTING_RESOURCE_PLACEMENT_RADIUS * 2.0,
+        .candidate_spot_count = 32,
+        .skip_span = STARTING_PATCH_SET_COUNT,
+        .skip_offset = field.config.starting_patch_set_index,
+        .hard_region_target_quantity = true,
+        .basement_value = field.basementValue(),
+        .maximum_spot_basement_radius = MAXIMUM_SPOT_BASEMENT_RADIUS,
+        .min_candidate_spacing = 32.0,
+    };
+}
+
+/// starting_patches = starting_spots + (blobs0 - 0.25) * starting_blob_amplitude.
+fn startingPatches(field: Field, basis: *const noise.BasisNoiseGen, x: f64, y: f64, starting_spot_value: f64) f64 {
+    return starting_spot_value + (blobs0(basis, x, y) - 0.25) * field.startingBlobAmplitude();
 }
 
 /// Full per-resource field value at (x, y): the pre-clamp "all patches" value.
-fn allPatchesValue(field: Field, basis: *const noise.BasisNoiseGen, x: f64, y: f64, spot_value: f64) f64 {
+/// `starting_spot_value` is StartingSpotField.evalAt (null when the resource has
+/// no starting placement or no starting field was built).
+fn allPatchesValue(field: Field, basis: *const noise.BasisNoiseGen, x: f64, y: f64, spot_value: f64, starting_spot_value: ?f64) f64 {
     const regular = regularPatches(field, basis, x, y, spot_value);
     if (field.has() == 1) {
-        return @max(startingPatches(field, x, y), regular);
+        if (starting_spot_value) |ssv| {
+            return @max(startingPatches(field, basis, x, y, ssv), regular);
+        }
     }
     return regular;
 }
@@ -325,54 +384,31 @@ fn richnessAt(field: Field, x: f64, y: f64, value: f64) f64 {
 
 /// Compute ore richness at a tile given the resource's field + its cached spot
 /// field. Returns 0 if the tile is not part of a patch (probability <= 0).
-///
-/// NOTE: the game additionally does a per-tile RNG roll comparing a uniform draw
-/// to clamp(value,0,1); tiles with 0<probability<1 are placed probabilistically.
-/// That placement-layer roll is not yet modelled — we place wherever
-/// probability > 0, which over-fills soft patch edges.
-fn computeOreAt(field: Field, spot: *RegularSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64, salt: u32) !f64 {
-    if (field.controls.size <= 0.0) return 0.0; // (var('control:X:size') > 0) gate
-
-    const spot_value = try spot.evalAt(x, y);
-    const value = allPatchesValue(field, basis, x, y, spot_value);
-
-    var probability = clamp01(value);
-    if (probability <= 0.0) return 0.0;
-    // Fluid resources (random_probability<1, e.g. crude-oil 1/48): multiply the
-    // probability by a per-tile random_penalty, then roll. random_penalty{source=1,
-    // amplitude=1/rp} is <0 on ~(1-rp) of tiles, so the cone becomes sparse wells.
-    if (field.config.random_probability < 1.0) {
-        probability *= noise.randomPenalty(x, y, 1.0, 1.0 / field.config.random_probability);
-        if (probability <= 0.0) return 0.0;
-    }
-    const ix: i32 = @intFromFloat(x);
-    const iy: i32 = @intFromFloat(y);
-    if (placementRoll(ix, iy, salt) >= probability) return 0.0;
-
-    return richnessAt(field, x, y, value);
-}
-
 /// Raw all_patches values at arbitrary positions — for calibration against the
 /// game's `default-<name>-patches` named noise expression evaluated via
 /// surface.calculate_tile_properties (see calibration/vanilla-sweep/probe_field.py).
-pub fn probeAllPatches(alloc: std.mem.Allocator, map_seed: u32, config: ResourceAutoplaceConfig, controls: AutoplaceControls, xs: []const f64, ys: []const f64, out: []f64) !void {
+pub fn probeAllPatches(alloc: std.mem.Allocator, map_seed: u32, config: ResourceAutoplaceConfig, controls: AutoplaceControls, lakes: ?*const terrain.ElevationLakes, xs: []const f64, ys: []const f64, out: []f64) !void {
     const field = Field{ .config = config, .controls = controls, .map_seed = map_seed };
     var spot = makeRegularSpotField(alloc, field);
     defer spot.deinit();
+    var sspot: ?StartingSpotField = if (field.has() == 1) makeStartingSpotField(alloc, field, lakes) else null;
+    defer if (sspot) |*ss| ss.deinit();
     const basis = noise.BasisNoiseGen.init(map_seed, config.seed1);
     for (xs, ys, out) |x, y, *o| {
         const sv = try spot.evalAt(x, y);
-        o.* = allPatchesValue(field, &basis, x, y, sv);
+        const ssv: ?f64 = if (sspot) |*ss| try ss.evalAt(x, y) else null;
+        o.* = allPatchesValue(field, &basis, x, y, sv, ssv);
     }
 }
 
 /// The probability_expression value at a tile: clamp(all_patches, 0, 1) *
 /// (random_probability<1 ? random_penalty : 1). No placement roll — that is the
 /// per-chunk RNG in computeOresInRect. Returns 0 if not part of any patch.
-fn probabilityAt(field: Field, spot: *RegularSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64) !f64 {
+fn probabilityAt(field: Field, spot: *RegularSpotField, sspot: ?*StartingSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64) !f64 {
     if (field.controls.size <= 0.0) return 0.0;
     const spot_value = try spot.evalAt(x, y);
-    const value = allPatchesValue(field, basis, x, y, spot_value);
+    const ssv: ?f64 = if (sspot) |ss| try ss.evalAt(x, y) else null;
+    const value = allPatchesValue(field, basis, x, y, spot_value, ssv);
     var probability = clamp01(value);
     if (probability <= 0.0) return 0.0;
     if (field.config.random_probability < 1.0) {
@@ -388,6 +424,15 @@ pub const OreEntity = struct {
     amount: u32,
 };
 
+/// Optional terrain context for vanilla Nauvis generation:
+/// - `elev` (elevation_nauvis) gates placement off water tiles (elevation < 0),
+/// - `lakes` (elevation_lakes) feeds the starting-patch favorability, and its
+///   presence enables the guaranteed starting patches.
+pub const TerrainCtx = struct {
+    elev: ?*const terrain.Elevation = null,
+    lakes: ?*const terrain.ElevationLakes = null,
+};
+
 pub fn computeOresInRect(
     alloc: std.mem.Allocator,
     map_seed: u32,
@@ -396,18 +441,23 @@ pub fn computeOresInRect(
     resources: []const ResourceAutoplaceConfig,
     resource_names: []const []const u8,
     controls: AutoplaceControls,
+    ctx: TerrainCtx,
 ) !std.ArrayList(OreEntity) {
     var results: std.ArrayList(OreEntity) = .empty;
 
     // Per-resource state (spot cache + basis gen), built once.
-    const RState = struct { field: Field, spot: RegularSpotField, basis: noise.BasisNoiseGen, name: []const u8 };
+    const RState = struct { field: Field, spot: RegularSpotField, sspot: ?StartingSpotField, basis: noise.BasisNoiseGen, name: []const u8 };
     const rstates = try alloc.alloc(RState, resources.len);
     defer alloc.free(rstates);
     for (resources, resource_names, 0..) |config, name, i| {
         const field = Field{ .config = config, .controls = controls, .map_seed = map_seed };
-        rstates[i] = .{ .field = field, .spot = makeRegularSpotField(alloc, field), .basis = noise.BasisNoiseGen.init(map_seed, config.seed1), .name = name };
+        const sspot: ?StartingSpotField = if (field.has() == 1) makeStartingSpotField(alloc, field, ctx.lakes) else null;
+        rstates[i] = .{ .field = field, .spot = makeRegularSpotField(alloc, field), .sspot = sspot, .basis = noise.BasisNoiseGen.init(map_seed, config.seed1), .name = name };
     }
-    defer for (rstates) |*rs| rs.spot.deinit();
+    defer for (rstates) |*rs| {
+        rs.spot.deinit();
+        if (rs.sspot) |*ss| ss.deinit();
+    };
 
     // Per-chunk two-pass placement (EntityMapGenerationTask::generateEntities,
     // ghidra/export/entity_placement.c). PASS 1: pick the winning resource per
@@ -422,6 +472,7 @@ pub fn computeOresInRect(
     var win_prob: [CHUNK * CHUNK]f64 = undefined;
     var win_res: [CHUNK * CHUNK]i32 = undefined; // index into rstates, -1 = none
     var win_rich: [CHUNK * CHUNK]f64 = undefined;
+    var water: [CHUNK * CHUNK]bool = undefined; // per-chunk mask, computed once
 
     var cy: i32 = cy0;
     while (cy <= cy1) : (cy += 1) {
@@ -432,6 +483,12 @@ pub fn computeOresInRect(
             while (i < CHUNK * CHUNK) : (i += 1) {
                 win_res[i] = -1;
                 win_prob[i] = 0.0;
+                // Water tiles collide with the resource layer: elevation < 0
+                // blocks every resource (tile-corner sample, matching the game).
+                water[i] = if (ctx.elev) |el| el.at(
+                    @floatFromInt(cx * CHUNK + @as(i32, @intCast(@mod(i, CHUNK)))),
+                    @floatFromInt(cy * CHUNK + @as(i32, @intCast(@divTrunc(i, CHUNK)))),
+                ) < 0.0 else false;
             }
             for (rstates, 0..) |*rs, ri| {
                 var ly: i32 = 0;
@@ -441,7 +498,9 @@ pub fn computeOresInRect(
                         const tx = cx * CHUNK + lx;
                         const ty = cy * CHUNK + ly;
                         if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
-                        const p = try probabilityAt(rs.field, &rs.spot, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
+                        if (water[@intCast(ly * CHUNK + lx)]) continue;
+                        const sspot_ptr: ?*StartingSpotField = if (rs.sspot) |*ss| ss else null;
+                        const p = try probabilityAt(rs.field, &rs.spot, sspot_ptr, &rs.basis, @floatFromInt(tx), @floatFromInt(ty));
                         if (p <= 0.0) continue;
                         const idx: usize = @intCast(ly * CHUNK + lx);
                         // Higher probability wins; ties keep the earlier resource
@@ -449,7 +508,8 @@ pub fn computeOresInRect(
                         if (p > win_prob[idx]) {
                             win_prob[idx] = p;
                             win_res[idx] = @intCast(ri);
-                            win_rich[idx] = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty))));
+                            const ssv: ?f64 = if (sspot_ptr) |ss| try ss.evalAt(@floatFromInt(tx), @floatFromInt(ty)) else null;
+                            win_rich[idx] = richnessAt(rs.field, @floatFromInt(tx), @floatFromInt(ty), allPatchesValue(rs.field, &rs.basis, @floatFromInt(tx), @floatFromInt(ty), try rs.spot.evalAt(@floatFromInt(tx), @floatFromInt(ty)), ssv));
                         }
                     }
                 }

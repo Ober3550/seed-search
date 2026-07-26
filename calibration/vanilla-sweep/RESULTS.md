@@ -53,3 +53,23 @@ missing = its starting patch exactly), iron 75%, coal 78%, stone 77%.
 ALL residual mismatch = the two known gaps (starting patches, water clipping).
 The remaining oracle diff is only in the deep basement (value<0, no placement)
 where the vanilla startingPatches stub returns a constant floor.
+
+## Starting patches + water clipping — DONE (99.8% tile-exact)
+
+- elevation_nauvis (terrain.Elevation) verified EXACT vs the oracle (RMS 1e-6)
+  once the engine-chosen starting lake is registered. Seed 341's lake: (74,4),
+  fitted by grid-searching addStartingLake against the probed elevation.
+- elevation_lakes (0.12-like lakes; used ONLY by starting-patch favorability)
+  ported as terrain.ElevationLakes — exact on first validation (RMS 0.0000).
+- Starting patches: StartingField + hard-target spot field (seed1+1, region
+  240, 32 candidates, spacing 32, starting-set stride), favorability =
+  clamp((elevation_lakes-1)/10,0,1)*2*mod - dist/120 + random_penalty_at(0.5,1)
+  via the new FavorabilityPenalty column hook (same proven reversed-order
+  semantics). starting_rq_factor_multiplier per resource: iron 1.5, copper 1.2,
+  coal 1.1, stone 1.1 (the missing 1.5x explained the undersized cones exactly).
+- Water gate: per-chunk elevation<0 mask blocks all resources (tile corner).
+
+seed 341 r=512, all controls default, lake (74,4):
+  all 14 patches matched (none missing, none extra), 12/14 ratio exactly 1.00,
+  RMS-log2 0.021. Exact tile overlap: copper 100.0%, coal 100.0%,
+  uranium 100.0%, iron 99.9%, stone 98.6% — TOTAL 99.8%.

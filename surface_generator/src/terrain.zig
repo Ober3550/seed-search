@@ -365,6 +365,93 @@ pub const Elevation = struct {
     }
 };
 
+/// elevation_lakes (core/prototypes/noise-programs.lua) — the 0.12-style lakes
+/// elevation: finish_elevation{make_0_12like_lakes{bias=20, terrain_octaves=8,
+/// segmentation_multiplier}, segmentation_multiplier}. This is NOT the world's
+/// default elevation (that's elevation_nauvis / Elevation above); the base-game
+/// starting-patch favorability reads it: clamp((elevation_lakes - 1)/10, 0, 1).
+pub const ElevationLakes = struct {
+    map_seed: u32,
+    seg: f64, // segmentation_multiplier = control:water:frequency
+    water_level: f64, // 10 * log2(control:water:size)
+    gen1: noise.BasisNoiseGen, // seed1=1 (vp terrain octaves + acmn persistence)
+    gen2: noise.BasisNoiseGen, // seed1=2 (second vp term)
+    gen123: noise.BasisNoiseGen, // seed1=123 basis in finish_elevation
+    // starting_lake_noise = quick_multioctave_noise_persistence{seed1=14, is=1/8,
+    // os=1, oct=5, oism=0.5, p=0.75} -> qmn{is=1/128, os=16, oism=2, oosm=0.75},
+    // fresh gen (map_seed+k, 14) per octave (octave_seed0_shift=1).
+    slake_gens: [5]noise.BasisNoiseGen,
+    slake_buf: [8][2]f64 = undefined,
+    slake_n: usize = 0,
+
+    pub fn init(map_seed: u32, water_frequency: f64, water_size: f64) ElevationLakes {
+        return .{
+            .map_seed = map_seed,
+            .seg = water_frequency,
+            .water_level = 10.0 * std.math.log2(water_size),
+            .gen1 = noise.BasisNoiseGen.init(map_seed, 1),
+            .gen2 = noise.BasisNoiseGen.init(map_seed, 2),
+            .gen123 = noise.BasisNoiseGen.init(map_seed, 123),
+            .slake_gens = .{
+                noise.BasisNoiseGen.init(map_seed, 14),
+                noise.BasisNoiseGen.init(map_seed +% 1, 14),
+                noise.BasisNoiseGen.init(map_seed +% 2, 14),
+                noise.BasisNoiseGen.init(map_seed +% 3, 14),
+                noise.BasisNoiseGen.init(map_seed +% 4, 14),
+            },
+        };
+    }
+
+    pub fn addStartingLake(self: *ElevationLakes, x: f64, y: f64) void {
+        if (self.slake_n >= self.slake_buf.len) return;
+        self.slake_buf[self.slake_n] = .{ x, y };
+        self.slake_n += 1;
+    }
+
+    fn slakeDistance(self: *const ElevationLakes, x: f64, y: f64) f64 {
+        var dist: f64 = 1024.0;
+        var i: usize = 0;
+        while (i < self.slake_n) : (i += 1) {
+            const dx = x - self.slake_buf[i][0];
+            const dy = y - self.slake_buf[i][1];
+            dist = @min(dist, @sqrt(dx * dx + dy * dy));
+        }
+        return dist;
+    }
+
+    fn slakeNoise(self: *const ElevationLakes, x: f64, y: f64) f64 {
+        return quickMultioctave(&self.slake_gens, x, y, 5, 1.0 / 128.0, 16.0, 2.0, 0.75, 0.0, 0.0);
+    }
+
+    pub fn at(self: *const ElevationLakes, x: f64, y: f64) f64 {
+        const is = self.seg / 2.0;
+        const offx = 10000.0 / self.seg;
+        // persistence = clamp(acmn{seed1=1, oct=terrain_octaves-2=6, is, offx,
+        // p=0.7, amplitude=0.5} + 0.3, 0.1, 0.9); acmn output_scale =
+        // (1-p)/2^oct/(1-p^oct)*amplitude (same normalization as nauvis).
+        const p = 0.7;
+        const oct = 6;
+        const acmn_os = (1.0 - p) / std.math.pow(f64, 2.0, oct) / (1.0 - std.math.pow(f64, p, oct)) * 0.5;
+        const persistence = std.math.clamp(
+            noise.variablePersistence(&self.gen1, x, y, oct, is, acmn_os, offx, 0.0, p) + 0.3,
+            0.1,
+            0.9,
+        );
+        const t1 = noise.variablePersistence(&self.gen1, x, y, 8, is, 0.125, offx, 0.0, persistence);
+        const t2 = noise.variablePersistence(&self.gen2, x, y, 6, is, 0.125, offx, 0.0, persistence);
+        const dist = @sqrt(x * x + y * y);
+        const raw = @max(20.0 + t1, 20.0 + self.water_level - 0.1 * self.seg * dist + t2);
+        // finish_elevation
+        const sd = self.slakeDistance(x, y);
+        const sn = self.slakeNoise(x, y);
+        var e = (raw - self.water_level) / self.seg;
+        e = @min(e, self.gen123.eval(x, y, 1.0 / 8.0, 1.5) + sd / 4.0 - 4.0);
+        e = @min(e, -1.0 + (sd + sn) / 16.0);
+        e = @min(e, @max(2.0, 2.0 + sd / 16.0 + sn / 2.0));
+        return e;
+    }
+};
+
 /// Horaerratum (world 57374) terrain controls.
 pub const HORAERRATUM = ZoneTerrain.Config{
     .map_seed = 2035207183,

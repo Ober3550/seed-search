@@ -343,6 +343,11 @@ pub fn regionSeed(seed0: u32, seed1: u32, region_x: i32, region_y: i32) u32 {
     return h;
 }
 
+/// A random_penalty term inside a spot_favorability_expression (e.g.
+/// random_penalty_at(v, seed) = random_penalty{source=v, amplitude=v, seed}).
+/// Declared by a field via `favorabilityPenalty()`.
+pub const FavorabilityPenalty = struct { source: f64, amplitude: f64, seed: f64 };
+
 /// Per-spot size (random_penalty_between) draw-stream variant, selectable at
 /// runtime for calibration against ground truth:
 ///   0 = seed from first STRIDED candidate, draws forward over strided
@@ -468,6 +473,29 @@ pub fn SpotNoiseField(comptime F: type) type {
             // its column last->first, so element i consumes draw col_n-1-i).
             const reversed = spot_size_rng_variant == 1 or spot_size_rng_variant == 2;
 
+            // Optional favorability random_penalty column (e.g. starting patches:
+            // random_penalty_at(0.5, 1)). Same PROVEN semantics as the size
+            // draws: seeded from the first strided candidate (with the penalty's
+            // own seed param added to y), consumed in reverse candidate order.
+            const fav_pen: ?FavorabilityPenalty = if (@hasDecl(F, "favorabilityPenalty"))
+                self.field.favorabilityPenalty()
+            else
+                null;
+            var fav_draws: [MAX_POINTS]f64 = undefined;
+            if (fav_pen) |pen| {
+                var fp_rng = blk: {
+                    if (self.skip_offset >= point_count) break :blk rng.Rng.init(341);
+                    const xi: i32 = @intFromFloat(px[self.skip_offset]);
+                    const yi: i32 = @intFromFloat(py[self.skip_offset] + pen.seed);
+                    var rp: u32 = (@as(u32, @bitCast(xi)) *% 7919) +%
+                        (@as(u32, @bitCast(yi)) *% 7907) +% 0x3fbe2c;
+                    if (rp < 342) rp = 341;
+                    break :blk rng.Rng.init(rp);
+                };
+                var d: usize = 0;
+                while (d < strided_n) : (d += 1) fav_draws[d] = fp_rng.float();
+            }
+
             const Candidate = struct { x: f64, y: f64, density: f64, quantity: f64, radius: f64, fav: f64 };
             var cands: [MAX_POINTS]Candidate = undefined;
             var nc: usize = 0;
@@ -485,7 +513,10 @@ pub fn SpotNoiseField(comptime F: type) type {
                     .density = self.field.spotDensityAt(cx, cy),
                     .quantity = q,
                     .radius = self.field.spotRadius(q),
-                    .fav = self.field.favorability(cx, cy),
+                    .fav = self.field.favorability(cx, cy) + if (fav_pen) |pen|
+                        pen.source - fav_draws[strided_n - 1 - nc] * pen.amplitude
+                    else
+                        0.0,
                 };
                 nc += 1;
             }

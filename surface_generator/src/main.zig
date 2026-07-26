@@ -52,6 +52,8 @@ pub fn main(init: std.process.Init) !void {
     var jsonl_filename: ?[]const u8 = null;
     var probe_in: ?[]const u8 = null;
     var probe_out: ?[]const u8 = null;
+    var lake_x: ?f64 = null;
+    var lake_y: ?f64 = null;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -77,6 +79,11 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--spot-rng")) {
             i += 1;
             if (i < args.len) surfacegen.noise.spot_size_rng_variant = try std.fmt.parseInt(u8, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--lake")) {
+            i += 1;
+            lake_x = try std.fmt.parseFloat(f64, args[i]);
+            i += 1;
+            lake_y = try std.fmt.parseFloat(f64, args[i]);
         } else if (std.mem.eql(u8, args[i], "--probe")) {
             i += 1;
             probe_in = args[i];
@@ -119,7 +126,21 @@ pub fn main(init: std.process.Init) !void {
             try ys.append(a, try std.fmt.parseFloat(f64, sy));
         }
         const vals = try a.alloc(f64, xs.items.len);
-        try surfacegen.ore.probeAllPatches(a, seed, configs.items[0], controls, xs.items, ys.items, vals);
+        if (std.mem.eql(u8, resource_name, "elevation-lakes")) {
+            var el = surfacegen.terrain.ElevationLakes.init(seed, controls.frequency, controls.size);
+            if (lake_x) |lx| el.addStartingLake(lx, lake_y.?);
+            for (xs.items, ys.items, vals) |x, y, *v| v.* = el.at(x, y);
+        } else if (std.mem.eql(u8, resource_name, "elevation")) {
+            // Nauvis elevation (terrain.Elevation) instead of an ore field —
+            // for oracle comparison against calculate_tile_properties('elevation').
+            var el = surfacegen.terrain.Elevation.init(seed, controls.frequency, controls.size);
+            if (lake_x) |lx| el.addStartingLake(lx, lake_y.?);
+            for (xs.items, ys.items, vals) |x, y, *v| v.* = el.at(x, y);
+        } else {
+            var lakes_probe = surfacegen.terrain.ElevationLakes.init(seed, 1.0, 1.0);
+            if (lake_x) |lx| lakes_probe.addStartingLake(lx, lake_y.?);
+            try surfacegen.ore.probeAllPatches(a, seed, configs.items[0], controls, &lakes_probe, xs.items, ys.items, vals);
+        }
         var buf: std.ArrayList(u8) = .empty;
         for (vals) |v| {
             var line: [64]u8 = undefined;
@@ -137,7 +158,18 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("# Seed {d}, radius {d}, resources: {s}\n", .{ seed, r, resource_name });
     std.debug.print("# Controls: freq={d:.1} size={d:.1} rich={d:.1}\n", .{ controls.frequency, controls.size, controls.richness });
 
-    var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls);
+    // Terrain context: Nauvis elevation for the water gate + elevation_lakes for
+    // starting patches. Water controls default (freq=1,size=1); --lake registers
+    // the engine-chosen starting lake (exactness near origin needs it).
+    var elev_gate = surfacegen.terrain.Elevation.init(seed, 1.0, 1.0);
+    var lakes_gate = surfacegen.terrain.ElevationLakes.init(seed, 1.0, 1.0);
+    if (lake_x) |lx| {
+        elev_gate.addStartingLake(lx, lake_y.?);
+        lakes_gate.addStartingLake(lx, lake_y.?);
+    }
+    const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate };
+
+    var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls, tctx);
     defer ores.deinit(a);
 
     std.debug.print("# Found {} ore entities\n", .{ores.items.len});

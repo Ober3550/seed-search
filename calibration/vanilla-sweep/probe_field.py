@@ -18,13 +18,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--save", required=True)
     ap.add_argument("--resource", default="iron-ore")
+    ap.add_argument("--prop", default=None,
+                    help="raw property/noise-expression name (default: default-<resource>-patches)")
     ap.add_argument("--grids", required=True)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
     save = os.path.join(FDATA, "saves", f"{args.save}.zip")
     assert os.path.exists(save), save
-    prop = f"default-{args.resource}-patches"
+    prop = args.prop or f"default-{args.resource}-patches"
 
     pts = []
     for g in args.grids.split(","):
