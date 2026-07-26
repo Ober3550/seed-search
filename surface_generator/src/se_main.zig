@@ -57,45 +57,53 @@ const HORAERRATUM_RADIUS: f64 = 1041.0;
 // (patchset-dump mod, data-final-fixes). This is what makes spot POSITIONS match.
 const SE_REGULAR_PATCH_SET_COUNT: u32 = 18;
 
-fn entries() [9]Entry {
-    // Each resource strides the shared candidate list from its data-load index
-    // (regular_patch_set_index) by SE_REGULAR_PATCH_SET_COUNT. The `idx` values
-    // below come from the game dump (patchset-dump.json).
-    const mk = struct {
-        fn f(name: []const u8, idx: u32, bd: f64, bspk: f64, rqm: f64, rp: f64, add: f64, smin: f64, smax: f64, cf: f64, cs: f64, cr: f64) Entry {
-            return .{
-                .name = name,
-                .cfg = .{
-                    .base_density = bd,
-                    .base_spots_per_km2 = bspk,
-                    .regular_rq_factor_multiplier = rqm,
-                    .random_probability = rp,
-                    .additional_richness = add,
-                    .random_spot_size_minimum = smin,
-                    .random_spot_size_maximum = smax,
-                    .regular_patch_set_index = idx,
-                    .regular_patch_set_count = SE_REGULAR_PATCH_SET_COUNT,
-                },
-                .ctrl = .{ .frequency = cf, .size = cs, .richness = cr },
-            };
-        }
-    }.f;
-    // Controls (last 3 args) are the ACTUAL post-zone-modifier values the game
-    // applied, dumped from the live hval surface's map_gen_settings
-    // (calibration/mod-dump/hval-controls.json). SE's Zone.apply_controls_to_mapgen
-    // multiplies frequency by a per-zone factor (~4.5x here), so the raw
-    // computeZoneResourceControls values were far too low and starved spot count.
+fn mkEntry(name: []const u8, idx: u32, bd: f64, bspk: f64, rqm: f64, rp: f64, add: f64, smin: f64, smax: f64, cf: f64, cs: f64, cr: f64) Entry {
+    // (name, patch_set_index, base_density, base_spots_per_km2, rq_mult,
+    //  random_probability, additional_richness, spot_size_min, spot_size_max,
+    //  freq_control, size_control, richness_control)
     return .{
-        mk("iron-ore", 0, 14, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.72599, 1.43847, 1.46655),
-        mk("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 2.08951, 0.58708, 0.65773),
-        mk("uranium-ore", 5, 1, 2.0, 1.1, 1.0, 0, 2.0, 4.0, 3.45809, 1.29909, 1.33414),
-        mk("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.46945, 0.26449, 0.35127),
-        mk("crude-oil", 4, 8, 2.5, 1.2, 1.0 / 24.0, 220000, 1.0, 1.0, 2.50998, 0.80584, 0.86554),
-        mk("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.04810, 1.08579, 1.13150),
-        mk("se-vulcanite", 16, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.36720, 1.77206, 1.78346),
-        mk("se-cryonite", 12, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.52532, 1.85433, 1.86161),
-        mk("se-vitamelange", 17, 10, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 8.02342, 3.67423, 3.59052),
+        .name = name,
+        .cfg = .{
+            .base_density = bd,
+            .base_spots_per_km2 = bspk,
+            .regular_rq_factor_multiplier = rqm,
+            .random_probability = rp,
+            .additional_richness = add,
+            .random_spot_size_minimum = smin,
+            .random_spot_size_maximum = smax,
+            .regular_patch_set_index = idx,
+            .regular_patch_set_count = SE_REGULAR_PATCH_SET_COUNT,
+        },
+        .ctrl = .{ .frequency = cf, .size = cs, .richness = cr },
     };
+}
+
+const N_BASE_RESOURCES = 9;
+// Each resource strides the shared candidate list from its data-load index
+// (regular_patch_set_index, from patchset-dump.json) by SE_REGULAR_PATCH_SET_COUNT.
+// Controls (last 3 args) are the ACTUAL post-zone-modifier values the game
+// applied (SE multiplies zone-control frequency by a per-moon factor ~4.8x).
+// The last 3 (Krastorio 2) are gated behind --k2. K2 params from SE's K2 compat
+// (prototypes/phase-1/compatibility/krastorio2/resource-gen.lua); controls dumped
+// live from Horaerratum.
+const RESOURCE_ENTRIES = [_]Entry{
+    mkEntry("iron-ore", 0, 14, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.72599, 1.43847, 1.46655),
+    mkEntry("copper-ore", 1, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 2.08951, 0.58708, 0.65773),
+    mkEntry("uranium-ore", 5, 1, 2.0, 1.1, 1.0, 0, 2.0, 4.0, 3.45809, 1.29909, 1.33414),
+    mkEntry("coal", 2, 9, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 1.46945, 0.26449, 0.35127),
+    mkEntry("crude-oil", 4, 8, 2.5, 1.2, 1.0 / 24.0, 220000, 1.0, 1.0, 2.50998, 0.80584, 0.86554),
+    mkEntry("stone", 3, 12, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.04810, 1.08579, 1.13150),
+    mkEntry("se-vulcanite", 16, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.36720, 1.77206, 1.78346),
+    mkEntry("se-cryonite", 12, 10, 5.0, 1.1, 1.0, 0, 0.25, 2.0, 4.52532, 1.85433, 1.86161),
+    mkEntry("se-vitamelange", 17, 10, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 8.02342, 3.67423, 3.59052),
+    // --- Krastorio 2 (--k2) ---
+    mkEntry("kr-rare-metal-ore", 8, 8, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.97694, 1.56903, 1.59058),
+    mkEntry("kr-mineral-water", 7, 8, 2.0, 1.0, 1.0 / 24.0, 120000, 1.0, 1.0, 3.33011, 1.23251, 1.27089),
+    mkEntry("kr-imersite", 6, 1, 0.05, 1.0, 1.0 / 4.0, 250000, 0.01, 0.1, 3.59600, 1.37084, 1.40230),
+};
+
+fn entries(k2: bool) []const Entry {
+    return if (k2) RESOURCE_ENTRIES[0..] else RESOURCE_ENTRIES[0..N_BASE_RESOURCES];
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -120,6 +128,7 @@ pub fn main(init: std.process.Init) !void {
     var horaerratum_biome: bool = false;
     var water_exclude: bool = false;
     var biome_bg: bool = false;
+    var k2_enable: bool = false;
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--bmp")) {
@@ -156,6 +165,8 @@ pub fn main(init: std.process.Init) !void {
             horaerratum_biome = true;
         } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
             biome_bg = true;
+        } else if (std.mem.eql(u8, args[i], "--k2")) {
+            k2_enable = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
             water_exclude = true;
         }
@@ -400,7 +411,7 @@ pub fn main(init: std.process.Init) !void {
 
     if (probe) {
         // Decompose iron-ore value along y=-535, x in [-525,-475].
-        const e = entries()[0]; // iron-ore
+        const e = entries(false)[0]; // iron-ore
         var st = se.makeResourceState(a, HORAERRATUM_SEED, e.name, e.cfg, e.ctrl);
         defer st.spot.deinit();
         const yq: f64 = -535;
@@ -413,9 +424,10 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    const es = entries();
-    var inputs: [9]se.ResourceInput = undefined;
-    for (es, 0..) |e, k| inputs[k] = .{ .name = e.name, .config = e.cfg, .controls = e.ctrl };
+    const es = entries(k2_enable);
+    var inputs_buf: [RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
+    for (es, 0..) |e, k| inputs_buf[k] = .{ .name = e.name, .config = e.cfg, .controls = e.ctrl };
+    const inputs = inputs_buf[0..es.len];
 
     const r: i32 = if (override_radius) |or2| or2 else @intFromFloat(HORAERRATUM_RADIUS);
     const zone_r: f64 = if (override_radius) |or2| @floatFromInt(or2) else HORAERRATUM_RADIUS;
@@ -466,7 +478,7 @@ pub fn main(init: std.process.Init) !void {
     const water_pred: ?*const surfacegen.terrain.Elevation = if (water_exclude) &elev else null;
     const zt_ptr: ?*const surfacegen.terrain.ZoneTerrain = if (water_exclude) &zt_gate else null;
     const cls_ptr: ?*const surfacegen.biome.Classifier = if (water_exclude) &classifier_gate else null;
-    var ores = try se.computeSEOresInRect(a, HORAERRATUM_SEED, zone_r, -r, -r, r, r, &inputs, sample_step, water_pred, zt_ptr, cls_ptr);
+    var ores = try se.computeSEOresInRect(a, HORAERRATUM_SEED, zone_r, -r, -r, r, r, inputs, sample_step, water_pred, zt_ptr, cls_ptr);
     defer ores.deinit(a);
     std.debug.print("# Found {} ore entities\n", .{ores.items.len});
 
