@@ -155,6 +155,31 @@ function cancelAllJobs() {
   return { universe: u.changes, surface: s.changes };
 }
 
+// FULL RESET for testing: kill running work, wipe all generated data (jobs,
+// seeds, zones, filtered sets) from the DB, and empty the output/ directory.
+// Config is kept: filter presets (filter_defs) and settings (worker limits).
+function wipeSystem() {
+  cancelAllJobs(); // mark cancelled + SIGTERM any running children
+  const d = db.getDb();
+  // FK-safe order: children before parents (seeds/zones reference universe_jobs,
+  // surface_jobs reference zones), so universe_jobs is deleted LAST.
+  const tables = ["surface_jobs", "zones", "seeds",
+                  "seed_filter_members", "seed_filters", "job_logs", "universe_jobs"];
+  const tx = d.transaction(() => {
+    for (const t of tables) { try { d.prepare(`DELETE FROM ${t}`).run(); } catch (_) {} }
+  });
+  tx();
+  let removed = 0;
+  try {
+    for (const e of fs.readdirSync(OUTPUT_DIR)) {
+      fs.rmSync(path.join(OUTPUT_DIR, e), { recursive: true, force: true });
+      removed++;
+    }
+  } catch (e) { console.log("[wipe] output clear:", e.message); }
+  console.log(`[wipe] cleared ${tables.length} tables + ${removed} output entries`);
+  return { ok: true, outputRemoved: removed };
+}
+
 // Remove all CANCELLED job rows and their on-disk data. A bucket folder is
 // deleted only if no surviving (non-cancelled) job shares its label, so live
 // data is never touched. Also drops any partial seeds/zones imported under a
@@ -816,6 +841,7 @@ module.exports = {
   workerStatus,
   cancelAllJobs,
   clearCancelledJobs,
+  wipeSystem,
   createFilteredSet,
   writeSeedZonesFile,
   surfaceGridFor,

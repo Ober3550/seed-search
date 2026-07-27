@@ -507,3 +507,6 @@ tr.zone-info:hover { opacity: 1; }
 /* clickable zone rows (navigate to surface detail) */
 .data-table tr.clickable { cursor: pointer; }
 .data-table tr.clickable:hover td { background: rgba(88,166,255,0.09); }
+
+/* wipe-system button in the sidebar footer */
+.wipe-btn { width: 100%; margin-bottom: 8px; font-size: 0.8rem; }

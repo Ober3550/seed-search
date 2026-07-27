@@ -74,6 +74,11 @@ function htmxPage(title, content) {
         <li><a href="/workers" hx-get="/workers" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Workers</a></li>
       </ul>
       <div class="sidebar-footer">
+        <button type="button" class="btn danger wipe-btn" hx-post="/api/system/wipe" hx-swap="none"
+          hx-confirm="⚠️ Wipe the whole system? This deletes ALL jobs, seeds, and generated surfaces (the database AND the output/ folder). This cannot be undone."
+          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          🗑 Wipe system
+        </button>
         <small>buckets → seeds → zone → surface</small>
       </div>
     </nav>
@@ -1059,6 +1064,12 @@ app.post("/api/jobs/cancel-all", (req, res) => {
 // Remove cancelled job rows + their on-disk data (exclusively-cancelled buckets).
 app.post("/api/jobs/clear-cancelled", (req, res) => {
   const r = jobs.clearCancelledJobs();
+  res.json({ ok: true, ...r });
+});
+
+// FULL wipe (testing reset): clear generated data from the DB + empty output/.
+app.post("/api/system/wipe", (req, res) => {
+  const r = jobs.wipeSystem();
   res.json({ ok: true, ...r });
 });
 
