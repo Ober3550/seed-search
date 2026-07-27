@@ -182,7 +182,7 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
   const fail = (failed("ore") || failed("surface")) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
 
   const poll = anyActive
-    ? `hx-get="/api/zone/cell?seed=${seed}&zone_id=${zone.id}" hx-trigger="every 2s" hx-swap="outerHTML"`
+    ? `hx-get="/api/zone/cell?seed=${seed}&zone_id=${zone.id}" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop"`
     : "";
 
   // OOB refresh of the Resources cell so est→measured flips as jobs land.
@@ -522,7 +522,7 @@ function renderSurfaceGrid(seed, zoneId) {
 
   const total = cells.length;
   const complete = done + failed >= total;
-  const poll = complete ? "" : `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML"`;
+  const poll = complete ? "" : `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML" hx-sync="#main:drop"`;
   const status = complete
     ? (failed ? `⚠️ ${done}/${total} cells (${failed} failed)` : `✅ ${done}/${total} cells`)
     : `⏳ ${done}/${total} cells…`;
@@ -677,7 +677,7 @@ function renderSurfaceViewer(job) {
       ${imgSrc ? `<div class="surface-image-container">
         <img src="${imgSrc}" class="surface-image" style="max-width:100%; image-rendering:pixelated; border:1px solid #333;">
         <p class="image-info">1 px = 1 tile</p></div>`
-      : job.status === "running" ? `<div class="loading"><p>⏳ Generating… <span hx-get="/surface/${job.id}" hx-trigger="every 2s" hx-target="closest .page" hx-swap="outerHTML"></span></p></div>` : ""}
+      : job.status === "running" ? `<div class="loading"><p>⏳ Generating… <span hx-get="/surface/${job.id}" hx-trigger="every 2s" hx-target="closest .page" hx-swap="outerHTML" hx-sync="#main:drop"></span></p></div>` : ""}
     </div>
   </div>`;
 }
