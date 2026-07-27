@@ -110,16 +110,27 @@ function zoneSurfacePng(bucket, seed, zoneName, base = "ore") {
   return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
 }
 
+// Top few chips shown inline; the rest collapse behind a chevron (<details>).
+function resChips(prefix, chips, shown = 4) {
+  if (!chips.length) return "—";
+  const head = chips.slice(0, shown).join(" ");
+  const rest = chips.slice(shown);
+  if (!rest.length) return `${prefix}${head}`;
+  return `${prefix}<details class="res-more"><summary>${head} <span class="more-count">+${rest.length} more</span></summary>` +
+    `<span class="res-rest">${rest.join(" ")}</span></details>`;
+}
+
 // Inner HTML of the Resources cell: measured amounts if a summary exists,
-// otherwise the universe-generator estimates. Highest quantity first.
+// otherwise the universe-generator estimates. Highest quantity first, with the
+// long tail collapsed behind a chevron.
 function renderZoneResources(bucket, seed, zone) {
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
   const summary = zoneSurfaceSummary(bucket, seed, zone.name);
   if (summary) {
     const chips = Object.entries(summary.resources || {})
       .sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
-      .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`).join(" ");
-    return `✅ ${chips}`;
+      .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`);
+    return resChips("✅ ", chips);
   }
   let y = {};
   try { y = JSON.parse(zone.resource_yields || "{}"); } catch (_) {}
@@ -129,10 +140,9 @@ function renderZoneResources(bucket, seed, zone) {
     const s = { b: 1e9, m: 1e6, k: 1e3 }[(m[2] || "").toLowerCase()] || 1;
     return parseFloat(m[1]) * s;
   };
-  const entries = Object.entries(y).sort((a, b) => mag(b[1]) - mag(a[1]));
-  return entries.length
-    ? entries.map(([r, v]) => `<span class="res-chip est">${nm(r)} <strong>${v}</strong></span>`).join(" ")
-    : "—";
+  const chips = Object.entries(y).sort((a, b) => mag(b[1]) - mag(a[1]))
+    .map(([r, v]) => `<span class="res-chip est">${nm(r)} <strong>${v}</strong></span>`);
+  return resChips("", chips);
 }
 
 // The actions/status cell for one zone row. Reflects live job state and, while

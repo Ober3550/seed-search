@@ -406,3 +406,15 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 .rule-row .btn-sm.ghost { background: #b23838; border-color: #d05050; color: #ffffff; }
 .rule-row .btn-sm.ghost:hover { background: #d05050; border-color: #e07070; color: #ffffff; }
 .rule-row.legacy { color: #b58a5a; font-size: 0.85rem; gap: 6px; }
+
+/* collapsible resource tail in the seed zone table */
+/* override the clipping from the base .yields-cell so chips can show/wrap */
+.yields-cell { white-space: normal; overflow: visible; text-overflow: clip; max-width: 560px; }
+.res-more { display: inline; }
+.res-more > summary { display: inline; list-style: none; cursor: pointer; }
+.res-more > summary::-webkit-details-marker { display: none; }
+.more-count { color: #7a8aa0; font-size: 0.8rem; white-space: nowrap; }
+.res-more > summary::after { content: " ▸"; color: #7a8aa0; }
+.res-more[open] > summary::after { content: " ▾"; }
+.res-more[open] .more-count { display: none; }
+.res-rest { display: inline; }
