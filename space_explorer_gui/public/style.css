@@ -461,3 +461,5 @@ tr.zone-info:hover { opacity: 1; }
 .wtag.surf { background: rgba(88,166,255,0.18); color: var(--accent); }
 .pool-form { flex-wrap: wrap; }
 .pool-form label { display: inline-flex; align-items: center; gap: 4px; }
+
+.muted { color: var(--muted); }

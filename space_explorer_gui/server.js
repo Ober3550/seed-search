@@ -286,10 +286,11 @@ app.get("/seeds", (req, res) => {
   });
   const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
   const defs = db.getFilterDefs();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q }));
+  const genCounts = db.getGeneratedZoneCounts();
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q }, genCounts));
 });
 
-function renderSeedsPage(seeds, buckets, defs, f) {
+function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
   const rules = f.def ? JSON.parse(f.def.rules) : [];
   const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
   return `
@@ -318,22 +319,47 @@ function renderSeedsPage(seeds, buckets, defs, f) {
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
     </div>
-    <table class="data-table">
-      <thead><tr><th>Seed</th><th>Bucket</th><th>K2</th><th>Loot</th><th>Zones</th><th>Naq</th><th></th></tr></thead>
+    <table class="data-table" id="seeds-table">
+      <thead><tr>
+        <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
+        <th>Bucket</th><th>K2</th><th>Loot</th>
+        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')">Zones <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="gen" onclick="sortSeeds('gen')" title="distinct zones with a generated surface/ore">Generated <span class="sort-ind"></span></th>
+        <th>Naq</th><th></th>
+      </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
           const c = seedCriteria(s) || {};
+          const gen = genCounts[s.seed] || 0;
           return `
-        <tr>
+        <tr data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${s.zone_count}</td>
+          <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : `<span class="muted">0/${s.zone_count}</span>`}</td>
           <td>${c.naqField || "—"}</td>
           <td><a href="/seed/${s.seed}" hx-get="/seed/${s.seed}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="7">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="8">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
+    <script>
+      (function () {
+        var st = { key: null, dir: "asc" };
+        window.sortSeeds = function (key) {
+          st.dir = (st.key === key && st.dir === "asc") ? "desc" : "asc";
+          st.key = key;
+          var tb = document.querySelector("#seeds-table tbody");
+          [].slice.call(tb.querySelectorAll("tr[data-seed]")).sort(function (a, b) {
+            var cmp = (parseFloat(a.dataset[key]) || 0) - (parseFloat(b.dataset[key]) || 0);
+            return st.dir === "asc" ? cmp : -cmp;
+          }).forEach(function (r) { tb.appendChild(r); });
+          document.querySelectorAll("#seeds-table th.sortable .sort-ind").forEach(function (s) { s.textContent = ""; });
+          var h = document.querySelector('#seeds-table th[data-key="' + key + '"] .sort-ind');
+          if (h) h.textContent = st.dir === "asc" ? "▲" : "▼";
+        };
+      })();
+    </script>
   </div>`;
 }
 

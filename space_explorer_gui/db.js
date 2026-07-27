@@ -416,6 +416,16 @@ function getSeed(seed) {
   return d.prepare("SELECT * FROM seeds WHERE seed = ?").get(seed);
 }
 
+// { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.
+function getGeneratedZoneCounts() {
+  const rows = getDb().prepare(
+    "SELECT seed, COUNT(DISTINCT zone_name) AS n FROM surface_jobs WHERE status='done' GROUP BY seed"
+  ).all();
+  const m = {};
+  for (const r of rows) m[r.seed] = r.n;
+  return m;
+}
+
 // ── Seed Filters (second-layer, persisted) ─────────────────────────────
 
 function createSeedFilter(f) {
@@ -517,6 +527,7 @@ module.exports = {
   createSurfaceJob,
   getSurfaceJobs,
   getAllSurfaceJobs,
+  getGeneratedZoneCounts,
   getSurfaceJob,
   getSurfaceJobsForZone,
   updateSurfaceJob,
