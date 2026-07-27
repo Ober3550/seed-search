@@ -688,7 +688,7 @@ function renderRuleRow(rule = null, disabled = false) {
   if (rule && !nr) {
     // legacy count rule (specials/pairs) — show it, allow removal, no editing
     return `<div class="rule-row legacy"><em>legacy: ${analyze.ruleLabel(rule)}</em>` +
-      (dis ? "" : `<button type="button" class="btn-sm ghost" title="remove" onclick="delRow(this)">×</button>`) + `</div>`;
+      (dis ? "" : `<button type="button" class="btn-sm ghost" title="remove" onclick="delRow(this)">−</button>`) + `</div>`;
   }
   const primChecked = nr && nr.primary ? "checked" : "";
   const resList = nr && nr.res.length ? nr.res : [""];
@@ -697,7 +697,7 @@ function renderRuleRow(rule = null, disabled = false) {
       <input type="checkbox" name="primary" ${primChecked} ${dis}> primary</label>
     <span class="res-selects">${resList.map(v => resSelect(v, disabled)).join("")}</span>
     ${dis ? "" : `<button type="button" class="btn-sm" title="add another resource to this rule" onclick="addRes(this)">+</button>
-    <button type="button" class="btn-sm ghost" title="remove this rule" onclick="delRow(this)">×</button>`}
+    <button type="button" class="btn-sm ghost" title="remove a resource (or the rule if it's the last)" onclick="removeRes(this)">−</button>`}
   </div>`;
 }
 
@@ -777,6 +777,16 @@ function renderPresetsPage(defs) {
       function delRow(btn) {
         const row = btn.closest(".rule-row"), rows = btn.closest(".rules-rows");
         if (rows.querySelectorAll(".rule-row").length > 1) row.remove();
+      }
+      function removeRes(btn) {
+        const row = btn.closest(".rule-row"), rows = btn.closest(".rules-rows");
+        const selects = row.querySelectorAll("select[name=res]");
+        if (selects.length > 1) { selects[selects.length - 1].remove(); return; }
+        if (rows.querySelectorAll(".rule-row").length > 1) { row.remove(); return; }
+        // last resource of the last rule → clear it rather than empty the form
+        selects[0].value = "";
+        const chk = row.querySelector("input[name=primary]");
+        if (chk) chk.checked = false;
       }
     </script>
   </div>`;
