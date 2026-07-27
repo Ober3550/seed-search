@@ -613,6 +613,7 @@ pub fn main(init: std.process.Init) !void {
     var nauvis_diag: bool = false;
     var nauvis_biome: bool = false;
     var horaerratum_biome: bool = false;
+    var biome_probe: ?[]const u8 = null;
     var water_exclude: bool = false;
     var biome_bg: bool = false;
     var k2_enable: bool = false;
@@ -679,6 +680,9 @@ pub fn main(init: std.process.Init) !void {
             nauvis_biome = true;
         } else if (std.mem.eql(u8, args[i], "--horaerratum-biome")) {
             horaerratum_biome = true;
+        } else if (std.mem.eql(u8, args[i], "--biome-probe")) {
+            i += 1;
+            if (i < args.len) biome_probe = args[i];
         } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
             biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--ores-only")) {
@@ -836,6 +840,27 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("{s}\n", .{row[0..]});
             }
         }
+        return;
+    }
+
+    if (biome_probe) |bp| {
+        // Dump the fitness breakdown at one world point (Horaerratum config) so a
+        // ground-truth disagreement can be traced to a specific term.
+        const comma = std.mem.indexOfScalar(u8, bp, ',') orelse {
+            std.debug.print("--biome-probe expects \"x,y\"\n", .{});
+            return;
+        };
+        const px = try std.fmt.parseFloat(f64, bp[0..comma]);
+        const py = try std.fmt.parseFloat(f64, bp[comma + 1 ..]);
+        const zt = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
+        const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+        const classifier = surfacegen.biome.Classifier.init(surfacegen.terrain.HORAERRATUM.map_seed);
+        const t = zt.temperature(px, py);
+        const m = zt.moisture(px, py);
+        const av = zt.aux(px, py);
+        const e = elev.at(px, py);
+        std.debug.print("probe ({d},{d}): t={d:.4} m={d:.4} a={d:.4} e={d:.4}\n", .{ px, py, t, m, av, e });
+        classifier.probe(px, py, t, m, av, e);
         return;
     }
 

@@ -72,6 +72,48 @@ pub const Classifier = struct {
     pub fn classifyColor(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) [3]u8 {
         return biomes[self.classifyIndex(x, y, t, m, a, e)].color;
     }
+
+    /// Debug: print the full fitness breakdown for the top-N tiles at (x,y), so a
+    /// disagreement with the ground truth can be traced to a specific term.
+    pub fn probe(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) void {
+        const water_noise = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 8.0, 0.666);
+        const crater_noise = noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666);
+        const beach = @min(0.0, e / 5.0 - 1.0);
+        std.debug.print("  water_noise={d:.4} crater_noise={d:.4} beach={d:.4}\n", .{ water_noise, crater_noise, beach });
+
+        var fits: [biomes.len]f64 = undefined;
+        for (biomes, 0..) |b, i| {
+            var f: f64 = std.math.inf(f64);
+            if (b.t) |r| f = @min(f, plateauPeak(t, r));
+            if (b.m) |r| f = @min(f, plateauPeak(m, r));
+            if (b.a) |r| f = @min(f, plateauPeak(a, r));
+            if (b.e) |r| f = @min(f, plateauPeak(e, r));
+            if (b.beach_weight < 0.0) f += beach;
+            if (b.water_coef != 0.0) f += b.water_coef * water_noise;
+            if (b.crater) f += -0.6 - 0.7 * crater_noise;
+            f += 0.5 * noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+            fits[i] = f;
+        }
+        var order: [biomes.len]usize = undefined;
+        for (0..biomes.len) |i| order[i] = i;
+        std.mem.sort(usize, &order, &fits, struct {
+            fn lt(fs: *const [biomes.len]f64, ia: usize, ib: usize) bool {
+                return fs[ia] > fs[ib]; // descending
+            }
+        }.lt);
+        var rank: usize = 0;
+        while (rank < 12 and rank < biomes.len) : (rank += 1) {
+            const i = order[rank];
+            const b = biomes[i];
+            const tv = 0.5 * noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+            const tpk = if (b.t) |r| plateauPeak(t, r) else std.math.inf(f64);
+            const mpk = if (b.m) |r| plateauPeak(m, r) else std.math.inf(f64);
+            const apk = if (b.a) |r| plateauPeak(a, r) else std.math.inf(f64);
+            const bch: f64 = if (b.beach_weight < 0.0) beach else 0.0;
+            const wtr: f64 = if (b.water_coef != 0.0) b.water_coef * water_noise else 0.0;
+            std.debug.print("  #{d:>2} f={d:.4}  {s:<26} rgb={d},{d},{d}  tpk={d:.3} mpk={d:.3} apk={d:.3} beach={d:.3} water={d:.3} tv={d:.4}\n", .{ rank, fits[i], b.name, b.color[0], b.color[1], b.color[2], tpk, mpk, apk, bch, wtr, tv });
+        }
+    }
 };
 
 /// Water tile colors keyed by depth (Horaerratum legend values).

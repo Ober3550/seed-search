@@ -59,6 +59,7 @@ NEAR = 45  # max per-channel RGB distance to call a miss an adjacent-shade near-
 
 match = miss = near = 0
 miss_pairs = Counter()   # (gt_color, gen_color) -> count, the confusions
+samples = {}             # (gt,gen) -> a few (world_x, world_y) example points
 for Y in range(gh):
     for X in range(gw):
         tn = px(GN, X, Y)
@@ -72,6 +73,9 @@ for Y in range(gh):
         else:
             miss += 1
             miss_pairs[(tg, tn)] += 1
+            s = samples.setdefault((tg, tn), [])
+            if len(s) < 5:
+                s.append((X - rg, Y - rg))   # world coords (raw pixel - radius)
             cd = max(abs(tn[0] - tg[0]), abs(tn[1] - tg[1]), abs(tn[2] - tg[2]))
             if cd <= NEAR:
                 near += 1
@@ -104,7 +108,8 @@ if miss:
     print(f"misses: {miss}  ·  near (≤{NEAR}/chan, adjacent shade) {near} = {near / miss * 100:.1f}%"
           f"  ·  structural {far} = {far / miss * 100:.1f}%")
     print(f"exact+near (base biome right) = {(match + near) / tot * 100:.2f}%")
-    print("top tile confusions (GT rgb -> GEN rgb : count):")
+    print("top tile confusions (GT rgb -> GEN rgb : count : sample world pts):")
     for (g, n), c in miss_pairs.most_common(8):
-        print(f"  {g} -> {n} : {c}  ({c / miss * 100:.1f}% of misses)")
+        pts = " ".join(f"{x},{y}" for x, y in samples.get((g, n), [])[:3])
+        print(f"  {g} -> {n} : {c}  ({c / miss * 100:.1f}%)  @ {pts}")
 print(f"wrote {OUT}")
