@@ -469,3 +469,14 @@ tr.zone-info:hover { opacity: 1; }
 .watch-layout .surface-meta { flex: 0 0 300px; max-width: 340px; }
 .watch-layout .surface-meta h3 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
 .watch-layout .watch-grid-col { flex: 1 1 400px; min-width: 300px; }
+
+/* watch layout override: thin meta panel + square surface sized to view height */
+.watch-layout { flex-wrap: nowrap; gap: 16px; }
+.watch-layout .surface-meta { flex: 0 0 240px; max-width: 240px; }
+.watch-layout .watch-grid-col { flex: 1 1 auto; min-width: 0; display: flex; justify-content: flex-start; align-items: flex-start; }
+.watch-grid-col .surf-grid { width: min(calc(100vh - 130px), 100%); max-width: 100%; }
+@media (max-width: 760px) {
+  .watch-layout { flex-wrap: wrap; }
+  .watch-layout .surface-meta { flex-basis: 100%; max-width: none; }
+  .watch-grid-col .surf-grid { width: min(90vw, 90vh); }
+}
