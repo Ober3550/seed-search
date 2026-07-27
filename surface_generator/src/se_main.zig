@@ -173,6 +173,8 @@ fn runZoneDriver(
         while (it.next()) |zn| try wanted.put(a, zn, true);
     }
 
+    var report: std.ArrayList(u8) = .empty;
+
     for (zarr.items) |zv| {
         const z = zv.object;
         const name = (z.get("n") orelse continue).string;
@@ -274,8 +276,12 @@ fn runZoneDriver(
         );
         defer ores.deinit(a);
 
-        // per-resource counts
+        // per-resource ORE totals (amounts are the deliverable; tiles are detail)
+        var summary: std.ArrayList(u8) = .empty;
+        try summary.appendSlice(a, "{");
+        try appendFmt(a, &summary, "\"zone\":\"{s}\",\"zone_seed\":{d},\"radius\":{d},\"resources\":{{", .{ name, zone_seed, r });
         {
+            var first = true;
             for (inputs) |inp| {
                 var cnt: u64 = 0;
                 var amount: u64 = 0;
@@ -285,9 +291,14 @@ fn runZoneDriver(
                         amount += o.amount;
                     }
                 }
-                if (cnt > 0) std.debug.print("   {s}: {d} tiles, {d} total\n", .{ inp.name, cnt, amount });
+                if (cnt == 0) continue;
+                std.debug.print("   {s}: {d} ore ({d} tiles)\n", .{ inp.name, amount, cnt });
+                if (!first) try summary.appendSlice(a, ",");
+                first = false;
+                try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"tiles\":{d}}}", .{ inp.name, amount, cnt });
             }
         }
+        try summary.appendSlice(a, "}}");
 
         // write outputs
         var dirbuf: [512]u8 = undefined;
@@ -307,6 +318,15 @@ fn runZoneDriver(
             try file.writePositionalAll(init.io, buf.items, 0);
         }
         std.debug.print("   wrote {s} ({d} entities)\n", .{ jpath, ores.items.len });
+        {
+            var spathbuf: [512]u8 = undefined;
+            const spath = try std.fmt.bufPrint(&spathbuf, "{s}/summary.json", .{zdir});
+            const sfile = try std.Io.Dir.createFile(.cwd(), init.io, spath, .{});
+            defer sfile.close(init.io);
+            try sfile.writePositionalAll(init.io, summary.items, 0);
+        }
+        if (report.items.len > 0) try report.appendSlice(a, ",");
+        try report.appendSlice(a, summary.items);
         if (write_bmp) {
             var bpathbuf: [512]u8 = undefined;
             const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.bmp", .{zdir});
@@ -332,6 +352,29 @@ fn runZoneDriver(
             std.debug.print("   wrote {s}\n", .{bpath});
         }
     }
+
+    // world-level report: ore-count estimates for every generated zone
+    {
+        var rbuf: [512]u8 = undefined;
+        const rdir = try std.fmt.bufPrint(&rbuf, "{s}/{d}", .{ out_dir, world_seed });
+        std.Io.Dir.createDirPath(.cwd(), init.io, rdir) catch {};
+        var rpbuf: [512]u8 = undefined;
+        const rpath = try std.fmt.bufPrint(&rpbuf, "{s}/report.json", .{rdir});
+        var out: std.ArrayList(u8) = .empty;
+        try appendFmt(a, &out, "{{\"world_seed\":{d},\"zones\":[", .{world_seed});
+        try out.appendSlice(a, report.items);
+        try out.appendSlice(a, "]}");
+        const rfile = try std.Io.Dir.createFile(.cwd(), init.io, rpath, .{});
+        defer rfile.close(init.io);
+        try rfile.writePositionalAll(init.io, out.items, 0);
+        std.debug.print("wrote {s}\n", .{rpath});
+    }
+}
+
+fn appendFmt(a: std.mem.Allocator, list: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    var buf: [1024]u8 = undefined;
+    const sl = try std.fmt.bufPrint(&buf, fmt, args);
+    try list.appendSlice(a, sl);
 }
 
 fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {

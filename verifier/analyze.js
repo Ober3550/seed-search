@@ -205,6 +205,7 @@ function viableBodies(seedOld) {
     const enemy = s.tags.enemy || "enemy_none";
     return (
       s.tags.water !== "water_none" &&
+      r.length > 0 &&
       resourceNames[noColor(r[0])] &&
       s.radius > 2000 &&
       enemy !== "enemy_very_high" &&
@@ -244,8 +245,8 @@ function bestNaqField(seedOld) {
   return fields[0] || null;
 }
 
-function evalCore(seedOld) {
-  // Seed has every special resource at score >= 1.0 on some viable body
+function evalCore(seedOld, selected) {
+  // Seed has >= minSpecials special resources as primary on some viable body
   const bodies = viableBodies(seedOld);
   const covered = new Set();
   for (const b of bodies) {
@@ -253,16 +254,17 @@ function evalCore(seedOld) {
       if (isPrimaryResource(b, r)) covered.add(r);
     }
   }
-  if (covered.size >= SPECIAL.length) {
+  if (covered.size >= minSpecials) {
     console.log(
       `\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`,
     );
     console.log(
-      `  All ${SPECIAL.length} specials as primary across ${bodies.length} viable bodies`,
+      `  ${covered.size}/${SPECIAL.length} specials as primary across ${bodies.length} viable bodies`,
     );
     for (const res of SPECIAL) {
       const b = bodies.find((x) => isPrimaryResource(x, res));
       if (b) {
+        if (selected) selected.add(b.name);
         const e = (b.tags.enemy || "enemy_none")
           .replace("enemy_", "")
           .replace("very_", "v");
@@ -285,6 +287,7 @@ function evalCore(seedOld) {
         null,
       );
       if (best && (best.resource || {})[extra] > 0) {
+        if (selected) selected.add(best.name);
         const e = (best.tags.enemy || "enemy_none")
           .replace("enemy_", "")
           .replace("very_", "v");
@@ -310,7 +313,7 @@ function evalCore(seedOld) {
   return false;
 }
 
-function evalPairs(seedOld) {
+function evalPairs(seedOld, selected) {
   // Production-chain-aware resource pairings.
   // Each combo can be on the same body (ideal) or different bodies (good).
   const combos = [
@@ -354,6 +357,7 @@ function evalPairs(seedOld) {
     );
     for (const r of results) {
       const b = r.body;
+      if (selected) selected.add(b.name);
       // Sort resources by score (highest first)
       const parts = [...r.want]
         .sort((a, b2) => (b.resource[b2] || 0) - (b.resource[a] || 0))
@@ -390,7 +394,17 @@ const mode = args.includes("--core")
     ? "pairs"
     : "show";
 const allMode = args.includes("--all");
-const files = args.filter((a) => !a.startsWith("--"));
+const msIdx = args.indexOf("--min-specials");
+const minSpecials = msIdx >= 0 ? parseInt(args[msIdx + 1]) : SPECIAL.length;
+const emitIdx = args.indexOf("--emit");
+const emitPath = emitIdx >= 0 ? args[emitIdx + 1] : null;
+const emitLines = [];
+const files = args.filter(
+  (a, i) =>
+    !a.startsWith("--") &&
+    (emitIdx < 0 || i !== emitIdx + 1) &&
+    (msIdx < 0 || i !== msIdx + 1),
+);
 
 let fnames = [];
 for (const arg of files) {
@@ -419,10 +433,25 @@ for (const fname of fnames) {
       const old = convertNewToOld(seed, true); // always Calidus only
       const loot = old.loot.join("");
       if (!allMode && !loot.match(/^PPSS/)) continue;
-      if (mode === "core" && evalCore(old)) matched++;
-      else if (mode === "pairs" && evalPairs(old)) matched++;
-      else if (mode === "show" && evalSeed(old)) matched++;
+      const selected = new Set();
+      let ok = false;
+      if (mode === "core") ok = evalCore(old, selected);
+      else if (mode === "pairs") ok = evalPairs(old, selected);
+      if (ok) {
+        matched++;
+        if (emitPath && selected.size > 0) {
+          // Emit the world in the ORIGINAL universe-generator format, with z
+          // filtered to only the zones the criteria selected — downstream
+          // (segen --zones ... --zone all) then generates exactly these.
+          const filtered = { ...seed, z: (seed.z || []).filter((z) => selected.has(z.n)) };
+          emitLines.push(JSON.stringify(filtered));
+        }
+      }
     } catch (e) {}
   }
 }
 console.log(`${matched} seeds matched (${fnames.length} files scanned)`);
+if (emitPath) {
+  fs.writeFileSync(emitPath, emitLines.join("\n") + (emitLines.length ? "\n" : ""));
+  console.log(`emitted ${emitLines.length} filtered worlds -> ${emitPath}`);
+}
