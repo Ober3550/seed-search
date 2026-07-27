@@ -14,11 +14,14 @@ import sys, os, struct, zlib, glob, re
 zone_dir = sys.argv[1]
 grid = int(sys.argv[2])
 radius = int(sys.argv[3])
-out = sys.argv[4] if len(sys.argv) > 4 else os.path.join(zone_dir, "surface.png")
+# layer prefix: surface (combined), terrain, or oremap. Defaults to surface.
+prefix = sys.argv[4] if len(sys.argv) > 4 else "surface"
+out = sys.argv[5] if len(sys.argv) > 5 else os.path.join(zone_dir, prefix + ".png")
 
 full = radius * 2
 cellW = (full + grid - 1) // grid
-BG = (20, 20, 20)
+# ore layer sits on black so it composites over the dimmed terrain.
+BG = (0, 0, 0) if prefix == "oremap" else (20, 20, 20)
 
 
 def read_bmp(p):
@@ -40,14 +43,14 @@ canvas = bytearray(full * full * 3)
 for i in range(full * full):
     canvas[i * 3], canvas[i * 3 + 1], canvas[i * 3 + 2] = BG
 
-cells = glob.glob(os.path.join(zone_dir, f"surface_{grid}_*.bmp"))
+cells = glob.glob(os.path.join(zone_dir, f"{prefix}_{grid}_*.bmp"))
 # also accept a single whole-surface bmp (grid==1)
-if grid == 1 and os.path.exists(os.path.join(zone_dir, "surface.bmp")):
-    cells = [os.path.join(zone_dir, "surface.bmp")]
+if grid == 1 and os.path.exists(os.path.join(zone_dir, prefix + ".bmp")):
+    cells = [os.path.join(zone_dir, prefix + ".bmp")]
 
 placed = 0
 for cf in cells:
-    m = re.search(rf"surface_{grid}_(\d+)\.bmp$", os.path.basename(cf))
+    m = re.search(rf"{prefix}_{grid}_(\d+)\.bmp$", os.path.basename(cf))
     cell = int(m.group(1)) if m else 0
     gx, gy = cell % grid, cell // grid
     x0, y0 = gx * cellW, gy * cellW  # offset within the 2r canvas (world+radius)

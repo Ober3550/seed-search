@@ -346,11 +346,11 @@ function createSurfaceJob(job) {
 
 // Sibling cells of a tiled surface (same seed/zone/grid), to know when a group
 // is complete and ready to stitch.
-function getSurfaceCells(seed, zoneName, gridN) {
+function getSurfaceCells(seed, zoneName, gridN, kind = "surface") {
   const d = getDb();
   return d.prepare(
-    "SELECT * FROM surface_jobs WHERE seed = ? AND zone_name = ? AND kind = 'surface' AND grid_n = ?"
-  ).all(seed, zoneName, gridN);
+    "SELECT * FROM surface_jobs WHERE seed = ? AND zone_name = ? AND kind = ? AND grid_n = ?"
+  ).all(seed, zoneName, kind, gridN);
 }
 
 function getSurfaceJobs(limit = 30) {

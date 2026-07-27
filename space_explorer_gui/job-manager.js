@@ -613,20 +613,28 @@ function surfaceCellLayout(radius) {
   return { n, cells };
 }
 
-function stitchSurface(zoneDir, gridN, radius) {
+function stitchSurface(zoneDir, gridN, radius, prefix = "surface") {
   return new Promise((resolve) => {
-    const child = spawn("python3", [STITCH, zoneDir, String(gridN), String(radius)],
+    const child = spawn("python3", [STITCH, zoneDir, String(gridN), String(radius), prefix],
       { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
     child.stderr.on("data", d => err += d);
     child.on("close", code => {
-      const png = path.join(zoneDir, "surface.png");
+      const png = path.join(zoneDir, prefix + ".png");
       if (code === 0 && fs.existsSync(png)) resolve(png);
       else { console.log("[job-manager] stitch failed:", err.slice(0, 200)); resolve(null); }
     });
     child.on("error", () => resolve(null));
   });
 }
+
+// Render kinds → segen layer flag + output filename prefix. 'ore' = compute-only
+// (no render). 'surface' is the legacy combined layer.
+const RENDER_KINDS = {
+  surface: { layer: null, prefix: "surface" },
+  terrain: { layer: "terrain", prefix: "terrain" },
+  oremap: { layer: "ore", prefix: "oremap" },
+};
 
 // ── Surface generation via the segen zone driver ───────────────────────
 
@@ -650,10 +658,12 @@ function runSurfaceJob(job) {
     const zonesFile = path.join(sDir, "zones.jsonl");
     if (!fs.existsSync(zonesFile)) writeSeedZonesFile(seedRow, null);
 
-    const isSurface = job.kind === "surface";
-    const isCell = isSurface && job.grid_cell >= 0 && job.grid_n > 1;
-    // ore jobs = amounts only (no image, fast even for huge planets); surface
-    // jobs render the biome+water map (whole, or one grid cell for parallelism).
+    const rk = RENDER_KINDS[job.kind];         // undefined for the 'ore' compute job
+    const isRender = !!rk;
+    const prefix = rk ? rk.prefix : null;
+    const isCell = isRender && job.grid_cell >= 0 && job.grid_n > 1;
+    // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
+    // draw a layer (terrain biome+water, oremap ore-on-black, or combined).
     const args = [
       "--zones", zonesFile,
       "--world-seed", String(job.seed),
@@ -661,9 +671,10 @@ function runSurfaceJob(job) {
       "--out", bucketDir(label),
       "--ores-only",
     ];
-    if (isSurface) {
+    if (isRender) {
       if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
       else args.push("--render-surface");
+      if (rk.layer) args.push("--surface-layer", rk.layer);
       // Render from the cached ore.jsonl (written by the zone's ore-prep job)
       // instead of recomputing zone-wide ore for every cell.
       if (job.load_ore) args.push("--load-ore");
@@ -679,54 +690,57 @@ function runSurfaceJob(job) {
 
     child.on("close", async code => {
       surfaceChildren.delete(job.id);
-      // Cancelled out from under us — don't overwrite the 'cancelled' status
-      // or run post-processing (stitch/png) for killed work.
+      // Cancelled out from under us — don't overwrite the 'cancelled' status.
       if ((db.getSurfaceJob(job.id) || {}).status === "cancelled") return resolve();
       const zDir = path.join(sDir, job.zone_name);
-      const summaryFile = path.join(zDir, "summary.json");
-      if (code !== 0 || !fs.existsSync(summaryFile)) {
-        const errMsg = (stderr.slice(-500)) || `exit ${code}`;
-        db.updateSurfaceJob(job.id, { status: "failed", error: errMsg, finished_at: new Date().toISOString() });
-        db.addJobLog("surface", job.id, `Failed: ${errMsg.slice(0, 200)}`);
-        return resolve();
-      }
+      const fail = (msg) => {
+        db.updateSurfaceJob(job.id, { status: "failed", error: String(msg).slice(0, 500), finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Failed: ${String(msg).slice(0, 200)}`);
+        resolve();
+      };
+      if (code !== 0) return fail((stderr.slice(-500)) || `exit ${code}`);
+
+      // Best-effort ore summary (present for ore/surface/oremap; absent for terrain).
       let summary = null, oreCount = 0;
       try {
-        summary = fs.readFileSync(summaryFile, "utf8");
+        summary = fs.readFileSync(path.join(zDir, "summary.json"), "utf8");
         for (const r of Object.values(JSON.parse(summary).resources || {})) oreCount += r.tiles || 0;
       } catch (_) {}
 
+      if (!isRender) {
+        // ore-compute job: success = summary.json written
+        if (!summary) return fail("ore pass produced no summary.json");
+        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} ore (${oreCount} tiles)`);
+        return resolve();
+      }
+
+      // render job — success = the layer BMP was written
+      const bmpFile = isCell
+        ? path.join(zDir, `${prefix}_${job.grid_n}_${job.grid_cell}.bmp`)
+        : path.join(zDir, `${prefix}.bmp`);
+      if (!fs.existsSync(bmpFile)) return fail(`no ${prefix} output (${stderr.slice(-200)})`);
+
       let pngRel = null;
       if (isCell) {
-        // A cell finished. Convert its BMP → per-cell PNG right away so the live
-        // watch grid can show it immediately (before the whole group stitches).
-        const cellBmp = path.join(zDir, `surface_${job.grid_n}_${job.grid_cell}.bmp`);
-        if (fs.existsSync(cellBmp)) await cellToPng(cellBmp);
-        // When ALL cells of this (seed,zone,grid) group are done, stitch them.
+        await cellToPng(bmpFile); // → prefix_N_i.png for the live grid
         db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, finished_at: new Date().toISOString() });
-        const siblings = db.getSurfaceCells(job.seed, job.zone_name, job.grid_n);
+        const siblings = db.getSurfaceCells(job.seed, job.zone_name, job.grid_n, job.kind);
         const allDone = siblings.length >= expectedCells(job.grid_n, job.radius) &&
                         siblings.every(s => s.status === "done" || s.status === "failed");
         if (allDone) {
-          const png = await stitchSurface(zDir, job.grid_n, job.radius);
+          const png = await stitchSurface(zDir, job.grid_n, job.radius, prefix);
           if (png) {
             pngRel = path.relative(OUTPUT_DIR, png);
-            // point every sibling's png at the stitched result
             for (const s of siblings) db.updateSurfaceJob(s.id, { png_file: pngRel });
-            db.addJobLog("surface", job.id, `Stitched ${job.zone_name} surface (grid ${job.grid_n})`);
+            db.addJobLog("surface", job.id, `Stitched ${job.zone_name} ${prefix} (grid ${job.grid_n})`);
           }
         }
       } else {
-        // whole-surface job (grid 1): convert surface.bmp
-        if (isSurface) {
-          const bmpFile = path.join(zDir, "surface.bmp");
-          if (fs.existsSync(bmpFile)) {
-            const png = await convertBmpToPng(bmpFile);
-            if (png && png.endsWith(".png")) pngRel = path.relative(OUTPUT_DIR, png);
-          }
-        }
+        const png = await convertBmpToPng(bmpFile); // whole → prefix.png
+        if (png && png.endsWith(".png")) pngRel = path.relative(OUTPUT_DIR, png);
         db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
-        db.addJobLog("surface", job.id, `Done: ${job.zone_name} (${oreCount} ore tiles)`);
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix}`);
       }
       resolve();
     });
