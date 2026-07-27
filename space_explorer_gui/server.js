@@ -293,6 +293,15 @@ app.get("/seeds", (req, res) => {
 function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
   const rules = f.def ? JSON.parse(f.def.rules) : [];
   const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
+  // default order = zones descending: generated seeds first (by most
+  // generated), then the rest by most total zones.
+  const gen = (s) => genCounts[s.seed] || 0;
+  seeds = [...seeds].sort((a, b) => {
+    const ag = gen(a) > 0, bg = gen(b) > 0;
+    if (ag !== bg) return ag ? -1 : 1;
+    if (ag) return gen(b) - gen(a);
+    return (b.zone_count || 0) - (a.zone_count || 0);
+  });
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seeds ${f.bucket || "(all)"}` }])}
@@ -323,7 +332,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
       <thead><tr>
         <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
         <th>Bucket</th><th>K2</th><th>Loot</th>
-        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">▼</span></th>
         <th>Naq</th><th></th>
       </tr></thead>
       <tbody>
@@ -343,7 +352,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
     <script>
       (function () {
-        var st = { key: null, dir: "desc" };
+        var st = { key: "zones", dir: "desc" }; // initial order (server pre-sorted)
         // DESCENDING comparators (first click). Zones desc: generated seeds
         // first (by most generated), then the rest (by most total zones).
         function baseCmp(key, a, b) {
