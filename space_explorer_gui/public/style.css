@@ -463,3 +463,9 @@ tr.zone-info:hover { opacity: 1; }
 .pool-form label { display: inline-flex; align-items: center; gap: 4px; }
 
 .muted { color: var(--muted); }
+
+/* watch page: metadata + grid side by side */
+.watch-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.watch-layout .surface-meta { flex: 0 0 300px; max-width: 340px; }
+.watch-layout .surface-meta h3 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px; }
+.watch-layout .watch-grid-col { flex: 1 1 400px; min-width: 300px; }

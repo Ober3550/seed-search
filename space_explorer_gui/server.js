@@ -152,33 +152,33 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
   const surfActive = active("surface");
   const anyActive = oreActive.length > 0 || surfActive.length > 0;
 
-  const orePng = zoneSurfacePng(bucket, seed, zone.name, "ore");
   const surfPng = zoneSurfacePng(bucket, seed, zone.name, "surface");
   const summary = !!zoneSurfaceSummary(bucket, seed, zone.name);
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
 
-  // Ore control
+  // Ore control: generate button until ore exists, then nothing (data is
+  // populated — no regenerate). Shows progress while running.
   let oreCtl;
   if (oreActive.length) oreCtl = `<span class="gen-status running">⏳ ore…</span>`;
-  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} ${tgt}>${summary ? "↻ ore" : "⛏ ore"}</button>`;
+  else if (summary) oreCtl = "";
+  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} ${tgt}>⛏ ore</button>`;
 
-  // Surface control (may be many cell jobs)
+  // Surface control: if a surface exists or is rendering, this button opens the
+  // watch/view page; otherwise it starts generation.
+  const surfDone = zjobs.filter(j => j.kind === "surface" && j.status === "done").length;
+  const hasSurfaceWork = surfPng || zjobs.some(j => j.kind === "surface");
+  const watchAttrs = `href="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-get="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace"`;
   let surfCtl;
   if (surfActive.length) {
-    const total = surfActive.length + zjobs.filter(j => j.kind === "surface" && j.status === "done").length;
-    surfCtl = `<span class="gen-status running">⏳ surface ${total - surfActive.length}/${total}…</span>`;
+    const total = surfActive.length + surfDone;
+    surfCtl = `<a class="btn-sm btn-secondary" ${watchAttrs} title="watch progress">⏳ surface ${surfDone}/${total}</a>`;
+  } else if (hasSurfaceWork) {
+    surfCtl = `<a class="btn-sm btn-secondary" ${watchAttrs} title="view surface">🗺️ surface</a>`;
   } else {
-    surfCtl = `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ 🗺️" : "🗺️ surface"}</button>`;
+    surfCtl = `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>🗺️ surface</button>`;
   }
 
-  // Watch link: available whenever a surface has been generated OR cells are
-  // still rendering — opens the live tiled grid.
-  const hasSurfaceWork = surfPng || zjobs.some(j => j.kind === "surface");
-  const watch = hasSurfaceWork
-    ? `<a class="btn-sm" href="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-get="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-target="#main" hx-push-url="true" title="watch grid">👁</a>`
-    : "";
-  const links = `${orePng ? `<a class="btn-sm" href="${orePng}" target="_blank" title="ore map">⛏</a>` : ""}${surfPng ? `<a class="btn-sm" href="${surfPng}" target="_blank" title="surface map">🗺️</a>` : ""}${watch}`;
   const fail = (failed("ore") || failed("surface")) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
 
   const poll = anyActive
@@ -192,7 +192,7 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
     ? `<td class="yields-cell" id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</td>`
     : "";
 
-  return `<td class="row-actions" id="zcell-${zone.id}" ${poll}>${links}${oreCtl}${surfCtl}${fail}</td>${resOob}`;
+  return `<td class="row-actions" id="zcell-${zone.id}" ${poll}>${oreCtl}${surfCtl}${fail}</td>${resOob}`;
 }
 
 // Breadcrumb trail for the drill-down.
@@ -592,14 +592,44 @@ app.get("/surface/watch", (req, res) => {
   const s = db.getSeed(seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
   if (!s || !zone) return page(req, res, "Watch", `<div class="page"><p class="hint">Seed or zone not found.</p></div>`);
+
+  const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
+  const summary = zoneSurfaceSummary(s.bucket, seed, zone.name);
+  const water = (zone.water || "none").replace(/^water[_-]?/, "") || "none";
+  const enemy = (zone.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
+  const oreBlock = summary
+    ? `<table class="data-table compact"><thead><tr><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
+        ${Object.entries(summary.resources || {}).sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
+          .map(([r, v]) => `<tr><td>${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
+      </tbody></table>`
+    : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
+  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
+  const reload = `hx-on::after-request="htmx.ajax('GET','/surface/watch?seed=${seed}&zone_id=${zoneId}',{target:'#main'})"`;
+
   const content = `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seed ${seed}`, href: `/seed/${seed}` }, { label: `${zone.name} surface` }])}
-    <h2>👁 Watching <strong>${zone.name}</strong> surface</h2>
-    <p class="hint">Each tile appears as its generation cell finishes; the grid matches the final stitched image.</p>
-    ${renderSurfaceGrid(seed, zoneId)}
+    <h2>👁 <strong>${zone.name}</strong> surface <span class="badge zone-type">${zone.zone_type}</span></h2>
+    <div class="watch-layout">
+      <aside class="surface-meta">
+        <h3>Zone</h3>
+        <dl>
+          <dt>Radius</dt><dd>${zone.radius ? Math.round(zone.radius) : "—"}</dd>
+          <dt>Δv</dt><dd>${zone.delta_v ? Math.round(zone.delta_v) : "—"}</dd>
+          <dt>Water</dt><dd>${water}</dd>
+          <dt>Enemy</dt><dd>${enemy}</dd>
+          <dt>Primary</dt><dd>${zone.primary_resource ? nm(zone.primary_resource) : "—"}</dd>
+        </dl>
+        <h3>Ore ${summary ? "<span class='badge done'>measured</span>" : "<span class='badge'>estimate</span>"}</h3>
+        ${oreBlock}
+        <div class="preset-actions">
+          <button class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${reload}>↻ Regenerate surface</button>
+        </div>
+      </aside>
+      <div class="watch-grid-col">${renderSurfaceGrid(seed, zoneId)}</div>
+    </div>
   </div>`;
-  page(req, res, `Watch ${zone.name}`, content);
+  page(req, res, `${zone.name} surface`, content);
 });
 
 // ── Surface jobs + viewer ──────────────────────────────────────────────
