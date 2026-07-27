@@ -503,3 +503,7 @@ tr.zone-info:hover { opacity: 1; }
 .surf-cell { overflow: hidden; }
 .dim-slider { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); margin: 10px 0; }
 .dim-slider input[type=range] { width: 100%; }
+
+/* clickable zone rows (navigate to surface detail) */
+.data-table tr.clickable { cursor: pointer; }
+.data-table tr.clickable:hover td { background: rgba(88,166,255,0.09); }

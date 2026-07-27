@@ -154,23 +154,23 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
   const anyActive = oreActive.length > 0 || surfActive.length > 0;
 
   const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
+  const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
+    || zoneSurfacePng(bucket, seed, zone.name, "oremap")
+    || zoneSurfacePng(bucket, seed, zone.name, "surface");
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
-  const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
+  // stop the click bubbling to the row (which navigates to the detail page)
+  const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML" onclick="event.stopPropagation()"`;
 
-  // Ore control: generate the ore map (amounts + ore-on-black image); once it
-  // exists the button opens that ore png (it is not removed).
-  let oreCtl;
-  if (oreActive.length) oreCtl = `<span class="gen-status running">⏳ ore…</span>`;
-  else if (oremapPng) oreCtl = `<a class="btn-sm" href="${oremapPng}" target="_blank" title="ore map png">🗺️ ore</a>`;
-  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>⛏ ore</button>`;
+  // Ore control: start the ore-map job (amounts + ore-on-black image). ⏳ running.
+  const oreCtl = oreActive.length
+    ? `<span class="gen-status running">⏳ ore…</span>`
+    : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>${oremapPng ? "↻ ore" : "⛏ ore"}</button>`;
 
-  // Surface control: ALWAYS opens the surface detail (watch) page — generation
-  // happens there, so you can view the detail without generating first.
+  // Surface control: start the surface (terrain + ore) job. ⏳ running.
   const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
-  const watchAttrs = `href="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-get="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace"`;
   const surfCtl = surfActive.length
-    ? `<a class="btn-sm btn-secondary" ${watchAttrs} title="watch progress">⏳ surface ${surfDone}/${surfActive.length + surfDone}</a>`
-    : `<a class="btn-sm btn-secondary" ${watchAttrs} title="surface detail">🗺️ surface</a>`;
+    ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
+    : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ surface" : "🗺️ surface"}</button>`;
 
   const fail = (failed(["ore", "oremap"]) || failed(["terrain"])) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
 
@@ -452,9 +452,14 @@ function renderSeedDetail(s, c, zones, filterId) {
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
             const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
+            // generatable rows navigate to the surface detail on click; the
+            // checkbox and action buttons stopPropagation so they don't.
+            const nav = gen
+              ? `hx-get="/surface/watch?seed=${s.seed}&zone_id=${z.id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace"`
+              : "";
             return `
-          <tr class="${gen ? "" : "zone-info"}" ${data}>
-            <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
+          <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
+            <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""} onclick="event.stopPropagation()">` : ""}</td>
             <td><strong>${z.name}</strong></td>
             <td><span class="badge zone-type">${z.zone_type}</span></td>
             <td>${z.radius ? Math.round(z.radius) : "—"}</td>
