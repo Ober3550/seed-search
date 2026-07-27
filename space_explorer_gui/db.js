@@ -385,6 +385,12 @@ function createFilterDef(name, rules) {
   ).run(name, JSON.stringify(rules));
   return info.lastInsertRowid;
 }
+function updateFilterDef(id, name, rules) {
+  return getDb().prepare(
+    "UPDATE filter_defs SET name = ?, rules = ? WHERE id = ? AND builtin = 0"
+  ).run(name, JSON.stringify(rules), id).changes;
+}
+
 function deleteFilterDef(id) {
   getDb().prepare("DELETE FROM filter_defs WHERE id = ? AND builtin = 0").run(id);
 }
@@ -456,6 +462,7 @@ module.exports = {
   getFilterDefs,
   getFilterDef,
   createFilterDef,
+  updateFilterDef,
   deleteFilterDef,
   createSeedFilter,
   setFilterMembers,

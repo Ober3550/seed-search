@@ -671,55 +671,95 @@ app.post("/api/filter/create", (req, res) => {
 
 app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
 
+const RULE_KINDS = ["primary", "present", "combo", "specials", "pairs"];
+
 function renderPresetsPage(defs) {
-  const kinds = ["primary", "present", "combo", "specials", "pairs"];
+  const kinds = RULE_KINDS;
+  const refresh = `hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})"`;
+
+  const item = (d) => {
+    let rules = [];
+    try { rules = JSON.parse(d.rules); } catch (_) {}
+    const rl = rules.map(analyze.ruleLabel).join(" AND ") || "—";
+    const badge = d.builtin ? '<span class="badge">preset</span>' : '<span class="badge custom">custom</span>';
+    const summary = `<summary><span class="preset-name">${d.name}</span> ${badge}<span class="rule-sum">${rl}</span></summary>`;
+
+    if (d.builtin) {
+      // read-only: show how it's constructed
+      return `<details class="preset-item">
+        ${summary}
+        <div class="preset-body">
+          <p class="hint">Built-in preset — read-only. Rules (all must hold):</p>
+          <div class="rules-rows">${rules.map(r => renderRuleRow(kinds, r, true)).join("")}</div>
+        </div>
+      </details>`;
+    }
+    // custom: editable in place
+    return `<details class="preset-item">
+      ${summary}
+      <div class="preset-body">
+        <form hx-post="/api/preset/${d.id}/update" hx-swap="none" ${refresh}>
+          <label>Name: <input type="text" name="name" value="${d.name}" required></label>
+          <div class="rules-rows">${(rules.length ? rules : [null]).map(r => renderRuleRow(kinds, r)).join("")}</div>
+          <button type="button" class="btn-sm" onclick="addRule(this)">+ rule</button>
+          <div class="preset-actions">
+            <button type="submit" class="btn">💾 Save changes</button>
+            <button type="button" class="btn-sm danger" hx-delete="/api/preset/${d.id}" hx-swap="none" ${refresh}>🗑 Delete</button>
+          </div>
+        </form>
+      </div>
+    </details>`;
+  };
+
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Filter Presets" }])}
     <h2>⚙ Filter Presets</h2>
-    <p class="hint">A preset is a named set of rules (all must hold). Use them on the Seeds page and save matches as a Filtered Set.</p>
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Rules (AND)</th><th></th></tr></thead>
-      <tbody>
-        ${defs.map(d => {
-          let rl = "—"; try { rl = JSON.parse(d.rules).map(analyze.ruleLabel).join(" AND "); } catch (_) {}
-          return `<tr>
-            <td><strong>${d.name}</strong>${d.builtin ? ' <span class="badge">preset</span>' : ""}</td>
-            <td>${rl}</td>
-            <td>${d.builtin ? "" : `<button class="btn-sm danger" hx-delete="/api/preset/${d.id}" hx-swap="none" hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})">🗑</button>`}</td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table>
-    <h3>New preset</h3>
-    <form id="preset-form" hx-post="/api/preset/create" hx-swap="none"
-          hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})">
-      <label>Name: <input type="text" name="name" required></label>
-      <div id="rules-rows">
-        ${renderRuleRow(kinds)}
-      </div>
-      <button type="button" class="btn-sm" onclick="const d=document.getElementById('rules-rows'); d.insertAdjacentHTML('beforeend', d.firstElementChild.outerHTML);">+ rule</button>
-      <button type="submit" class="btn">Create preset</button>
-    </form>
+    <p class="hint">A preset is a named set of rules (all must hold). Click a row to see how it's built;
+    custom ones are editable. Use presets on the Seeds page and save matches as a Filtered Set.</p>
+    <template id="rule-tpl">${renderRuleRow(kinds)}</template>
+    <div class="preset-list">
+      ${defs.map(item).join("")}
+      <details class="preset-item new">
+        <summary><span class="preset-name">➕ New preset</span></summary>
+        <div class="preset-body">
+          <form hx-post="/api/preset/create" hx-swap="none" ${refresh}>
+            <label>Name: <input type="text" name="name" placeholder="e.g. vulcanite + naq field" required></label>
+            <div class="rules-rows">${renderRuleRow(kinds)}</div>
+            <button type="button" class="btn-sm" onclick="addRule(this)">+ rule</button>
+            <div class="preset-actions"><button type="submit" class="btn">Create preset</button></div>
+          </form>
+        </div>
+      </details>
+    </div>
+    <script>
+      function addRule(btn) {
+        const rows = btn.closest("form").querySelector(".rules-rows");
+        const tpl = document.getElementById("rule-tpl");
+        rows.appendChild(tpl.content.firstElementChild.cloneNode(true));
+      }
+    </script>
   </div>`;
 }
 
-function renderRuleRow(kinds) {
-  const opts = (arr, blank) => (blank ? `<option value="">${blank}</option>` : "") + arr.map(o => `<option value="${o}">${o}</option>`).join("");
+// A single rule-builder row, optionally pre-filled from `rule` and/or disabled.
+function renderRuleRow(kinds, rule = null, disabled = false) {
+  const dis = disabled ? "disabled" : "";
+  const kindOpts = kinds.map(o => `<option value="${o}" ${rule && rule.kind === o ? "selected" : ""}>${o}</option>`).join("");
+  const resOpts = (val, blank) => `<option value="">${blank}</option>` +
+    RESOURCES.map(o => `<option value="${o}" ${val === o ? "selected" : ""}>${o}</option>`).join("");
   return `<div class="rule-row">
-    <select name="kind">${opts(kinds)}</select>
-    <select name="res">${opts([""].concat(RESOURCES).filter(Boolean), "(resource)")}</select>
-    <select name="res2">${opts([""].concat(RESOURCES).filter(Boolean), "(secondary, for combo)")}</select>
-    <input type="number" name="n" placeholder="n (for specials/pairs)" min="1" max="6" style="width:120px">
+    <select name="kind" ${dis}>${kindOpts}</select>
+    <select name="res" ${dis}>${resOpts(rule ? rule.res : "", "(resource)")}</select>
+    <select name="res2" ${dis}>${resOpts(rule ? rule.res2 : "", "(secondary, for combo)")}</select>
+    <input type="number" name="n" placeholder="n (specials/pairs)" min="1" max="6" style="width:130px" value="${rule && rule.n ? rule.n : ""}" ${dis}>
   </div>`;
 }
 
-app.post("/api/preset/create", (req, res) => {
-  const name = (req.body.name || "").trim();
-  if (!name) return res.status(400).json({ ok: false, error: "name required" });
-  // rule rows arrive as parallel arrays (or scalars for a single row)
+// Parse the parallel rule-row arrays (or scalars for a single row) into rules.
+function parseRuleRows(body) {
   const arr = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
-  const kinds = arr(req.body.kind), r1 = arr(req.body.res), r2 = arr(req.body.res2), ns = arr(req.body.n);
+  const kinds = arr(body.kind), r1 = arr(body.res), r2 = arr(body.res2), ns = arr(body.n);
   const rules = [];
   for (let i = 0; i < kinds.length; i++) {
     const kind = kinds[i];
@@ -727,9 +767,33 @@ app.post("/api/preset/create", (req, res) => {
     else if (kind === "combo") { if (r1[i] && r2[i]) rules.push({ kind, res: r1[i], res2: r2[i] }); }
     else if (kind === "specials" || kind === "pairs") { const n = parseInt(ns[i]); if (n > 0) rules.push({ kind, n }); }
   }
+  return rules;
+}
+
+app.post("/api/preset/create", (req, res) => {
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ ok: false, error: "name required" });
+  const rules = parseRuleRows(req.body);
   if (rules.length === 0) return res.status(400).json({ ok: false, error: "no valid rules" });
-  const id = db.createFilterDef(name, rules);
-  res.json({ ok: true, id, rules });
+  try {
+    const id = db.createFilterDef(name, rules);
+    res.json({ ok: true, id, rules });
+  } catch (e) { res.status(400).json({ ok: false, error: String(e.message) }); }
+});
+
+app.post("/api/preset/:id/update", (req, res) => {
+  const id = parseInt(req.params.id);
+  const def = db.getFilterDef(id);
+  if (!def) return res.status(404).json({ ok: false, error: "preset not found" });
+  if (def.builtin) return res.status(400).json({ ok: false, error: "built-in presets are read-only" });
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ ok: false, error: "name required" });
+  const rules = parseRuleRows(req.body);
+  if (rules.length === 0) return res.status(400).json({ ok: false, error: "no valid rules" });
+  try {
+    db.updateFilterDef(id, name, rules);
+    res.json({ ok: true, id, rules });
+  } catch (e) { res.status(400).json({ ok: false, error: String(e.message) }); }
 });
 
 app.delete("/api/preset/:id", (req, res) => { db.deleteFilterDef(parseInt(req.params.id)); res.json({ ok: true }); });

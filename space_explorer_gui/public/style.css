@@ -377,3 +377,23 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 .btn.danger:hover { background: #7a3333; }
 .badge.cancelled, .badge.canceled { background: #4a3a20; color: #e8c98a; }
 .head-actions { display: flex; gap: 8px; }
+
+/* filter-preset accordion */
+.preset-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.preset-item { border: 1px solid #2a3446; border-radius: 6px; background: #171c24; overflow: hidden; }
+.preset-item > summary {
+  list-style: none; cursor: pointer; padding: 10px 12px;
+  display: flex; align-items: center; gap: 10px; user-select: none;
+}
+.preset-item > summary::-webkit-details-marker { display: none; }
+.preset-item > summary::before { content: "▸"; color: #7a8aa0; transition: transform 0.15s; }
+.preset-item[open] > summary::before { transform: rotate(90deg); }
+.preset-item[open] > summary { border-bottom: 1px solid #2a3446; background: #1b2230; }
+.preset-item.new > summary { color: #9ec5ff; }
+.preset-name { font-weight: 600; }
+.rule-sum { color: #8a97a8; font-size: 0.85rem; margin-left: auto; text-align: right; }
+.preset-body { padding: 12px; }
+.preset-body .rules-rows { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.rule-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.preset-actions { display: flex; gap: 8px; margin-top: 10px; }
+.badge.custom { background: #24405a; color: #9ec5ff; }
