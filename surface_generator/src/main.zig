@@ -56,6 +56,7 @@ pub fn main(init: std.process.Init) !void {
     var lake_y: ?f64 = null;
     var water_threshold: f64 = -0.012; // calibrated water-boundary (see TerrainCtx)
     var extras_file: ?[]const u8 = null;
+    var ores_only: bool = false;
     var controls = surfacegen.ore.AutoplaceControls{};
 
     var i: usize = 2;
@@ -81,6 +82,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--spot-rng")) {
             i += 1;
             if (i < args.len) surfacegen.noise.spot_size_rng_variant = try std.fmt.parseInt(u8, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--ores-only")) {
+            ores_only = true;
         } else if (std.mem.eql(u8, args[i], "--extras")) {
             i += 1;
             extras_file = args[i];
@@ -113,8 +116,10 @@ pub fn main(init: std.process.Init) !void {
                 else if (std.mem.eql(u8, rname, "stone")) surfacegen.ore.stone_default
                 else if (std.mem.eql(u8, rname, "uranium-ore")) surfacegen.ore.uranium_ore_default
                 else surfacegen.ore.crude_oil_default;
-            try configs.append(a, cfg);
-            try names.append(a, rname);
+            if (!(ores_only and cfg.random_probability < 1.0)) {
+                try configs.append(a, cfg);
+                try names.append(a, rname);
+            }
         }
     }
 

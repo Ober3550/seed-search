@@ -136,6 +136,7 @@ pub fn main(init: std.process.Init) !void {
     var water_exclude: bool = false;
     var biome_bg: bool = false;
     var k2_enable: bool = false;
+    var ores_only: bool = false;
     var field_probe_res: ?[]const u8 = null;
     var field_probe_in: ?[]const u8 = null;
     var field_probe_out: ?[]const u8 = null;
@@ -191,6 +192,8 @@ pub fn main(init: std.process.Init) !void {
             horaerratum_biome = true;
         } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
             biome_bg = true;
+        } else if (std.mem.eql(u8, args[i], "--ores-only")) {
+            ores_only = true;
         } else if (std.mem.eql(u8, args[i], "--k2")) {
             k2_enable = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
@@ -451,9 +454,18 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const es = entries(k2_enable);
+    // --ores-only: skip fluid resources (random_probability < 1: crude-oil,
+    // kr-mineral-water, kr-imersite) — they don't affect solid ore placement
+    // (separate order groups, lower probability) and cost a penalty column +
+    // extra field evaluations per chunk. Fast path for ore-quantity surveys.
     var inputs_buf: [RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
-    for (es, 0..) |e, k| inputs_buf[k] = .{ .name = e.name, .config = e.cfg, .controls = e.ctrl };
-    const inputs = inputs_buf[0..es.len];
+    var ninputs: usize = 0;
+    for (es) |e| {
+        if (ores_only and e.cfg.random_probability < 1.0) continue;
+        inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = e.ctrl };
+        ninputs += 1;
+    }
+    const inputs = inputs_buf[0..ninputs];
 
     const r: i32 = if (override_radius) |or2| or2 else @intFromFloat(HORAERRATUM_RADIUS);
     const zone_r: f64 = if (override_radius) |or2| @floatFromInt(or2) else HORAERRATUM_RADIUS;
