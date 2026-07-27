@@ -123,11 +123,11 @@ function createUniverseBuckets(units, k2Enabled) {
 // ── Job processing loop ───────────────────────────────────────────────
 
 // Number of bucket jobs run concurrently (each is a single seedgen process).
-let universeConcurrency = parseInt(process.env.UNIVERSE_CONCURRENCY || "4");
+let universeConcurrency = parseInt(process.env.UNIVERSE_CONCURRENCY || "10");
 const runningUniverse = new Set();
 // Surface CELL jobs run concurrently (each renders one tile of one zone); this
 // is what parallelizes a large surface across cores/jobs.
-let surfaceConcurrency = parseInt(process.env.SURFACE_CONCURRENCY || "4");
+let surfaceConcurrency = parseInt(process.env.SURFACE_CONCURRENCY || "10");
 const runningSurface = new Set();
 
 // Live child processes by job id, so cancel-all can actually kill running work.
