@@ -180,6 +180,7 @@ fn runZoneDriver(
     surface_grid: i32, // NxN grid the surface is split into (1 = whole)
     surface_cell: i32, // which cell (0..grid*grid-1) to render; -1 = all cells
     load_ore: bool, // read ore.jsonl instead of computing (per-cell renders)
+    surface_layer: i32, // 0 = both (surface_), 1 = terrain only, 2 = ore only
 ) !void {
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
     var world: ?std.json.Value = null;
@@ -309,7 +310,11 @@ fn runZoneDriver(
         var ores: std.ArrayList(se.OreEntity) = .empty;
         defer ores.deinit(a);
 
-        if (load_ore) {
+        // terrain-only renders don't touch ore at all (no compute, no load, no
+        // ore.jsonl/summary write); ore + combined layers do.
+        const need_ores = surface_layer != 1;
+
+        if (need_ores and load_ore) {
             // Read the ore overlay from a prior zone-wide pass instead of
             // recomputing it (the expensive step). Keep only entities inside the
             // target cell (or the whole disk when rendering all cells).
@@ -344,7 +349,7 @@ fn runZoneDriver(
                 try ores.append(a, .{ .x = @intCast(ox), .y = @intCast(oy), .resource_name = sname, .amount = @intCast(oa) });
             }
             std.debug.print("== zone {s}: loaded {d} cached ore entities (cell {d}/{d})\n", .{ name, ores.items.len, surface_cell, surface_grid * surface_grid });
-        } else {
+        } else if (need_ores) {
             std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
             ores = try se.computeSEOresInRect(
                 a,
@@ -471,45 +476,57 @@ fn runZoneDriver(
                 const ch: u32 = @intCast(y1 - y0);
                 var pixels = try a.alloc(u8, @as(usize, cw) * ch * 3);
                 defer a.free(pixels);
-                @memset(pixels, 20);
-                var iy: i32 = y0;
-                while (iy < y1) : (iy += 1) {
-                    var ix: i32 = x0;
-                    while (ix < x1) : (ix += 1) {
-                        const fx: f64 = @floatFromInt(ix);
-                        const fy: f64 = @floatFromInt(iy);
-                        if (fx * fx + fy * fy > radius * radius) continue;
-                        const e = if (has_water) el_s.at(fx, fy) else 1.0;
-                        const color: [3]u8 = if (has_water and e < 0.0)
-                            (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
-                        else
-                            cls_s.classifyColor(fx, fy, zt_s.temperature(fx, fy), zt_s.moisture(fx, fy), zt_s.aux(fx, fy), e);
-                        const lpx: usize = @intCast(ix - x0);
-                        const lpy: usize = @intCast(iy - y0);
-                        const idx = (lpy * cw + lpx) * 3;
-                        pixels[idx] = color[0];
-                        pixels[idx + 1] = color[1];
-                        pixels[idx + 2] = color[2];
+                // ore-only layer is on a black background so it composites over
+                // the dimmed terrain (CSS lighten blend); others use dark grey.
+                @memset(pixels, if (surface_layer == 2) @as(u8, 0) else @as(u8, 20));
+                // biome + water fill (skip for the ore-only layer)
+                if (surface_layer != 2) {
+                    var iy: i32 = y0;
+                    while (iy < y1) : (iy += 1) {
+                        var ix: i32 = x0;
+                        while (ix < x1) : (ix += 1) {
+                            const fx: f64 = @floatFromInt(ix);
+                            const fy: f64 = @floatFromInt(iy);
+                            if (fx * fx + fy * fy > radius * radius) continue;
+                            const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                            const color: [3]u8 = if (has_water and e < 0.0)
+                                (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
+                            else
+                                cls_s.classifyColor(fx, fy, zt_s.temperature(fx, fy), zt_s.moisture(fx, fy), zt_s.aux(fx, fy), e);
+                            const lpx: usize = @intCast(ix - x0);
+                            const lpy: usize = @intCast(iy - y0);
+                            const idx = (lpy * cw + lpx) * 3;
+                            pixels[idx] = color[0];
+                            pixels[idx + 1] = color[1];
+                            pixels[idx + 2] = color[2];
+                        }
                     }
                 }
-                // ore overlay for tiles in this cell
-                for (ores.items) |ore| {
-                    if (ore.x < x0 or ore.x >= x1 or ore.y < y0 or ore.y >= y1) continue;
-                    const lpx: usize = @intCast(ore.x - x0);
-                    const lpy: usize = @intCast(ore.y - y0);
-                    const oc = MapColors.get(ore.resource_name);
-                    const idx = (lpy * cw + lpx) * 3;
-                    pixels[idx] = oc[0];
-                    pixels[idx + 1] = oc[1];
-                    pixels[idx + 2] = oc[2];
+                // ore overlay for tiles in this cell (skip for terrain-only)
+                if (surface_layer != 1) {
+                    for (ores.items) |ore| {
+                        if (ore.x < x0 or ore.x >= x1 or ore.y < y0 or ore.y >= y1) continue;
+                        const lpx: usize = @intCast(ore.x - x0);
+                        const lpy: usize = @intCast(ore.y - y0);
+                        const oc = MapColors.get(ore.resource_name);
+                        const idx = (lpy * cw + lpx) * 3;
+                        pixels[idx] = oc[0];
+                        pixels[idx + 1] = oc[1];
+                        pixels[idx + 2] = oc[2];
+                    }
                 }
                 var sbuf: std.ArrayList(u8) = .empty;
                 try surfacegen.bmp.writeBmp(a, &sbuf, cw, ch, pixels);
+                const prefix: []const u8 = switch (surface_layer) {
+                    1 => "terrain",
+                    2 => "oremap",
+                    else => "surface",
+                };
                 var spb: [512]u8 = undefined;
                 const sp = if (grid == 1)
-                    try std.fmt.bufPrint(&spb, "{s}/surface.bmp", .{zdir})
+                    try std.fmt.bufPrint(&spb, "{s}/{s}.bmp", .{ zdir, prefix })
                 else
-                    try std.fmt.bufPrint(&spb, "{s}/surface_{d}_{d}.bmp", .{ zdir, grid, cell });
+                    try std.fmt.bufPrint(&spb, "{s}/{s}_{d}_{d}.bmp", .{ zdir, prefix, grid, cell });
                 const sfile = try std.Io.Dir.createFile(.cwd(), init.io, sp, .{});
                 defer sfile.close(init.io);
                 try sfile.writePositionalAll(init.io, sbuf.items, 0);
@@ -605,6 +622,7 @@ pub fn main(init: std.process.Init) !void {
     var surface_grid: i32 = 1;
     var surface_cell: i32 = -1;
     var load_ore: bool = false;
+    var surface_layer: i32 = 0;
     var world_seed: ?u64 = null;
     var zone_names: ?[]const u8 = null;
     var out_dir: []const u8 = "output";
@@ -679,6 +697,11 @@ pub fn main(init: std.process.Init) !void {
             // from an already-written ore.jsonl. Used for per-cell surface jobs
             // so the ore pass runs once per zone, not once per cell.
             load_ore = true;
+        } else if (std.mem.eql(u8, args[i], "--surface-layer")) {
+            // terrain = biome+water only (dimmable), ore = ore patches on black
+            // (composited over terrain), both = combined (legacy surface_).
+            i += 1;
+            surface_layer = if (std.mem.eql(u8, args[i], "terrain")) 1 else if (std.mem.eql(u8, args[i], "ore")) 2 else 0;
         } else if (std.mem.eql(u8, args[i], "--zones")) {
             i += 1;
             zones_file = args[i];
@@ -969,7 +992,7 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("--zones requires --world-seed\n", .{});
             return;
         };
-        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell, load_ore);
+        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell, load_ore, surface_layer);
         return;
     }
 
