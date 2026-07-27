@@ -434,14 +434,14 @@ function renderSeedDetail(s, c, zones, filterId) {
       <input type="hidden" name="seed" value="${s.seed}">
       <div class="batch-actions">
         <button type="button" class="btn"
-          hx-post="/api/surface/batch?kind=ore" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
+          hx-post="/api/surface/batch?kind=oremap" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
-          ⛏ Generate ores — selected zones
+          ⛏ Generate ore maps — selected zones
         </button>
         <button type="button" class="btn btn-secondary"
           hx-post="/api/surface/batch?kind=surface" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
-          🗺️ Generate surfaces (biome+water) — selected zones
+          🗺️ Generate surfaces (terrain + ore) — selected zones
         </button>
       </div>
       <table class="data-table" id="zone-table">
