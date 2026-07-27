@@ -167,7 +167,19 @@ function initSchema() {
 function seedPresetFilters() {
   db.prepare("DELETE FROM filter_defs WHERE builtin = 1").run();
   const presets = [
-    { name: "core", rules: [{ kind: "specials", n: 6 }] },
+    {
+      // the core-mineable specials, each required as a primary (on a distinct
+      // body). Add a resource twice to require two bodies of it.
+      name: "core",
+      rules: [
+        { kind: "primary", res: "se-vulcanite" },
+        { kind: "primary", res: "se-cryonite" },
+        { kind: "primary", res: "se-holmium-ore" },
+        { kind: "primary", res: "se-beryllium-ore" },
+        { kind: "primary", res: "se-iridium-ore" },
+        { kind: "primary", res: "se-vitamelange" },
+      ],
+    },
     {
       name: "pairs",
       rules: [
@@ -178,8 +190,22 @@ function seedPresetFilters() {
       ],
     },
   ];
-  const stmt = db.prepare("INSERT OR IGNORE INTO filter_defs (name, rules, builtin) VALUES (?, ?, 0)");
-  for (const p of presets) stmt.run(p.name, JSON.stringify(p.rules));
+  // rules JSON of PRIOR auto-seeded defaults — safe to upgrade to the current
+  // definition (the user hasn't customised them). User-edited starters and
+  // already-current ones are left untouched, so edits survive restarts.
+  const upgradable = new Set([
+    JSON.stringify([{ kind: "specials", n: 6 }]),  // old "core"
+    JSON.stringify([{ kind: "pairs", n: 5 }]),     // oldest "pairs"
+  ]);
+  const get = db.prepare("SELECT id, rules FROM filter_defs WHERE name = ?");
+  const ins = db.prepare("INSERT INTO filter_defs (name, rules, builtin) VALUES (?, ?, 0)");
+  const upd = db.prepare("UPDATE filter_defs SET rules = ? WHERE id = ?");
+  for (const p of presets) {
+    const rj = JSON.stringify(p.rules);
+    const cur = get.get(p.name);
+    if (!cur) ins.run(p.name, rj);
+    else if (upgradable.has(cur.rules)) upd.run(rj, cur.id);
+  }
 }
 
 // ── Universe Jobs ──────────────────────────────────────────────────────

@@ -671,7 +671,11 @@ app.post("/api/filter/create", (req, res) => {
 
 app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
 
-const RULE_KINDS = ["primary", "present", "both", "combo", "specials", "pairs"];
+// Resource-based rule kinds offered in the builder. The count kinds
+// (specials/pairs) are retired — list resources explicitly instead, and add a
+// rule twice to require two bodies. matchFilter still honours legacy count
+// rules if any old preset has one.
+const RULE_KINDS = ["primary", "present", "both", "combo"];
 
 function renderPresetsPage(defs) {
   const kinds = RULE_KINDS;
@@ -745,7 +749,9 @@ function renderPresetsPage(defs) {
 // A single rule-builder row, optionally pre-filled from `rule` and/or disabled.
 function renderRuleRow(kinds, rule = null, disabled = false) {
   const dis = disabled ? "disabled" : "";
-  const kindOpts = kinds.map(o => `<option value="${o}" ${rule && rule.kind === o ? "selected" : ""}>${o}</option>`).join("");
+  // keep a legacy kind (e.g. specials/pairs) selectable when editing an old rule
+  const kindList = rule && rule.kind && !kinds.includes(rule.kind) ? [...kinds, rule.kind] : kinds;
+  const kindOpts = kindList.map(o => `<option value="${o}" ${rule && rule.kind === o ? "selected" : ""}>${o}</option>`).join("");
   const resOpts = (val, blank) => `<option value="">${blank}</option>` +
     RESOURCES.map(o => `<option value="${o}" ${val === o ? "selected" : ""}>${o}</option>`).join("");
   return `<div class="rule-row">

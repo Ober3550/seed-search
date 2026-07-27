@@ -488,27 +488,30 @@ function evaluateWorld(seedRaw) {
 function matchFilter(crit, rules) {
   if (!rules || rules.length === 0) return { match: true, zones: crit.selectedZones || [] };
   const bodies = crit.bodies || [];
-  const zones = new Set();
+  const used = new Set();          // each resource rule claims a DISTINCT body,
+  const zones = new Set();          // so N copies of a rule require N bodies
+  const pick = (pred) => bodies.find((x) => !used.has(x.name) && pred(x));
   for (const rule of rules) {
     if (rule.kind === "primary") {
-      const b = bodies.find((x) => x.primary === rule.res);
+      const b = pick((x) => x.primary === rule.res);
       if (!b) return { match: false, zones: [] };
-      zones.add(b.name);
+      used.add(b.name); zones.add(b.name);
     } else if (rule.kind === "present") {
-      const b = bodies.find((x) => (x.present || []).includes(rule.res));
+      const b = pick((x) => (x.present || []).includes(rule.res));
       if (!b) return { match: false, zones: [] };
-      zones.add(b.name);
+      used.add(b.name); zones.add(b.name);
     } else if (rule.kind === "combo") {
-      const b = bodies.find((x) => x.primary === rule.res && (x.present || []).includes(rule.res2));
+      const b = pick((x) => x.primary === rule.res && (x.present || []).includes(rule.res2));
       if (!b) return { match: false, zones: [] };
-      zones.add(b.name);
+      used.add(b.name); zones.add(b.name);
     } else if (rule.kind === "both") {
       // one body has BOTH resources present (either may be primary) — the
       // production-pair relationship from the analyze --pairs combos.
-      const b = bodies.find((x) => (x.present || []).includes(rule.res) && (x.present || []).includes(rule.res2));
+      const b = pick((x) => (x.present || []).includes(rule.res) && (x.present || []).includes(rule.res2));
       if (!b) return { match: false, zones: [] };
-      zones.add(b.name);
+      used.add(b.name); zones.add(b.name);
     } else if (rule.kind === "specials") {
+      // legacy count rule (no longer offered in the builder)
       if ((crit.numSpecials || 0) < (rule.n || 0)) return { match: false, zones: [] };
       for (const z of Object.values(crit.specials || {})) zones.add(z);
     } else if (rule.kind === "pairs") {
