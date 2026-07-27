@@ -364,20 +364,20 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
         <th>Bucket</th><th>K2</th><th>Loot</th>
         <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">▼</span></th>
-        <th>Naq</th><th></th>
+        <th>Naq</th>
       </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}">
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}"
+          hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           <td>${c.naqField || "—"}</td>
-          <td><a href="/seed/${s.seed}" hx-get="/seed/${s.seed}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="7">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="6">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
