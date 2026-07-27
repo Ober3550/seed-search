@@ -696,55 +696,52 @@ app.post("/api/universe/create", (req, res) => {
 app.get("/workers", (req, res) => page(req, res, "Workers", renderWorkersPage(jobs.workerStatus())));
 
 function renderWorkersPage(st) {
-  const jobLabel = (pool, j) => pool === "universe"
-    ? `Bucket <strong>${j.bucket || "—"}</strong> · ${(j.seed_start || 0).toLocaleString()}–${(j.seed_end || 0).toLocaleString()}${j.k2_enabled ? " · K2" : ""}`
-    : `<strong>${j.zone_name}</strong> · seed ${j.seed} · ${j.kind || "ore"}${j.kind === "surface" && j.grid_cell >= 0 ? ` · cell ${j.grid_cell}/${j.grid_n * j.grid_n}` : ""}`;
+  const jobLabel = (type, j) => type === "universe"
+    ? `<span class="wtag uni">universe</span> Bucket <strong>${j.bucket || "—"}</strong> · ${(j.seed_start || 0).toLocaleString()}–${(j.seed_end || 0).toLocaleString()}${j.k2_enabled ? " · K2" : ""}`
+    : `<span class="wtag surf">surface</span> <strong>${j.zone_name}</strong> · seed ${j.seed} · ${j.kind || "ore"}${j.kind === "surface" && j.grid_cell >= 0 ? ` · cell ${j.grid_cell}/${j.grid_n * j.grid_n}` : ""}`;
 
-  const pool = (title, kind, s) => `
-    <div class="worker-pool">
-      <div class="pool-head">
-        <h3>${title}</h3>
-        <span class="badge ${s.active ? "running" : "done"}">${s.active}/${s.max} active</span>
-        <span class="hint">${s.queued} queued</span>
-        <form class="pool-form" hx-post="/api/workers/concurrency" hx-swap="none"
-              hx-on::after-request="htmx.ajax('GET','/workers',{target:'#main'})">
-          <input type="hidden" name="pool" value="${kind}">
-          <label>Max workers: <input type="number" name="max" value="${s.max}" min="1" max="16"></label>
-          <button type="submit" class="btn-sm">Apply</button>
-        </form>
-      </div>
-      <ul class="worker-list">
-        ${Array.from({ length: s.max }).map((_, i) => {
-          const j = s.jobs[i];
-          return j
-            ? `<li><span class="dot running"></span> worker ${i + 1}: ${jobLabel(kind, j)}</li>`
-            : `<li class="idle"><span class="dot idle"></span> worker ${i + 1}: idle</li>`;
-        }).join("")}
-      </ul>
-    </div>`;
+  // shared slot list: running universe jobs, then running surface jobs, then idle
+  const active = [
+    ...st.universe.jobs.map(j => ["universe", j]),
+    ...st.surface.jobs.map(j => ["surface", j]),
+  ];
+  const slots = Array.from({ length: st.total }).map((_, i) => {
+    const a = active[i];
+    return a
+      ? `<li><span class="dot running"></span> worker ${i + 1}: ${jobLabel(a[0], a[1])}</li>`
+      : `<li class="idle"><span class="dot idle"></span> worker ${i + 1}: idle</li>`;
+  }).join("");
 
   return `
   <div class="page" hx-get="/workers" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Workers" }])}
     <h2>⚙ Workers</h2>
-    <p class="hint">Universe workers run <code>seedgen</code> (one per 100k bucket); surface workers run
-    <code>segen</code> (one per surface cell). Set how many run at once.</p>
-    <div class="worker-pools">
-      ${pool("🌠 Universe", "universe", st.universe)}
-      ${pool("🗺️ Surface", "surface", st.surface)}
+    <p class="hint">One shared pool — each worker (thread) picks up whichever job is next: universe
+    (<code>seedgen</code>) or surface (<code>segen</code>). Optionally cap how many of the pool each
+    type may use at once; set both caps to the total for a free-for-all.</p>
+    <div class="worker-pool">
+      <div class="pool-head">
+        <span class="badge ${st.running ? "running" : "done"}">${st.running}/${st.total} busy</span>
+        <span class="hint">universe ${st.universe.running}/${st.universe.cap} (${st.universe.queued} queued) ·
+        surface ${st.surface.running}/${st.surface.cap} (${st.surface.queued} queued)</span>
+        <form class="pool-form" hx-post="/api/workers/concurrency" hx-swap="none"
+              hx-on::after-request="htmx.ajax('GET','/workers',{target:'#main'})">
+          <label>Total <input type="number" name="total" value="${st.total}" min="1" max="32"></label>
+          <label title="max pool slots universe may use">Universe cap <input type="number" name="universe" value="${st.universe.cap}" min="0" max="32"></label>
+          <label title="max pool slots surface may use">Surface cap <input type="number" name="surface" value="${st.surface.cap}" min="0" max="32"></label>
+          <button type="submit" class="btn-sm">Apply</button>
+        </form>
+      </div>
+      <ul class="worker-list">${slots}</ul>
     </div>
   </div>`;
 }
 
 app.post("/api/workers/concurrency", (req, res) => {
-  const p = req.body.pool;
-  const max = parseInt(req.body.max);
-  if (!(max >= 1)) return res.status(400).json({ ok: false, error: "invalid max" });
-  if (p === "universe") jobs.setUniverseConcurrency(max);
-  else if (p === "surface") jobs.setSurfaceConcurrency(max);
-  else return res.status(400).json({ ok: false, error: "unknown pool" });
+  const num = (v) => (v === undefined || v === "" ? undefined : parseInt(v));
+  jobs.setWorkerLimits({ total: num(req.body.total), universe: num(req.body.universe), surface: num(req.body.surface) });
   jobs.processQueue(); // fill any newly-freed worker slots right away
-  res.json({ ok: true });
+  res.json({ ok: true, status: jobs.workerStatus() });
 });
 
 // ── Filter presets (reusable rulesets) ────────────────────────────────

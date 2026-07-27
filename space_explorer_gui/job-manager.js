@@ -122,12 +122,14 @@ function createUniverseBuckets(units, k2Enabled) {
 
 // ── Job processing loop ───────────────────────────────────────────────
 
-// Number of bucket jobs run concurrently (each is a single seedgen process).
-let universeConcurrency = parseInt(process.env.UNIVERSE_CONCURRENCY || "10");
+// ONE shared worker pool: `maxWorkers` threads, each of which picks up whichever
+// job is next (universe seedgen OR surface segen). Optional per-type caps limit
+// how many of the pool a type may use at once (default = maxWorkers = no limit,
+// i.e. fully shared). Set e.g. universe=5/surface=5 to reserve the split.
+let maxWorkers = parseInt(process.env.WORKERS || "10");
+let maxUniverse = parseInt(process.env.UNIVERSE_CONCURRENCY || String(maxWorkers));
+let maxSurface = parseInt(process.env.SURFACE_CONCURRENCY || String(maxWorkers));
 const runningUniverse = new Set();
-// Surface CELL jobs run concurrently (each renders one tile of one zone); this
-// is what parallelizes a large surface across cores/jobs.
-let surfaceConcurrency = parseInt(process.env.SURFACE_CONCURRENCY || "10");
 const runningSurface = new Set();
 
 // Live child processes by job id, so cancel-all can actually kill running work.
@@ -194,70 +196,81 @@ function clearCancelledJobs() {
   return { universe: uCount, surface: s.changes, dirsRemoved };
 }
 
-function setUniverseConcurrency(n) {
-  universeConcurrency = Math.max(1, Math.min(16, n | 0));
-}
-function setSurfaceConcurrency(n) {
-  surfaceConcurrency = Math.max(1, Math.min(16, n | 0));
+const clampInt = (n, lo, hi) => Math.max(lo, Math.min(hi, n | 0));
+
+// Set the shared pool size and optional per-type caps. Caps are clamped to the
+// pool size. Any field left undefined is unchanged.
+function setWorkerLimits({ total, universe, surface }) {
+  if (total != null && !Number.isNaN(total)) maxWorkers = clampInt(total, 1, 32);
+  if (universe != null && !Number.isNaN(universe)) maxUniverse = clampInt(universe, 0, maxWorkers);
+  if (surface != null && !Number.isNaN(surface)) maxSurface = clampInt(surface, 0, maxWorkers);
+  maxUniverse = Math.min(maxUniverse, maxWorkers);
+  maxSurface = Math.min(maxSurface, maxWorkers);
 }
 
-// Live worker snapshot: each pool's max, the jobs currently being processed
-// (so the UI can show universe vs surface), and how many are queued.
+// Live snapshot: pool size, per-type caps/running/queued, and the running jobs
+// (so the UI can label each worker universe vs surface).
 function workerStatus() {
   const d = db.getDb();
   const uniJobs = [...runningUniverse].map(id => db.getUniverseJob(id)).filter(Boolean);
   const surfJobs = [...runningSurface].map(id => db.getSurfaceJob(id)).filter(Boolean);
   const q = (t) => d.prepare(`SELECT COUNT(*) n FROM ${t} WHERE status='queued'`).get().n;
   return {
-    universe: { max: universeConcurrency, active: uniJobs.length, queued: q("universe_jobs"), jobs: uniJobs },
-    surface: { max: surfaceConcurrency, active: surfJobs.length, queued: q("surface_jobs"), jobs: surfJobs },
+    total: maxWorkers,
+    running: uniJobs.length + surfJobs.length,
+    universe: { cap: maxUniverse, running: uniJobs.length, queued: q("universe_jobs"), jobs: uniJobs },
+    surface: { cap: maxSurface, running: surfJobs.length, queued: q("surface_jobs"), jobs: surfJobs },
   };
 }
 
+function startUniverse(job) {
+  db.updateUniverseJob(job.id, { status: "running", started_at: new Date().toISOString() });
+  runningUniverse.add(job.id);
+  runUniverseBucket(job)
+    .catch(e => db.updateUniverseJob(job.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() }))
+    .finally(() => runningUniverse.delete(job.id));
+}
+
+function startSurface(job) {
+  db.updateSurfaceJob(job.id, { status: "running", started_at: new Date().toISOString() });
+  runningSurface.add(job.id);
+  runSurfaceJob(job)
+    .catch(e => db.updateSurfaceJob(job.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() }))
+    .finally(() => runningSurface.delete(job.id));
+}
+
+// One shared pool: fill up to `maxWorkers` threads, each taking whichever job is
+// next-eligible (respecting the per-type caps). When both a universe and a
+// surface job are eligible, the earlier-created one goes first.
 async function processQueue() {
   const d = db.getDb();
 
-  // universe buckets: keep up to `universeConcurrency` running
-  while (runningUniverse.size < universeConcurrency) {
-    const job = d.prepare(
-      "SELECT * FROM universe_jobs WHERE status = 'queued' AND id NOT IN " +
-      `(${[...runningUniverse, -1].join(",")}) ORDER BY seed_start LIMIT 1`
-    ).get();
-    if (!job) break;
-    db.updateUniverseJob(job.id, { status: "running", started_at: new Date().toISOString() });
-    runningUniverse.add(job.id);
-    runUniverseBucket(job)
-      .catch(e => {
-        db.updateUniverseJob(job.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() });
-      })
-      .finally(() => runningUniverse.delete(job.id));
-  }
-
-  // If a prerequisite (ore-prep) job failed, cascade the failure to its
-  // dependent cell jobs so they don't wait forever.
+  // A failed ore-prep cascades failure to its dependent cell jobs.
   d.prepare(
     "UPDATE surface_jobs SET status='failed', error='prerequisite ore pass failed', finished_at=? " +
     "WHERE status='queued' AND depends_on IN (SELECT id FROM surface_jobs WHERE status='failed')"
   ).run(new Date().toISOString());
 
-  // surface/ore jobs: up to surfaceConcurrency at once (tiled surface cells
-  // parallelize this way; ore jobs are fast). A cell job with a `depends_on`
-  // only becomes eligible once its ore-prep job is done (ore.jsonl exists).
-  while (runningSurface.size < surfaceConcurrency) {
-    const sjob = d.prepare(
-      "SELECT * FROM surface_jobs WHERE status = 'queued' AND id NOT IN " +
-      `(${[...runningSurface, -1].join(",")}) ` +
-      "AND (depends_on IS NULL OR depends_on IN (SELECT id FROM surface_jobs WHERE status='done')) " +
-      "ORDER BY created_at LIMIT 1"
-    ).get();
-    if (!sjob) break;
-    db.updateSurfaceJob(sjob.id, { status: "running", started_at: new Date().toISOString() });
-    runningSurface.add(sjob.id);
-    runSurfaceJob(sjob)
-      .catch(e => {
-        db.updateSurfaceJob(sjob.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() });
-      })
-      .finally(() => runningSurface.delete(sjob.id));
+  while (runningUniverse.size + runningSurface.size < maxWorkers) {
+    const uni = runningUniverse.size < maxUniverse
+      ? d.prepare(
+          "SELECT * FROM universe_jobs WHERE status='queued' AND id NOT IN " +
+          `(${[...runningUniverse, -1].join(",")}) ORDER BY seed_start LIMIT 1`
+        ).get()
+      : null;
+    const surf = runningSurface.size < maxSurface
+      ? d.prepare(
+          "SELECT * FROM surface_jobs WHERE status='queued' AND id NOT IN " +
+          `(${[...runningSurface, -1].join(",")}) ` +
+          "AND (depends_on IS NULL OR depends_on IN (SELECT id FROM surface_jobs WHERE status='done')) " +
+          "ORDER BY created_at LIMIT 1"
+        ).get()
+      : null;
+
+    if (!uni && !surf) break;
+    const pickUniverse = uni && (!surf || (uni.created_at || "") <= (surf.created_at || ""));
+    if (pickUniverse) startUniverse(uni);
+    else startSurface(surf);
   }
 }
 
@@ -726,8 +739,7 @@ module.exports = {
   requireSegen,
   requireSeedgen,
   createUniverseBuckets,
-  setUniverseConcurrency,
-  setSurfaceConcurrency,
+  setWorkerLimits,
   workerStatus,
   cancelAllJobs,
   clearCancelledJobs,
