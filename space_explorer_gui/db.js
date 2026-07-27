@@ -1,7 +1,7 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 
-const DB_PATH = path.join(__dirname, "data.sqlite");
+const DB_PATH = process.env.SE_GUI_DB || path.join(__dirname, "data.sqlite");
 
 let db;
 
@@ -149,6 +149,8 @@ function initSchema() {
     "ALTER TABLE surface_jobs ADD COLUMN kind TEXT DEFAULT 'ore'",  // 'ore' | 'surface'
     "ALTER TABLE surface_jobs ADD COLUMN grid_n INTEGER DEFAULT 1", // surface tiling: grid size
     "ALTER TABLE surface_jobs ADD COLUMN grid_cell INTEGER DEFAULT -1", // which cell (-1 = whole/ore)
+    "ALTER TABLE surface_jobs ADD COLUMN depends_on INTEGER", // prerequisite job id (cell → its ore-prep)
+    "ALTER TABLE surface_jobs ADD COLUMN load_ore INTEGER DEFAULT 0", // 1 = render from cached ore.jsonl
     "ALTER TABLE seed_filters ADD COLUMN rules TEXT", // JSON ruleset (replaces min_specials/min_pairs)
   ];
   for (const m of migrations) {
@@ -275,14 +277,15 @@ function createSurfaceJob(job) {
   const d = getDb();
   const stmt = d.prepare(`
     INSERT INTO surface_jobs
-      (zone_id, seed, zone_name, radius, sample_step, chunk_x, chunk_y, chunk_w, kind, grid_n, grid_cell)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (zone_id, seed, zone_name, radius, sample_step, chunk_x, chunk_y, chunk_w, kind, grid_n, grid_cell, depends_on, load_ore)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const info = stmt.run(
     job.zone_id, job.seed, job.zone_name, job.radius,
     job.sample_step || 1, job.chunk_x || null, job.chunk_y || null,
     job.chunk_w || null, job.kind || "ore",
-    job.grid_n || 1, job.grid_cell === undefined ? -1 : job.grid_cell
+    job.grid_n || 1, job.grid_cell === undefined ? -1 : job.grid_cell,
+    job.depends_on || null, job.load_ore ? 1 : 0
   );
   return info.lastInsertRowid;
 }

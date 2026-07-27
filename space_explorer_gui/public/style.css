@@ -335,3 +335,38 @@ dd { font-weight: 500; }
 .rule-row { display: flex; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
 .rule-row select, .rule-row input { padding: 4px; }
 .save-filter { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+
+/* per-zone resource chips */
+.res-chip { display: inline-block; background: #2a3446; border-radius: 4px; padding: 1px 5px; margin: 1px; font-size: 0.82rem; white-space: nowrap; }
+.res-chip.est { background: #2f2a20; opacity: 0.85; }
+.yields-cell { max-width: 520px; }
+
+/* generation status + in-flight feedback */
+.gen-status { display: inline-block; font-size: 0.8rem; padding: 1px 6px; border-radius: 4px; white-space: nowrap; margin-left: 2px; }
+.gen-status.running { background: #2b3a52; color: #9ec5ff; animation: pulse 1.2s ease-in-out infinite; }
+.gen-status.failed { background: #4a2222; color: #ffb3b3; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+/* htmx marks the element .htmx-request while its request is in flight */
+.btn.htmx-request, .btn-sm.htmx-request { opacity: 0.6; pointer-events: none; position: relative; }
+.btn.htmx-request::after, .btn-sm.htmx-request::after { content: " ⏳"; }
+button[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* live surface watch grid */
+.surf-grid-wrap { margin-top: 12px; }
+.surf-grid-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 0.95rem; }
+.surf-grid {
+  position: relative;
+  width: min(80vh, 100%);
+  aspect-ratio: 1 / 1;
+  background: #14181f;
+  border: 1px solid #2a3446;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.surf-cell { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+.surf-cell img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.surf-cell.queued { background: #1b2230; box-shadow: inset 0 0 0 1px #222c3a; }
+.surf-cell.running { background: #1f2a3d; box-shadow: inset 0 0 0 1px #37507a; animation: pulse 1.2s ease-in-out infinite; }
+.surf-cell.running span, .surf-cell.failed span { font-size: 1.4rem; opacity: 0.8; }
+.surf-cell.failed { background: #33201f; box-shadow: inset 0 0 0 1px #6a3030; }
+.surf-cell img.surf-full, .surf-full { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }

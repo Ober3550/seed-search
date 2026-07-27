@@ -124,6 +124,45 @@ fn entries(k2: bool) []const Entry {
     return if (k2) RESOURCE_ENTRIES[0..] else RESOURCE_ENTRIES[0..N_BASE_RESOURCES];
 }
 
+// ── Compact ore.jsonl parsing (for --load-ore) ──────────────────────────
+// Lines are exactly {"x":<int>,"y":<int>,"n":"<name>","a":<uint>}.
+
+/// Integer that follows `key` (e.g. "\"x\":") in a compact JSON line.
+fn intAfter(line: []const u8, key: []const u8) ?i64 {
+    const idx = std.mem.indexOf(u8, line, key) orelse return null;
+    var p = idx + key.len;
+    var neg = false;
+    if (p < line.len and line[p] == '-') {
+        neg = true;
+        p += 1;
+    }
+    var v: i64 = 0;
+    var any = false;
+    while (p < line.len and line[p] >= '0' and line[p] <= '9') : (p += 1) {
+        v = v * 10 + @as(i64, line[p] - '0');
+        any = true;
+    }
+    if (!any) return null;
+    return if (neg) -v else v;
+}
+
+/// Quoted string right after `key` (key ends with the opening quote, e.g. "\"n\":\"").
+fn strAfter(line: []const u8, key: []const u8) ?[]const u8 {
+    const idx = std.mem.indexOf(u8, line, key) orelse return null;
+    const start = idx + key.len;
+    const rel = std.mem.indexOfScalar(u8, line[start..], '"') orelse return null;
+    return line[start .. start + rel];
+}
+
+/// Map a parsed resource name to the static RESOURCE_ENTRIES slice (stable
+/// lifetime, and matches MapColors), or null if unknown.
+fn staticResName(n: []const u8) ?[]const u8 {
+    for (RESOURCE_ENTRIES) |e| {
+        if (std.mem.eql(u8, e.name, n)) return e.name;
+    }
+    return null;
+}
+
 /// Zone driver: read a seeds jsonl (universe summary), pick a world by seed and
 /// zones by name, compute each zone's surface autoplace controls via the
 /// universe generator port, generate ore, and write results into
@@ -140,6 +179,7 @@ fn runZoneDriver(
     render_surface: bool,
     surface_grid: i32, // NxN grid the surface is split into (1 = whole)
     surface_cell: i32, // which cell (0..grid*grid-1) to render; -1 = all cells
+    load_ore: bool, // read ore.jsonl instead of computing (per-cell renders)
 ) !void {
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
     var world: ?std.json.Value = null;
@@ -260,76 +300,118 @@ fn runZoneDriver(
         classifier = surfacegen.biome.Classifier.init(zone_seed);
 
         const r: i32 = @intFromFloat(radius);
-        std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
-        var ores = try se.computeSEOresInRect(
-            a,
-            zone_seed,
-            radius,
-            -r,
-            -r,
-            r,
-            r,
-            inputs,
-            1,
-            if (elev) |*e| e else null,
-            if (zt) |*t| t else null,
-            if (classifier) |*c| c else null,
-        );
-        defer ores.deinit(a);
 
-        // per-resource ORE totals (amounts are the deliverable; tiles are detail)
-        var summary: std.ArrayList(u8) = .empty;
-        try summary.appendSlice(a, "{");
-        try appendFmt(a, &summary, "\"zone\":\"{s}\",\"zone_seed\":{d},\"radius\":{d},\"resources\":{{", .{ name, zone_seed, r });
-        {
-            var first = true;
-            for (inputs) |inp| {
-                var cnt: u64 = 0;
-                var amount: u64 = 0;
-                for (ores.items) |o| {
-                    if (std.mem.eql(u8, o.resource_name, inp.name)) {
-                        cnt += 1;
-                        amount += o.amount;
-                    }
-                }
-                if (cnt == 0) continue;
-                var abuf: [32]u8 = undefined;
-                const disp = fmtAmount(&abuf, amount);
-                std.debug.print("   {s}: {s} ore ({d} tiles)\n", .{ inp.name, disp, cnt });
-                if (!first) try summary.appendSlice(a, ",");
-                first = false;
-                try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ inp.name, amount, disp, cnt });
-            }
-        }
-        try summary.appendSlice(a, "}}");
-
-        // write outputs
+        // Output dir up-front so --load-ore can read ore.jsonl from it.
         var dirbuf: [512]u8 = undefined;
         const zdir = try std.fmt.bufPrint(&dirbuf, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, name });
         try std.Io.Dir.createDirPath(.cwd(), init.io, zdir);
-        var pathbuf: [512]u8 = undefined;
-        const jpath = try std.fmt.bufPrint(&pathbuf, "{s}/ore.jsonl", .{zdir});
-        {
-            var buf: std.ArrayList(u8) = .empty;
-            for (ores.items) |ore| {
-                var line: [256]u8 = undefined;
-                const sl = try std.fmt.bufPrint(&line, "{{\"x\":{d},\"y\":{d},\"n\":\"{s}\",\"a\":{d}}}\n", .{ ore.x, ore.y, ore.resource_name, ore.amount });
-                try buf.appendSlice(a, sl);
+
+        var ores: std.ArrayList(se.OreEntity) = .empty;
+        defer ores.deinit(a);
+
+        if (load_ore) {
+            // Read the ore overlay from a prior zone-wide pass instead of
+            // recomputing it (the expensive step). Keep only entities inside the
+            // target cell (or the whole disk when rendering all cells).
+            var lx0: i32 = -r;
+            var ly0: i32 = -r;
+            var lx1: i32 = r;
+            var ly1: i32 = r;
+            if (surface_cell >= 0 and surface_grid > 1) {
+                const grid = surface_grid;
+                const full = r * 2;
+                const cw2 = @divTrunc(full + grid - 1, grid);
+                const gx = @mod(surface_cell, grid);
+                const gy = @divTrunc(surface_cell, grid);
+                lx0 = -r + gx * cw2;
+                lx1 = @min(r, lx0 + cw2);
+                ly0 = -r + gy * cw2;
+                ly1 = @min(r, ly0 + cw2);
             }
-            const file = try std.Io.Dir.createFile(.cwd(), init.io, jpath, .{});
-            defer file.close(init.io);
-            try file.writePositionalAll(init.io, buf.items, 0);
-        }
-        std.debug.print("   wrote {s} ({d} entities)\n", .{ jpath, ores.items.len });
-        {
-            var spathbuf: [512]u8 = undefined;
-            const spath = try std.fmt.bufPrint(&spathbuf, "{s}/summary.json", .{zdir});
-            const sfile = try std.Io.Dir.createFile(.cwd(), init.io, spath, .{});
-            defer sfile.close(init.io);
-            try sfile.writePositionalAll(init.io, summary.items, 0);
+            var opbuf: [512]u8 = undefined;
+            const opath = try std.fmt.bufPrint(&opbuf, "{s}/ore.jsonl", .{zdir});
+            const oraw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, opath, a, .unlimited);
+            defer a.free(oraw);
+            var olines = std.mem.tokenizeAny(u8, oraw, "\r\n");
+            while (olines.next()) |ln| {
+                if (ln.len == 0) continue;
+                const ox = intAfter(ln, "\"x\":") orelse continue;
+                const oy = intAfter(ln, "\"y\":") orelse continue;
+                if (ox < lx0 or ox >= lx1 or oy < ly0 or oy >= ly1) continue;
+                const onm = strAfter(ln, "\"n\":\"") orelse continue;
+                const sname = staticResName(onm) orelse continue;
+                const oa = intAfter(ln, "\"a\":") orelse 0;
+                try ores.append(a, .{ .x = @intCast(ox), .y = @intCast(oy), .resource_name = sname, .amount = @intCast(oa) });
+            }
+            std.debug.print("== zone {s}: loaded {d} cached ore entities (cell {d}/{d})\n", .{ name, ores.items.len, surface_cell, surface_grid * surface_grid });
+        } else {
+            std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
+            ores = try se.computeSEOresInRect(
+                a,
+                zone_seed,
+                radius,
+                -r,
+                -r,
+                r,
+                r,
+                inputs,
+                1,
+                if (elev) |*e| e else null,
+                if (zt) |*t| t else null,
+                if (classifier) |*c| c else null,
+            );
+
+            // per-resource ORE totals + ore.jsonl + summary.json. Skipped under
+            // --load-ore: those files already exist from the zone-wide pass.
+            var summary: std.ArrayList(u8) = .empty;
+            try summary.appendSlice(a, "{");
+            try appendFmt(a, &summary, "\"zone\":\"{s}\",\"zone_seed\":{d},\"radius\":{d},\"resources\":{{", .{ name, zone_seed, r });
+            {
+                var first = true;
+                for (inputs) |inp| {
+                    var cnt: u64 = 0;
+                    var amount: u64 = 0;
+                    for (ores.items) |o| {
+                        if (std.mem.eql(u8, o.resource_name, inp.name)) {
+                            cnt += 1;
+                            amount += o.amount;
+                        }
+                    }
+                    if (cnt == 0) continue;
+                    var abuf: [32]u8 = undefined;
+                    const disp = fmtAmount(&abuf, amount);
+                    std.debug.print("   {s}: {s} ore ({d} tiles)\n", .{ inp.name, disp, cnt });
+                    if (!first) try summary.appendSlice(a, ",");
+                    first = false;
+                    try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ inp.name, amount, disp, cnt });
+                }
+            }
+            try summary.appendSlice(a, "}}");
+
+            var pathbuf: [512]u8 = undefined;
+            const jpath = try std.fmt.bufPrint(&pathbuf, "{s}/ore.jsonl", .{zdir});
+            {
+                var buf: std.ArrayList(u8) = .empty;
+                for (ores.items) |ore| {
+                    var line: [256]u8 = undefined;
+                    const sl = try std.fmt.bufPrint(&line, "{{\"x\":{d},\"y\":{d},\"n\":\"{s}\",\"a\":{d}}}\n", .{ ore.x, ore.y, ore.resource_name, ore.amount });
+                    try buf.appendSlice(a, sl);
+                }
+                const file = try std.Io.Dir.createFile(.cwd(), init.io, jpath, .{});
+                defer file.close(init.io);
+                try file.writePositionalAll(init.io, buf.items, 0);
+            }
+            std.debug.print("   wrote {s} ({d} entities)\n", .{ jpath, ores.items.len });
+            {
+                var spathbuf: [512]u8 = undefined;
+                const spath = try std.fmt.bufPrint(&spathbuf, "{s}/summary.json", .{zdir});
+                const sfile = try std.Io.Dir.createFile(.cwd(), init.io, spath, .{});
+                defer sfile.close(init.io);
+                try sfile.writePositionalAll(init.io, summary.items, 0);
+            }
         }
 
-        if (write_bmp) {
+        if (write_bmp and !load_ore) {
             var bpathbuf: [512]u8 = undefined;
             const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.bmp", .{zdir});
             const size: u32 = @intCast(r * 2);
@@ -522,6 +604,7 @@ pub fn main(init: std.process.Init) !void {
     var render_surface: bool = false;
     var surface_grid: i32 = 1;
     var surface_cell: i32 = -1;
+    var load_ore: bool = false;
     var world_seed: ?u64 = null;
     var zone_names: ?[]const u8 = null;
     var out_dir: []const u8 = "output";
@@ -591,6 +674,11 @@ pub fn main(init: std.process.Init) !void {
             i += 1;
             surface_cell = try std.fmt.parseInt(i32, args[i], 10);
             render_surface = true;
+        } else if (std.mem.eql(u8, args[i], "--load-ore")) {
+            // Skip the (expensive) zone-wide ore pass and read the ore overlay
+            // from an already-written ore.jsonl. Used for per-cell surface jobs
+            // so the ore pass runs once per zone, not once per cell.
+            load_ore = true;
         } else if (std.mem.eql(u8, args[i], "--zones")) {
             i += 1;
             zones_file = args[i];
@@ -881,7 +969,7 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("--zones requires --world-seed\n", .{});
             return;
         };
-        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell);
+        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell, load_ore);
         return;
     }
 

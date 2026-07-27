@@ -15,10 +15,40 @@ const RESOURCES = [
 const app = express();
 const PORT = process.env.PORT || 3456;
 
+// Dev livereload: on in dev (default), off with NODE_ENV=production.
+const DEV = process.env.NODE_ENV !== "production";
+const START_EPOCH = Date.now(); // changes on every `node --watch` restart
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/static", express.static(path.join(__dirname, "public")));
 app.use("/output", express.static(jobs.OUTPUT_DIR));
+
+// Browser auto-reload (dev only, zero deps). The page holds this SSE stream
+// open; when `node --watch` restarts the server the socket drops, EventSource
+// auto-reconnects, sees a newer epoch, and reloads. See LIVERELOAD_SNIPPET.
+if (DEV) {
+  app.get("/__livereload", (req, res) => {
+    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    res.flushHeaders();
+    res.write(`event: hello\ndata: ${START_EPOCH}\n\n`);
+    const ping = setInterval(() => res.write(": ping\n\n"), 30000);
+    req.on("close", () => clearInterval(ping));
+  });
+}
+
+const LIVERELOAD_SNIPPET = DEV ? `
+  <script>
+  (function () {
+    var epoch = null;
+    var es = new EventSource("/__livereload");
+    es.addEventListener("hello", function (e) {
+      if (epoch !== null && epoch !== e.data) location.reload();
+      epoch = e.data;
+    });
+    // EventSource reconnects on its own after a restart — no onerror needed.
+  })();
+  </script>` : "";
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
@@ -30,7 +60,7 @@ function htmxPage(title, content) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} — SE Explorer</title>
   <script src="/static/htmx.min.js"></script>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css">${LIVERELOAD_SNIPPET}
 </head>
 <body>
   <div class="app">
@@ -78,6 +108,85 @@ function zoneSurfaceSummary(bucket, seed, zoneName) {
 function zoneSurfacePng(bucket, seed, zoneName, base = "ore") {
   const rel = path.join(bucket, `seed_${seed}`, zoneName, `${base}.png`);
   return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
+}
+
+// Inner HTML of the Resources cell: measured amounts if a summary exists,
+// otherwise the universe-generator estimates. Highest quantity first.
+function renderZoneResources(bucket, seed, zone) {
+  const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
+  const summary = zoneSurfaceSummary(bucket, seed, zone.name);
+  if (summary) {
+    const chips = Object.entries(summary.resources || {})
+      .sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
+      .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`).join(" ");
+    return `✅ ${chips}`;
+  }
+  let y = {};
+  try { y = JSON.parse(zone.resource_yields || "{}"); } catch (_) {}
+  const mag = (v) => {
+    const m = String(v).match(/([\d.]+)\s*([BMK]?)/i);
+    if (!m) return 0;
+    const s = { b: 1e9, m: 1e6, k: 1e3 }[(m[2] || "").toLowerCase()] || 1;
+    return parseFloat(m[1]) * s;
+  };
+  const entries = Object.entries(y).sort((a, b) => mag(b[1]) - mag(a[1]));
+  return entries.length
+    ? entries.map(([r, v]) => `<span class="res-chip est">${nm(r)} <strong>${v}</strong></span>`).join(" ")
+    : "—";
+}
+
+// The actions/status cell for one zone row. Reflects live job state and, while
+// anything is queued/running, polls itself every 2s. When ore work finishes it
+// also pushes a fresh Resources cell out-of-band (est → measured).
+function renderZoneCell(bucket, seed, zone, withResOob = false) {
+  const zjobs = db.getSurfaceJobsForZone(zone.id);
+  const active = (kind) => zjobs.filter(j => j.kind === kind && (j.status === "queued" || j.status === "running"));
+  const failed = (kind) => zjobs.filter(j => j.kind === kind && j.status === "failed").length > 0;
+  const oreActive = active("ore");
+  const surfActive = active("surface");
+  const anyActive = oreActive.length > 0 || surfActive.length > 0;
+
+  const orePng = zoneSurfacePng(bucket, seed, zone.name, "ore");
+  const surfPng = zoneSurfacePng(bucket, seed, zone.name, "surface");
+  const summary = !!zoneSurfaceSummary(bucket, seed, zone.name);
+  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
+  const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
+
+  // Ore control
+  let oreCtl;
+  if (oreActive.length) oreCtl = `<span class="gen-status running">⏳ ore…</span>`;
+  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} ${tgt}>${summary ? "↻ ore" : "⛏ ore"}</button>`;
+
+  // Surface control (may be many cell jobs)
+  let surfCtl;
+  if (surfActive.length) {
+    const total = surfActive.length + zjobs.filter(j => j.kind === "surface" && j.status === "done").length;
+    surfCtl = `<span class="gen-status running">⏳ surface ${total - surfActive.length}/${total}…</span>`;
+  } else {
+    surfCtl = `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ 🗺️" : "🗺️ surface"}</button>`;
+  }
+
+  // Watch link: available whenever a surface has been generated OR cells are
+  // still rendering — opens the live tiled grid.
+  const hasSurfaceWork = surfPng || zjobs.some(j => j.kind === "surface");
+  const watch = hasSurfaceWork
+    ? `<a class="btn-sm" href="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-get="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-target="#main" hx-push-url="true" title="watch grid">👁</a>`
+    : "";
+  const links = `${orePng ? `<a class="btn-sm" href="${orePng}" target="_blank" title="ore map">⛏</a>` : ""}${surfPng ? `<a class="btn-sm" href="${surfPng}" target="_blank" title="surface map">🗺️</a>` : ""}${watch}`;
+  const fail = (failed("ore") || failed("surface")) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
+
+  const poll = anyActive
+    ? `hx-get="/api/zone/cell?seed=${seed}&zone_id=${zone.id}" hx-trigger="every 2s" hx-swap="outerHTML"`
+    : "";
+
+  // OOB refresh of the Resources cell so est→measured flips as jobs land.
+  // Only emitted on poll/create responses — never in the initial full-page
+  // render, where a second <td> would duplicate the column.
+  const resOob = withResOob
+    ? `<td class="yields-cell" id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</td>`
+    : "";
+
+  return `<td class="row-actions" id="zcell-${zone.id}" ${poll}>${links}${oreCtl}${surfCtl}${fail}</td>${resOob}`;
 }
 
 // Breadcrumb trail for the drill-down.
@@ -302,13 +411,10 @@ function renderSeedDetail(s, c, zones, relevantOnly, filterId) {
     ? { label: "Filtered Set", href: `/filter/${filterId}` }
     : { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
   const filterQ = filterId ? `&filter=${filterId}` : "";
-  const specialsList = Object.entries(c.specials || {}).map(([r, z]) => `${r.replace("se-", "").replace("-ore", "")}→${z}`).join(", ");
-  const pairsList = Object.entries(c.pairs || {}).map(([p, z]) => `${p}→${z}`).join(", ");
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code></h2>
-    <p class="hint">Specials: ${specialsList || "none"}<br>Pairs: ${pairsList || "none"}${c.naqField ? `<br>Naq field: ${c.naqField}` : ""}</p>
     <div class="filter-bar">
       <label class="checkbox-label">
         <input type="checkbox" ${relevantOnly ? "checked" : ""}
@@ -321,54 +427,133 @@ function renderSeedDetail(s, c, zones, relevantOnly, filterId) {
       <div class="batch-actions">
         <button type="button" class="btn"
           hx-post="/api/surface/batch?kind=ore" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
-          hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)">
+          hx-disabled-elt="this"
+          hx-on::after-request="htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'})">
           ⛏ Generate ores — selected zones
         </button>
         <button type="button" class="btn btn-secondary"
           hx-post="/api/surface/batch?kind=surface" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
-          hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)">
+          hx-disabled-elt="this"
+          hx-on::after-request="htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'})">
           🗺️ Generate surfaces (biome+water) — selected zones
         </button>
       </div>
       <table class="data-table">
         <thead><tr>
           <th><input type="checkbox" onclick="document.querySelectorAll('#zone-batch input[name=zone]').forEach(c=>c.checked=this.checked)"></th>
-          <th>Zone</th><th>Type</th><th>Radius</th><th>Primary</th><th>Δv</th><th>★</th><th>Ore estimates</th><th></th>
+          <th>Zone</th><th>Type</th><th>Radius</th><th>Δv</th><th>Water</th><th>Enemy</th><th>★</th>
+          <th>Resources <small>(measured if generated, else est.)</small></th><th></th>
         </tr></thead>
         <tbody>
           ${zones.map(z => {
             const relevant = (c.selectedZones || []).includes(z.name);
-            const summary = zoneSurfaceSummary(s.bucket, s.seed, z.name);
-            const orePng = zoneSurfacePng(s.bucket, s.seed, z.name, "ore");
-            const surfPng = zoneSurfacePng(s.bucket, s.seed, z.name, "surface");
-            const ore = summary ? Object.entries(summary.resources || {})
-              .sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0)).slice(0, 4)
-              .map(([r, v]) => `${r.replace("se-", "").replace("kr-", "").replace("-ore", "")}: <strong>${v.display || fmtAmount(v.amount)}</strong>`).join(", ") : "";
-            const genArgs = `hx-vals='${JSON.stringify({ zone_id: z.id, seed: s.seed, zone_name: z.name, radius: Math.round(z.radius || 500) })}'`;
-            const after = `hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)"`;
+            const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
+            const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
             return `
           <tr>
             <td><input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}></td>
             <td><strong>${z.name}</strong></td>
             <td><span class="badge zone-type">${z.zone_type}</span></td>
             <td>${z.radius ? Math.round(z.radius) : "—"}</td>
-            <td>${z.primary_resource || "—"}</td>
             <td class="num">${z.delta_v ? Math.round(z.delta_v) : "—"}</td>
+            <td>${water}</td>
+            <td>${enemy}</td>
             <td>${relevant ? "⭐" : ""}</td>
-            <td class="yields-cell">${summary ? `✅ ${ore}` : "—"}</td>
-            <td class="row-actions">
-              ${orePng ? `<a class="btn-sm" href="${orePng}" target="_blank" title="ore map">⛏</a>` : ""}
-              ${surfPng ? `<a class="btn-sm" href="${surfPng}" target="_blank" title="surface map">🗺️</a>` : ""}
-              <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} hx-swap="none" ${after}>${summary ? "↻ ore" : "⛏ ore"}</button>
-              <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${after}>🗺️ surface</button>
-            </td>
+            <td class="yields-cell" id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</td>
+            ${renderZoneCell(s.bucket, s.seed, z)}
           </tr>`;}).join("")}
-          ${zones.length === 0 ? `<tr><td colspan="9">No zones in this view.</td></tr>` : ""}
+          ${zones.length === 0 ? `<tr><td colspan="10">No zones in this view.</td></tr>` : ""}
         </tbody>
       </table>
     </form>
   </div>`;
 }
+
+// ── Live surface watch (tiled grid) ────────────────────────────────────
+
+function zoneCellPng(bucket, seed, zoneName, n, cell) {
+  const file = n > 1 ? `surface_${n}_${cell}.png` : "surface.png";
+  const rel = path.join(bucket, `seed_${seed}`, zoneName, file);
+  return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
+}
+
+// The tiled grid fragment. Each planned cell is absolutely positioned as a % of
+// the 2r canvas (matches the stitched surface.png exactly). Polls itself every
+// 1.5s until every cell has a PNG, then stops.
+function renderSurfaceGrid(seed, zoneId) {
+  const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
+  if (!zone) return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}"><p class="hint">Zone not found.</p></div>`;
+  const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
+  const radius = Math.round(zone.radius || 500);
+  const { n, cells } = jobs.surfaceCellLayout(radius);
+
+  const surfJobs = db.getSurfaceJobsForZone(zoneId).filter(j => j.kind === "surface");
+  const byCell = {};
+  for (const j of surfJobs) byCell[j.grid_cell] = j;
+  const anyActive = surfJobs.some(j => j.status === "queued" || j.status === "running");
+
+  // Fallback for surfaces stitched before per-cell PNGs existed: no cell PNGs on
+  // disk, nothing running, but surface.png present → just show the full image.
+  const hasCellPngs = cells.some(c => zoneCellPng(bucket, seed, zone.name, n, c.cell));
+  const stitchedRel = zoneCellPng(bucket, seed, zone.name, 1, 0);
+  if (n > 1 && !hasCellPngs && !anyActive && stitchedRel) {
+    return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}">
+      <div class="surf-grid-head"><strong>${zone.name}</strong> · <span class="gen-status">✅ stitched</span>
+        <a class="btn-sm" href="${stitchedRel}" target="_blank" title="full-res">⤢ full image</a></div>
+      <div class="surf-grid"><img class="surf-full" src="${stitchedRel}" alt="${zone.name} surface"></div>
+    </div>`;
+  }
+
+  let done = 0, failed = 0;
+  const slots = cells.map(c => {
+    const png = zoneCellPng(bucket, seed, zone.name, n, c.cell);
+    const job = byCell[n > 1 ? c.cell : -1];
+    const style = `left:${c.leftPct}%;top:${c.topPct}%;width:${c.wPct}%;height:${c.hPct}%`;
+    let state, inner;
+    if (png) { state = "done"; done++; inner = `<img loading="lazy" src="${png}" alt="cell ${c.cell}">`; }
+    else if (job && job.status === "failed") { state = "failed"; failed++; inner = `<span>⚠️</span>`; }
+    else if (job && job.status === "running") { state = "running"; inner = `<span>⏳</span>`; }
+    else { state = "queued"; inner = ""; }
+    return `<div class="surf-cell ${state}" style="${style}" title="cell ${c.cell}">${inner}</div>`;
+  }).join("");
+
+  const total = cells.length;
+  const complete = done + failed >= total;
+  const poll = complete ? "" : `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML"`;
+  const status = complete
+    ? (failed ? `⚠️ ${done}/${total} cells (${failed} failed)` : `✅ ${done}/${total} cells`)
+    : `⏳ ${done}/${total} cells…`;
+
+  return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}" ${poll}>
+    <div class="surf-grid-head">
+      <strong>${zone.name}</strong> · grid ${n}×${n} · <span class="gen-status ${complete ? "" : "running"}">${status}</span>
+      ${complete && stitchedRel ? `<a class="btn-sm" href="${stitchedRel}" target="_blank" title="stitched full-res">⤢ full image</a>` : ""}
+    </div>
+    <div class="surf-grid">${slots}</div>
+  </div>`;
+}
+
+// Poll target for the live grid.
+app.get("/api/surface/grid", (req, res) => {
+  res.send(renderSurfaceGrid(parseInt(req.query.seed), parseInt(req.query.zone_id)));
+});
+
+// Full watch page (breadcrumb + embedded live grid).
+app.get("/surface/watch", (req, res) => {
+  const seed = parseInt(req.query.seed);
+  const zoneId = parseInt(req.query.zone_id);
+  const s = db.getSeed(seed);
+  const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
+  if (!s || !zone) return page(req, res, "Watch", `<div class="page"><p class="hint">Seed or zone not found.</p></div>`);
+  const content = `
+  <div class="page">
+    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seed ${seed}`, href: `/seed/${seed}` }, { label: `${zone.name} surface` }])}
+    <h2>👁 Watching <strong>${zone.name}</strong> surface</h2>
+    <p class="hint">Each tile appears as its generation cell finishes; the grid matches the final stitched image.</p>
+    ${renderSurfaceGrid(seed, zoneId)}
+  </div>`;
+  page(req, res, `Watch ${zone.name}`, content);
+});
 
 // ── Surface jobs + viewer ──────────────────────────────────────────────
 
@@ -535,10 +720,21 @@ function queueZone(zone, seed, kind) {
   }
   const n = jobs.surfaceGridFor(radius);
   const cells = jobs.planSurfaceCells(radius, n);
-  return cells.map(cell => db.createSurfaceJob({
+  // Small planet (no tiling): a single render job computes its own ore.
+  if (n <= 1) {
+    return [db.createSurfaceJob({
+      zone_id: zone.id, seed, zone_name: zone.name, radius, kind: "surface", grid_n: 1, grid_cell: -1,
+    })];
+  }
+  // Tiled: run the ore pass ONCE (a prep job writes ore.jsonl), then every cell
+  // render depends on it and reads that cache (--load-ore) rather than
+  // recomputing zone-wide ore per cell.
+  const prep = db.createSurfaceJob({ zone_id: zone.id, seed, zone_name: zone.name, radius, kind: "ore" });
+  const cellIds = cells.map(cell => db.createSurfaceJob({
     zone_id: zone.id, seed, zone_name: zone.name, radius,
-    kind: "surface", grid_n: n, grid_cell: n > 1 ? cell : -1,
+    kind: "surface", grid_n: n, grid_cell: cell, depends_on: prep, load_ore: 1,
   }));
+  return [prep, ...cellIds];
 }
 
 app.post("/api/surface/create", (req, res) => {
@@ -547,7 +743,23 @@ app.post("/api/surface/create", (req, res) => {
   const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.body.zone_id));
   if (!zone) return res.status(404).json({ ok: false, error: "zone not found" });
   const ids = queueZone(zone, seed, kind);
+  // Row button targets #zcell-<id>: hand back the live cell so it immediately
+  // shows "generating…" and starts polling. Non-htmx callers get JSON.
+  if (req.headers["hx-request"]) {
+    const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
+    return res.send(renderZoneCell(bucket, seed, zone, true));
+  }
   res.json({ ok: true, kind, queued: ids.length, job_ids: ids });
+});
+
+// Poll target for a single zone's action cell. Re-renders live status and,
+// via OOB, the Resources cell. Stops polling itself once nothing is active.
+app.get("/api/zone/cell", (req, res) => {
+  const seed = parseInt(req.query.seed);
+  const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.query.zone_id));
+  if (!zone) return res.status(404).send("");
+  const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
+  res.send(renderZoneCell(bucket, seed, zone, true));
 });
 
 // Batch: queue for each checked zone of a seed (kind = ore | surface).
@@ -573,7 +785,8 @@ if (!fs.existsSync(htmxPath)) fs.writeFileSync(htmxPath, "// htmx placeholder �
 app.listen(PORT, () => {
   console.log(`\n🌌 SE Explorer GUI at http://localhost:${PORT}`);
   console.log("  buckets → seeds → filtered → seed → zone\n");
-  jobs.startPolling();
+  if (process.env.SE_GUI_NO_WORKER) console.log("  ⚠️  worker disabled (SE_GUI_NO_WORKER)\n");
+  else jobs.startPolling();
 });
 
 process.on("SIGINT", () => { jobs.stopPolling(); process.exit(0); });

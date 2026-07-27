@@ -15,7 +15,7 @@ const UNIVERSE_GEN_DIR = path.join(PROJECT_ROOT, "universe_generator", "zig");
 //   output/<bucket>/seed_<n>/<Zone>/ore.jsonl        surface
 //   output/<bucket>/seed_<n>/<Zone>/summary.json
 //   output/<bucket>/seed_<n>/<Zone>/ore.png
-const OUTPUT_DIR = path.join(PROJECT_ROOT, "output");
+const OUTPUT_DIR = process.env.SE_GUI_OUTPUT || path.join(PROJECT_ROOT, "output");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 // Every universe job is exactly one fixed-size bucket.
@@ -144,12 +144,22 @@ async function processQueue() {
       .finally(() => runningUniverse.delete(job.id));
   }
 
+  // If a prerequisite (ore-prep) job failed, cascade the failure to its
+  // dependent cell jobs so they don't wait forever.
+  d.prepare(
+    "UPDATE surface_jobs SET status='failed', error='prerequisite ore pass failed', finished_at=? " +
+    "WHERE status='queued' AND depends_on IN (SELECT id FROM surface_jobs WHERE status='failed')"
+  ).run(new Date().toISOString());
+
   // surface/ore jobs: up to surfaceConcurrency at once (tiled surface cells
-  // parallelize this way; ore jobs are fast).
+  // parallelize this way; ore jobs are fast). A cell job with a `depends_on`
+  // only becomes eligible once its ore-prep job is done (ore.jsonl exists).
   while (runningSurface.size < surfaceConcurrency) {
     const sjob = d.prepare(
       "SELECT * FROM surface_jobs WHERE status = 'queued' AND id NOT IN " +
-      `(${[...runningSurface, -1].join(",")}) ORDER BY created_at LIMIT 1`
+      `(${[...runningSurface, -1].join(",")}) ` +
+      "AND (depends_on IS NULL OR depends_on IN (SELECT id FROM surface_jobs WHERE status='done')) " +
+      "ORDER BY created_at LIMIT 1"
     ).get();
     if (!sjob) break;
     db.updateSurfaceJob(sjob.id, { status: "running", started_at: new Date().toISOString() });
@@ -376,9 +386,19 @@ function writeSeedZonesFile(seedRow, zoneNames) {
 
 const STITCH = path.join(PROJECT_ROOT, "calibration", "mod-dump", "stitch_surface.py");
 
-// Grid size for a zone: cells of ~1024 tiles, at least 1 (whole) up to a cap.
+// Static cell edge (tiles). Grid is chosen so every cell is ~this size on ANY
+// planet, so each surface job processes a near-constant tile count and finishes
+// in roughly the same time (cellW = ceil(2r/N) ≈ SURFACE_CELL_TILES). Bump this
+// to trade fewer/larger jobs for more/smaller ones.
+const SURFACE_CELL_TILES = 1024;
+// Safety cap on N (grid is N×N). Set well above the real radius range (max
+// radius ~10000 → N=20) so it never bites in practice; guards pathological huge
+// bodies from exploding into thousands of jobs.
+const SURFACE_GRID_CAP = 32;
+
+// Grid size for a zone: N×N cells of ~SURFACE_CELL_TILES, at least 1 (whole).
 function surfaceGridFor(radius) {
-  return Math.max(1, Math.min(8, Math.ceil((radius * 2) / 1024)));
+  return Math.max(1, Math.min(SURFACE_GRID_CAP, Math.ceil((radius * 2) / SURFACE_CELL_TILES)));
 }
 
 // Cell indices (row-major, gx=i%n) of an n×n grid over [-r,r]² that intersect
@@ -403,6 +423,29 @@ function planSurfaceCells(radius, n) {
 // How many cells the group SHOULD have (used to detect group completion).
 function expectedCells(n, radius) {
   return planSurfaceCells(radius, n).length;
+}
+
+// Per-cell placement (as % of the 2r canvas) for the live browser grid, in the
+// SAME orientation as the stitched surface.png. Verified pixel-exact against the
+// stitcher: place surface_<n>_<cell>.png at (leftPct, topPct) sized wPct×hPct.
+function surfaceCellLayout(radius) {
+  const n = surfaceGridFor(radius);
+  const full = radius * 2;
+  const cellW = Math.ceil(full / n);
+  const cells = planSurfaceCells(radius, n).map(cell => {
+    const gx = cell % n, gy = Math.floor(cell / n);
+    const x0 = gx * cellW, y0 = gy * cellW;
+    const cw = Math.min(full, x0 + cellW) - x0;
+    const ch = Math.min(full, y0 + cellW) - y0;
+    return {
+      cell, gx, gy,
+      leftPct: 100 * x0 / full,
+      topPct: 100 * (full - y0 - ch) / full, // final vertical flip
+      wPct: 100 * cw / full,
+      hPct: 100 * ch / full,
+    };
+  });
+  return { n, cells };
 }
 
 function stitchSurface(zoneDir, gridN, radius) {
@@ -456,6 +499,9 @@ function runSurfaceJob(job) {
     if (isSurface) {
       if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
       else args.push("--render-surface");
+      // Render from the cached ore.jsonl (written by the zone's ore-prep job)
+      // instead of recomputing zone-wide ore for every cell.
+      if (job.load_ore) args.push("--load-ore");
     }
 
     console.log(`[surface ${job.id}] segen ${args.join(" ")}`);
@@ -482,8 +528,11 @@ function runSurfaceJob(job) {
 
       let pngRel = null;
       if (isCell) {
-        // A cell finished. When ALL cells of this (seed,zone,grid) group are
-        // done, stitch them into surface.png.
+        // A cell finished. Convert its BMP → per-cell PNG right away so the live
+        // watch grid can show it immediately (before the whole group stitches).
+        const cellBmp = path.join(zDir, `surface_${job.grid_n}_${job.grid_cell}.bmp`);
+        if (fs.existsSync(cellBmp)) await cellToPng(cellBmp);
+        // When ALL cells of this (seed,zone,grid) group are done, stitch them.
         db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, finished_at: new Date().toISOString() });
         const siblings = db.getSurfaceCells(job.seed, job.zone_name, job.grid_n);
         const allDone = siblings.length >= expectedCells(job.grid_n, job.radius) &&
@@ -539,6 +588,19 @@ function convertBmpToPng(bmpPath) {
   });
 }
 
+// One tiled cell BMP → final-oriented PNG (flip + BGR→RGB) for the live grid.
+const CELL_PNG = path.join(PROJECT_ROOT, "calibration", "mod-dump", "cell_png.py");
+function cellToPng(bmpPath) {
+  return new Promise((resolve) => {
+    const pngPath = bmpPath.replace(/\.bmp$/, ".png");
+    const child = spawn("python3", [CELL_PNG, bmpPath, pngPath], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", d => err += d);
+    child.on("close", code => resolve(code === 0 && fs.existsSync(pngPath) ? pngPath : null));
+    child.on("error", () => resolve(null));
+  });
+}
+
 // ── Polling ────────────────────────────────────────────────────────────
 
 let pollTimer = null;
@@ -568,6 +630,7 @@ module.exports = {
   writeSeedZonesFile,
   surfaceGridFor,
   planSurfaceCells,
+  surfaceCellLayout,
   bucketLabel,
   bucketDir,
   seedDir,
