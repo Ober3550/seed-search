@@ -292,10 +292,12 @@ fn runZoneDriver(
                     }
                 }
                 if (cnt == 0) continue;
-                std.debug.print("   {s}: {d} ore ({d} tiles)\n", .{ inp.name, amount, cnt });
+                var abuf: [32]u8 = undefined;
+                const disp = fmtAmount(&abuf, amount);
+                std.debug.print("   {s}: {s} ore ({d} tiles)\n", .{ inp.name, disp, cnt });
                 if (!first) try summary.appendSlice(a, ",");
                 first = false;
-                try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"tiles\":{d}}}", .{ inp.name, amount, cnt });
+                try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ inp.name, amount, disp, cnt });
             }
         }
         try summary.appendSlice(a, "}}");
@@ -369,6 +371,14 @@ fn runZoneDriver(
         try rfile.writePositionalAll(init.io, out.items, 0);
         std.debug.print("wrote {s}\n", .{rpath});
     }
+}
+
+/// Human-readable ore amount: >=1e9 -> "X.XXB", >=1e6 -> "X.XXM", else raw.
+fn fmtAmount(buf: []u8, amount: u64) []const u8 {
+    const f: f64 = @floatFromInt(amount);
+    if (f >= 1e9) return std.fmt.bufPrint(buf, "{d:.2}B", .{f / 1e9}) catch "?";
+    if (f >= 1e6) return std.fmt.bufPrint(buf, "{d:.2}M", .{f / 1e6}) catch "?";
+    return std.fmt.bufPrint(buf, "{d}", .{amount}) catch "?";
 }
 
 fn appendFmt(a: std.mem.Allocator, list: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
