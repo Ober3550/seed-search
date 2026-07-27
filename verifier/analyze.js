@@ -446,12 +446,25 @@ function evaluateWorld(seedRaw) {
   }
   const selected = new Set([...Object.values(specials), ...Object.values(pairs)]);
   const nf = bestNaqField(old);
+  // Per-viable-body detail so tag/rule filters can query primary + present
+  // (secondary) resources. present = resources with a nonzero score.
+  const bodyInfo = bodies.map((b) => ({
+    name: b.name,
+    type: (b.zone_type && b.zone_type[0]) || "?",
+    radius: Math.round(b.radius || 0),
+    dv: Math.round(b.delta_v || 0),
+    primary: primaryResource(b),
+    present: Object.entries(b.resource || {})
+      .filter(([, v]) => v > 0)
+      .map(([k]) => noColor(k)),
+  }));
   return {
     seed: seedRaw.s,
     loot: (seedRaw.l || ""),
     k2: !!seedRaw.k,
     zoneCount: (seedRaw.z || []).length,
     viableBodies: bodies.map((b) => b.name),
+    bodies: bodyInfo,   // [{name,type,radius,dv,primary,present:[...]}]
     specials,          // resource -> zone name
     numSpecials: Object.keys(specials).length,
     pairs,             // combo -> zone name
@@ -461,7 +474,58 @@ function evaluateWorld(seedRaw) {
   };
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld };
+// ── Rule-based filters ───────────────────────────────────────────────────
+// A filter is a list of rules, ALL of which must hold (AND). Each rule:
+//   { kind: "primary",   res }            — a body has `res` as primary
+//   { kind: "present",   res }            — a body has `res` present (secondary ok)
+//   { kind: "combo",     res, res2 }      — one body: `res` primary AND `res2` present
+//   { kind: "specials",  n }              — >= n distinct special primaries
+//   { kind: "pairs",     n }              — >= n production pairs matched
+// matchFilter returns { match, zones:[names] } — zones are the bodies that
+// satisfied the resource rules (for downstream zone selection); specials/pairs
+// rules contribute their preset selectedZones.
+function matchFilter(crit, rules) {
+  if (!rules || rules.length === 0) return { match: true, zones: crit.selectedZones || [] };
+  const bodies = crit.bodies || [];
+  const zones = new Set();
+  for (const rule of rules) {
+    if (rule.kind === "primary") {
+      const b = bodies.find((x) => x.primary === rule.res);
+      if (!b) return { match: false, zones: [] };
+      zones.add(b.name);
+    } else if (rule.kind === "present") {
+      const b = bodies.find((x) => (x.present || []).includes(rule.res));
+      if (!b) return { match: false, zones: [] };
+      zones.add(b.name);
+    } else if (rule.kind === "combo") {
+      const b = bodies.find((x) => x.primary === rule.res && (x.present || []).includes(rule.res2));
+      if (!b) return { match: false, zones: [] };
+      zones.add(b.name);
+    } else if (rule.kind === "specials") {
+      if ((crit.numSpecials || 0) < (rule.n || 0)) return { match: false, zones: [] };
+      for (const z of Object.values(crit.specials || {})) zones.add(z);
+    } else if (rule.kind === "pairs") {
+      if ((crit.numPairs || 0) < (rule.n || 0)) return { match: false, zones: [] };
+      for (const z of Object.values(crit.pairs || {})) zones.add(z);
+    }
+  }
+  return { match: true, zones: [...zones] };
+}
+
+// A short human label for a rule (UI + preset descriptions).
+function ruleLabel(rule) {
+  const nm = (r) => (r || "").replace("se-", "").replace("kr-", "").replace("-ore", "");
+  switch (rule.kind) {
+    case "primary": return `${nm(rule.res)} primary`;
+    case "present": return `has ${nm(rule.res)}`;
+    case "combo": return `${nm(rule.res)} primary + ${nm(rule.res2)} secondary`;
+    case "specials": return `≥${rule.n} specials`;
+    case "pairs": return `≥${rule.n} pairs`;
+    default: return JSON.stringify(rule);
+  }
+}
+
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, ruleLabel };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below

@@ -330,3 +330,8 @@ dd { font-weight: 500; }
 .crumbs { font-size: 0.85rem; opacity: 0.8; margin-bottom: 8px; }
 .crumbs a { color: #7fb3ff; text-decoration: none; }
 .danger { background: #6a2a2a; }
+
+/* filter preset rule builder */
+.rule-row { display: flex; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+.rule-row select, .rule-row input { padding: 4px; }
+.save-filter { display: flex; gap: 6px; align-items: center; margin-top: 6px; }

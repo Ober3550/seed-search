@@ -3,6 +3,14 @@ const path = require("path");
 const fs = require("fs");
 const db = require("./db");
 const jobs = require("./job-manager");
+const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
+
+const RESOURCES = [
+  "se-vulcanite", "se-cryonite", "se-vitamelange", "se-holmium-ore",
+  "se-beryllium-ore", "se-iridium-ore", "se-naquium-ore",
+  "kr-imersite", "kr-mineral-water", "kr-rare-metal-ore",
+  "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil",
+];
 
 const app = express();
 const PORT = process.env.PORT || 3456;
@@ -31,6 +39,7 @@ function htmxPage(title, content) {
       <ul class="nav-links">
         <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true">Universe Buckets</a></li>
         <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true">Seeds</a></li>
+        <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true">Filter Presets</a></li>
         <li><a href="/filters" hx-get="/filters" hx-target="#main" hx-push-url="true">Filtered Sets</a></li>
         <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true">Surface Jobs</a></li>
       </ul>
@@ -56,6 +65,10 @@ function fmtAmount(n) {
 }
 
 function seedCriteria(s) { try { return JSON.parse(s.criteria); } catch (_) { return null; } }
+function filterRulesLabel(f) {
+  try { const r = JSON.parse(f.rules); return r.map(analyze.ruleLabel).join(" AND ") || "no rules"; }
+  catch (_) { return "—"; }
+}
 
 function zoneSurfaceSummary(bucket, seed, zoneName) {
   try {
@@ -130,20 +143,25 @@ function renderBucketsTable(jobsList) {
 
 app.get("/seeds", (req, res) => {
   const bucket = req.query.bucket || "";
-  const min_specials = parseInt(req.query.min_specials || "0");
-  const min_pairs = parseInt(req.query.min_pairs || "0");
+  const defId = req.query.def ? parseInt(req.query.def) : null;
   const loot = req.query.loot || "";
+
+  const def = defId ? db.getFilterDef(defId) : null;
+  const rules = def ? JSON.parse(def.rules) : [];
 
   let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined });
   seeds = seeds.filter(s => {
-    const c = seedCriteria(s); if (!c) return min_specials === 0 && min_pairs === 0;
-    return c.numSpecials >= min_specials && c.numPairs >= min_pairs;
+    const c = seedCriteria(s); if (!c) return rules.length === 0;
+    return analyze.matchFilter(c, rules).match;
   });
   const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, { bucket, min_specials, min_pairs, loot }));
+  const defs = db.getFilterDefs();
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot }));
 });
 
-function renderSeedsPage(seeds, buckets, f) {
+function renderSeedsPage(seeds, buckets, defs, f) {
+  const rules = f.def ? JSON.parse(f.def.rules) : [];
+  const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seeds ${f.bucket || "(all)"}` }])}
@@ -154,27 +172,25 @@ function renderSeedsPage(seeds, buckets, f) {
           <option value="">All buckets</option>
           ${buckets.map(b => `<option value="${b}" ${f.bucket === b ? "selected" : ""}>${b}</option>`).join("")}
         </select>
-        <label>Min specials:
-          <select name="min_specials" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
-            ${[0,1,2,3,4,5,6].map(n => `<option value="${n}" ${f.min_specials === n ? "selected" : ""}>${n}</option>`).join("")}
-          </select></label>
-        <label>Min pairs:
-          <select name="min_pairs" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
-            ${[0,1,2,3,4,5].map(n => `<option value="${n}" ${f.min_pairs === n ? "selected" : ""}>${n}</option>`).join("")}
+        <label>Filter:
+          <select name="def" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
+            <option value="">— none —</option>
+            ${defs.map(d => `<option value="${d.id}" ${f.defId === d.id ? "selected" : ""}>${d.name}${d.builtin ? "" : " *"}</option>`).join("")}
           </select></label>
         <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
+        <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
-      ${f.bucket ? `
+      <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
+      ${f.bucket && f.defId ? `
       <form class="save-filter" hx-post="/api/filter/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/filters?bucket=${f.bucket}',{target:'#main'})">
         <input type="hidden" name="bucket" value="${f.bucket}">
-        <input type="hidden" name="min_specials" value="${f.min_specials}">
-        <input type="hidden" name="min_pairs" value="${f.min_pairs}">
+        <input type="hidden" name="def" value="${f.defId}">
         <input type="hidden" name="loot" value="${f.loot}">
-        <input type="text" name="name" placeholder="Save these as a filtered set…" required>
+        <input type="text" name="name" placeholder="Save as a filtered set…" value="${f.def ? f.def.name.replace(/[^a-zA-Z0-9_-]/g, "_") : ""}" required>
         <button type="submit" class="btn">💾 Save filtered set (${seeds.length})</button>
-      </form>` : `<p class="hint">Pick a bucket to save a filtered set.</p>`}
+      </form>` : `<p class="hint">Pick a bucket and a filter to save a filtered set.</p>`}
     </div>
     <table class="data-table">
       <thead><tr><th>Seed</th><th>Bucket</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th>Naq</th><th></th></tr></thead>
@@ -217,7 +233,7 @@ function renderFiltersPage(filters, bucket) {
         <tr>
           <td><strong>${f.name}</strong></td>
           <td>${f.bucket}</td>
-          <td>≥${f.min_specials} specials, ≥${f.min_pairs} pairs${f.loot ? `, loot ${f.loot}*` : ""}</td>
+          <td>${filterRulesLabel(f)}${f.loot ? `, loot ${f.loot}*` : ""}</td>
           <td>${f.matched}</td>
           <td>${f.created_at}</td>
           <td>
@@ -244,7 +260,7 @@ function renderFilterSeeds(f, seeds) {
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Seeds", href: `/seeds?bucket=${f.bucket}` }, { label: "Filtered Sets", href: `/filters?bucket=${f.bucket}` }, { label: f.name }])}
     <h2>🔎 ${f.name} <span class="badge zone-type">${f.bucket}</span> <span class="badge done">${seeds.length} seeds</span></h2>
-    <p class="hint">≥${f.min_specials} specials, ≥${f.min_pairs} pairs${f.loot ? `, loot ${f.loot}*` : ""}</p>
+    <p class="hint">${filterRulesLabel(f)}${f.loot ? `, loot ${f.loot}*` : ""}</p>
     <table class="data-table">
       <thead><tr><th>Seed</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th></th></tr></thead>
       <tbody>
@@ -427,18 +443,83 @@ app.post("/api/universe/create", (req, res) => {
 app.post("/api/filter/create", (req, res) => {
   const bucket = req.body.bucket;
   const name = (req.body.name || "filter").trim();
-  const crit = {
-    min_specials: parseInt(req.body.min_specials || "0"),
-    min_pairs: parseInt(req.body.min_pairs || "0"),
-    loot: req.body.loot || "",
-  };
+  const loot = req.body.loot || "";
+  const def = req.body.def ? db.getFilterDef(parseInt(req.body.def)) : null;
+  const rules = def ? JSON.parse(def.rules) : [];
   try {
-    const r = jobs.createFilteredSet(bucket, name, crit);
+    const r = jobs.createFilteredSet(bucket, name, rules, loot);
     res.json({ ok: true, ...r });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+// ── Filter presets (reusable rulesets) ────────────────────────────────
+
+app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
+
+function renderPresetsPage(defs) {
+  const kinds = ["primary", "present", "combo", "specials", "pairs"];
+  return `
+  <div class="page">
+    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Filter Presets" }])}
+    <h2>⚙ Filter Presets</h2>
+    <p class="hint">A preset is a named set of rules (all must hold). Use them on the Seeds page and save matches as a Filtered Set.</p>
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Rules (AND)</th><th></th></tr></thead>
+      <tbody>
+        ${defs.map(d => {
+          let rl = "—"; try { rl = JSON.parse(d.rules).map(analyze.ruleLabel).join(" AND "); } catch (_) {}
+          return `<tr>
+            <td><strong>${d.name}</strong>${d.builtin ? ' <span class="badge">preset</span>' : ""}</td>
+            <td>${rl}</td>
+            <td>${d.builtin ? "" : `<button class="btn-sm danger" hx-delete="/api/preset/${d.id}" hx-swap="none" hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})">🗑</button>`}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+    <h3>New preset</h3>
+    <form id="preset-form" hx-post="/api/preset/create" hx-swap="none"
+          hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})">
+      <label>Name: <input type="text" name="name" required></label>
+      <div id="rules-rows">
+        ${renderRuleRow(kinds)}
+      </div>
+      <button type="button" class="btn-sm" onclick="const d=document.getElementById('rules-rows'); d.insertAdjacentHTML('beforeend', d.firstElementChild.outerHTML);">+ rule</button>
+      <button type="submit" class="btn">Create preset</button>
+    </form>
+  </div>`;
+}
+
+function renderRuleRow(kinds) {
+  const opts = (arr, blank) => (blank ? `<option value="">${blank}</option>` : "") + arr.map(o => `<option value="${o}">${o}</option>`).join("");
+  return `<div class="rule-row">
+    <select name="kind">${opts(kinds)}</select>
+    <select name="res">${opts([""].concat(RESOURCES).filter(Boolean), "(resource)")}</select>
+    <select name="res2">${opts([""].concat(RESOURCES).filter(Boolean), "(secondary, for combo)")}</select>
+    <input type="number" name="n" placeholder="n (for specials/pairs)" min="1" max="6" style="width:120px">
+  </div>`;
+}
+
+app.post("/api/preset/create", (req, res) => {
+  const name = (req.body.name || "").trim();
+  if (!name) return res.status(400).json({ ok: false, error: "name required" });
+  // rule rows arrive as parallel arrays (or scalars for a single row)
+  const arr = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
+  const kinds = arr(req.body.kind), r1 = arr(req.body.res), r2 = arr(req.body.res2), ns = arr(req.body.n);
+  const rules = [];
+  for (let i = 0; i < kinds.length; i++) {
+    const kind = kinds[i];
+    if (kind === "primary" || kind === "present") { if (r1[i]) rules.push({ kind, res: r1[i] }); }
+    else if (kind === "combo") { if (r1[i] && r2[i]) rules.push({ kind, res: r1[i], res2: r2[i] }); }
+    else if (kind === "specials" || kind === "pairs") { const n = parseInt(ns[i]); if (n > 0) rules.push({ kind, n }); }
+  }
+  if (rules.length === 0) return res.status(400).json({ ok: false, error: "no valid rules" });
+  const id = db.createFilterDef(name, rules);
+  res.json({ ok: true, id, rules });
+});
+
+app.delete("/api/preset/:id", (req, res) => { db.deleteFilterDef(parseInt(req.params.id)); res.json({ ok: true }); });
 
 app.delete("/api/filter/:id", (req, res) => {
   db.deleteSeedFilter(parseInt(req.params.id));

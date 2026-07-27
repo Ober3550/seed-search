@@ -130,6 +130,15 @@ function initSchema() {
       seed INTEGER,
       PRIMARY KEY (filter_id, seed)
     );
+
+    -- Reusable named filter definitions (rulesets). Presets are seeded on init.
+    CREATE TABLE IF NOT EXISTS filter_defs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      rules TEXT NOT NULL,       -- JSON array of rules (see analyze.matchFilter)
+      builtin INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // additive migrations for pre-existing databases
@@ -140,10 +149,28 @@ function initSchema() {
     "ALTER TABLE surface_jobs ADD COLUMN kind TEXT DEFAULT 'ore'",  // 'ore' | 'surface'
     "ALTER TABLE surface_jobs ADD COLUMN grid_n INTEGER DEFAULT 1", // surface tiling: grid size
     "ALTER TABLE surface_jobs ADD COLUMN grid_cell INTEGER DEFAULT -1", // which cell (-1 = whole/ore)
+    "ALTER TABLE seed_filters ADD COLUMN rules TEXT", // JSON ruleset (replaces min_specials/min_pairs)
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
   }
+  seedPresetFilters();
+}
+
+// Built-in filter presets that mirror the analyze script's modes, plus a few
+// resource-tag examples. Idempotent (INSERT OR IGNORE by unique name).
+function seedPresetFilters() {
+  const presets = [
+    { name: "core (6 specials)", rules: [{ kind: "specials", n: 6 }] },
+    { name: "core (≥4 specials)", rules: [{ kind: "specials", n: 4 }] },
+    { name: "all production pairs", rules: [{ kind: "pairs", n: 5 }] },
+    { name: "vulcanite primary", rules: [{ kind: "primary", res: "se-vulcanite" }] },
+    { name: "vitamelange primary", rules: [{ kind: "primary", res: "se-vitamelange" }] },
+    { name: "vulcanite primary + iridium secondary",
+      rules: [{ kind: "combo", res: "se-vulcanite", res2: "se-iridium-ore" }] },
+  ];
+  const stmt = db.prepare("INSERT OR IGNORE INTO filter_defs (name, rules, builtin) VALUES (?, ?, 1)");
+  for (const p of presets) stmt.run(p.name, JSON.stringify(p.rules));
 }
 
 // ── Universe Jobs ──────────────────────────────────────────────────────
@@ -332,10 +359,28 @@ function getSeed(seed) {
 function createSeedFilter(f) {
   const d = getDb();
   const info = d.prepare(`
-    INSERT OR REPLACE INTO seed_filters (bucket, name, min_specials, min_pairs, loot, matched)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(f.bucket, f.name, f.min_specials || 0, f.min_pairs || 0, f.loot || "", f.matched || 0);
+    INSERT OR REPLACE INTO seed_filters (bucket, name, rules, loot, matched)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(f.bucket, f.name, f.rules ? JSON.stringify(f.rules) : null, f.loot || "", f.matched || 0);
   return info.lastInsertRowid;
+}
+
+// ── Filter definitions (reusable named rulesets) ───────────────────────
+
+function getFilterDefs() {
+  return getDb().prepare("SELECT * FROM filter_defs ORDER BY builtin DESC, name").all();
+}
+function getFilterDef(id) {
+  return getDb().prepare("SELECT * FROM filter_defs WHERE id = ?").get(id);
+}
+function createFilterDef(name, rules) {
+  const info = getDb().prepare(
+    "INSERT OR REPLACE INTO filter_defs (name, rules, builtin) VALUES (?, ?, 0)"
+  ).run(name, JSON.stringify(rules));
+  return info.lastInsertRowid;
+}
+function deleteFilterDef(id) {
+  getDb().prepare("DELETE FROM filter_defs WHERE id = ? AND builtin = 0").run(id);
 }
 
 function setFilterMembers(filterId, seeds) {
@@ -402,6 +447,10 @@ module.exports = {
   getSeeds,
   getSeed,
   getSurfaceCells,
+  getFilterDefs,
+  getFilterDef,
+  createFilterDef,
+  deleteFilterDef,
   createSeedFilter,
   setFilterMembers,
   getSeedFilters,

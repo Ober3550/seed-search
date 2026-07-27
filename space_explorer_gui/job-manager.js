@@ -324,7 +324,10 @@ async function importBucket(filePath, jobId, label) {
 // Apply analyze criteria to a bucket's seeds, persist a named filter (DB rows +
 // output/<bucket>/<name>.jsonl in universe format with zones trimmed to the
 // criteria-relevant ones). Lives alongside seeds.jsonl in the same folder.
-function createFilteredSet(bucket, name, crit) {
+// `rules` is an analyze ruleset (see analyze.matchFilter); `loot` an optional
+// loot-prefix constraint. Emits the world lines with zones trimmed to the ones
+// the rules selected (so the surface generator only sees relevant zones).
+function createFilteredSet(bucket, name, rules, loot) {
   const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "_");
   const seeds = db.getSeeds({ bucket });
   const members = [];
@@ -333,29 +336,21 @@ function createFilteredSet(bucket, name, crit) {
     let c = null;
     try { c = JSON.parse(s.criteria); } catch (_) {}
     if (!c) continue;
-    if ((c.numSpecials || 0) < (crit.min_specials || 0)) continue;
-    if ((c.numPairs || 0) < (crit.min_pairs || 0)) continue;
-    if (crit.loot && !(s.loot || "").startsWith(crit.loot)) continue;
+    if (loot && !(s.loot || "").startsWith(loot)) continue;
+    const m = analyze.matchFilter(c, rules);
+    if (!m.match) continue;
     members.push(s.seed);
-    // emit the world with zones trimmed to the criteria-selected ones
     try {
       const world = JSON.parse(s.line);
-      const keep = new Set(c.selectedZones || []);
-      const filtered = { ...world, z: (world.z || []).filter(z => keep.has(z.n)) };
-      lines.push(JSON.stringify(filtered));
+      const keep = new Set(m.zones.length ? m.zones : (c.selectedZones || []));
+      lines.push(JSON.stringify({ ...world, z: (world.z || []).filter(z => keep.has(z.n)) }));
     } catch (_) {}
   }
   const dir = bucketDir(bucket);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${safeName}.jsonl`), lines.join("\n") + (lines.length ? "\n" : ""));
 
-  const filterId = db.createSeedFilter({
-    bucket, name: safeName,
-    min_specials: crit.min_specials || 0,
-    min_pairs: crit.min_pairs || 0,
-    loot: crit.loot || "",
-    matched: members.length,
-  });
+  const filterId = db.createSeedFilter({ bucket, name: safeName, rules, loot: loot || "", matched: members.length });
   db.setFilterMembers(filterId, members);
   return { filterId, matched: members.length, name: safeName };
 }
