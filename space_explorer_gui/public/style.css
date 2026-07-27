@@ -397,3 +397,12 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 .rule-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .preset-actions { display: flex; gap: 8px; margin-top: 10px; }
 .badge.custom { background: #24405a; color: #9ec5ff; }
+
+/* rule-row builder: checkbox + resource selects + actions */
+.rule-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.prim-check { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; color: #9ec5ff; white-space: nowrap; }
+.prim-check input { margin: 0; }
+.res-selects { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.rule-row .btn-sm.ghost { background: transparent; border-color: #3a4658; color: #8a97a8; }
+.rule-row .btn-sm.ghost:hover { color: #ffb3b3; border-color: #6a3030; }
+.rule-row.legacy { color: #b58a5a; font-size: 0.85rem; gap: 6px; }

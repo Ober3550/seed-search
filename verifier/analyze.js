@@ -485,6 +485,26 @@ function evaluateWorld(seedRaw) {
 // matchFilter returns { match, zones:[names] } — zones are the bodies that
 // satisfied the resource rules (for downstream zone selection); specials/pairs
 // rules contribute their preset selectedZones.
+// Canonical rule shape: { primary: bool, res: [r1, r2, ...] } — a body has all
+// of `res` present, and (if primary) its PRIMARY is res[0]. Legacy kind-based
+// rules (primary/present/combo/both) map onto it; count rules (specials/pairs)
+// have no resource form and return null (handled separately in matchFilter).
+function normalizeRule(rule) {
+  if (!rule || typeof rule !== "object") return null;
+  switch (rule.kind) {
+    case "primary": return { primary: true, res: [rule.res].filter(Boolean) };
+    case "present": return { primary: false, res: [rule.res].filter(Boolean) };
+    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean) };
+    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean) };
+    case "specials":
+    case "pairs": return null;
+    default: {
+      const res = Array.isArray(rule.res) ? rule.res.filter(Boolean) : (rule.res ? [rule.res] : []);
+      return { primary: !!rule.primary, res };
+    }
+  }
+}
+
 function matchFilter(crit, rules) {
   if (!rules || rules.length === 0) return { match: true, zones: crit.selectedZones || [] };
   const bodies = crit.bodies || [];
@@ -492,32 +512,24 @@ function matchFilter(crit, rules) {
   const zones = new Set();          // so N copies of a rule require N bodies
   const pick = (pred) => bodies.find((x) => !used.has(x.name) && pred(x));
   for (const rule of rules) {
-    if (rule.kind === "primary") {
-      const b = pick((x) => x.primary === rule.res);
-      if (!b) return { match: false, zones: [] };
-      used.add(b.name); zones.add(b.name);
-    } else if (rule.kind === "present") {
-      const b = pick((x) => (x.present || []).includes(rule.res));
-      if (!b) return { match: false, zones: [] };
-      used.add(b.name); zones.add(b.name);
-    } else if (rule.kind === "combo") {
-      const b = pick((x) => x.primary === rule.res && (x.present || []).includes(rule.res2));
-      if (!b) return { match: false, zones: [] };
-      used.add(b.name); zones.add(b.name);
-    } else if (rule.kind === "both") {
-      // one body has BOTH resources present (either may be primary) — the
-      // production-pair relationship from the analyze --pairs combos.
-      const b = pick((x) => (x.present || []).includes(rule.res) && (x.present || []).includes(rule.res2));
-      if (!b) return { match: false, zones: [] };
-      used.add(b.name); zones.add(b.name);
-    } else if (rule.kind === "specials") {
-      // legacy count rule (no longer offered in the builder)
+    if (rule.kind === "specials") { // legacy count rule
       if ((crit.numSpecials || 0) < (rule.n || 0)) return { match: false, zones: [] };
       for (const z of Object.values(crit.specials || {})) zones.add(z);
-    } else if (rule.kind === "pairs") {
+      continue;
+    }
+    if (rule.kind === "pairs") {
       if ((crit.numPairs || 0) < (rule.n || 0)) return { match: false, zones: [] };
       for (const z of Object.values(crit.pairs || {})) zones.add(z);
+      continue;
     }
+    const nr = normalizeRule(rule);
+    if (!nr || nr.res.length === 0) continue;
+    const b = pick((x) =>
+      nr.res.every((r) => (x.present || []).includes(r)) &&
+      (!nr.primary || x.primary === nr.res[0]));
+    if (!b) return { match: false, zones: [] };
+    used.add(b.name);
+    zones.add(b.name);
   }
   return { match: true, zones: [...zones] };
 }
@@ -525,18 +537,18 @@ function matchFilter(crit, rules) {
 // A short human label for a rule (UI + preset descriptions).
 function ruleLabel(rule) {
   const nm = (r) => (r || "").replace("se-", "").replace("kr-", "").replace("-ore", "");
-  switch (rule.kind) {
-    case "primary": return `${nm(rule.res)} primary`;
-    case "present": return `has ${nm(rule.res)}`;
-    case "combo": return `${nm(rule.res)} primary + ${nm(rule.res2)} secondary`;
-    case "both": return `${nm(rule.res)} + ${nm(rule.res2)} together`;
-    case "specials": return `≥${rule.n} specials`;
-    case "pairs": return `≥${rule.n} pairs`;
-    default: return JSON.stringify(rule);
+  if (rule.kind === "specials") return `≥${rule.n} specials`;
+  if (rule.kind === "pairs") return `≥${rule.n} pairs`;
+  const nr = normalizeRule(rule);
+  if (!nr || nr.res.length === 0) return "—";
+  const names = nr.res.map(nm);
+  if (nr.primary) {
+    return names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`;
   }
+  return names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, ruleLabel };
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, ruleLabel, normalizeRule };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below

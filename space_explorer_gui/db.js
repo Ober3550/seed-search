@@ -166,36 +166,49 @@ function initSchema() {
 // re-adds a starter only if it's missing.
 function seedPresetFilters() {
   db.prepare("DELETE FROM filter_defs WHERE builtin = 1").run();
+  // Canonical rule shape: { primary: bool, res: [...] } — a body has all of
+  // `res` present, and if `primary` its PRIMARY is res[0] (core fragments).
   const presets = [
     {
-      // the core-mineable specials, each required as a primary (on a distinct
-      // body). Add a resource twice to require two bodies of it.
+      // the core-mineable specials, each required as a primary (distinct body).
       name: "core",
       rules: [
-        { kind: "primary", res: "se-vulcanite" },
-        { kind: "primary", res: "se-cryonite" },
-        { kind: "primary", res: "se-holmium-ore" },
-        { kind: "primary", res: "se-beryllium-ore" },
-        { kind: "primary", res: "se-iridium-ore" },
-        { kind: "primary", res: "se-vitamelange" },
+        { primary: true, res: ["se-vulcanite"] },
+        { primary: true, res: ["se-cryonite"] },
+        { primary: true, res: ["se-holmium-ore"] },
+        { primary: true, res: ["se-beryllium-ore"] },
+        { primary: true, res: ["se-iridium-ore"] },
+        { primary: true, res: ["se-vitamelange"] },
       ],
     },
     {
       name: "pairs",
       rules: [
-        { kind: "both", res: "se-vulcanite", res2: "se-iridium-ore" },
-        { kind: "both", res: "se-cryonite", res2: "se-beryllium-ore" },
-        { kind: "both", res: "se-vitamelange", res2: "stone" },
-        { kind: "present", res: "se-holmium-ore" },
+        { primary: false, res: ["se-vulcanite", "se-iridium-ore"] },
+        { primary: false, res: ["se-cryonite", "se-beryllium-ore"] },
+        { primary: false, res: ["se-vitamelange", "stone"] },
+        { primary: false, res: ["se-holmium-ore"] },
       ],
     },
   ];
   // rules JSON of PRIOR auto-seeded defaults — safe to upgrade to the current
-  // definition (the user hasn't customised them). User-edited starters and
-  // already-current ones are left untouched, so edits survive restarts.
+  // shape (the user hasn't customised them). Edited/already-current starters
+  // are left untouched, so edits survive restarts.
   const upgradable = new Set([
-    JSON.stringify([{ kind: "specials", n: 6 }]),  // old "core"
+    JSON.stringify([{ kind: "specials", n: 6 }]),  // oldest "core"
     JSON.stringify([{ kind: "pairs", n: 5 }]),     // oldest "pairs"
+    // prior kind-based "core" (6 primaries) and "pairs" (both/present)
+    JSON.stringify([
+      { kind: "primary", res: "se-vulcanite" }, { kind: "primary", res: "se-cryonite" },
+      { kind: "primary", res: "se-holmium-ore" }, { kind: "primary", res: "se-beryllium-ore" },
+      { kind: "primary", res: "se-iridium-ore" }, { kind: "primary", res: "se-vitamelange" },
+    ]),
+    JSON.stringify([
+      { kind: "both", res: "se-vulcanite", res2: "se-iridium-ore" },
+      { kind: "both", res: "se-cryonite", res2: "se-beryllium-ore" },
+      { kind: "both", res: "se-vitamelange", res2: "stone" },
+      { kind: "present", res: "se-holmium-ore" },
+    ]),
   ]);
   const get = db.prepare("SELECT id, rules FROM filter_defs WHERE name = ?");
   const ins = db.prepare("INSERT INTO filter_defs (name, rules, builtin) VALUES (?, ?, 0)");

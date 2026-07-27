@@ -671,15 +671,41 @@ app.post("/api/filter/create", (req, res) => {
 
 app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
 
-// Resource-based rule kinds offered in the builder. The count kinds
-// (specials/pairs) are retired — list resources explicitly instead, and add a
-// rule twice to require two bodies. matchFilter still honours legacy count
-// rules if any old preset has one.
-const RULE_KINDS = ["primary", "present", "both", "combo"];
+// One resource <select>. Reused for pre-filled rows and the clone templates.
+function resSelect(val = "", disabled = false) {
+  const dis = disabled ? "disabled" : "";
+  return `<select name="res" ${dis}><option value="">(resource)</option>` +
+    RESOURCES.map(o => `<option value="${o}" ${val === o ? "selected" : ""}>${o}</option>`).join("") +
+    `</select>`;
+}
+
+// A rule row: [primary checkbox] [1..many resource selects] [+ add resource] [× remove rule].
+// A rule = { primary: bool, res: [...] } — the body's primary must be res[0]
+// (when checked, for core fragments) and all `res` must be present.
+function renderRuleRow(rule = null, disabled = false) {
+  const dis = disabled ? "disabled" : "";
+  const nr = rule ? analyze.normalizeRule(rule) : null;
+  if (rule && !nr) {
+    // legacy count rule (specials/pairs) — show it, allow removal, no editing
+    return `<div class="rule-row legacy"><em>legacy: ${analyze.ruleLabel(rule)}</em>` +
+      (dis ? "" : `<button type="button" class="btn-sm ghost" title="remove" onclick="delRow(this)">×</button>`) + `</div>`;
+  }
+  const primChecked = nr && nr.primary ? "checked" : "";
+  const resList = nr && nr.res.length ? nr.res : [""];
+  return `<div class="rule-row">
+    <label class="prim-check" title="require this body's PRIMARY to be the first resource (core fragments)">
+      <input type="checkbox" name="primary" ${primChecked} ${dis}> primary</label>
+    <span class="res-selects">${resList.map(v => resSelect(v, disabled)).join("")}</span>
+    ${dis ? "" : `<button type="button" class="btn-sm" title="add another resource to this rule" onclick="addRes(this)">+</button>
+    <button type="button" class="btn-sm ghost" title="remove this rule" onclick="delRow(this)">×</button>`}
+  </div>`;
+}
 
 function renderPresetsPage(defs) {
-  const kinds = RULE_KINDS;
   const refresh = `hx-on::after-request="htmx.ajax('GET','/presets',{target:'#main'})"`;
+  // Serialize the rows to a `rules` JSON param at request time (checkboxes +
+  // variable resource counts don't survive flat form arrays cleanly).
+  const serialize = `hx-on::config-request="event.detail.parameters.rules = JSON.stringify(collectRules(this))"`;
 
   const item = (d) => {
     let rules = [];
@@ -687,49 +713,45 @@ function renderPresetsPage(defs) {
     const rl = rules.map(analyze.ruleLabel).join(" AND ") || "—";
     const badge = d.builtin ? '<span class="badge">preset</span>' : '<span class="badge custom">custom</span>';
     const summary = `<summary><span class="preset-name">${d.name}</span> ${badge}<span class="rule-sum">${rl}</span></summary>`;
-
+    const post = d.builtin ? null : (d.id);
     if (d.builtin) {
-      // read-only: show how it's constructed
-      return `<details class="preset-item">
-        ${summary}
+      return `<details class="preset-item">${summary}
         <div class="preset-body">
-          <p class="hint">Built-in preset — read-only. Rules (all must hold):</p>
-          <div class="rules-rows">${rules.map(r => renderRuleRow(kinds, r, true)).join("")}</div>
-        </div>
-      </details>`;
+          <p class="hint">Built-in preset — read-only.</p>
+          <div class="rules-rows">${rules.map(r => renderRuleRow(r, true)).join("")}</div>
+        </div></details>`;
     }
-    // custom: editable in place
-    return `<details class="preset-item">
-      ${summary}
+    return `<details class="preset-item">${summary}
       <div class="preset-body">
-        <form hx-post="/api/preset/${d.id}/update" hx-swap="none" ${refresh}>
+        <form hx-post="/api/preset/${post}/update" hx-swap="none" ${serialize} ${refresh}>
           <label>Name: <input type="text" name="name" value="${d.name}" required></label>
-          <div class="rules-rows">${(rules.length ? rules : [null]).map(r => renderRuleRow(kinds, r)).join("")}</div>
+          <div class="rules-rows">${(rules.length ? rules : [null]).map(r => renderRuleRow(r)).join("")}</div>
           <button type="button" class="btn-sm" onclick="addRule(this)">+ rule</button>
           <div class="preset-actions">
             <button type="submit" class="btn">💾 Save changes</button>
-            <button type="button" class="btn-sm danger" hx-delete="/api/preset/${d.id}" hx-swap="none" ${refresh}>🗑 Delete</button>
+            <button type="button" class="btn-sm danger" hx-delete="/api/preset/${post}" hx-swap="none" ${refresh}>🗑 Delete</button>
           </div>
         </form>
-      </div>
-    </details>`;
+      </div></details>`;
   };
 
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Filter Presets" }])}
     <h2>⚙ Filter Presets</h2>
-    <p class="hint">A preset is a named set of rules (all must hold). Click a row to see how it's built;
-    custom ones are editable. Use presets on the Seeds page and save matches as a Filtered Set.</p>
-    <template id="rule-tpl">${renderRuleRow(kinds)}</template>
+    <p class="hint">A preset is a set of rules (all must hold). Each rule = a body with the listed resource(s);
+    tick <strong>primary</strong> to require it be that body's primary (core fragments). Add a resource with <strong>+</strong>,
+    or repeat a rule to require another body. Use presets on the Seeds page.</p>
+    <template id="rule-tpl">${renderRuleRow()}</template>
+    <template id="res-tpl">${resSelect()}</template>
     <div class="preset-list">
       ${defs.map(item).join("")}
       <details class="preset-item new">
         <summary><span class="preset-name">➕ New preset</span></summary>
         <div class="preset-body">
-          <form hx-post="/api/preset/create" hx-swap="none" ${refresh}>
-            <label>Name: <input type="text" name="name" placeholder="e.g. vulcanite + naq field" required></label>
-            <div class="rules-rows">${renderRuleRow(kinds)}</div>
+          <form hx-post="/api/preset/create" hx-swap="none" ${serialize} ${refresh}>
+            <label>Name: <input type="text" name="name" placeholder="e.g. vulcanite core + naq" required></label>
+            <div class="rules-rows">${renderRuleRow()}</div>
             <button type="button" class="btn-sm" onclick="addRule(this)">+ rule</button>
             <div class="preset-actions"><button type="submit" class="btn">Create preset</button></div>
           </form>
@@ -737,49 +759,43 @@ function renderPresetsPage(defs) {
       </details>
     </div>
     <script>
+      function collectRules(form) {
+        return [...form.querySelectorAll(".rule-row")].map(function (row) {
+          const chk = row.querySelector("input[name=primary]");
+          const res = [...row.querySelectorAll("select[name=res]")].map(function (s) { return s.value; }).filter(Boolean);
+          return res.length ? { primary: !!(chk && chk.checked), res: res } : null;
+        }).filter(Boolean);
+      }
       function addRule(btn) {
-        const rows = btn.closest("form").querySelector(".rules-rows");
-        const tpl = document.getElementById("rule-tpl");
-        rows.appendChild(tpl.content.firstElementChild.cloneNode(true));
+        btn.closest("form").querySelector(".rules-rows")
+          .appendChild(document.getElementById("rule-tpl").content.firstElementChild.cloneNode(true));
+      }
+      function addRes(btn) {
+        btn.closest(".rule-row").querySelector(".res-selects")
+          .appendChild(document.getElementById("res-tpl").content.firstElementChild.cloneNode(true));
+      }
+      function delRow(btn) {
+        const row = btn.closest(".rule-row"), rows = btn.closest(".rules-rows");
+        if (rows.querySelectorAll(".rule-row").length > 1) row.remove();
       }
     </script>
   </div>`;
 }
 
-// A single rule-builder row, optionally pre-filled from `rule` and/or disabled.
-function renderRuleRow(kinds, rule = null, disabled = false) {
-  const dis = disabled ? "disabled" : "";
-  // keep a legacy kind (e.g. specials/pairs) selectable when editing an old rule
-  const kindList = rule && rule.kind && !kinds.includes(rule.kind) ? [...kinds, rule.kind] : kinds;
-  const kindOpts = kindList.map(o => `<option value="${o}" ${rule && rule.kind === o ? "selected" : ""}>${o}</option>`).join("");
-  const resOpts = (val, blank) => `<option value="">${blank}</option>` +
-    RESOURCES.map(o => `<option value="${o}" ${val === o ? "selected" : ""}>${o}</option>`).join("");
-  return `<div class="rule-row">
-    <select name="kind" ${dis}>${kindOpts}</select>
-    <select name="res" ${dis}>${resOpts(rule ? rule.res : "", "(resource)")}</select>
-    <select name="res2" ${dis}>${resOpts(rule ? rule.res2 : "", "(2nd resource — combo/both)")}</select>
-    <input type="number" name="n" placeholder="n (specials/pairs)" min="1" max="6" style="width:130px" value="${rule && rule.n ? rule.n : ""}" ${dis}>
-  </div>`;
-}
-
-// Parse the parallel rule-row arrays (or scalars for a single row) into rules.
-function parseRuleRows(body) {
-  const arr = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
-  const kinds = arr(body.kind), r1 = arr(body.res), r2 = arr(body.res2), ns = arr(body.n);
-  const rules = [];
-  for (let i = 0; i < kinds.length; i++) {
-    const kind = kinds[i];
-    if (kind === "primary" || kind === "present") { if (r1[i]) rules.push({ kind, res: r1[i] }); }
-    else if (kind === "combo" || kind === "both") { if (r1[i] && r2[i]) rules.push({ kind, res: r1[i], res2: r2[i] }); }
-    else if (kind === "specials" || kind === "pairs") { const n = parseInt(ns[i]); if (n > 0) rules.push({ kind, n }); }
-  }
-  return rules;
+// Parse the `rules` JSON param into normalized { primary, res:[...] } rules.
+function parseRules(body) {
+  let raw = [];
+  try { raw = JSON.parse(body.rules || "[]"); } catch (_) {}
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(r => ({ primary: !!r.primary, res: Array.isArray(r.res) ? r.res.filter(Boolean) : [] }))
+    .filter(r => r.res.length > 0);
 }
 
 app.post("/api/preset/create", (req, res) => {
   const name = (req.body.name || "").trim();
   if (!name) return res.status(400).json({ ok: false, error: "name required" });
-  const rules = parseRuleRows(req.body);
+  const rules = parseRules(req.body);
   if (rules.length === 0) return res.status(400).json({ ok: false, error: "no valid rules" });
   try {
     const id = db.createFilterDef(name, rules);
@@ -794,7 +810,7 @@ app.post("/api/preset/:id/update", (req, res) => {
   if (def.builtin) return res.status(400).json({ ok: false, error: "built-in presets are read-only" });
   const name = (req.body.name || "").trim();
   if (!name) return res.status(400).json({ ok: false, error: "name required" });
-  const rules = parseRuleRows(req.body);
+  const rules = parseRules(req.body);
   if (rules.length === 0) return res.status(400).json({ ok: false, error: "no valid rules" });
   try {
     db.updateFilterDef(id, name, rules);
