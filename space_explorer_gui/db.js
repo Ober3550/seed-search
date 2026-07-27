@@ -352,6 +352,10 @@ function getSurfaceJobs(limit = 30) {
   ).all(limit);
 }
 
+function getAllSurfaceJobs() {
+  return getDb().prepare("SELECT * FROM surface_jobs ORDER BY created_at DESC").all();
+}
+
 function getSurfaceJob(id) {
   const d = getDb();
   return d.prepare("SELECT * FROM surface_jobs WHERE id = ?").get(id);
@@ -497,6 +501,7 @@ module.exports = {
   getDistinctSeeds,
   createSurfaceJob,
   getSurfaceJobs,
+  getAllSurfaceJobs,
   getSurfaceJob,
   getSurfaceJobsForZone,
   updateSurfaceJob,

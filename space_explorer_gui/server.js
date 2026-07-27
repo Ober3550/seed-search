@@ -110,14 +110,10 @@ function zoneSurfacePng(bucket, seed, zoneName, base = "ore") {
   return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
 }
 
-// Top few chips shown inline; the rest collapse behind a chevron (<details>).
-function resChips(prefix, chips, shown = 4) {
+// All resource chips inline (a couple of wrapped rows is fine, no collapsing).
+function resChips(prefix, chips) {
   if (!chips.length) return "—";
-  const head = chips.slice(0, shown).join(" ");
-  const rest = chips.slice(shown);
-  if (!rest.length) return `${prefix}${head}`;
-  return `${prefix}<details class="res-more"><summary>${head} <span class="more-count">+${rest.length} more</span></summary>` +
-    `<span class="res-rest">${rest.join(" ")}</span></details>`;
+  return `${prefix}${chips.join(" ")}`;
 }
 
 // Inner HTML of the Resources cell: measured amounts if a summary exists,
@@ -643,35 +639,93 @@ app.get("/surface/watch", (req, res) => {
 
 // ── Surface jobs + viewer ──────────────────────────────────────────────
 
-app.get("/surfaces", (req, res) => page(req, res, "Surface Jobs", renderSurfaceJobsPage(db.getSurfaceJobs(50))));
+app.get("/surfaces", (req, res) => page(req, res, "Surface Jobs", renderSurfaceJobsPage(db.getAllSurfaceJobs())));
 
 function renderSurfaceJobsPage(jobsList) {
+  // group all jobs by (seed, zone) = one surface
+  const groups = new Map();
+  for (const j of jobsList) {
+    const key = `${j.seed} ${j.zone_name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(j);
+  }
+  const isActive = (j) => j.status === "queued" || j.status === "running";
+  const anyActive = jobsList.some(isActive);
+
+  const arr = [...groups.values()].map((js) => {
+    const c = { queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 };
+    for (const j of js) c[j.status] = (c[j.status] || 0) + 1;
+    return { js, c, active: js.some(isActive), created: js[0].created_at || "" };
+  });
+  // active surfaces first, then most recent
+  arr.sort((a, b) => (b.active - a.active) || b.created.localeCompare(a.created));
+
+  const groupRow = (g) => {
+    const js = g.js, c = g.c, first = js[0];
+    const total = js.length;
+    const status = c.failed ? `⚠️ ${c.done}/${total} · ${c.failed} failed`
+      : (c.cancelled && !g.active) ? `⊘ ${c.done}/${total} · ${c.cancelled} cancelled`
+        : g.active ? `⏳ ${c.done}/${total}` : `✅ ${c.done}/${total}`;
+    const cls = c.failed ? "failed" : g.active ? "running" : (c.cancelled && !c.done) ? "cancelled" : "done";
+    const gid = `grp-${first.seed}-${(first.zone_name || "").replace(/[^a-z0-9]/gi, "-")}`;
+    const watch = first.zone_id
+      ? `<a class="btn-sm" href="/surface/watch?seed=${first.seed}&zone_id=${first.zone_id}" hx-get="/surface/watch?seed=${first.seed}&zone_id=${first.zone_id}" hx-target="#main" hx-push-url="true" title="watch grid">👁</a>`
+      : "";
+    return `<details class="surf-group" id="${gid}">
+      <summary>
+        <span class="preset-name">${first.zone_name}</span>
+        <a href="/seed/${first.seed}" hx-get="/seed/${first.seed}" hx-target="#main" hx-push-url="true" class="badge zone-type">seed ${first.seed}</a>
+        <span class="badge">${first.bucket || "—"}</span>
+        <span class="job-count">${total} job${total === 1 ? "" : "s"}</span>
+        <span class="gen-status ${g.active ? "running" : ""}" style="margin-left:auto">${status}</span>
+        ${watch}
+      </summary>
+      <div class="preset-body">
+        <table class="data-table compact">
+          <thead><tr><th>ID</th><th>Kind</th><th>Cell</th><th>Status</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            ${js.map(j => `<tr class="row-${j.status}">
+              <td>${j.id}</td>
+              <td><span class="badge">${j.kind || "ore"}</span></td>
+              <td>${j.kind === "surface" && j.grid_cell >= 0 ? `${j.grid_cell}/${j.grid_n * j.grid_n}` : "—"}</td>
+              <td><span class="badge ${j.status}">${j.status}</span></td>
+              <td>${j.created_at}</td>
+              <td>${j.status === "done" && j.kind !== "ore" ? `<a href="/surface/${j.id}" hx-get="/surface/${j.id}" hx-target="#main" hx-push-url="true" class="btn-sm">🖼️</a>` : ""}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </details>`;
+  };
+
   return `
-  <div class="page" hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML">
+  <div class="page" ${anyActive ? `hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML"` : ""}>
     <div class="page-head">
-      <h2>🗺️ Surface Generation Jobs</h2>
+      <h2>🗺️ Surface Jobs <span class="hint">${arr.length} surface${arr.length === 1 ? "" : "s"}, ${jobsList.length} job${jobsList.length === 1 ? "" : "s"}</span></h2>
       <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
         hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
         hx-on::after-request="htmx.ajax('GET','/surfaces',{target:'#main'})">
         ✖ Cancel all jobs
       </button>
     </div>
-    <table class="data-table">
-      <thead><tr><th>ID</th><th>Zone</th><th>Kind</th><th>Seed</th><th>Bucket</th><th>Status</th><th>Ore tiles</th><th>Created</th><th></th></tr></thead>
-      <tbody>
-        ${jobsList.map(j => `
-        <tr class="row-${j.status}">
-          <td>${j.id}</td><td><strong>${j.zone_name}</strong></td>
-          <td><span class="badge">${j.kind || "ore"}</span></td>
-          <td><a href="/seed/${j.seed}" hx-get="/seed/${j.seed}" hx-target="#main" hx-push-url="true">${j.seed}</a></td>
-          <td>${j.bucket || "—"}</td>
-          <td><span class="badge ${j.status}">${j.status}</span></td>
-          <td>${j.ore_count || "—"}</td><td>${j.created_at}</td>
-          <td>${j.status === "done" ? `<a href="/surface/${j.id}" hx-get="/surface/${j.id}" hx-target="#main" hx-push-url="true" class="btn-sm">🖼️</a>` : ""}</td>
-        </tr>`).join("")}
-        ${jobsList.length === 0 ? `<tr><td colspan="9">No surface jobs yet.</td></tr>` : ""}
-      </tbody>
-    </table>
+    <div class="preset-list">
+      ${arr.map(groupRow).join("")}
+      ${arr.length === 0 ? `<p class="hint">No surface jobs yet.</p>` : ""}
+    </div>
+    <script>
+      (function () {
+        var KEY = "surfOpenGroups";
+        function save() {
+          var open = [].slice.call(document.querySelectorAll(".surf-group[open]")).map(function (d) { return d.id; });
+          sessionStorage.setItem(KEY, JSON.stringify(open));
+        }
+        try {
+          var open = JSON.parse(sessionStorage.getItem(KEY) || "[]");
+          open.forEach(function (id) { var d = document.getElementById(id); if (d) d.open = true; });
+        } catch (e) {}
+        document.querySelectorAll(".surf-group").forEach(function (d) { d.addEventListener("toggle", save); });
+      })();
+    </script>
   </div>`;
 }
 

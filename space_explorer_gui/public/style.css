@@ -427,3 +427,15 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 tr.zone-info { opacity: 0.66; }
 tr.zone-info:hover { opacity: 1; }
 .row-actions.muted { color: var(--muted); }
+
+/* grouped surface jobs (accordion per surface) */
+.surf-group { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); overflow: hidden; }
+.surf-group > summary { list-style: none; cursor: pointer; padding: 9px 12px; display: flex; align-items: center; gap: 10px; user-select: none; flex-wrap: wrap; }
+.surf-group > summary::-webkit-details-marker { display: none; }
+.surf-group > summary::before { content: "▸"; color: var(--muted); }
+.surf-group[open] > summary::before { transform: rotate(90deg); }
+.surf-group[open] > summary { border-bottom: 1px solid var(--border); }
+.surf-group .preset-name { font-weight: 600; }
+.surf-group .job-count { color: var(--muted); font-size: 0.8rem; }
+.surf-group summary a.badge { text-decoration: none; }
+.data-table.compact td, .data-table.compact th { padding: 5px 10px; font-size: 0.8rem; }
