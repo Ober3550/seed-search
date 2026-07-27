@@ -1,8 +1,0 @@
-{
-  "name": "rp-probe",
-  "version": "1.0.0",
-  "title": "random_penalty probe",
-  "author": "calibration",
-  "factorio_version": "2.0",
-  "dependencies": ["base"]
-}

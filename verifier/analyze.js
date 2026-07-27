@@ -374,8 +374,8 @@ function evalPairs(seedOld, selected) {
     if (match) results.push({ ...c, body: match });
   }
 
-  // Only show seeds with all combos found
-  if (results.length >= combos.length) {
+  // Only show seeds with enough combos found (--min-pairs, default: all)
+  if (results.length >= Math.min(minPairs, combos.length)) {
     // Sort by delta-v (closest first)
     results.sort((a, b) => a.body.delta_v - b.body.delta_v);
     const gen = loadGeneratedWorld(seedOld.seed);
@@ -415,6 +415,59 @@ function evalPairs(seedOld, selected) {
   return false;
 }
 
+// ── programmatic API (used by space_explorer_gui) ────────────────────
+
+// Evaluate a raw new-format world line. Returns criteria info + the zone names
+// each criterion selected (for zone-level filtering downstream).
+function evaluateWorld(seedRaw) {
+  const old = convertNewToOld(seedRaw, true);
+  const bodies = viableBodies(old);
+  const specials = {};
+  for (const b of bodies) {
+    for (const r of SPECIAL) {
+      if (isPrimaryResource(b, r) && !specials[r]) specials[r] = b.name;
+    }
+  }
+  // pair combos (same set as evalPairs)
+  const combos = [
+    { name: "vulc+irid", want: ["se-iridium-ore", "se-vulcanite"] },
+    { name: "beryl+cryo", want: ["se-beryllium-ore", "se-cryonite"] },
+    { name: "holm+h2o", want: ["se-holmium-ore", "kr-mineral-water"] },
+    { name: "vita+h2o+stone", want: ["se-vitamelange", "kr-mineral-water", "stone"] },
+    { name: "K2:imer+h2o", want: ["kr-imersite", "kr-mineral-water"] },
+  ];
+  const pairs = {};
+  for (const c of combos) {
+    let match = bodies.find(
+      (b) => isPrimaryResource(b, c.want[0]) && c.want.every((r) => ((b.resource || {})[r] || 0) > 0),
+    );
+    if (!match) match = bodies.find((b) => c.want.every((r) => ((b.resource || {})[r] || 0) > 0));
+    if (match) pairs[c.name] = match.name;
+  }
+  const selected = new Set([...Object.values(specials), ...Object.values(pairs)]);
+  const nf = bestNaqField(old);
+  return {
+    seed: seedRaw.s,
+    loot: (seedRaw.l || ""),
+    k2: !!seedRaw.k,
+    zoneCount: (seedRaw.z || []).length,
+    viableBodies: bodies.map((b) => b.name),
+    specials,          // resource -> zone name
+    numSpecials: Object.keys(specials).length,
+    pairs,             // combo -> zone name
+    numPairs: Object.keys(pairs).length,
+    naqField: nf ? nf.name : null,
+    selectedZones: [...selected],
+  };
+}
+
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld };
+
+if (require.main !== module) {
+  // imported as a library — skip the CLI main below
+  return;
+}
+
 // ── main ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -426,6 +479,8 @@ const mode = args.includes("--core")
 const allMode = args.includes("--all");
 const msIdx = args.indexOf("--min-specials");
 const minSpecials = msIdx >= 0 ? parseInt(args[msIdx + 1]) : SPECIAL.length;
+const mpIdx = args.indexOf("--min-pairs");
+const minPairs = mpIdx >= 0 ? parseInt(args[mpIdx + 1]) : 99;
 const gdIdx = args.indexOf("--gen-dir");
 const genDir = gdIdx >= 0 ? args[gdIdx + 1] : "output";
 const emitIdx = args.indexOf("--emit");
@@ -436,6 +491,7 @@ const files = args.filter(
     !a.startsWith("--") &&
     (emitIdx < 0 || i !== emitIdx + 1) &&
     (msIdx < 0 || i !== msIdx + 1) &&
+    (mpIdx < 0 || i !== mpIdx + 1) &&
     (gdIdx < 0 || i !== gdIdx + 1),
 );
 

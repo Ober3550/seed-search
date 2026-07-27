@@ -41,5 +41,11 @@ generator/zig/seedgen
 generator/zig/seedgen2
 generator/zig/test_primaries
 calibration/calibrate-batch.sh
-# Large local GUI app (sqlite + node_modules)
-space_explorer_gui/
+# GUI app — track source, ignore heavy/generated bits
+space_explorer_gui/node_modules/
+space_explorer_gui/data.sqlite
+space_explorer_gui/data.sqlite-shm
+space_explorer_gui/data.sqlite-wal
+space_explorer_gui/output/
+space_explorer_gui/public/htmx.min.js
+calibration/vanilla-sweep/mods-empty/mod-list.json

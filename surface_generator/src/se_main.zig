@@ -302,7 +302,7 @@ fn runZoneDriver(
 
         // write outputs
         var dirbuf: [512]u8 = undefined;
-        const zdir = try std.fmt.bufPrint(&dirbuf, "{s}/{d}/{s}", .{ out_dir, world_seed, name });
+        const zdir = try std.fmt.bufPrint(&dirbuf, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, name });
         try std.Io.Dir.createDirPath(.cwd(), init.io, zdir);
         var pathbuf: [512]u8 = undefined;
         const jpath = try std.fmt.bufPrint(&pathbuf, "{s}/ore.jsonl", .{zdir});
@@ -356,7 +356,7 @@ fn runZoneDriver(
     // re-runs of single zones never lose previously generated zones).
     {
         var rbuf: [512]u8 = undefined;
-        const rdir = try std.fmt.bufPrint(&rbuf, "{s}/{d}", .{ out_dir, world_seed });
+        const rdir = try std.fmt.bufPrint(&rbuf, "{s}/seed_{d}", .{ out_dir, world_seed });
         std.Io.Dir.createDirPath(.cwd(), init.io, rdir) catch {};
         var out: std.ArrayList(u8) = .empty;
         try appendFmt(a, &out, "{{\"world_seed\":{d},\"zones\":[", .{world_seed});
