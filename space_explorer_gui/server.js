@@ -208,7 +208,14 @@ app.get("/universe", (req, res) => page(req, res, "Universe Buckets", renderUniv
 function renderUniversePage(jobsList) {
   return `
   <div class="page">
-    <h2>🌠 Universe Generation</h2>
+    <div class="page-head">
+      <h2>🌠 Universe Generation</h2>
+      <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
+        hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
+        hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+        ✖ Cancel all jobs
+      </button>
+    </div>
     <p class="hint">Every job is a fixed 100k-seed bucket. Requesting 10M queues 100 buckets;
     each writes <code>output/&lt;bucket&gt;/seeds.jsonl</code> (seedgen's rough pass).</p>
     <div class="job-form">
@@ -562,7 +569,14 @@ app.get("/surfaces", (req, res) => page(req, res, "Surface Jobs", renderSurfaceJ
 function renderSurfaceJobsPage(jobsList) {
   return `
   <div class="page" hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML">
-    <h2>🗺️ Surface Generation Jobs</h2>
+    <div class="page-head">
+      <h2>🗺️ Surface Generation Jobs</h2>
+      <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
+        hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
+        hx-on::after-request="htmx.ajax('GET','/surfaces',{target:'#main'})">
+        ✖ Cancel all jobs
+      </button>
+    </div>
     <table class="data-table">
       <thead><tr><th>ID</th><th>Zone</th><th>Kind</th><th>Seed</th><th>Bucket</th><th>Status</th><th>Ore tiles</th><th>Created</th><th></th></tr></thead>
       <tbody>
@@ -760,6 +774,13 @@ app.get("/api/zone/cell", (req, res) => {
   if (!zone) return res.status(404).send("");
   const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
   res.send(renderZoneCell(bucket, seed, zone, true));
+});
+
+// Cancel every queued/running job (universe + surface) and kill their
+// processes. Used e.g. when a batch was started with the wrong settings.
+app.post("/api/jobs/cancel-all", (req, res) => {
+  const r = jobs.cancelAllJobs();
+  res.json({ ok: true, ...r });
 });
 
 // Batch: queue for each checked zone of a seed (kind = ore | surface).

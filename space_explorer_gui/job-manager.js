@@ -118,6 +118,28 @@ const runningUniverse = new Set();
 let surfaceConcurrency = parseInt(process.env.SURFACE_CONCURRENCY || "4");
 const runningSurface = new Set();
 
+// Live child processes by job id, so cancel-all can actually kill running work.
+const universeChildren = new Map();
+const surfaceChildren = new Map();
+
+// Cancel every queued/running job and kill their processes. Jobs already
+// marked 'cancelled' are skipped by their close handlers (see the guards) so a
+// killed child doesn't resurrect itself as 'failed'/'done'.
+function cancelAllJobs() {
+  const d = db.getDb();
+  const now = new Date().toISOString();
+  const u = d.prepare(
+    "UPDATE universe_jobs SET status='cancelled', finished_at=? WHERE status IN ('queued','running')"
+  ).run(now);
+  const s = d.prepare(
+    "UPDATE surface_jobs SET status='cancelled', finished_at=? WHERE status IN ('queued','running')"
+  ).run(now);
+  for (const child of universeChildren.values()) { try { child.kill("SIGTERM"); } catch (_) {} }
+  for (const child of surfaceChildren.values()) { try { child.kill("SIGTERM"); } catch (_) {} }
+  console.log(`[cancel-all] cancelled ${u.changes} universe + ${s.changes} surface jobs`);
+  return { universe: u.changes, surface: s.changes };
+}
+
 function setUniverseConcurrency(n) {
   universeConcurrency = Math.max(1, Math.min(16, n | 0));
 }
@@ -204,6 +226,7 @@ function runUniverseBucket(job) {
     db.addJobLog("universe", job.id, `Bucket ${label}: scanning ${BUCKET_SIZE.toLocaleString()} seeds`);
 
     const child = spawn(binPath, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    universeChildren.set(job.id, child);
     const outStream = fs.createWriteStream(outFile);
     child.stdout.pipe(outStream);
 
@@ -224,7 +247,10 @@ function runUniverseBucket(job) {
     });
 
     child.on("close", async code => {
+      universeChildren.delete(job.id);
       outStream.end();
+      // Cancelled out from under us — leave the 'cancelled' status intact.
+      if ((db.getUniverseJob(job.id) || {}).status === "cancelled") return resolve();
       if (code !== 0) {
         db.updateUniverseJob(job.id, { status: "failed", error: `seedgen exit ${code}`, finished_at: new Date().toISOString() });
         return resolve();
@@ -246,6 +272,8 @@ function runUniverseBucket(job) {
     });
 
     child.on("error", err => {
+      universeChildren.delete(job.id);
+      if ((db.getUniverseJob(job.id) || {}).status === "cancelled") return resolve();
       db.updateUniverseJob(job.id, { status: "failed", error: `spawn: ${err.message}`, finished_at: new Date().toISOString() });
       resolve();
     });
@@ -506,12 +534,17 @@ function runSurfaceJob(job) {
 
     console.log(`[surface ${job.id}] segen ${args.join(" ")}`);
     const child = spawn(binPath, args, { cwd: SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
+    surfaceChildren.set(job.id, child);
 
     let stderr = "";
     child.stderr.on("data", d => stderr += d);
     child.stdout.on("data", () => {});
 
     child.on("close", async code => {
+      surfaceChildren.delete(job.id);
+      // Cancelled out from under us — don't overwrite the 'cancelled' status
+      // or run post-processing (stitch/png) for killed work.
+      if ((db.getSurfaceJob(job.id) || {}).status === "cancelled") return resolve();
       const zDir = path.join(sDir, job.zone_name);
       const summaryFile = path.join(zDir, "summary.json");
       if (code !== 0 || !fs.existsSync(summaryFile)) {
@@ -562,6 +595,8 @@ function runSurfaceJob(job) {
     });
 
     child.on("error", err => {
+      surfaceChildren.delete(job.id);
+      if ((db.getSurfaceJob(job.id) || {}).status === "cancelled") return resolve();
       db.updateSurfaceJob(job.id, { status: "failed", error: `spawn: ${err.message}`, finished_at: new Date().toISOString() });
       resolve();
     });
@@ -626,6 +661,7 @@ module.exports = {
   createUniverseBuckets,
   setUniverseConcurrency,
   setSurfaceConcurrency,
+  cancelAllJobs,
   createFilteredSet,
   writeSeedZonesFile,
   surfaceGridFor,
