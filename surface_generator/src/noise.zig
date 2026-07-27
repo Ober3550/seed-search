@@ -563,6 +563,27 @@ pub fn SpotNoiseField(comptime F: type) type {
         }
 
         /// Field value at (x, y): max(basement, max cone over nearby spots).
+        /// Gather every spot this field can see for tiles inside [x0,x1)x[y0,y1)
+        /// into an owned slice (the 3x3-region window of any tile in the rect is
+        /// covered). One-time cost so the hot path can iterate a flat slice
+        /// instead of hashing region lookups per tile.
+        pub fn allSpotsInRect(self: *Self, alloc: std.mem.Allocator, x0: f64, x1: f64, y0: f64, y1: f64) ![]Spot {
+            const rminx: i32 = @as(i32, @intFromFloat(@round(x0 / self.region_size))) - 1;
+            const rmaxx: i32 = @as(i32, @intFromFloat(@round(x1 / self.region_size))) + 1;
+            const rminy: i32 = @as(i32, @intFromFloat(@round(y0 / self.region_size))) - 1;
+            const rmaxy: i32 = @as(i32, @intFromFloat(@round(y1 / self.region_size))) + 1;
+            var list: std.ArrayList(Spot) = .empty;
+            var rx: i32 = rminx;
+            while (rx <= rmaxx) : (rx += 1) {
+                var ry: i32 = rminy;
+                while (ry <= rmaxy) : (ry += 1) {
+                    const spots = try self.spotsForRegion(rx, ry);
+                    try list.appendSlice(alloc, spots);
+                }
+            }
+            return list.toOwnedSlice(alloc);
+        }
+
         pub fn evalAt(self: *Self, x: f64, y: f64) !f64 {
             var value = self.basement_value;
             const cxr: i32 = @intFromFloat(@round(x / self.region_size));

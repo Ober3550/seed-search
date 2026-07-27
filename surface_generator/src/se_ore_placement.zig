@@ -251,6 +251,10 @@ const ResourceState = struct {
     // false or no elevation was provided). all_patches = max(regular, starting).
     starting_spot: ?StartingSpotField = null,
     starting_blob_amplitude: f64 = 0,
+    // Flat spot slices for the fast direct-eval path (filled by
+    // computeSEOresInRect after the region precompute; no hashing in hot loops).
+    all_spots: []const noise.Spot = &.{},
+    all_start_spots: []const noise.Spot = &.{},
     basis: noise.BasisNoiseGen,
 
     fn typicalHeightAt(self_density: f64, rq: f64, smin: f64, smax: f64, base_spots_per_km2: f64, freq_mult: f64) f64 {
@@ -447,6 +451,77 @@ fn richnessDistance(x: f64, y: f64) f64 {
 /// Evaluate one resource at one tile. Read-only w.r.t. `st` once its spot cache
 /// has been pre-populated (see computeSEOresInRect), so this is safe to call
 /// concurrently from multiple threads on shared ResourceStates.
+/// Direct max-cone evaluation over a flat spot slice (SpotNoiseField.evalAt
+/// semantics without region hashing): max over spots within basement_radius of
+/// (peak - slope*dist), floored at basement.
+inline fn spotValueDirect(spots: []const noise.Spot, basement: f64, basement_radius: f64, x: f64, y: f64) f64 {
+    var value = basement;
+    for (spots) |sp| {
+        const ddx = x - sp.x;
+        const ddy = y - sp.y;
+        const dist = @sqrt(ddx * ddx + ddy * ddy);
+        if (dist <= basement_radius) {
+            const v = sp.peak - dist * sp.slope;
+            if (v > value) value = v;
+        }
+    }
+    return value;
+}
+
+/// allPatchesValue on the fast path: identical math, but spot fields evaluated
+/// from the pre-gathered flat slices.
+fn allPatchesValueDirect(st: *ResourceState, x: f64, y: f64) f64 {
+    const spot_v = spotValueDirect(st.all_spots, st.basement_value, SE_MAX_BASEMENT_RADIUS, x, y);
+    // Early out: the blob/vein terms are bounded by 4*amp, so if even the best
+    // spot value cannot reach 0 the tile places nothing — skip the noise evals
+    // (3 basis + two 6-octave multioctaves). Most tiles in active chunks are
+    // still outside every cone.
+    {
+        const reg_max = spot_v + 4.0 * st.blob_amplitude;
+        var start_max: f64 = -1.0;
+        if (st.starting_spot != null) {
+            const sv = spotValueDirect(st.all_start_spots, st.basement_value, SE_STARTING_MAX_BASEMENT_RADIUS, x, y);
+            start_max = sv + 4.0 * st.starting_blob_amplitude;
+        }
+        if (reg_max <= 0.0 and start_max <= 0.0) return -1.0;
+    }
+    const blobs0 = st.basis.eval(x, y, 1.0 / 8.0, 1.0) + st.basis.eval(x, y, 1.0 / 24.0, 1.0);
+    const blob = blobs0 + st.basis.eval(x, y, 1.0 / 64.0, 1.5) - 1.0 / 3.0;
+    const vein_v = 1.0 - 10.0 * @abs(noise.multioctaveNoisePrebuilt(&st.basis, x, y, VEIN_OCTAVES, 0.5, 1.0 / 4.0, 1.0));
+    const regular = spot_v + (blob + 0.8 * vein_v) * st.spot.field.blobAmplitudeAt(x, y);
+    if (st.starting_spot != null) {
+        const start_spot_v = spotValueDirect(st.all_start_spots, st.basement_value, SE_STARTING_MAX_BASEMENT_RADIUS, x, y);
+        const start_vein = 1.0 - 10.0 * @abs(noise.multioctaveNoisePrebuilt(&st.basis, x, y, VEIN_OCTAVES, 0.5, 1.0, 1.0));
+        const starting = start_spot_v + (0.4 * (blobs0 - 0.25) + 0.2 * start_vein) * st.starting_blob_amplitude;
+        return @max(regular, starting);
+    }
+    return regular;
+}
+
+/// Can this resource produce a POSITIVE all_patches value anywhere within
+/// `radius` of (cx, cy)? all_patches > 0 requires a spot cone to lift the value
+/// above -(blob range)*amp; outside every cone the field sits at basement
+/// (-6*amp) which the blob terms (|blob+0.8*vein| < 4) can never overcome. So a
+/// chunk with no spot within min(basement_radius, (peak+4*amp)/slope) + radius
+/// can be skipped entirely.
+fn chunkCanHaveOre(st: *ResourceState, cx: f64, cy: f64, radius: f64) bool {
+    const amp4 = 4.0 * st.blob_amplitude;
+    for (st.all_spots) |sp| {
+        const reach = @min(SE_MAX_BASEMENT_RADIUS, (sp.peak + amp4) / sp.slope);
+        const ddx = cx - sp.x;
+        const ddy = cy - sp.y;
+        if (@sqrt(ddx * ddx + ddy * ddy) <= reach + radius) return true;
+    }
+    const samp4 = 4.0 * st.starting_blob_amplitude;
+    for (st.all_start_spots) |sp| {
+        const reach = @min(SE_STARTING_MAX_BASEMENT_RADIUS, (sp.peak + samp4) / sp.slope);
+        const ddx = cx - sp.x;
+        const ddy = cy - sp.y;
+        if (@sqrt(ddx * ddx + ddy * ddy) <= reach + radius) return true;
+    }
+    return false;
+}
+
 /// Raw all_patches values at arbitrary positions — oracle comparison against
 /// the live game's `default-<name>-patches` via calculate_tile_properties
 /// (calibration/vanilla-sweep/probe_live.py).
@@ -503,6 +578,10 @@ const Worker = struct {
     classifier: ?*const biome.Classifier,
     out: std.ArrayList(OreEntity) = .empty,
     err: ?anyerror = null,
+    // --- profiling counters, aggregated by the caller ---
+    n_elev: u64 = 0,
+    n_field: u64 = 0,
+    n_biome: u64 = 0,
 
     fn run(self: *Worker) void {
         if (self.sample_step != 1) return self.runLegacy();
@@ -526,6 +605,22 @@ const Worker = struct {
         while (cy <= cy1) : (cy += 1) {
             var cx: i32 = cx0;
             while (cx <= cx1) : (cx += 1) {
+                // Chunk culling: skip everything (fields, water, biome, pass 2)
+                // when no resource can produce a positive value anywhere in the
+                // chunk — ore covers ~2% of the surface, so this skips the vast
+                // majority of chunks. Safe: solids don't depend on the RNG
+                // stream, and per-chunk streams are independent.
+                const ccx: f64 = @floatFromInt(cx * CHUNK + 16);
+                const ccy: f64 = @floatFromInt(cy * CHUNK + 16);
+                const chunk_r = 16.0 * std.math.sqrt2 + 1.0;
+                var any_active = false;
+                var active: [64]bool = undefined;
+                for (self.states, 0..) |*st0, ri0| {
+                    active[ri0] = chunkCanHaveOre(st0, ccx, ccy, chunk_r);
+                    if (active[ri0]) any_active = true;
+                }
+                if (!any_active) continue;
+
                 // PASS 1 (generateEntities): winner per tile = highest
                 // probability, ties broken by higher richness.
                 var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
@@ -535,6 +630,7 @@ const Worker = struct {
                 @memset(elev_done[0..], false);
                 @memset(biome_done[0..], false);
                 for (self.states, 0..) |*st, ri| {
+                    if (!active[ri]) continue;
                     var ly: i32 = 0;
                     while (ly < CHUNK) : (ly += 1) {
                         var lx: i32 = 0;
@@ -545,10 +641,8 @@ const Worker = struct {
                             const fx: f64 = @floatFromInt(tx);
                             const fy: f64 = @floatFromInt(ty);
                             if (dist0(fx, fy) > self.zone_radius) continue;
-                            const value = allPatchesValue(st, fx, fy) catch |e| {
-                                self.err = e;
-                                return;
-                            };
+                            const value = allPatchesValueDirect(st, fx, fy);
+                            self.n_field += 1;
                             var p = clamp01(value);
                             if (p <= 0.0) continue;
                             const idx: usize = @intCast(ly * CHUNK + lx);
@@ -565,6 +659,7 @@ const Worker = struct {
                             if (self.water) |w| {
                                 if (!elev_done[idx]) {
                                     elev_val[idx] = w.at(fx, fy);
+                                    self.n_elev += 1;
                                     elev_done[idx] = true;
                                 }
                                 if (elev_val[idx] < se_water_threshold) continue;
@@ -576,6 +671,7 @@ const Worker = struct {
                                         if (!biome_done[idx]) {
                                             const ev = if (elev_done[idx]) elev_val[idx] else 0.0;
                                             biome_idx[idx] = c.classifyIndex(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), ev);
+                                            self.n_biome += 1;
                                             biome_done[idx] = true;
                                         }
                                         if (!biome.oreAllowedOnBiome(st.name, biome_idx[idx])) continue;
@@ -754,6 +850,20 @@ pub fn computeSEOresInRect(
         }
     }
 
+    // Flat spot slices for the fast path (direct eval + chunk culling).
+    {
+        const fx0: f64 = @floatFromInt(x0);
+        const fx1: f64 = @floatFromInt(x1);
+        const fy0: f64 = @floatFromInt(y0);
+        const fy1: f64 = @floatFromInt(y1);
+        for (states) |*st| {
+            st.all_spots = try st.spot.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+            if (st.starting_spot) |*ss| {
+                st.all_start_spots = try ss.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+            }
+        }
+    }
+
     // Decide worker count from the row (step) budget and CPU cores. For the
     // per-chunk path (sample_step==1) bands are whole 32-row chunk rows so a
     // chunk is never split across workers (its RNG stream must be sequential).
@@ -798,6 +908,20 @@ pub fn computeSEOresInRect(
         for (threads, workers[1..]) |*t, *w| t.* = try std.Thread.spawn(.{}, Worker.run, .{w});
         workers[0].run();
         for (threads) |t| t.join();
+    }
+
+    // Aggregate + report profiling (CPU-time across workers; wall time is
+    // roughly cpu/threads).
+    {
+        var ne: u64 = 0;
+        var nf: u64 = 0;
+        var nb: u64 = 0;
+        for (workers) |*w| {
+            ne += w.n_elev;
+            nf += w.n_field;
+            nb += w.n_biome;
+        }
+        std.debug.print("# profile counts: field evals {d}, elevation evals {d}, biome classifies {d}\n", .{ nf, ne, nb });
     }
 
     // Merge worker outputs (in band order) and surface any worker error.
