@@ -601,12 +601,15 @@ function buildSurfaceGrid(seed, zoneId) {
     const full = cp(1, 0, prefix);
     if (full) return `<img class="layer ${cls}" loading="lazy" src="${full}" alt="">`;
     if (n <= 1) return "";
-    const layerActive = active(kind);
+    // Cells a worker is actively rendering right now (status="running"); queued
+    // cells show nothing until they're picked up.
+    const runningCells = new Set(grp(kind).filter(j => j.status === "running").map(j => j.grid_cell));
     const cellDivs = cells.map(c => {
       const png = cp(n, c.cell, prefix);
       if (png) return `<div class="surf-cell done" style="${cellStyle(c)}"><img loading="lazy" src="${png}" alt=""></div>`;
-      // show progress only on the terrain layer (the ore layer's gaps are transparent)
-      if (cls === "terrain" && layerActive) return `<div class="surf-cell queued" style="${cellStyle(c)}"><span>⏳</span></div>`;
+      // show the hourglass only on the terrain layer (the ore layer's gaps are
+      // transparent) and only while that cell is actually being generated.
+      if (cls === "terrain" && runningCells.has(c.cell)) return `<div class="surf-cell running" style="${cellStyle(c)}"><span>⏳</span></div>`;
       return "";
     }).join("");
     return cellDivs ? `<div class="layer ${cls} cell-layer">${cellDivs}</div>` : "";
