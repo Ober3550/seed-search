@@ -170,9 +170,9 @@ function resOobTd(bucket, seed, zone) {
 function renderZoneCtl(bucket, seed, zone, which) {
   const zjobs = db.getSurfaceJobsForZone(zone.id);
   // The ore map is a shared job, but each control tracks only its own half: the
-  // ore control watches ore/oremap, the surface control watches terrain. So a
-  // standalone ore-map job never lights up (flashes) the surface control. A
-  // kind=surface job queues both terrain AND oremap, so it lights up both.
+  // ore control watches ore/oremap, the surface control watches terrain, and the
+  // two buttons queue independent jobs (⛏ ore → oremap only, 🗺️ surface →
+  // terrain only), so neither ever lights up (flashes) the other's control.
   const SURF_KINDS = ["surface", "terrain"];
   const active = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
   const failed = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && j.status === "failed").length > 0;
@@ -205,7 +205,7 @@ function renderZoneCtl(bucket, seed, zone, which) {
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
       : surfPng
         ? ""
-        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>🗺️ surface</button>`;
+        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`;
     if (!activeNow && !surfPng && failed(["terrain"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   }
@@ -471,9 +471,9 @@ function renderSeedDetail(s, c, zones, filterId) {
           ⛏ Generate ore maps — selected zones
         </button>
         <button type="button" class="btn btn-secondary"
-          hx-post="/api/surface/batch?kind=surface" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
+          hx-post="/api/surface/batch?kind=terrain" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
-          🗺️ Generate surfaces (terrain + ore) — selected zones
+          🗺️ Generate surfaces (terrain) — selected zones
         </button>
       </div>
       <table class="data-table" id="zone-table">
