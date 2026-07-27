@@ -152,47 +152,67 @@ function renderZoneResources(bucket, seed, zone) {
 // The actions/status cell for one zone row. Reflects live job state and, while
 // anything is queued/running, polls itself every 2s. When ore work finishes it
 // also pushes a fresh Resources cell out-of-band (est → measured).
-function renderZoneCell(bucket, seed, zone, withResOob = false) {
+// OOB refresh of the Resources cell so est→measured flips as jobs land. Emitted
+// only on poll/create responses — never in the initial full-page render, where a
+// second <td> would duplicate the column.
+function resOobTd(bucket, seed, zone) {
+  return `<td class="yields-cell" id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</td>`;
+}
+
+// One generate-control (ore or surface) for a zone row, in its own <span> that
+// self-polls ONLY while its own job type is active. This keeps a running ore job
+// from re-rendering (flashing) the surface button every 2s, and vice-versa. The
+// button still re-renders the whole cell (#zcell-N) on click, so a surface job —
+// which also queues the ore map — flips both controls at once.
+function renderZoneCtl(bucket, seed, zone, which) {
   const zjobs = db.getSurfaceJobsForZone(zone.id);
-  const SURF_KINDS = ["surface", "terrain", "oremap"];
+  // The ore map is a shared job, but each control tracks only its own half: the
+  // ore control watches ore/oremap, the surface control watches terrain. So a
+  // standalone ore-map job never lights up (flashes) the surface control. A
+  // kind=surface job queues both terrain AND oremap, so it lights up both.
+  const SURF_KINDS = ["surface", "terrain"];
   const active = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
   const failed = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && j.status === "failed").length > 0;
-  const oreActive = active(["ore", "oremap"]);       // ore amounts + ore-map render
-  const surfActive = active(SURF_KINDS);
-  const anyActive = oreActive.length > 0 || surfActive.length > 0;
-
-  const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
-  const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
-    || zoneSurfacePng(bucket, seed, zone.name, "oremap")
-    || zoneSurfacePng(bucket, seed, zone.name, "surface");
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
+  const id = which === "ore" ? `orectl-${zone.id}` : `surfctl-${zone.id}`;
 
-  // Ore control: start the ore-map job (amounts + ore-on-black image). ⏳ running.
-  const oreCtl = oreActive.length
-    ? `<span class="gen-status running">⏳ ore…</span>`
-    : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>${oremapPng ? "↻ ore" : "⛏ ore"}</button>`;
+  let inner, activeNow;
+  if (which === "ore") {
+    // ore amounts + ore-map render
+    activeNow = active(["ore", "oremap"]).length > 0;
+    const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
+    inner = activeNow
+      ? `<span class="gen-status running">⏳ ore…</span>`
+      : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>${oremapPng ? "↻ ore" : "⛏ ore"}</button>`;
+    if (!activeNow && failed(["ore", "oremap"]))
+      inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
+  } else {
+    const surfActive = active(SURF_KINDS);
+    activeNow = surfActive.length > 0;
+    const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
+    const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
+      || zoneSurfacePng(bucket, seed, zone.name, "oremap")
+      || zoneSurfacePng(bucket, seed, zone.name, "surface");
+    inner = activeNow
+      ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
+      : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ surface" : "🗺️ surface"}</button>`;
+    if (!activeNow && failed(["terrain"]))
+      inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
+  }
 
-  // Surface control: start the surface (terrain + ore) job. ⏳ running.
-  const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
-  const surfCtl = surfActive.length
-    ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
-    : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ surface" : "🗺️ surface"}</button>`;
-
-  const fail = (failed(["ore", "oremap"]) || failed(["terrain"])) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
-
-  const poll = anyActive
-    ? `hx-get="/api/zone/cell?seed=${seed}&zone_id=${zone.id}" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop"`
+  const poll = activeNow
+    ? `hx-get="/api/zone/control?seed=${seed}&zone_id=${zone.id}&which=${which}" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop"`
     : "";
+  return `<span class="zctl" id="${id}" ${poll}>${inner}</span>`;
+}
 
-  // OOB refresh of the Resources cell so est→measured flips as jobs land.
-  // Only emitted on poll/create responses — never in the initial full-page
-  // render, where a second <td> would duplicate the column.
-  const resOob = withResOob
-    ? `<td class="yields-cell" id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</td>`
-    : "";
-
-  return `<td class="row-actions" id="zcell-${zone.id}" ${poll}>${oreCtl}${surfCtl}${fail}</td>${resOob}`;
+function renderZoneCell(bucket, seed, zone, withResOob = false) {
+  return `<td class="row-actions" id="zcell-${zone.id}">`
+    + renderZoneCtl(bucket, seed, zone, "ore")
+    + renderZoneCtl(bucket, seed, zone, "surf")
+    + `</td>`
+    + (withResOob ? resOobTd(bucket, seed, zone) : "");
 }
 
 // Breadcrumb trail for the drill-down.
@@ -466,7 +486,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             // page instantly); the trigger filter ignores clicks on buttons/inputs so
             // those keep working normally.
             const nav = gen
-              ? `hx-get="/seed/${s.seed}/surface/${z.id}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" hx-trigger="click[shouldNav(event)]" hx-sync="#main:replace" style="cursor:pointer"`
+              ? `hx-get="/seed/${s.seed}/surface/${z.id}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" hx-trigger="click[shouldNav(event)]" hx-sync="#main:replace" hx-disinherit="*" style="cursor:pointer"`
               : "";
             return `
           <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
@@ -1076,6 +1096,21 @@ app.get("/api/zone/cell", (req, res) => {
   if (!zone) return res.status(404).send("");
   const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
   res.send(renderZoneCell(bucket, seed, zone, true));
+});
+
+// Poll target for a single generate-control (ore or surface). Returns just that
+// control's <span> so a running job only re-renders its own button, not both.
+// The ore control also carries the Resources OOB refresh (yields flip
+// est→measured once the ore amounts land).
+app.get("/api/zone/control", (req, res) => {
+  const seed = parseInt(req.query.seed);
+  const which = req.query.which === "surf" ? "surf" : "ore";
+  const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.query.zone_id));
+  if (!zone) return res.status(404).send("");
+  const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
+  let html = renderZoneCtl(bucket, seed, zone, which);
+  if (which === "ore") html += resOobTd(bucket, seed, zone);
+  res.send(html);
 });
 
 // Cancel every queued/running job (universe + surface) and kill their
