@@ -671,7 +671,7 @@ app.post("/api/filter/create", (req, res) => {
 
 app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
 
-const RULE_KINDS = ["primary", "present", "combo", "specials", "pairs"];
+const RULE_KINDS = ["primary", "present", "both", "combo", "specials", "pairs"];
 
 function renderPresetsPage(defs) {
   const kinds = RULE_KINDS;
@@ -751,7 +751,7 @@ function renderRuleRow(kinds, rule = null, disabled = false) {
   return `<div class="rule-row">
     <select name="kind" ${dis}>${kindOpts}</select>
     <select name="res" ${dis}>${resOpts(rule ? rule.res : "", "(resource)")}</select>
-    <select name="res2" ${dis}>${resOpts(rule ? rule.res2 : "", "(secondary, for combo)")}</select>
+    <select name="res2" ${dis}>${resOpts(rule ? rule.res2 : "", "(2nd resource — combo/both)")}</select>
     <input type="number" name="n" placeholder="n (specials/pairs)" min="1" max="6" style="width:130px" value="${rule && rule.n ? rule.n : ""}" ${dis}>
   </div>`;
 }
@@ -764,7 +764,7 @@ function parseRuleRows(body) {
   for (let i = 0; i < kinds.length; i++) {
     const kind = kinds[i];
     if (kind === "primary" || kind === "present") { if (r1[i]) rules.push({ kind, res: r1[i] }); }
-    else if (kind === "combo") { if (r1[i] && r2[i]) rules.push({ kind, res: r1[i], res2: r2[i] }); }
+    else if (kind === "combo" || kind === "both") { if (r1[i] && r2[i]) rules.push({ kind, res: r1[i], res2: r2[i] }); }
     else if (kind === "specials" || kind === "pairs") { const n = parseInt(ns[i]); if (n > 0) rules.push({ kind, n }); }
   }
   return rules;

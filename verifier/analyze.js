@@ -479,6 +479,7 @@ function evaluateWorld(seedRaw) {
 //   { kind: "primary",   res }            — a body has `res` as primary
 //   { kind: "present",   res }            — a body has `res` present (secondary ok)
 //   { kind: "combo",     res, res2 }      — one body: `res` primary AND `res2` present
+//   { kind: "both",      res, res2 }      — one body has BOTH present (production pair)
 //   { kind: "specials",  n }              — >= n distinct special primaries
 //   { kind: "pairs",     n }              — >= n production pairs matched
 // matchFilter returns { match, zones:[names] } — zones are the bodies that
@@ -501,6 +502,12 @@ function matchFilter(crit, rules) {
       const b = bodies.find((x) => x.primary === rule.res && (x.present || []).includes(rule.res2));
       if (!b) return { match: false, zones: [] };
       zones.add(b.name);
+    } else if (rule.kind === "both") {
+      // one body has BOTH resources present (either may be primary) — the
+      // production-pair relationship from the analyze --pairs combos.
+      const b = bodies.find((x) => (x.present || []).includes(rule.res) && (x.present || []).includes(rule.res2));
+      if (!b) return { match: false, zones: [] };
+      zones.add(b.name);
     } else if (rule.kind === "specials") {
       if ((crit.numSpecials || 0) < (rule.n || 0)) return { match: false, zones: [] };
       for (const z of Object.values(crit.specials || {})) zones.add(z);
@@ -519,6 +526,7 @@ function ruleLabel(rule) {
     case "primary": return `${nm(rule.res)} primary`;
     case "present": return `has ${nm(rule.res)}`;
     case "combo": return `${nm(rule.res)} primary + ${nm(rule.res2)} secondary`;
+    case "both": return `${nm(rule.res)} + ${nm(rule.res2)} together`;
     case "specials": return `≥${rule.n} specials`;
     case "pairs": return `≥${rule.n} pairs`;
     default: return JSON.stringify(rule);

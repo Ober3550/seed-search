@@ -159,19 +159,26 @@ function initSchema() {
   seedPresetFilters();
 }
 
-// Built-in filter presets that mirror the analyze script's modes, plus a few
-// resource-tag examples. Idempotent (INSERT OR IGNORE by unique name).
+// Two EDITABLE starter presets mirroring the analyze script's --core and
+// --pairs modes. Seeded as builtin=0 so they can be tweaked/deleted (the pair
+// definitions aren't set in stone). Old read-only (builtin=1) presets from
+// earlier versions are removed. Idempotent: INSERT OR IGNORE keeps edits, and
+// re-adds a starter only if it's missing.
 function seedPresetFilters() {
+  db.prepare("DELETE FROM filter_defs WHERE builtin = 1").run();
   const presets = [
-    { name: "core (6 specials)", rules: [{ kind: "specials", n: 6 }] },
-    { name: "core (≥4 specials)", rules: [{ kind: "specials", n: 4 }] },
-    { name: "all production pairs", rules: [{ kind: "pairs", n: 5 }] },
-    { name: "vulcanite primary", rules: [{ kind: "primary", res: "se-vulcanite" }] },
-    { name: "vitamelange primary", rules: [{ kind: "primary", res: "se-vitamelange" }] },
-    { name: "vulcanite primary + iridium secondary",
-      rules: [{ kind: "combo", res: "se-vulcanite", res2: "se-iridium-ore" }] },
+    { name: "core", rules: [{ kind: "specials", n: 6 }] },
+    {
+      name: "pairs",
+      rules: [
+        { kind: "both", res: "se-vulcanite", res2: "se-iridium-ore" },
+        { kind: "both", res: "se-cryonite", res2: "se-beryllium-ore" },
+        { kind: "both", res: "se-vitamelange", res2: "stone" },
+        { kind: "present", res: "se-holmium-ore" },
+      ],
+    },
   ];
-  const stmt = db.prepare("INSERT OR IGNORE INTO filter_defs (name, rules, builtin) VALUES (?, ?, 1)");
+  const stmt = db.prepare("INSERT OR IGNORE INTO filter_defs (name, rules, builtin) VALUES (?, ?, 0)");
   for (const p of presets) stmt.run(p.name, JSON.stringify(p.rules));
 }
 
