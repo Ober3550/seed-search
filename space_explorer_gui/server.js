@@ -67,14 +67,13 @@ function htmxPage(title, content) {
     <nav class="sidebar">
       <h1>🌌 SE Explorer</h1>
       <ul class="nav-links">
-        <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true">Universe Buckets</a></li>
-        <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true">Seeds</a></li>
-        <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true">Filter Presets</a></li>
-        <li><a href="/filters" hx-get="/filters" hx-target="#main" hx-push-url="true">Filtered Sets</a></li>
-        <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true">Surface Jobs</a></li>
+        <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Universe Buckets</a></li>
+        <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
+        <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
+        <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Surface Jobs</a></li>
       </ul>
       <div class="sidebar-footer">
-        <small>buckets → seeds → filtered → seed → zone</small>
+        <small>buckets → seeds → zone → surface</small>
       </div>
     </nav>
     <main id="main">${content}</main>
@@ -242,7 +241,7 @@ function renderUniversePage(jobsList) {
         <button type="submit" class="btn">Queue Buckets</button>
       </form>
     </div>
-    <div id="jobs-table" hx-get="/universe/table" hx-trigger="every 3s">${renderBucketsTable(jobsList)}</div>
+    <div id="jobs-table" hx-get="/universe/table" hx-trigger="every 3s" hx-sync="#main:drop">${renderBucketsTable(jobsList)}</div>
   </div>`;
 }
 
@@ -318,103 +317,27 @@ function renderSeedsPage(seeds, buckets, defs, f) {
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
-      ${f.bucket && f.defId ? `
-      <form class="save-filter" hx-post="/api/filter/create" hx-swap="none"
-            hx-on::after-request="htmx.ajax('GET','/filters?bucket=${f.bucket}',{target:'#main'})">
-        <input type="hidden" name="bucket" value="${f.bucket}">
-        <input type="hidden" name="def" value="${f.defId}">
-        <input type="hidden" name="loot" value="${f.loot}">
-        <input type="text" name="name" placeholder="Save as a filtered set…" value="${f.def ? f.def.name.replace(/[^a-zA-Z0-9_-]/g, "_") : ""}" required>
-        <button type="submit" class="btn">💾 Save filtered set (${seeds.length})</button>
-      </form>` : `<p class="hint">Pick a bucket and a filter to save a filtered set.</p>`}
     </div>
     <table class="data-table">
-      <thead><tr><th>Seed</th><th>Bucket</th><th>K2</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th>Naq</th><th></th></tr></thead>
+      <thead><tr><th>Seed</th><th>Bucket</th><th>K2</th><th>Loot</th><th>Zones</th><th>Naq</th><th></th></tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
           const c = seedCriteria(s) || {};
           return `
         <tr>
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
-          <td>${s.zone_count}</td><td>${c.numSpecials ?? "—"}/6</td><td>${c.numPairs ?? "—"}/5</td>
+          <td>${s.zone_count}</td>
           <td>${c.naqField || "—"}</td>
           <td><a href="/seed/${s.seed}" hx-get="/seed/${s.seed}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="9">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="7">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
   </div>`;
 }
 
-// ── Level 3: Filtered Sets (saved second-layer subsets) ────────────────
-
-app.get("/filters", (req, res) => {
-  const bucket = req.query.bucket || "";
-  const filters = db.getSeedFilters(bucket || undefined);
-  page(req, res, "Filtered Sets", renderFiltersPage(filters, bucket));
-});
-
-function renderFiltersPage(filters, bucket) {
-  return `
-  <div class="page">
-    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Seeds", href: bucket ? `/seeds?bucket=${bucket}` : "/seeds" }, { label: "Filtered Sets" }])}
-    <h2>🔎 Filtered Sets ${bucket ? `<span class="badge zone-type">${bucket}</span>` : ""}</h2>
-    <p class="hint">Saved second-layer filters over each bucket's rough-passed seeds. The membership
-    file lives at <code>output/&lt;bucket&gt;/&lt;name&gt;.jsonl</code> (zones trimmed to relevant ones).</p>
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Bucket</th><th>Criteria</th><th>Matched</th><th>Created</th><th></th></tr></thead>
-      <tbody>
-        ${filters.map(f => `
-        <tr>
-          <td><strong>${f.name}</strong></td>
-          <td>${f.bucket}</td>
-          <td>${filterRulesLabel(f)}${f.loot ? `, loot ${f.loot}*` : ""}</td>
-          <td>${f.matched}</td>
-          <td>${f.created_at}</td>
-          <td>
-            <a href="/filter/${f.id}" hx-get="/filter/${f.id}" hx-target="#main" hx-push-url="true" class="btn-sm">Seeds →</a>
-            <button class="btn-sm danger" hx-delete="/api/filter/${f.id}" hx-swap="none"
-              hx-on::after-request="htmx.ajax('GET','/filters${bucket ? `?bucket=${bucket}` : ""}',{target:'#main'})">🗑</button>
-          </td>
-        </tr>`).join("")}
-        ${filters.length === 0 ? `<tr><td colspan="6">No saved filters. Create one from the Seeds page.</td></tr>` : ""}
-      </tbody>
-    </table>
-  </div>`;
-}
-
-app.get("/filter/:id", (req, res) => {
-  const f = db.getSeedFilter(parseInt(req.params.id));
-  if (!f) return res.status(404).send(htmxPage("Not Found", "<h2>Filter not found</h2>"));
-  const seeds = db.getFilterSeeds(f.id);
-  page(req, res, `Filter ${f.name}`, renderFilterSeeds(f, seeds));
-});
-
-function renderFilterSeeds(f, seeds) {
-  return `
-  <div class="page">
-    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Seeds", href: `/seeds?bucket=${f.bucket}` }, { label: "Filtered Sets", href: `/filters?bucket=${f.bucket}` }, { label: f.name }])}
-    <h2>🔎 ${f.name} <span class="badge zone-type">${f.bucket}</span> <span class="badge done">${seeds.length} seeds</span></h2>
-    <p class="hint">${filterRulesLabel(f)}${f.loot ? `, loot ${f.loot}*` : ""}</p>
-    <table class="data-table">
-      <thead><tr><th>Seed</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th></th></tr></thead>
-      <tbody>
-        ${seeds.map(s => {
-          const c = seedCriteria(s) || {};
-          return `
-        <tr>
-          <td><strong>${s.seed}</strong></td><td><code>${s.loot}</code></td><td>${s.zone_count}</td>
-          <td>${c.numSpecials ?? "—"}/6</td><td>${c.numPairs ?? "—"}/5</td>
-          <td><a href="/seed/${s.seed}?filter=${f.id}" hx-get="/seed/${s.seed}?filter=${f.id}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
-        </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="6">Empty set.</td></tr>` : ""}
-      </tbody>
-    </table>
-  </div>`;
-}
-
-// ── Level 4: Seed detail — zones (relevant-only by default) ────────────
+// ── Seed detail — zones ────────────────────────────────────────────────
 
 // Generatable zone types (surfaces). Others are shown for reference only.
 const GEN_TYPES = ["planet", "moon"];
@@ -451,10 +374,8 @@ function zoneSearchText(bucket, seed, zone) {
 }
 
 function renderSeedDetail(s, c, zones, filterId) {
-  const back = filterId
-    ? { label: "Filtered Set", href: `/filter/${filterId}` }
-    : { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
-  const reload = `/seed/${s.seed}${filterId ? `?filter=${filterId}` : ""}`;
+  const back = { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
+  const reload = `/seed/${s.seed}`;
   const sel = new Set(c.selectedZones || []);
   const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
 
@@ -699,7 +620,7 @@ function renderSurfaceJobsPage(jobsList) {
   };
 
   return `
-  <div class="page" ${anyActive ? `hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML"` : ""}>
+  <div class="page" ${anyActive ? `hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML" hx-sync="#main:drop"` : ""}>
     <div class="page-head">
       <h2>🗺️ Surface Jobs <span class="hint">${arr.length} surface${arr.length === 1 ? "" : "s"}, ${jobsList.length} job${jobsList.length === 1 ? "" : "s"}</span></h2>
       <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
@@ -770,20 +691,6 @@ app.post("/api/universe/create", (req, res) => {
   jobs.setUniverseConcurrency(conc);
   const ids = jobs.createUniverseBuckets(units, k2);
   res.json({ ok: true, job_ids: ids, message: `Queued ${units} × 100k buckets` });
-});
-
-app.post("/api/filter/create", (req, res) => {
-  const bucket = req.body.bucket;
-  const name = (req.body.name || "filter").trim();
-  const loot = req.body.loot || "";
-  const def = req.body.def ? db.getFilterDef(parseInt(req.body.def)) : null;
-  const rules = def ? JSON.parse(def.rules) : [];
-  try {
-    const r = jobs.createFilteredSet(bucket, name, rules, loot);
-    res.json({ ok: true, ...r });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
 });
 
 // ── Filter presets (reusable rulesets) ────────────────────────────────
@@ -948,11 +855,6 @@ app.post("/api/preset/:id/update", (req, res) => {
 });
 
 app.delete("/api/preset/:id", (req, res) => { db.deleteFilterDef(parseInt(req.params.id)); res.json({ ok: true }); });
-
-app.delete("/api/filter/:id", (req, res) => {
-  db.deleteSeedFilter(parseInt(req.params.id));
-  res.json({ ok: true });
-});
 
 // Queue jobs for one zone. kind=ore → a single ore job. kind=surface → one job
 // per grid cell that intersects the disk (parallel tiles, stitched on complete).
