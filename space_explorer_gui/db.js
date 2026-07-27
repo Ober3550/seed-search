@@ -139,6 +139,12 @@ function initSchema() {
       builtin INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Simple key/value settings (e.g. persisted worker limits).
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
 
   // additive migrations for pre-existing databases
@@ -435,6 +441,15 @@ function createFilterDef(name, rules) {
   ).run(name, JSON.stringify(rules));
   return info.lastInsertRowid;
 }
+function getSetting(key) {
+  const row = getDb().prepare("SELECT value FROM settings WHERE key = ?").get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  getDb().prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+}
+
 function updateFilterDef(id, name, rules) {
   return getDb().prepare(
     "UPDATE filter_defs SET name = ?, rules = ? WHERE id = ? AND builtin = 0"
@@ -515,6 +530,8 @@ module.exports = {
   createFilterDef,
   updateFilterDef,
   deleteFilterDef,
+  getSetting,
+  setSetting,
   createSeedFilter,
   setFilterMembers,
   getSeedFilters,

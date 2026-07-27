@@ -199,14 +199,27 @@ function clearCancelledJobs() {
 const clampInt = (n, lo, hi) => Math.max(lo, Math.min(hi, n | 0));
 
 // Set the shared pool size and optional per-type caps. Caps are clamped to the
-// pool size. Any field left undefined is unchanged.
-function setWorkerLimits({ total, universe, surface }) {
+// pool size. Any field left undefined is unchanged. Persisted to the DB so the
+// limits survive restarts.
+function setWorkerLimits({ total, universe, surface }, { persist = true } = {}) {
   if (total != null && !Number.isNaN(total)) maxWorkers = clampInt(total, 1, 32);
   if (universe != null && !Number.isNaN(universe)) maxUniverse = clampInt(universe, 0, maxWorkers);
   if (surface != null && !Number.isNaN(surface)) maxSurface = clampInt(surface, 0, maxWorkers);
   maxUniverse = Math.min(maxUniverse, maxWorkers);
   maxSurface = Math.min(maxSurface, maxWorkers);
+  if (persist) {
+    try { db.setSetting("worker_limits", JSON.stringify({ total: maxWorkers, universe: maxUniverse, surface: maxSurface })); }
+    catch (e) { console.log("[workers] persist failed:", e.message); }
+  }
 }
+
+// Load persisted limits from the DB (overriding the env/default) at startup.
+(function loadPersistedWorkerLimits() {
+  try {
+    const raw = db.getSetting("worker_limits");
+    if (raw) setWorkerLimits(JSON.parse(raw), { persist: false });
+  } catch (_) { /* table not ready / bad JSON — keep env defaults */ }
+})();
 
 // Live snapshot: pool size, per-type caps/running/queued, and the running jobs
 // (so the UI can label each worker universe vs surface).

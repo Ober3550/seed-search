@@ -696,9 +696,12 @@ app.post("/api/universe/create", (req, res) => {
 app.get("/workers", (req, res) => page(req, res, "Workers", renderWorkersPage(jobs.workerStatus())));
 
 function renderWorkersPage(st) {
+  const watchLink = (j) => j.zone_id
+    ? ` <a class="btn-sm" href="/surface/watch?seed=${j.seed}&zone_id=${j.zone_id}" hx-get="/surface/watch?seed=${j.seed}&zone_id=${j.zone_id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace" title="watch grid">👁</a>`
+    : "";
   const jobLabel = (type, j) => type === "universe"
     ? `<span class="wtag uni">universe</span> Bucket <strong>${j.bucket || "—"}</strong> · ${(j.seed_start || 0).toLocaleString()}–${(j.seed_end || 0).toLocaleString()}${j.k2_enabled ? " · K2" : ""}`
-    : `<span class="wtag surf">surface</span> <strong>${j.zone_name}</strong> · seed ${j.seed} · ${j.kind || "ore"}${j.kind === "surface" && j.grid_cell >= 0 ? ` · cell ${j.grid_cell}/${j.grid_n * j.grid_n}` : ""}`;
+    : `<span class="wtag surf">surface</span> <strong>${j.zone_name}</strong> · seed ${j.seed} · ${j.kind || "ore"}${j.kind === "surface" && j.grid_cell >= 0 ? ` · cell ${j.grid_cell}/${j.grid_n * j.grid_n}` : ""}${watchLink(j)}`;
 
   // shared slot list: running universe jobs, then running surface jobs, then idle
   const active = [
