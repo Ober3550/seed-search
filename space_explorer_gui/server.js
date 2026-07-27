@@ -323,8 +323,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
       <thead><tr>
         <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
         <th>Bucket</th><th>K2</th><th>Loot</th>
-        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')">Zones <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="gen" onclick="sortSeeds('gen')" title="distinct zones with a generated surface/ore">Generated <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind"></span></th>
         <th>Naq</th><th></th>
       </tr></thead>
       <tbody>
@@ -334,29 +333,39 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           return `
         <tr data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
-          <td>${s.zone_count}</td>
-          <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : `<span class="muted">0/${s.zone_count}</span>`}</td>
+          <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           <td>${c.naqField || "—"}</td>
           <td><a href="/seed/${s.seed}" hx-get="/seed/${s.seed}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="8">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="7">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
     <script>
       (function () {
-        var st = { key: null, dir: "asc" };
+        var st = { key: null, dir: "desc" };
+        // DESCENDING comparators (first click). Zones desc: generated seeds
+        // first (by most generated), then the rest (by most total zones).
+        function baseCmp(key, a, b) {
+          if (key === "zones") {
+            var ag = +a.dataset.gen, bg = +b.dataset.gen;
+            if ((ag > 0) !== (bg > 0)) return ag > 0 ? -1 : 1;
+            if (ag > 0) return bg - ag;
+            return (+b.dataset.zones) - (+a.dataset.zones);
+          }
+          return (+b.dataset[key] || 0) - (+a.dataset[key] || 0);
+        }
         window.sortSeeds = function (key) {
-          st.dir = (st.key === key && st.dir === "asc") ? "desc" : "asc";
+          st.dir = (st.key === key && st.dir === "desc") ? "asc" : "desc"; // first click = desc
           st.key = key;
           var tb = document.querySelector("#seeds-table tbody");
           [].slice.call(tb.querySelectorAll("tr[data-seed]")).sort(function (a, b) {
-            var cmp = (parseFloat(a.dataset[key]) || 0) - (parseFloat(b.dataset[key]) || 0);
-            return st.dir === "asc" ? cmp : -cmp;
+            var cmp = baseCmp(key, a, b);
+            return st.dir === "desc" ? cmp : -cmp;
           }).forEach(function (r) { tb.appendChild(r); });
           document.querySelectorAll("#seeds-table th.sortable .sort-ind").forEach(function (s) { s.textContent = ""; });
           var h = document.querySelector('#seeds-table th[data-key="' + key + '"] .sort-ind');
-          if (h) h.textContent = st.dir === "asc" ? "▲" : "▼";
+          if (h) h.textContent = st.dir === "desc" ? "▼" : "▲";
         };
       })();
     </script>
