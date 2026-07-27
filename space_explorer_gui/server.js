@@ -149,41 +149,30 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
   const SURF_KINDS = ["surface", "terrain", "oremap"];
   const active = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
   const failed = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && j.status === "failed").length > 0;
-  const oreActive = active(["ore"]);
+  const oreActive = active(["ore", "oremap"]);       // ore amounts + ore-map render
   const surfActive = active(SURF_KINDS);
   const anyActive = oreActive.length > 0 || surfActive.length > 0;
 
-  // a surface exists if any layer image (terrain/oremap/legacy surface) is present
-  const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
-    || zoneSurfacePng(bucket, seed, zone.name, "oremap")
-    || zoneSurfacePng(bucket, seed, zone.name, "surface");
-  const summary = !!zoneSurfaceSummary(bucket, seed, zone.name);
+  const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
 
-  // Ore control: generate button until ore exists, then nothing (data is
-  // populated — no regenerate). Shows progress while running.
+  // Ore control: generate the ore map (amounts + ore-on-black image); once it
+  // exists the button opens that ore png (it is not removed).
   let oreCtl;
   if (oreActive.length) oreCtl = `<span class="gen-status running">⏳ ore…</span>`;
-  else if (summary) oreCtl = "";
-  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} ${tgt}>⛏ ore</button>`;
+  else if (oremapPng) oreCtl = `<a class="btn-sm" href="${oremapPng}" target="_blank" title="ore map png">🗺️ ore</a>`;
+  else oreCtl = `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>⛏ ore</button>`;
 
-  // Surface control: if a surface exists or is rendering, this button opens the
-  // watch/view page; otherwise it starts generation.
+  // Surface control: ALWAYS opens the surface detail (watch) page — generation
+  // happens there, so you can view the detail without generating first.
   const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
-  const hasSurfaceWork = surfPng || zjobs.some(j => SURF_KINDS.includes(j.kind));
   const watchAttrs = `href="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-get="/surface/watch?seed=${seed}&zone_id=${zone.id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace"`;
-  let surfCtl;
-  if (surfActive.length) {
-    const total = surfActive.length + surfDone;
-    surfCtl = `<a class="btn-sm btn-secondary" ${watchAttrs} title="watch progress">⏳ surface ${surfDone}/${total}</a>`;
-  } else if (hasSurfaceWork) {
-    surfCtl = `<a class="btn-sm btn-secondary" ${watchAttrs} title="view surface">🗺️ surface</a>`;
-  } else {
-    surfCtl = `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>🗺️ surface</button>`;
-  }
+  const surfCtl = surfActive.length
+    ? `<a class="btn-sm btn-secondary" ${watchAttrs} title="watch progress">⏳ surface ${surfDone}/${surfActive.length + surfDone}</a>`
+    : `<a class="btn-sm btn-secondary" ${watchAttrs} title="surface detail">🗺️ surface</a>`;
 
-  const fail = (failed(["ore"]) || failed(SURF_KINDS)) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
+  const fail = (failed(["ore", "oremap"]) || failed(["terrain"])) && !anyActive ? `<span class="gen-status failed" title="see Surface Jobs">⚠️</span>` : "";
 
   const poll = anyActive
     ? `hx-get="/api/zone/cell?seed=${seed}&zone_id=${zone.id}" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop"`
