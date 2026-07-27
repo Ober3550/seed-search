@@ -530,7 +530,12 @@ function renderSeedDetail(s, c, zones, filterId) {
 function zoneCellPng(bucket, seed, zoneName, n, cell, prefix = "surface") {
   const file = n > 1 ? `${prefix}_${n}_${cell}.png` : `${prefix}.png`;
   const rel = path.join(bucket, `seed_${seed}`, zoneName, file);
-  return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
+  try {
+    // ?t=mtime busts the browser cache when a layer is regenerated (e.g. an old
+    // opaque ore map replaced by the new transparent one).
+    const t = Math.round(fs.statSync(path.join(jobs.OUTPUT_DIR, rel)).mtimeMs);
+    return `/output/${rel}?t=${t}`;
+  } catch (_) { return null; }
 }
 
 // Build the layered surface view (terrain dimmed + ore bright) as { grid, head }.
@@ -551,22 +556,32 @@ function buildSurfaceGrid(seed, zoneId) {
   const poll = anyActive ? `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML" hx-sync="#main:drop"` : "";
 
   const terrainFull = cp(1, 0, "terrain");   // stitched (n>1) or whole (n<=1)
-  const oreFull = cp(1, 0, "oremap");
   const legacy = cp(1, 0, "surface");        // old combined image
-  const img = (cls, src) => `<img class="layer ${cls}" loading="lazy" src="${src}" alt="">`;
+  const cellStyle = (c) => `left:${c.leftPct}%;top:${c.topPct}%;width:${c.wPct}%;height:${c.hPct}%`;
+
+  // Each layer renders independently: its stitched/whole image if present, else
+  // its live per-cell grid (so terrain cells still fill in under the ore layer).
+  const layer = (prefix, cls, kind) => {
+    const full = cp(1, 0, prefix);
+    if (full) return `<img class="layer ${cls}" loading="lazy" src="${full}" alt="">`;
+    if (n <= 1) return "";
+    const layerActive = active(kind);
+    const cellDivs = cells.map(c => {
+      const png = cp(n, c.cell, prefix);
+      if (png) return `<div class="surf-cell done" style="${cellStyle(c)}"><img loading="lazy" src="${png}" alt=""></div>`;
+      // show progress only on the terrain layer (the ore layer's gaps are transparent)
+      if (cls === "terrain" && layerActive) return `<div class="surf-cell queued" style="${cellStyle(c)}"><span>⏳</span></div>`;
+      return "";
+    }).join("");
+    return cellDivs ? `<div class="layer ${cls} cell-layer">${cellDivs}</div>` : "";
+  };
+
+  const terrainLayer = layer("terrain", "terrain", "terrain");
+  const oreLayer = layer("oremap", "ore", "oremap");
 
   let body;
-  if (terrainFull || oreFull) {
-    // completed / whole layers
-    body = `<div class="surf-grid layered">${terrainFull ? img("terrain", terrainFull) : ""}${oreFull ? img("ore", oreFull) : ""}</div>`;
-  } else if (n > 1 && cells.some(c => cp(n, c.cell, "terrain") || cp(n, c.cell, "oremap"))) {
-    // live per-cell composite
-    body = `<div class="surf-grid layered">${cells.map(c => {
-      const t = cp(n, c.cell, "terrain"), o = cp(n, c.cell, "oremap");
-      const style = `left:${c.leftPct}%;top:${c.topPct}%;width:${c.wPct}%;height:${c.hPct}%`;
-      const inner = (t ? img("terrain", t) : (anyActive ? "<span>⏳</span>" : "")) + (o ? img("ore", o) : "");
-      return `<div class="surf-cell ${t ? "done" : "queued"}" style="${style}">${inner}</div>`;
-    }).join("")}</div>`;
+  if (terrainLayer || oreLayer) {
+    body = `<div class="surf-grid layered">${terrainLayer}${oreLayer}</div>`;
   } else if (legacy) {
     body = `<div class="surf-grid"><img class="surf-full" src="${legacy}" alt="${zone.name}"></div>`;
   } else {
