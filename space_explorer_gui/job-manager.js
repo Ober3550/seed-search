@@ -592,8 +592,10 @@ function surfaceGridFor(radius) {
   return Math.max(1, Math.min(SURFACE_GRID_CAP, Math.ceil((radius * 2) / SURFACE_CELL_TILES)));
 }
 
-// Cell indices (row-major, gx=i%n) of an n×n grid over [-r,r]² that intersect
-// the disk of `radius`. Cells fully outside are skipped (never queued).
+// Cell indices (gx=i%n) of an n×n grid over [-r,r]² that intersect the disk of
+// `radius`. Cells fully outside are skipped. Ordered center-outward (by each
+// cell centre's distance from the origin) so the central landing area — where
+// the player arrives — is generated first and the edges last.
 function planSurfaceCells(radius, n) {
   if (n <= 1) return [0];
   const full = radius * 2;
@@ -606,9 +608,14 @@ function planSurfaceCells(radius, n) {
     if (x1 <= x0 || y1 <= y0) continue;
     const nx = Math.max(x0, Math.min(0, x1 - 1));
     const ny = Math.max(y0, Math.min(0, y1 - 1));
-    if (nx * nx + ny * ny <= radius * radius) cells.push(i);
+    if (nx * nx + ny * ny <= radius * radius) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      cells.push({ i, d2: cx * cx + cy * cy });
+    }
   }
-  return cells;
+  // Nearest-to-centre first; row-major (i) breaks ties for a stable order.
+  cells.sort((a, b) => a.d2 - b.d2 || a.i - b.i);
+  return cells.map(c => c.i);
 }
 
 // How many cells the group SHOULD have (used to detect group completion).
