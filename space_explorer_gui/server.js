@@ -71,6 +71,7 @@ function htmxPage(title, content) {
         <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
         <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
         <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Surface Jobs</a></li>
+        <li><a href="/workers" hx-get="/workers" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Workers</a></li>
       </ul>
       <div class="sidebar-footer">
         <small>buckets → seeds → zone → surface</small>
@@ -234,7 +235,6 @@ function renderUniversePage(jobsList) {
       <form hx-post="/api/universe/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
         <label title="Each unit = one 100k bucket">Buckets (×100k): <input type="number" name="units" value="10" min="1" max="1000" required></label>
-        <label title="Buckets run at once">Concurrency: <input type="number" name="concurrency" value="4" min="1" max="16"></label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Min 4 Prod Modules</label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Nearby Naq Field</label>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
@@ -686,11 +686,65 @@ function renderSurfaceViewer(job) {
 
 app.post("/api/universe/create", (req, res) => {
   const units = parseInt(req.body.units || req.body.total_units) || 1;
-  const conc = parseInt(req.body.concurrency) || 4;
   const k2 = req.body.k2_enabled === "on" || req.body.k2_enabled === "1";
-  jobs.setUniverseConcurrency(conc);
   const ids = jobs.createUniverseBuckets(units, k2);
   res.json({ ok: true, job_ids: ids, message: `Queued ${units} × 100k buckets` });
+});
+
+// ── Workers ────────────────────────────────────────────────────────────
+
+app.get("/workers", (req, res) => page(req, res, "Workers", renderWorkersPage(jobs.workerStatus())));
+
+function renderWorkersPage(st) {
+  const jobLabel = (pool, j) => pool === "universe"
+    ? `Bucket <strong>${j.bucket || "—"}</strong> · ${(j.seed_start || 0).toLocaleString()}–${(j.seed_end || 0).toLocaleString()}${j.k2_enabled ? " · K2" : ""}`
+    : `<strong>${j.zone_name}</strong> · seed ${j.seed} · ${j.kind || "ore"}${j.kind === "surface" && j.grid_cell >= 0 ? ` · cell ${j.grid_cell}/${j.grid_n * j.grid_n}` : ""}`;
+
+  const pool = (title, kind, s) => `
+    <div class="worker-pool">
+      <div class="pool-head">
+        <h3>${title}</h3>
+        <span class="badge ${s.active ? "running" : "done"}">${s.active}/${s.max} active</span>
+        <span class="hint">${s.queued} queued</span>
+        <form class="pool-form" hx-post="/api/workers/concurrency" hx-swap="none"
+              hx-on::after-request="htmx.ajax('GET','/workers',{target:'#main'})">
+          <input type="hidden" name="pool" value="${kind}">
+          <label>Max workers: <input type="number" name="max" value="${s.max}" min="1" max="16"></label>
+          <button type="submit" class="btn-sm">Apply</button>
+        </form>
+      </div>
+      <ul class="worker-list">
+        ${Array.from({ length: s.max }).map((_, i) => {
+          const j = s.jobs[i];
+          return j
+            ? `<li><span class="dot running"></span> worker ${i + 1}: ${jobLabel(kind, j)}</li>`
+            : `<li class="idle"><span class="dot idle"></span> worker ${i + 1}: idle</li>`;
+        }).join("")}
+      </ul>
+    </div>`;
+
+  return `
+  <div class="page" hx-get="/workers" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop">
+    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Workers" }])}
+    <h2>⚙ Workers</h2>
+    <p class="hint">Universe workers run <code>seedgen</code> (one per 100k bucket); surface workers run
+    <code>segen</code> (one per surface cell). Set how many run at once.</p>
+    <div class="worker-pools">
+      ${pool("🌠 Universe", "universe", st.universe)}
+      ${pool("🗺️ Surface", "surface", st.surface)}
+    </div>
+  </div>`;
+}
+
+app.post("/api/workers/concurrency", (req, res) => {
+  const p = req.body.pool;
+  const max = parseInt(req.body.max);
+  if (!(max >= 1)) return res.status(400).json({ ok: false, error: "invalid max" });
+  if (p === "universe") jobs.setUniverseConcurrency(max);
+  else if (p === "surface") jobs.setSurfaceConcurrency(max);
+  else return res.status(400).json({ ok: false, error: "unknown pool" });
+  jobs.processQueue(); // fill any newly-freed worker slots right away
+  res.json({ ok: true });
 });
 
 // ── Filter presets (reusable rulesets) ────────────────────────────────

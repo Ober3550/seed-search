@@ -201,6 +201,19 @@ function setSurfaceConcurrency(n) {
   surfaceConcurrency = Math.max(1, Math.min(16, n | 0));
 }
 
+// Live worker snapshot: each pool's max, the jobs currently being processed
+// (so the UI can show universe vs surface), and how many are queued.
+function workerStatus() {
+  const d = db.getDb();
+  const uniJobs = [...runningUniverse].map(id => db.getUniverseJob(id)).filter(Boolean);
+  const surfJobs = [...runningSurface].map(id => db.getSurfaceJob(id)).filter(Boolean);
+  const q = (t) => d.prepare(`SELECT COUNT(*) n FROM ${t} WHERE status='queued'`).get().n;
+  return {
+    universe: { max: universeConcurrency, active: uniJobs.length, queued: q("universe_jobs"), jobs: uniJobs },
+    surface: { max: surfaceConcurrency, active: surfJobs.length, queued: q("surface_jobs"), jobs: surfJobs },
+  };
+}
+
 async function processQueue() {
   const d = db.getDb();
 
@@ -715,6 +728,7 @@ module.exports = {
   createUniverseBuckets,
   setUniverseConcurrency,
   setSurfaceConcurrency,
+  workerStatus,
   cancelAllJobs,
   clearCancelledJobs,
   createFilteredSet,

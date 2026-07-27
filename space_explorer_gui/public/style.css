@@ -439,3 +439,18 @@ tr.zone-info:hover { opacity: 1; }
 .surf-group .job-count { color: var(--muted); font-size: 0.8rem; }
 .surf-group summary a.badge { text-decoration: none; }
 .data-table.compact td, .data-table.compact th { padding: 5px 10px; font-size: 0.8rem; }
+
+/* workers page */
+.worker-pools { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 800px) { .worker-pools { grid-template-columns: 1fr; } }
+.worker-pool { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.pool-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.pool-head h3 { font-size: 1rem; }
+.pool-form { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pool-form input[type=number] { width: 64px; }
+.worker-list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.worker-list li { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; padding: 4px 6px; border-radius: 4px; background: var(--bg); }
+.worker-list li.idle { color: var(--muted); }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
+.dot.running { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.dot.idle { background: #3a4250; }
