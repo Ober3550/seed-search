@@ -40,17 +40,28 @@ def bmp_to_png(bmp_path, png_path=None):
             ba[0::3], ba[2::3] = r_ch, b_ch
             rows.append(bytes(ba))
 
+    # The ore layer (oremap.bmp) is drawn on black; emit RGBA with the black
+    # pixels transparent so terrain shows through underneath.
+    alpha = "oremap" in os.path.basename(bmp_path)
+
     # PNG signature
     png_sig = b"\x89PNG\r\n\x1a\n"
 
-    # IHDR chunk
-    ihdr_data = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8bit RGB
+    # IHDR chunk (color type 6 = RGBA, 2 = RGB)
+    ihdr_data = struct.pack(">IIBBBBB", w, h, 8, 6 if alpha else 2, 0, 0, 0)
     ihdr = make_chunk(b"IHDR", ihdr_data)
 
-    # IDAT: filter byte 0 + RGB data per row, compressed
+    # IDAT: filter byte 0 + pixel data per row, compressed
     raw = b""
     for row in rows:
-        raw += b"\x00" + row  # filter type 0 (None)
+        if alpha:
+            line = bytearray()
+            for x in range(w):
+                r, g, b = row[x * 3], row[x * 3 + 1], row[x * 3 + 2]
+                line += bytes((r, g, b, 0 if (r == 0 and g == 0 and b == 0) else 255))
+            raw += b"\x00" + bytes(line)
+        else:
+            raw += b"\x00" + row  # filter type 0 (None)
     idat = make_chunk(b"IDAT", zlib.compress(raw))
 
     # IEND

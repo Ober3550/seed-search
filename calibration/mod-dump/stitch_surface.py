@@ -75,13 +75,23 @@ def chunk(t, dat):
     c = t + dat
     return struct.pack(">I", len(dat)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
 
+# The ore layer is emitted RGBA with black transparent so terrain shows through.
+alpha = prefix == "oremap"
 raw = bytearray()
 for y in range(full - 1, -1, -1):
     raw.append(0)
-    raw += canvas[y * full * 3:(y + 1) * full * 3]
+    if alpha:
+        base = y * full * 3
+        for x in range(full):
+            o = base + x * 3
+            r, g, b = canvas[o], canvas[o + 1], canvas[o + 2]
+            raw.extend((r, g, b, 0 if (r == 0 and g == 0 and b == 0) else 255))
+    else:
+        raw += canvas[y * full * 3:(y + 1) * full * 3]
+color_type = 6 if alpha else 2  # 6 = RGBA, 2 = RGB
 png = (b"\x89PNG\r\n\x1a\n"
-       + chunk(b"IHDR", struct.pack(">IIBBBBB", full, full, 8, 2, 0, 0, 0))
+       + chunk(b"IHDR", struct.pack(">IIBBBBB", full, full, 8, color_type, 0, 0, 0))
        + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
        + chunk(b"IEND", b""))
 open(out, "wb").write(png)
-print(f"stitched {placed} cell(s) → {out} ({full}x{full})")
+print(f"stitched {placed} cell(s) → {out} ({full}x{full}{' RGBA' if alpha else ''})")

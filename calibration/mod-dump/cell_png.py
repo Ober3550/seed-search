@@ -37,20 +37,27 @@ def chunk(t, dat):
     return struct.pack(">I", len(dat)) + c + struct.pack(">I", zlib.crc32(c) & 0xffffffff)
 
 
+# The ore layer (oremap_*) is drawn on black; emit it as RGBA with the black
+# pixels transparent so the terrain shows through underneath.
+alpha = "oremap" in os.path.basename(src)
+
 w, h, rows = read_bmp(src)
 raw = bytearray()
-# flip vertically (final orientation) + BGR→RGB
+# flip vertically (final orientation) + BGR→RGB (+ alpha for the ore layer)
 for y in range(h - 1, -1, -1):
     raw.append(0)
     row = rows[y]
     for x in range(w):
-        raw.append(row[x * 3 + 2])  # r
-        raw.append(row[x * 3 + 1])  # g
-        raw.append(row[x * 3])      # b
+        r, g, b = row[x * 3 + 2], row[x * 3 + 1], row[x * 3]
+        if alpha:
+            raw.extend((r, g, b, 0 if (r == 0 and g == 0 and b == 0) else 255))
+        else:
+            raw.extend((r, g, b))
 
+color_type = 6 if alpha else 2  # 6 = RGBA, 2 = RGB
 png = (b"\x89PNG\r\n\x1a\n"
-       + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+       + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0))
        + chunk(b"IDAT", zlib.compress(bytes(raw), 6))
        + chunk(b"IEND", b""))
 open(out, "wb").write(png)
-print(f"cell → {out} ({w}x{h})")
+print(f"cell → {out} ({w}x{h}{' RGBA' if alpha else ''})")
