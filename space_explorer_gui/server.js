@@ -158,8 +158,7 @@ function renderZoneCell(bucket, seed, zone, withResOob = false) {
     || zoneSurfacePng(bucket, seed, zone.name, "oremap")
     || zoneSurfacePng(bucket, seed, zone.name, "surface");
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
-  // stop the click bubbling to the row (which navigates to the detail page)
-  const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML" onclick="event.stopPropagation()"`;
+  const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
 
   // Ore control: start the ore-map job (amounts + ore-on-black image). ⏳ running.
   const oreCtl = oreActive.length
@@ -210,12 +209,12 @@ function renderUniversePage(jobsList) {
     <div class="page-head">
       <h2>🌠 Universe Generation</h2>
       <div class="head-actions">
-        <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
+        <button type="button" class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
           hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
           hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
           ✖ Cancel all jobs
         </button>
-        <button class="btn" hx-post="/api/jobs/clear-cancelled" hx-swap="none"
+        <button type="button" class="btn" hx-post="/api/jobs/clear-cancelled" hx-swap="none"
           hx-confirm="Delete all CANCELLED job entries and their on-disk bucket data? (surviving buckets are kept)"
           hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
           🧹 Clear cancelled
@@ -452,14 +451,12 @@ function renderSeedDetail(s, c, zones, filterId) {
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
             const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
-            // generatable rows navigate to the surface detail on click; the
-            // checkbox and action buttons stopPropagation so they don't.
-            const nav = gen
-              ? `hx-get="/surface/watch?seed=${s.seed}&zone_id=${z.id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace"`
-              : "";
+            // generatable rows navigate to the surface detail on click; rowNav
+            // ignores clicks on buttons/inputs so those keep working normally.
+            const nav = gen ? `onclick="rowNav(event,'/surface/watch?seed=${s.seed}&zone_id=${z.id}')"` : "";
             return `
           <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
-            <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""} onclick="event.stopPropagation()">` : ""}</td>
+            <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
             <td><strong>${z.name}</strong></td>
             <td><span class="badge zone-type">${z.zone_type}</span></td>
             <td>${z.radius ? Math.round(z.radius) : "—"}</td>
@@ -508,6 +505,13 @@ function renderSeedDetail(s, c, zones, filterId) {
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = master.checked;
           });
+        };
+        // Row click → surface detail, unless the click was on an interactive
+        // control (button/input/link) — those keep their own behaviour.
+        window.rowNav = function (e, url) {
+          if (e.target.closest("button, input, a, select, label")) return;
+          htmx.ajax("GET", url, { target: "#main" });
+          history.pushState({}, "", url);
         };
       })();
     </script>
@@ -624,9 +628,9 @@ app.get("/surface/watch", (req, res) => {
           <input type="range" min="0" max="100" value="45" oninput="setTerrB(this.value)">
         </label>
         <div class="preset-actions">
-          <button class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🌍 terrain</button>
-          <button class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore map</button>
-          <button class="btn-sm" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${reload} title="both layers">↻ both</button>
+          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🌍 terrain</button>
+          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore map</button>
+          <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${reload} title="both layers">↻ both</button>
         </div>
       </aside>
       <div class="watch-grid-col">${g.grid}</div>
@@ -706,7 +710,7 @@ function renderSurfaceJobsPage(jobsList) {
   <div class="page" ${anyActive ? `hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML" hx-sync="#main:drop"` : ""}>
     <div class="page-head">
       <h2>🗺️ Surface Jobs <span class="hint">${arr.length} surface${arr.length === 1 ? "" : "s"}, ${jobsList.length} job${jobsList.length === 1 ? "" : "s"}</span></h2>
-      <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
+      <button type="button" class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
         hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
         hx-on::after-request="htmx.ajax('GET','/surfaces',{target:'#main'})">
         ✖ Cancel all jobs
@@ -1019,7 +1023,7 @@ function queueZone(zone, seed, kind) {
 }
 
 app.post("/api/surface/create", (req, res) => {
-  const kind = req.query.kind === "surface" ? "surface" : "ore";
+  const kind = ["ore", "oremap", "terrain", "surface"].includes(req.query.kind) ? req.query.kind : "ore";
   const seed = parseInt(req.body.seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.body.zone_id));
   if (!zone) return res.status(404).json({ ok: false, error: "zone not found" });
@@ -1058,7 +1062,7 @@ app.post("/api/jobs/clear-cancelled", (req, res) => {
 
 // Batch: queue for each checked zone of a seed (kind = ore | surface).
 app.post("/api/surface/batch", (req, res) => {
-  const kind = req.query.kind === "surface" ? "surface" : "ore";
+  const kind = ["ore", "oremap", "terrain", "surface"].includes(req.query.kind) ? req.query.kind : "ore";
   const seed = parseInt(req.body.seed);
   let names = req.body.zone || [];
   if (!Array.isArray(names)) names = [names];
