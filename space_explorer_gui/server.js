@@ -155,8 +155,11 @@ function renderZoneResources(bucket, seed, zone) {
 // OOB refresh of the Resources cell so est→measured flips as jobs land. Emitted
 // only on poll/create responses — never in the initial full-page render, where a
 // second <td> would duplicate the column.
+// The OOB target is a <div> (flow content), not a bare <td>: when the poll
+// response leads with the control <span>, the HTML parser is in "in body" mode
+// and would silently drop a stray <td>, leaking its chips next to the button.
 function resOobTd(bucket, seed, zone) {
-  return `<td class="yields-cell" id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</td>`;
+  return `<div id="zres-${zone.id}" hx-swap-oob="true">${renderZoneResources(bucket, seed, zone)}</div>`;
 }
 
 // One generate-control (ore or surface) for a zone row, in its own <span> that
@@ -498,7 +501,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             <td>${water}</td>
             <td>${enemy}</td>
             <td>${relevant ? "⭐" : ""}</td>
-            <td class="yields-cell" id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</td>
+            <td class="yields-cell"><div id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</div></td>
             ${gen ? renderZoneCell(s.bucket, s.seed, z) : `<td class="row-actions muted">—</td>`}
           </tr>`;}).join("")}
           ${zones.length === 0 ? `<tr><td colspan="10">No zones.</td></tr>` : ""}
