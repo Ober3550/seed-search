@@ -527,9 +527,11 @@ function zoneCellPng(bucket, seed, zoneName, n, cell) {
 // The tiled grid fragment. Each planned cell is absolutely positioned as a % of
 // the 2r canvas (matches the stitched surface.png exactly). Polls itself every
 // 1.5s until every cell has a PNG, then stops.
-function renderSurfaceGrid(seed, zoneId) {
+// Build the live grid + its status "head" separately, so the head can live in
+// the side panel while the grid fills the image column. Returns { grid, head }.
+function buildSurfaceGrid(seed, zoneId) {
   const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
-  if (!zone) return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}"><p class="hint">Zone not found.</p></div>`;
+  if (!zone) return { grid: `<div class="surf-grid-wrap" id="surfgrid-${zoneId}"><p class="hint">Zone not found.</p></div>`, head: "" };
   const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
   const radius = Math.round(zone.radius || 500);
   const { n, cells } = jobs.surfaceCellLayout(radius);
@@ -539,16 +541,14 @@ function renderSurfaceGrid(seed, zoneId) {
   for (const j of surfJobs) byCell[j.grid_cell] = j;
   const anyActive = surfJobs.some(j => j.status === "queued" || j.status === "running");
 
-  // Fallback for surfaces stitched before per-cell PNGs existed: no cell PNGs on
-  // disk, nothing running, but surface.png present → just show the full image.
+  // Fallback for surfaces stitched before per-cell PNGs existed.
   const hasCellPngs = cells.some(c => zoneCellPng(bucket, seed, zone.name, n, c.cell));
   const stitchedRel = zoneCellPng(bucket, seed, zone.name, 1, 0);
   if (n > 1 && !hasCellPngs && !anyActive && stitchedRel) {
-    return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}">
-      <div class="surf-grid-head"><strong>${zone.name}</strong> · <span class="gen-status">✅ stitched</span>
-        <a class="btn-sm" href="${stitchedRel}" target="_blank" title="full-res">⤢ full image</a></div>
-      <div class="surf-grid"><img class="surf-full" src="${stitchedRel}" alt="${zone.name} surface"></div>
-    </div>`;
+    return {
+      head: `<span class="gen-status">✅ stitched</span> <a class="btn-sm" href="${stitchedRel}" target="_blank" title="full-res">⤢ full image</a>`,
+      grid: `<div class="surf-grid-wrap" id="surfgrid-${zoneId}"><div class="surf-grid"><img class="surf-full" src="${stitchedRel}" alt="${zone.name} surface"></div></div>`,
+    };
   }
 
   let done = 0, failed = 0;
@@ -571,18 +571,17 @@ function renderSurfaceGrid(seed, zoneId) {
     ? (failed ? `⚠️ ${done}/${total} cells (${failed} failed)` : `✅ ${done}/${total} cells`)
     : `⏳ ${done}/${total} cells…`;
 
-  return `<div class="surf-grid-wrap" id="surfgrid-${zoneId}" ${poll}>
-    <div class="surf-grid-head">
-      <strong>${zone.name}</strong> · grid ${n}×${n} · <span class="gen-status ${complete ? "" : "running"}">${status}</span>
-      ${complete && stitchedRel ? `<a class="btn-sm" href="${stitchedRel}" target="_blank" title="stitched full-res">⤢ full image</a>` : ""}
-    </div>
-    <div class="surf-grid">${slots}</div>
-  </div>`;
+  const head = `grid ${n}×${n} · <span class="gen-status ${complete ? "" : "running"}">${status}</span>` +
+    (complete && stitchedRel ? ` <a class="btn-sm" href="${stitchedRel}" target="_blank" title="stitched full-res">⤢ full image</a>` : "");
+  const grid = `<div class="surf-grid-wrap" id="surfgrid-${zoneId}" ${poll}><div class="surf-grid">${slots}</div></div>`;
+  return { grid, head };
 }
 
-// Poll target for the live grid.
+// Poll target for the live grid: swap the grid + OOB-update the panel status.
 app.get("/api/surface/grid", (req, res) => {
-  res.send(renderSurfaceGrid(parseInt(req.query.seed), parseInt(req.query.zone_id)));
+  const zoneId = parseInt(req.query.zone_id);
+  const g = buildSurfaceGrid(parseInt(req.query.seed), zoneId);
+  res.send(`${g.grid}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>`);
 });
 
 // Full watch page (breadcrumb + embedded live grid).
@@ -605,6 +604,7 @@ app.get("/surface/watch", (req, res) => {
     : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
   const reload = `hx-on::after-request="htmx.ajax('GET','/surface/watch?seed=${seed}&zone_id=${zoneId}',{target:'#main'})"`;
+  const g = buildSurfaceGrid(seed, zoneId);
 
   const content = `
   <div class="page">
@@ -625,8 +625,10 @@ app.get("/surface/watch", (req, res) => {
         <div class="preset-actions">
           <button class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${reload}>↻ Regenerate surface</button>
         </div>
+        <h3>Surface</h3>
+        <div id="gridstatus-${zoneId}" class="grid-status">${g.head}</div>
       </aside>
-      <div class="watch-grid-col">${renderSurfaceGrid(seed, zoneId)}</div>
+      <div class="watch-grid-col">${g.grid}</div>
     </div>
   </div>`;
   page(req, res, `${zone.name} surface`, content);

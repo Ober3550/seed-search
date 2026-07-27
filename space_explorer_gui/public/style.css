@@ -235,7 +235,6 @@ dd { font-weight: 500; }
 .num { font-family: "SF Mono", "Fira Code", monospace; text-align: right; }
 .yields-cell { font-size: 0.8rem; color: var(--muted); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.surface-gen-section { }
 .surface-gen-section h3 { margin-bottom: 12px; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .surface-jobs-list { margin-top: 16px; }
@@ -482,3 +481,7 @@ tr.zone-info:hover { opacity: 1; }
   .watch-layout .surface-meta { flex-basis: 100%; max-width: none; }
   .watch-grid-col .surf-grid { width: min(90vw, 90vh); }
 }
+
+/* grid status now lives in the meta panel (under Regenerate) */
+.grid-status { font-size: 0.85rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.watch-grid-col .surf-grid-wrap { margin-top: 0; }
