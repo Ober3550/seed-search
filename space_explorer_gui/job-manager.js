@@ -113,10 +113,16 @@ function createUniverseBuckets(units, k2Enabled) {
 // Number of bucket jobs run concurrently (each is a single seedgen process).
 let universeConcurrency = parseInt(process.env.UNIVERSE_CONCURRENCY || "4");
 const runningUniverse = new Set();
-let surfaceRunning = false;
+// Surface CELL jobs run concurrently (each renders one tile of one zone); this
+// is what parallelizes a large surface across cores/jobs.
+let surfaceConcurrency = parseInt(process.env.SURFACE_CONCURRENCY || "4");
+const runningSurface = new Set();
 
 function setUniverseConcurrency(n) {
   universeConcurrency = Math.max(1, Math.min(16, n | 0));
+}
+function setSurfaceConcurrency(n) {
+  surfaceConcurrency = Math.max(1, Math.min(16, n | 0));
 }
 
 async function processQueue() {
@@ -138,20 +144,21 @@ async function processQueue() {
       .finally(() => runningUniverse.delete(job.id));
   }
 
-  // surfaces: one at a time (segen already saturates cores)
-  if (!surfaceRunning) {
+  // surface/ore jobs: up to surfaceConcurrency at once (tiled surface cells
+  // parallelize this way; ore jobs are fast).
+  while (runningSurface.size < surfaceConcurrency) {
     const sjob = d.prepare(
-      "SELECT * FROM surface_jobs WHERE status = 'queued' ORDER BY created_at LIMIT 1"
+      "SELECT * FROM surface_jobs WHERE status = 'queued' AND id NOT IN " +
+      `(${[...runningSurface, -1].join(",")}) ORDER BY created_at LIMIT 1`
     ).get();
-    if (sjob) {
-      surfaceRunning = true;
-      db.updateSurfaceJob(sjob.id, { status: "running", started_at: new Date().toISOString() });
-      runSurfaceJob(sjob)
-        .catch(e => {
-          db.updateSurfaceJob(sjob.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() });
-        })
-        .finally(() => { surfaceRunning = false; });
-    }
+    if (!sjob) break;
+    db.updateSurfaceJob(sjob.id, { status: "running", started_at: new Date().toISOString() });
+    runningSurface.add(sjob.id);
+    runSurfaceJob(sjob)
+      .catch(e => {
+        db.updateSurfaceJob(sjob.id, { status: "failed", error: String(e).slice(0, 500), finished_at: new Date().toISOString() });
+      })
+      .finally(() => runningSurface.delete(sjob.id));
   }
 }
 
@@ -370,6 +377,54 @@ function writeSeedZonesFile(seedRow, zoneNames) {
   return file;
 }
 
+// ── Tiled surface planning + stitching ─────────────────────────────────
+
+const STITCH = path.join(PROJECT_ROOT, "calibration", "mod-dump", "stitch_surface.py");
+
+// Grid size for a zone: cells of ~1024 tiles, at least 1 (whole) up to a cap.
+function surfaceGridFor(radius) {
+  return Math.max(1, Math.min(8, Math.ceil((radius * 2) / 1024)));
+}
+
+// Cell indices (row-major, gx=i%n) of an n×n grid over [-r,r]² that intersect
+// the disk of `radius`. Cells fully outside are skipped (never queued).
+function planSurfaceCells(radius, n) {
+  if (n <= 1) return [0];
+  const full = radius * 2;
+  const cellW = Math.ceil(full / n);
+  const cells = [];
+  for (let i = 0; i < n * n; i++) {
+    const gx = i % n, gy = Math.floor(i / n);
+    const x0 = -radius + gx * cellW, x1 = Math.min(radius, x0 + cellW);
+    const y0 = -radius + gy * cellW, y1 = Math.min(radius, y0 + cellW);
+    if (x1 <= x0 || y1 <= y0) continue;
+    const nx = Math.max(x0, Math.min(0, x1 - 1));
+    const ny = Math.max(y0, Math.min(0, y1 - 1));
+    if (nx * nx + ny * ny <= radius * radius) cells.push(i);
+  }
+  return cells;
+}
+
+// How many cells the group SHOULD have (used to detect group completion).
+function expectedCells(n, radius) {
+  return planSurfaceCells(radius, n).length;
+}
+
+function stitchSurface(zoneDir, gridN, radius) {
+  return new Promise((resolve) => {
+    const child = spawn("python3", [STITCH, zoneDir, String(gridN), String(radius)],
+      { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", d => err += d);
+    child.on("close", code => {
+      const png = path.join(zoneDir, "surface.png");
+      if (code === 0 && fs.existsSync(png)) resolve(png);
+      else { console.log("[job-manager] stitch failed:", err.slice(0, 200)); resolve(null); }
+    });
+    child.on("error", () => resolve(null));
+  });
+}
+
 // ── Surface generation via the segen zone driver ───────────────────────
 
 function runSurfaceJob(job) {
@@ -392,14 +447,21 @@ function runSurfaceJob(job) {
     const zonesFile = path.join(sDir, "zones.jsonl");
     if (!fs.existsSync(zonesFile)) writeSeedZonesFile(seedRow, null);
 
+    const isSurface = job.kind === "surface";
+    const isCell = isSurface && job.grid_cell >= 0 && job.grid_n > 1;
+    // ore jobs = amounts only (no image, fast even for huge planets); surface
+    // jobs render the biome+water map (whole, or one grid cell for parallelism).
     const args = [
       "--zones", zonesFile,
       "--world-seed", String(job.seed),
       "--zone", job.zone_name,
       "--out", bucketDir(label),
       "--ores-only",
-      "--bmp", "x",
     ];
+    if (isSurface) {
+      if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
+      else args.push("--render-surface");
+    }
 
     console.log(`[surface ${job.id}] segen ${args.join(" ")}`);
     const child = spawn(binPath, args, { cwd: SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
@@ -411,33 +473,46 @@ function runSurfaceJob(job) {
     child.on("close", async code => {
       const zDir = path.join(sDir, job.zone_name);
       const summaryFile = path.join(zDir, "summary.json");
-      if (code === 0 && fs.existsSync(summaryFile)) {
-        const bmpFile = path.join(zDir, "ore.bmp");
-        let pngRel = null;
-        if (fs.existsSync(bmpFile)) {
-          const png = await convertBmpToPng(bmpFile);
-          if (png && png.endsWith(".png")) pngRel = path.relative(OUTPUT_DIR, png);
-        }
-        let summary = null;
-        let oreCount = 0;
-        try {
-          summary = fs.readFileSync(summaryFile, "utf8");
-          const parsed = JSON.parse(summary);
-          for (const r of Object.values(parsed.resources || {})) oreCount += r.tiles || 0;
-        } catch (_) {}
-        db.updateSurfaceJob(job.id, {
-          status: "done",
-          ore_count: oreCount,
-          bucket: label,
-          summary,
-          png_file: pngRel,
-          finished_at: new Date().toISOString(),
-        });
-        db.addJobLog("surface", job.id, `Done: ${job.zone_name} (${oreCount} ore tiles)`);
-      } else {
+      if (code !== 0 || !fs.existsSync(summaryFile)) {
         const errMsg = (stderr.slice(-500)) || `exit ${code}`;
         db.updateSurfaceJob(job.id, { status: "failed", error: errMsg, finished_at: new Date().toISOString() });
         db.addJobLog("surface", job.id, `Failed: ${errMsg.slice(0, 200)}`);
+        return resolve();
+      }
+      let summary = null, oreCount = 0;
+      try {
+        summary = fs.readFileSync(summaryFile, "utf8");
+        for (const r of Object.values(JSON.parse(summary).resources || {})) oreCount += r.tiles || 0;
+      } catch (_) {}
+
+      let pngRel = null;
+      if (isCell) {
+        // A cell finished. When ALL cells of this (seed,zone,grid) group are
+        // done, stitch them into surface.png.
+        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, finished_at: new Date().toISOString() });
+        const siblings = db.getSurfaceCells(job.seed, job.zone_name, job.grid_n);
+        const allDone = siblings.length >= expectedCells(job.grid_n, job.radius) &&
+                        siblings.every(s => s.status === "done" || s.status === "failed");
+        if (allDone) {
+          const png = await stitchSurface(zDir, job.grid_n, job.radius);
+          if (png) {
+            pngRel = path.relative(OUTPUT_DIR, png);
+            // point every sibling's png at the stitched result
+            for (const s of siblings) db.updateSurfaceJob(s.id, { png_file: pngRel });
+            db.addJobLog("surface", job.id, `Stitched ${job.zone_name} surface (grid ${job.grid_n})`);
+          }
+        }
+      } else {
+        // whole-surface job (grid 1): convert surface.bmp
+        if (isSurface) {
+          const bmpFile = path.join(zDir, "surface.bmp");
+          if (fs.existsSync(bmpFile)) {
+            const png = await convertBmpToPng(bmpFile);
+            if (png && png.endsWith(".png")) pngRel = path.relative(OUTPUT_DIR, png);
+          }
+        }
+        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} (${oreCount} ore tiles)`);
       }
       resolve();
     });
@@ -493,8 +568,11 @@ module.exports = {
   requireSeedgen,
   createUniverseBuckets,
   setUniverseConcurrency,
+  setSurfaceConcurrency,
   createFilteredSet,
   writeSeedZonesFile,
+  surfaceGridFor,
+  planSurfaceCells,
   bucketLabel,
   bucketDir,
   seedDir,

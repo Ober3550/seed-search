@@ -62,8 +62,8 @@ function zoneSurfaceSummary(bucket, seed, zoneName) {
     return JSON.parse(fs.readFileSync(path.join(jobs.seedDir(bucket, seed), zoneName, "summary.json"), "utf8"));
   } catch (_) { return null; }
 }
-function zoneSurfacePng(bucket, seed, zoneName) {
-  const rel = path.join(bucket, `seed_${seed}`, zoneName, "ore.png");
+function zoneSurfacePng(bucket, seed, zoneName, base = "ore") {
+  const rel = path.join(bucket, `seed_${seed}`, zoneName, `${base}.png`);
   return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
 }
 
@@ -300,40 +300,57 @@ function renderSeedDetail(s, c, zones, relevantOnly, filterId) {
         Only criteria-relevant zones (writes <code>zones.jsonl</code> for the generator)
       </label>
     </div>
-    <table class="data-table">
-      <thead><tr><th>Zone</th><th>Type</th><th>Radius</th><th>Primary</th><th>Δv</th><th>★</th><th>Ore estimates</th><th></th></tr></thead>
-      <tbody>
-        ${zones.map(z => {
-          const relevant = (c.selectedZones || []).includes(z.name);
-          const summary = zoneSurfaceSummary(s.bucket, s.seed, z.name);
-          const png = zoneSurfacePng(s.bucket, s.seed, z.name);
-          const ore = summary ? Object.entries(summary.resources || {})
-            .sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0)).slice(0, 4)
-            .map(([r, v]) => `${r.replace("se-", "").replace("kr-", "").replace("-ore", "")}: <strong>${v.display || fmtAmount(v.amount)}</strong>`).join(", ") : "";
-          return `
-        <tr>
-          <td><strong>${z.name}</strong></td>
-          <td><span class="badge zone-type">${z.zone_type}</span></td>
-          <td>${z.radius ? Math.round(z.radius) : "—"}</td>
-          <td>${z.primary_resource || "—"}</td>
-          <td class="num">${z.delta_v ? Math.round(z.delta_v) : "—"}</td>
-          <td>${relevant ? "⭐" : ""}</td>
-          <td class="yields-cell">${summary ? `✅ ${ore}` : "—"}</td>
-          <td>
-            ${png ? `<a class="btn-sm" href="${png}" target="_blank">🖼️</a>` : ""}
-            <form style="display:inline" hx-post="/api/surface/create" hx-swap="none"
-                  hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)">
-              <input type="hidden" name="zone_id" value="${z.id}">
-              <input type="hidden" name="seed" value="${s.seed}">
-              <input type="hidden" name="zone_name" value="${z.name}">
-              <input type="hidden" name="radius" value="${Math.round(z.radius || 500)}">
-              <button type="submit" class="btn-sm">${summary ? "↻ Regen" : "⚙ Generate"}</button>
-            </form>
-          </td>
-        </tr>`;}).join("")}
-        ${zones.length === 0 ? `<tr><td colspan="8">No zones in this view.</td></tr>` : ""}
-      </tbody>
-    </table>
+    <form id="zone-batch">
+      <input type="hidden" name="seed" value="${s.seed}">
+      <div class="batch-actions">
+        <button type="button" class="btn"
+          hx-post="/api/surface/batch?kind=ore" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
+          hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)">
+          ⛏ Generate ores — selected zones
+        </button>
+        <button type="button" class="btn btn-secondary"
+          hx-post="/api/surface/batch?kind=surface" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
+          hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)">
+          🗺️ Generate surfaces (biome+water) — selected zones
+        </button>
+      </div>
+      <table class="data-table">
+        <thead><tr>
+          <th><input type="checkbox" onclick="document.querySelectorAll('#zone-batch input[name=zone]').forEach(c=>c.checked=this.checked)"></th>
+          <th>Zone</th><th>Type</th><th>Radius</th><th>Primary</th><th>Δv</th><th>★</th><th>Ore estimates</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${zones.map(z => {
+            const relevant = (c.selectedZones || []).includes(z.name);
+            const summary = zoneSurfaceSummary(s.bucket, s.seed, z.name);
+            const orePng = zoneSurfacePng(s.bucket, s.seed, z.name, "ore");
+            const surfPng = zoneSurfacePng(s.bucket, s.seed, z.name, "surface");
+            const ore = summary ? Object.entries(summary.resources || {})
+              .sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0)).slice(0, 4)
+              .map(([r, v]) => `${r.replace("se-", "").replace("kr-", "").replace("-ore", "")}: <strong>${v.display || fmtAmount(v.amount)}</strong>`).join(", ") : "";
+            const genArgs = `hx-vals='${JSON.stringify({ zone_id: z.id, seed: s.seed, zone_name: z.name, radius: Math.round(z.radius || 500) })}'`;
+            const after = `hx-on::after-request="setTimeout(() => htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'}), 700)"`;
+            return `
+          <tr>
+            <td><input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}></td>
+            <td><strong>${z.name}</strong></td>
+            <td><span class="badge zone-type">${z.zone_type}</span></td>
+            <td>${z.radius ? Math.round(z.radius) : "—"}</td>
+            <td>${z.primary_resource || "—"}</td>
+            <td class="num">${z.delta_v ? Math.round(z.delta_v) : "—"}</td>
+            <td>${relevant ? "⭐" : ""}</td>
+            <td class="yields-cell">${summary ? `✅ ${ore}` : "—"}</td>
+            <td class="row-actions">
+              ${orePng ? `<a class="btn-sm" href="${orePng}" target="_blank" title="ore map">⛏</a>` : ""}
+              ${surfPng ? `<a class="btn-sm" href="${surfPng}" target="_blank" title="surface map">🗺️</a>` : ""}
+              <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=ore" ${genArgs} hx-swap="none" ${after}>${summary ? "↻ ore" : "⛏ ore"}</button>
+              <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${after}>🗺️ surface</button>
+            </td>
+          </tr>`;}).join("")}
+          ${zones.length === 0 ? `<tr><td colspan="9">No zones in this view.</td></tr>` : ""}
+        </tbody>
+      </table>
+    </form>
   </div>`;
 }
 
@@ -346,18 +363,19 @@ function renderSurfaceJobsPage(jobsList) {
   <div class="page" hx-get="/surfaces" hx-trigger="every 3s" hx-swap="outerHTML">
     <h2>🗺️ Surface Generation Jobs</h2>
     <table class="data-table">
-      <thead><tr><th>ID</th><th>Zone</th><th>Seed</th><th>Bucket</th><th>Status</th><th>Ore tiles</th><th>Created</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Zone</th><th>Kind</th><th>Seed</th><th>Bucket</th><th>Status</th><th>Ore tiles</th><th>Created</th><th></th></tr></thead>
       <tbody>
         ${jobsList.map(j => `
         <tr class="row-${j.status}">
           <td>${j.id}</td><td><strong>${j.zone_name}</strong></td>
+          <td><span class="badge">${j.kind || "ore"}</span></td>
           <td><a href="/seed/${j.seed}" hx-get="/seed/${j.seed}" hx-target="#main" hx-push-url="true">${j.seed}</a></td>
           <td>${j.bucket || "—"}</td>
           <td><span class="badge ${j.status}">${j.status}</span></td>
           <td>${j.ore_count || "—"}</td><td>${j.created_at}</td>
           <td>${j.status === "done" ? `<a href="/surface/${j.id}" hx-get="/surface/${j.id}" hx-target="#main" hx-push-url="true" class="btn-sm">🖼️</a>` : ""}</td>
         </tr>`).join("")}
-        ${jobsList.length === 0 ? `<tr><td colspan="8">No surface jobs yet.</td></tr>` : ""}
+        ${jobsList.length === 0 ? `<tr><td colspan="9">No surface jobs yet.</td></tr>` : ""}
       </tbody>
     </table>
   </div>`;
@@ -427,15 +445,43 @@ app.delete("/api/filter/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// Queue jobs for one zone. kind=ore → a single ore job. kind=surface → one job
+// per grid cell that intersects the disk (parallel tiles, stitched on complete).
+function queueZone(zone, seed, kind) {
+  const radius = Math.round(zone.radius || 500);
+  if (kind !== "surface") {
+    return [db.createSurfaceJob({ zone_id: zone.id, seed, zone_name: zone.name, radius, kind: "ore" })];
+  }
+  const n = jobs.surfaceGridFor(radius);
+  const cells = jobs.planSurfaceCells(radius, n);
+  return cells.map(cell => db.createSurfaceJob({
+    zone_id: zone.id, seed, zone_name: zone.name, radius,
+    kind: "surface", grid_n: n, grid_cell: n > 1 ? cell : -1,
+  }));
+}
+
 app.post("/api/surface/create", (req, res) => {
-  const jobId = db.createSurfaceJob({
-    zone_id: parseInt(req.body.zone_id),
-    seed: parseInt(req.body.seed),
-    zone_name: req.body.zone_name,
-    radius: parseInt(req.body.radius) || 500,
-    sample_step: 1,
-  });
-  res.json({ ok: true, job_id: jobId });
+  const kind = req.query.kind === "surface" ? "surface" : "ore";
+  const seed = parseInt(req.body.seed);
+  const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.body.zone_id));
+  if (!zone) return res.status(404).json({ ok: false, error: "zone not found" });
+  const ids = queueZone(zone, seed, kind);
+  res.json({ ok: true, kind, queued: ids.length, job_ids: ids });
+});
+
+// Batch: queue for each checked zone of a seed (kind = ore | surface).
+app.post("/api/surface/batch", (req, res) => {
+  const kind = req.query.kind === "surface" ? "surface" : "ore";
+  const seed = parseInt(req.body.seed);
+  let names = req.body.zone || [];
+  if (!Array.isArray(names)) names = [names];
+  const zones = db.getZonesForSeed(seed);
+  let queued = 0;
+  for (const name of names) {
+    const z = zones.find(zz => zz.name === name);
+    if (z) queued += queueZone(z, seed, kind).length;
+  }
+  res.json({ ok: true, kind, zones: names.length, queued });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────

@@ -137,6 +137,9 @@ function initSchema() {
     "ALTER TABLE universe_jobs ADD COLUMN bucket TEXT",
     "ALTER TABLE surface_jobs ADD COLUMN bucket TEXT",
     "ALTER TABLE surface_jobs ADD COLUMN summary TEXT",
+    "ALTER TABLE surface_jobs ADD COLUMN kind TEXT DEFAULT 'ore'",  // 'ore' | 'surface'
+    "ALTER TABLE surface_jobs ADD COLUMN grid_n INTEGER DEFAULT 1", // surface tiling: grid size
+    "ALTER TABLE surface_jobs ADD COLUMN grid_cell INTEGER DEFAULT -1", // which cell (-1 = whole/ore)
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
@@ -245,15 +248,25 @@ function createSurfaceJob(job) {
   const d = getDb();
   const stmt = d.prepare(`
     INSERT INTO surface_jobs
-      (zone_id, seed, zone_name, radius, sample_step, chunk_x, chunk_y, chunk_w)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (zone_id, seed, zone_name, radius, sample_step, chunk_x, chunk_y, chunk_w, kind, grid_n, grid_cell)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const info = stmt.run(
     job.zone_id, job.seed, job.zone_name, job.radius,
     job.sample_step || 1, job.chunk_x || null, job.chunk_y || null,
-    job.chunk_w || null
+    job.chunk_w || null, job.kind || "ore",
+    job.grid_n || 1, job.grid_cell === undefined ? -1 : job.grid_cell
   );
   return info.lastInsertRowid;
+}
+
+// Sibling cells of a tiled surface (same seed/zone/grid), to know when a group
+// is complete and ready to stitch.
+function getSurfaceCells(seed, zoneName, gridN) {
+  const d = getDb();
+  return d.prepare(
+    "SELECT * FROM surface_jobs WHERE seed = ? AND zone_name = ? AND kind = 'surface' AND grid_n = ?"
+  ).all(seed, zoneName, gridN);
 }
 
 function getSurfaceJobs(limit = 30) {
@@ -388,6 +401,7 @@ module.exports = {
   insertSeeds,
   getSeeds,
   getSeed,
+  getSurfaceCells,
   createSeedFilter,
   setFilterMembers,
   getSeedFilters,

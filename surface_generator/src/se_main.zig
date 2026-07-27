@@ -137,6 +137,9 @@ fn runZoneDriver(
     out_dir: []const u8,
     ores_only: bool,
     write_bmp: bool,
+    render_surface: bool,
+    surface_grid: i32, // NxN grid the surface is split into (1 = whole)
+    surface_cell: i32, // which cell (0..grid*grid-1) to render; -1 = all cells
 ) !void {
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
     var world: ?std.json.Value = null;
@@ -350,6 +353,87 @@ fn runZoneDriver(
             try bfile.writePositionalAll(init.io, bbuf.items, 0);
             std.debug.print("   wrote {s}\n", .{bpath});
         }
+
+        // Full-resolution SURFACE render (biome tile + water, ore overlaid),
+        // TILED: the 2r×2r bounds split into a `grid`×`grid` set of cells; each
+        // cell is a separate region image so the work parallelizes across jobs
+        // and cells fully outside the disk are skipped entirely. Cell (gx,gy)
+        // spans tiles [x0,x1)×[y0,y1); rendered top-down (row 0 = y0) into
+        // surface_<grid>_<cell>.bmp; the stitcher composes + flips to north-up.
+        if (render_surface) {
+            const grid: i32 = if (surface_grid > 0) surface_grid else 1;
+            const full: i32 = r * 2;
+            const cellW: i32 = @divTrunc(full + grid - 1, grid); // ceil
+            var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, if (has_water) 1.5 else 1.0);
+            const zt_s = zt.?;
+            const cls_s = classifier.?;
+
+            var cell: i32 = if (surface_cell >= 0) surface_cell else 0;
+            const cell_hi: i32 = if (surface_cell >= 0) surface_cell + 1 else grid * grid;
+            while (cell < cell_hi) : (cell += 1) {
+                const gx = @mod(cell, grid);
+                const gy = @divTrunc(cell, grid);
+                const x0 = -r + gx * cellW;
+                const x1 = @min(r, x0 + cellW);
+                const y0 = -r + gy * cellW;
+                const y1 = @min(r, y0 + cellW);
+                if (x1 <= x0 or y1 <= y0) continue;
+                // Skip cells fully outside the disk: nearest rect point to origin.
+                const nx: f64 = @floatFromInt(@max(x0, @min(0, x1 - 1)));
+                const ny: f64 = @floatFromInt(@max(y0, @min(0, y1 - 1)));
+                if (nx * nx + ny * ny > radius * radius) {
+                    std.debug.print("   surface cell {d}/{d} outside disk — skipped\n", .{ cell, grid * grid });
+                    continue;
+                }
+                const cw: u32 = @intCast(x1 - x0);
+                const ch: u32 = @intCast(y1 - y0);
+                var pixels = try a.alloc(u8, @as(usize, cw) * ch * 3);
+                defer a.free(pixels);
+                @memset(pixels, 20);
+                var iy: i32 = y0;
+                while (iy < y1) : (iy += 1) {
+                    var ix: i32 = x0;
+                    while (ix < x1) : (ix += 1) {
+                        const fx: f64 = @floatFromInt(ix);
+                        const fy: f64 = @floatFromInt(iy);
+                        if (fx * fx + fy * fy > radius * radius) continue;
+                        const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                        const color: [3]u8 = if (has_water and e < 0.0)
+                            (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
+                        else
+                            cls_s.classifyColor(fx, fy, zt_s.temperature(fx, fy), zt_s.moisture(fx, fy), zt_s.aux(fx, fy), e);
+                        const lpx: usize = @intCast(ix - x0);
+                        const lpy: usize = @intCast(iy - y0);
+                        const idx = (lpy * cw + lpx) * 3;
+                        pixels[idx] = color[0];
+                        pixels[idx + 1] = color[1];
+                        pixels[idx + 2] = color[2];
+                    }
+                }
+                // ore overlay for tiles in this cell
+                for (ores.items) |ore| {
+                    if (ore.x < x0 or ore.x >= x1 or ore.y < y0 or ore.y >= y1) continue;
+                    const lpx: usize = @intCast(ore.x - x0);
+                    const lpy: usize = @intCast(ore.y - y0);
+                    const oc = MapColors.get(ore.resource_name);
+                    const idx = (lpy * cw + lpx) * 3;
+                    pixels[idx] = oc[0];
+                    pixels[idx + 1] = oc[1];
+                    pixels[idx + 2] = oc[2];
+                }
+                var sbuf: std.ArrayList(u8) = .empty;
+                try surfacegen.bmp.writeBmp(a, &sbuf, cw, ch, pixels);
+                var spb: [512]u8 = undefined;
+                const sp = if (grid == 1)
+                    try std.fmt.bufPrint(&spb, "{s}/surface.bmp", .{zdir})
+                else
+                    try std.fmt.bufPrint(&spb, "{s}/surface_{d}_{d}.bmp", .{ zdir, grid, cell });
+                const sfile = try std.Io.Dir.createFile(.cwd(), init.io, sp, .{});
+                defer sfile.close(init.io);
+                try sfile.writePositionalAll(init.io, sbuf.items, 0);
+                std.debug.print("   wrote {s} ({d}x{d})\n", .{ sp, cw, ch });
+            }
+        }
     }
 
     // world-level report: rebuilt from EVERY zone summary on disk (so partial
@@ -435,6 +519,9 @@ pub fn main(init: std.process.Init) !void {
     var k2_enable: bool = false;
     var ores_only: bool = false;
     var zones_file: ?[]const u8 = null;
+    var render_surface: bool = false;
+    var surface_grid: i32 = 1;
+    var surface_cell: i32 = -1;
     var world_seed: ?u64 = null;
     var zone_names: ?[]const u8 = null;
     var out_dir: []const u8 = "output";
@@ -495,6 +582,15 @@ pub fn main(init: std.process.Init) !void {
             biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--ores-only")) {
             ores_only = true;
+        } else if (std.mem.eql(u8, args[i], "--render-surface")) {
+            render_surface = true;
+        } else if (std.mem.eql(u8, args[i], "--surface-grid")) {
+            i += 1;
+            surface_grid = try std.fmt.parseInt(i32, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--surface-cell")) {
+            i += 1;
+            surface_cell = try std.fmt.parseInt(i32, args[i], 10);
+            render_surface = true;
         } else if (std.mem.eql(u8, args[i], "--zones")) {
             i += 1;
             zones_file = args[i];
@@ -785,7 +881,7 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("--zones requires --world-seed\n", .{});
             return;
         };
-        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null);
+        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell);
         return;
     }
 
