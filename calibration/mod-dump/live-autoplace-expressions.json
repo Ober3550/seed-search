@@ -59,5 +59,35 @@
   "probability": "clamp(var('default-kr-imersite-patches'), 0, 1) * random_penalty{x = x, y = y, source = 1, amplitude = 1 / 0.25}",
   "richness": "var('default-kr-imersite-patches') / 0.25 + 250000 * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:kr-imersite:richness') ^ 0.8)"
  },
- "_patch_set_counts": "/"
+ "_patch_set_counts": "/",
+ "se-holmium-ore": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 5,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-holmium-ore:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 13,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-holmium-ore:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 9,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-holmium-ore-patches'), 0, 1)",
+  "richness": "var('default-se-holmium-ore-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-holmium-ore:richness') ^ 0.8)"
+ },
+ "se-beryllium-ore": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 5,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-beryllium-ore:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 11,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-beryllium-ore:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 7,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-beryllium-ore-patches'), 0, 1)",
+  "richness": "var('default-se-beryllium-ore-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-beryllium-ore:richness') ^ 0.8)"
+ },
+ "se-iridium-ore": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 5,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-iridium-ore:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 14,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-iridium-ore:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 10,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-iridium-ore-patches'), 0, 1)",
+  "richness": "var('default-se-iridium-ore-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-iridium-ore:richness') ^ 0.8)"
+ },
+ "se-naquium-ore": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 1,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-naquium-ore:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 15,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-naquium-ore:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 11,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-naquium-ore-patches'), 0, 1)",
+  "richness": "var('default-se-naquium-ore-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-naquium-ore:richness') ^ 0.8)"
+ },
+ "se-methane-ice": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 5,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-methane-ice:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 10,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-methane-ice:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 6,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-methane-ice-patches'), 0, 1)",
+  "richness": "var('default-se-methane-ice-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-methane-ice:richness') ^ 0.8)"
+ },
+ "se-water-ice": {
+  "patches_expression": "se_resource_autoplace_all_patches{base_density = 5,base_spots_per_km2 = 2.5,candidate_spot_count = 64,frequency_multiplier = (var('control:se-water-ice:frequency') ^ 0.8),has_starting_area_placement = 1,random_spot_size_minimum = 0.25,random_spot_size_maximum = 2,regular_blob_amplitude_multiplier = 0.125,regular_patch_set_count = default_regular_resource_patch_set_count,regular_patch_set_index = 9,regular_rq_factor = 0.11,seed1 = 100,size_multiplier = (var('control:se-water-ice:size') ^ 0.8),starting_blob_amplitude_multiplier = 0.125,starting_patch_set_count = default_starting_resource_patch_set_count,starting_patch_set_index = 5,starting_rq_factor = 0.125,random_probability = 1}",
+  "probability": "clamp(var('default-se-water-ice-patches'), 0, 1)",
+  "richness": "var('default-se-water-ice-patches') * max(1, (5000 + clamp(5000 + clamp(var('control:planet-size:richness'), 0, 1) * (distance - 5000), 0, 5000) - 320)/(5000 + 5000)) * 1 * (var('control:se-water-ice:richness') ^ 0.8)"
+ }
 }

@@ -29,6 +29,13 @@ pub fn build(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
 
+    // Universe generator (zone controls from world seed + tags), shared with
+    // the zone-driver mode of segen.
+    const universe_mod = b.addModule("universe_gen", .{
+        .root_source_file = b.path("../universe_generator/zig/gen.zig"),
+        .target = target,
+    });
+
     // SE surface generator (Space Exploration zones).
     const se_exe = b.addExecutable(.{
         .name = "segen",
@@ -38,6 +45,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "surface_generator", .module = mod },
+                .{ .name = "universe_gen", .module = universe_mod },
             },
         }),
     });

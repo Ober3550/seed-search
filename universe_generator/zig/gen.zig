@@ -21,7 +21,7 @@ pub const Rng = struct {
     pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 { return lo + @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001))); }
 };
 
-const data = @import("data.zig");
+pub const data = @import("data.zig");
 const Body = data.Body;
 const Planet = struct { name: []const u8, moons: ArrayList([]const u8) };
 pub const Zone = struct { name: []const u8, ztype: data.ZoneType, seed: u32 = 0, radius: f64 = 0, star_gravity_well: f64 = 0, planet_gravity_well: f64 = 0, stellar_x: f64 = 0, stellar_y: f64 = 0 };
@@ -213,7 +213,7 @@ pub const Tags = struct {
     enemy: ?data.Enemy,
 };
 
-fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
+pub fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
     if (tag_str) |s| {
         inline for (@typeInfo(E).@"enum".fields) |f| {
             if (std.mem.eql(u8, s, @field(E, f.name).tagStr())) return @enumFromInt(f.value);

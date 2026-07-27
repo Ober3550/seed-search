@@ -1,6 +1,7 @@
 const std = @import("std");
 const surfacegen = @import("surface_generator");
 const se = surfacegen.se_ore;
+const universe = @import("universe_gen");
 
 /// Factorio/SE/K2 map colors (RGB), matching the ground-truth renderer
 /// calibration/mod-dump/convert_jsonl.py so generated images are directly
@@ -107,10 +108,241 @@ const RESOURCE_ENTRIES = [_]Entry{
     mkEntry("kr-rare-metal-ore", 8, 8, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 3.97694, 1.56903, 1.59058, -1, 1.5),
     mkEntry("kr-mineral-water", 7, 8, 2.0, 1.0, 1.0 / 24.0, 120000, 1.0, 1.0, 3.33011, 1.23251, 1.27089, -1, 1.0),
     mkEntry("kr-imersite", 6, 1, 0.05, 1.0, 1.0 / 4.0, 250000, 0.01, 0.1, 3.59600, 1.37084, 1.40230, -1, 1.0),
+    // --- remaining SE ores (live-dump params; controls come from the zone driver,
+    //     size 0 here means "skipped unless a zone provides controls") ---
+    mkEntry("se-water-ice", 9, 5, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 5, 1.0),
+    mkEntry("se-methane-ice", 10, 5, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 6, 1.0),
+    mkEntry("se-beryllium-ore", 11, 5, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 7, 1.0),
+    mkEntry("se-holmium-ore", 13, 5, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 9, 1.0),
+    mkEntry("se-iridium-ore", 14, 5, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 10, 1.0),
+    mkEntry("se-naquium-ore", 15, 1, 2.5, 1.1, 1.0, 0, 0.25, 2.0, 0, 0, 0, 11, 1.0),
 };
+
+const N_ALL_RESOURCES = RESOURCE_ENTRIES.len;
 
 fn entries(k2: bool) []const Entry {
     return if (k2) RESOURCE_ENTRIES[0..] else RESOURCE_ENTRIES[0..N_BASE_RESOURCES];
+}
+
+/// Zone driver: read a seeds jsonl (universe summary), pick a world by seed and
+/// zones by name, compute each zone's surface autoplace controls via the
+/// universe generator port, generate ore, and write results into
+/// <out>/<world_seed>/<zone_name>/ore.jsonl (+ ore.bmp with --bmp).
+fn runZoneDriver(
+    a: std.mem.Allocator,
+    init: std.process.Init,
+    zones_path: []const u8,
+    world_seed: u64,
+    zone_csv: ?[]const u8,
+    out_dir: []const u8,
+    ores_only: bool,
+    write_bmp: bool,
+) !void {
+    const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
+    var world: ?std.json.Value = null;
+    var lines = std.mem.tokenizeAny(u8, raw, "\r\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        const parsed = std.json.parseFromSlice(std.json.Value, a, line, .{}) catch continue;
+        const obj = parsed.value.object;
+        const sv = obj.get("s") orelse continue;
+        const sval: u64 = switch (sv) {
+            .integer => |v| @intCast(v),
+            else => continue,
+        };
+        if (sval == world_seed) {
+            world = parsed.value;
+            break;
+        }
+    }
+    const w = world orelse {
+        std.debug.print("world seed {d} not found in {s}\n", .{ world_seed, zones_path });
+        return;
+    };
+    const wobj = w.object;
+    const has_k2 = if (wobj.get("k")) |kv| (kv == .bool and kv.bool) else false;
+    const zarr = (wobj.get("z") orelse {
+        std.debug.print("world has no zones array\n", .{});
+        return;
+    }).array;
+
+    var wanted = std.StringHashMapUnmanaged(bool).empty;
+    const all_zones = zone_csv == null or std.mem.eql(u8, zone_csv.?, "all");
+    if (!all_zones) {
+        var it = std.mem.tokenizeAny(u8, zone_csv.?, ",");
+        while (it.next()) |zn| try wanted.put(a, zn, true);
+    }
+
+    for (zarr.items) |zv| {
+        const z = zv.object;
+        const name = (z.get("n") orelse continue).string;
+        if (!all_zones and wanted.get(name) == null) continue;
+        const ztype_str = (z.get("t") orelse continue).string;
+        const ztype: universe.data.ZoneType = blk: {
+            inline for (@typeInfo(universe.data.ZoneType).@"enum".fields) |fld| {
+                if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
+            }
+            std.debug.print("zone {s}: unsupported type {s}, skipping\n", .{ name, ztype_str });
+            continue;
+        };
+        if (ztype != .planet and ztype != .moon) {
+            std.debug.print("zone {s}: type {s} not surface-generatable, skipping\n", .{ name, ztype_str });
+            continue;
+        }
+        const zone_seed: u32 = @intCast((z.get("s") orelse continue).integer);
+        const radius: f64 = switch (z.get("r") orelse continue) {
+            .integer => |v| @floatFromInt(v),
+            .float => |v| v,
+            else => continue,
+        };
+        const primary: ?[]const u8 = if (z.get("p")) |pv| (if (pv == .string) pv.string else null) else null;
+
+        // tags (strings, optional)
+        const tags = universe.Tags{
+            .temperature = tagOf(universe.data.Temperature, z, "temperature"),
+            .water = tagOf(universe.data.Water, z, "water"),
+            .moisture = tagOf(universe.data.Moisture, z, "moisture"),
+            .trees = tagOf(universe.data.Trees, z, "trees"),
+            .aux = tagOf(universe.data.Aux, z, "aux"),
+            .cliff = tagOf(universe.data.Cliff, z, "cliff"),
+            .enemy = tagOf(universe.data.Enemy, z, "enemy"),
+        };
+        const controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
+        for (universe.resource_order, 0..) |rn, ri| {
+            const c = controls[ri];
+            if (c.present) std.debug.print("   ctrl {s}: f={d:.4} s={d:.4} r={d:.4}\n", .{ rn, c.frequency, c.size, c.richness });
+        }
+
+        // build resource inputs: our config table + the zone's controls
+        var inputs_buf: [RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
+        var ninputs: usize = 0;
+        for (RESOURCE_ENTRIES) |e| {
+            if (!has_k2 and std.mem.startsWith(u8, e.name, "kr-")) continue;
+            if (ores_only and e.cfg.random_probability < 1.0) continue;
+            var ctrl = se.Controls{ .frequency = 0, .size = 0, .richness = 0 };
+            for (universe.resource_order, 0..) |rn, ri| {
+                if (std.mem.eql(u8, rn, e.name)) {
+                    const c = controls[ri];
+                    if (c.present) ctrl = .{ .frequency = c.frequency, .size = c.size, .richness = c.richness };
+                    break;
+                }
+            }
+            if (ctrl.size <= 0) continue;
+            inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
+            ninputs += 1;
+        }
+        const inputs = inputs_buf[0..ninputs];
+
+        // terrain: water tag "none" => no water gate; otherwise approximate the
+        // SE water control (freq 1, size 1.5 — the calibrated Horaerratum point).
+        const has_water = if (tags.water) |wt| wt != .none else false;
+        var elev: ?surfacegen.terrain.Elevation = null;
+        var zt: ?surfacegen.terrain.ZoneTerrain = null;
+        var classifier: ?surfacegen.biome.Classifier = null;
+        if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, 1.5);
+        const fm = universe.zoneFrequencyMultiplier(radius);
+        zt = surfacegen.terrain.ZoneTerrain.init(.{
+            .map_seed = zone_seed,
+            .moisture_frequency = 1.0,
+            .moisture_bias = 0.0,
+            .aux_frequency = 1.0,
+            .aux_bias = 0.0,
+            .cold_size = 6.0,
+            .hot_size = 6.0,
+            .cold_frequency = fm,
+            .hot_frequency = fm,
+            .water_frequency = 1.0,
+            .water_size = if (has_water) 1.5 else 0.0,
+        });
+        classifier = surfacegen.biome.Classifier.init(zone_seed);
+
+        const r: i32 = @intFromFloat(radius);
+        std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
+        var ores = try se.computeSEOresInRect(
+            a,
+            zone_seed,
+            radius,
+            -r,
+            -r,
+            r,
+            r,
+            inputs,
+            1,
+            if (elev) |*e| e else null,
+            if (zt) |*t| t else null,
+            if (classifier) |*c| c else null,
+        );
+        defer ores.deinit(a);
+
+        // per-resource counts
+        {
+            for (inputs) |inp| {
+                var cnt: u64 = 0;
+                var amount: u64 = 0;
+                for (ores.items) |o| {
+                    if (std.mem.eql(u8, o.resource_name, inp.name)) {
+                        cnt += 1;
+                        amount += o.amount;
+                    }
+                }
+                if (cnt > 0) std.debug.print("   {s}: {d} tiles, {d} total\n", .{ inp.name, cnt, amount });
+            }
+        }
+
+        // write outputs
+        var dirbuf: [512]u8 = undefined;
+        const zdir = try std.fmt.bufPrint(&dirbuf, "{s}/{d}/{s}", .{ out_dir, world_seed, name });
+        try std.Io.Dir.createDirPath(.cwd(), init.io, zdir);
+        var pathbuf: [512]u8 = undefined;
+        const jpath = try std.fmt.bufPrint(&pathbuf, "{s}/ore.jsonl", .{zdir});
+        {
+            var buf: std.ArrayList(u8) = .empty;
+            for (ores.items) |ore| {
+                var line: [256]u8 = undefined;
+                const sl = try std.fmt.bufPrint(&line, "{{\"x\":{d},\"y\":{d},\"n\":\"{s}\",\"a\":{d}}}\n", .{ ore.x, ore.y, ore.resource_name, ore.amount });
+                try buf.appendSlice(a, sl);
+            }
+            const file = try std.Io.Dir.createFile(.cwd(), init.io, jpath, .{});
+            defer file.close(init.io);
+            try file.writePositionalAll(init.io, buf.items, 0);
+        }
+        std.debug.print("   wrote {s} ({d} entities)\n", .{ jpath, ores.items.len });
+        if (write_bmp) {
+            var bpathbuf: [512]u8 = undefined;
+            const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.bmp", .{zdir});
+            const size: u32 = @intCast(r * 2);
+            var pixels = try a.alloc(u8, @as(usize, size) * size * 3);
+            defer a.free(pixels);
+            @memset(pixels, 20);
+            for (ores.items) |ore| {
+                const px: i64 = @as(i64, ore.x) + r;
+                const py: i64 = @as(i64, ore.y) + r;
+                if (px < 0 or py < 0 or px >= size or py >= size) continue;
+                const color = MapColors.get(ore.resource_name);
+                const idx: usize = (@as(usize, @intCast(py)) * size + @as(usize, @intCast(px))) * 3;
+                pixels[idx] = color[0];
+                pixels[idx + 1] = color[1];
+                pixels[idx + 2] = color[2];
+            }
+            var bbuf: std.ArrayList(u8) = .empty;
+            try surfacegen.bmp.writeBmp(a, &bbuf, size, size, pixels);
+            const bfile = try std.Io.Dir.createFile(.cwd(), init.io, bpath, .{});
+            defer bfile.close(init.io);
+            try bfile.writePositionalAll(init.io, bbuf.items, 0);
+            std.debug.print("   wrote {s}\n", .{bpath});
+        }
+    }
+}
+
+fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {
+    const v = z.get(key) orelse return null;
+    if (v != .string) return null;
+    // seeds jsonl stores bare enum names ("very_high"), while tagStr() returns
+    // the prefixed prototype tags ("aux_very_high") — match field names.
+    inline for (@typeInfo(E).@"enum".fields) |fld| {
+        if (std.mem.eql(u8, v.string, fld.name)) return @enumFromInt(fld.value);
+    }
+    return universe.parseTagEnum(E, v.string);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -137,6 +369,10 @@ pub fn main(init: std.process.Init) !void {
     var biome_bg: bool = false;
     var k2_enable: bool = false;
     var ores_only: bool = false;
+    var zones_file: ?[]const u8 = null;
+    var world_seed: ?u64 = null;
+    var zone_names: ?[]const u8 = null;
+    var out_dir: []const u8 = "output";
     var field_probe_res: ?[]const u8 = null;
     var field_probe_in: ?[]const u8 = null;
     var field_probe_out: ?[]const u8 = null;
@@ -194,6 +430,18 @@ pub fn main(init: std.process.Init) !void {
             biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--ores-only")) {
             ores_only = true;
+        } else if (std.mem.eql(u8, args[i], "--zones")) {
+            i += 1;
+            zones_file = args[i];
+        } else if (std.mem.eql(u8, args[i], "--world-seed")) {
+            i += 1;
+            world_seed = try std.fmt.parseInt(u64, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--zone")) {
+            i += 1;
+            zone_names = args[i];
+        } else if (std.mem.eql(u8, args[i], "--out")) {
+            i += 1;
+            out_dir = args[i];
         } else if (std.mem.eql(u8, args[i], "--k2")) {
             k2_enable = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
@@ -466,6 +714,15 @@ pub fn main(init: std.process.Init) !void {
         ninputs += 1;
     }
     const inputs = inputs_buf[0..ninputs];
+
+    if (zones_file) |zf| {
+        const ws = world_seed orelse {
+            std.debug.print("--zones requires --world-seed\n", .{});
+            return;
+        };
+        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null);
+        return;
+    }
 
     const r: i32 = if (override_radius) |or2| or2 else @intFromFloat(HORAERRATUM_RADIUS);
     const zone_r: f64 = if (override_radius) |or2| @floatFromInt(or2) else HORAERRATUM_RADIUS;
