@@ -420,69 +420,87 @@ function renderFilterSeeds(f, seeds) {
 
 // ── Level 4: Seed detail — zones (relevant-only by default) ────────────
 
+// Generatable zone types (surfaces). Others are shown for reference only.
+const GEN_TYPES = ["planet", "moon"];
+
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
   if (!s) return res.status(404).send(htmxPage("Not Found", "<h2>Seed not found</h2>"));
   const c = seedCriteria(s) || { selectedZones: [], specials: {}, pairs: {} };
-  const relevantOnly = req.query.relevant !== "0";
   const filterId = req.query.filter || null;
 
-  const zones = db.getZonesForSeed(s.seed).filter(z => ["planet", "moon"].includes(z.zone_type));
-  const shown = relevantOnly ? zones.filter(z => (c.selectedZones || []).includes(z.name)) : zones;
+  // Show ALL zones; criteria-relevant ones are pinned to the top and pre-checked.
+  const sel = new Set(c.selectedZones || []);
+  const zones = db.getZonesForSeed(s.seed).sort((a, b) => {
+    const ra = sel.has(a.name) ? 0 : 1, rb = sel.has(b.name) ? 0 : 1;
+    return ra - rb || (a.name || "").localeCompare(b.name || "");
+  });
 
-  // Record the drill-down: zones.jsonl reflects exactly the zones in view.
-  try { jobs.writeSeedZonesFile(s, relevantOnly ? c.selectedZones : null); }
+  // zones.jsonl always carries the criteria-relevant zones for the generator.
+  try { jobs.writeSeedZonesFile(s, null); }
   catch (e) { console.error("writeSeedZonesFile:", e.message); }
 
-  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, shown, relevantOnly, filterId));
+  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId));
 });
 
-function renderSeedDetail(s, c, zones, relevantOnly, filterId) {
+// Lowercase "name type resource…" haystack for the client-side zone search.
+function zoneSearchText(bucket, seed, zone) {
+  const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
+  const parts = [zone.name, zone.zone_type];
+  const summary = zoneSurfaceSummary(bucket, seed, zone.name);
+  if (summary) parts.push(...Object.keys(summary.resources || {}).map(nm));
+  else { try { parts.push(...Object.keys(JSON.parse(zone.resource_yields || "{}")).map(nm)); } catch (_) {} }
+  if (zone.primary_resource) parts.push(nm(zone.primary_resource));
+  return parts.join(" ").toLowerCase().replace(/"/g, "");
+}
+
+function renderSeedDetail(s, c, zones, filterId) {
   const back = filterId
     ? { label: "Filtered Set", href: `/filter/${filterId}` }
     : { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
-  const filterQ = filterId ? `&filter=${filterId}` : "";
+  const reload = `/seed/${s.seed}${filterId ? `?filter=${filterId}` : ""}`;
+  const sel = new Set(c.selectedZones || []);
+  const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
+
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code></h2>
     <div class="filter-bar">
-      <label class="checkbox-label">
-        <input type="checkbox" ${relevantOnly ? "checked" : ""}
-          hx-get="/seed/${s.seed}?relevant=${relevantOnly ? "0" : "1"}${filterQ}" hx-target="#main" hx-push-url="true">
-        Only criteria-relevant zones (writes <code>zones.jsonl</code> for the generator)
-      </label>
+      <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
+      <span class="hint">All zones shown; ⭐ criteria-relevant are pinned to the top and pre-selected. Click a header to sort.</span>
     </div>
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
       <div class="batch-actions">
         <button type="button" class="btn"
           hx-post="/api/surface/batch?kind=ore" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
-          hx-disabled-elt="this"
-          hx-on::after-request="htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'})">
+          hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
           ⛏ Generate ores — selected zones
         </button>
         <button type="button" class="btn btn-secondary"
           hx-post="/api/surface/batch?kind=surface" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
-          hx-disabled-elt="this"
-          hx-on::after-request="htmx.ajax('GET','/seed/${s.seed}?relevant=${relevantOnly ? "1" : "0"}${filterQ}',{target:'#main'})">
+          hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
           🗺️ Generate surfaces (biome+water) — selected zones
         </button>
       </div>
-      <table class="data-table">
+      <table class="data-table" id="zone-table">
         <thead><tr>
-          <th><input type="checkbox" onclick="document.querySelectorAll('#zone-batch input[name=zone]').forEach(c=>c.checked=this.checked)"></th>
-          <th>Zone</th><th>Type</th><th>Radius</th><th>Δv</th><th>Water</th><th>Enemy</th><th>★</th>
+          <th><input type="checkbox" onclick="selectAllVisible(this)"></th>
+          ${th("Zone", "zone")}${th("Type", "type")}${th("Radius", "radius")}${th("Δv", "dv")}${th("Water", "water")}${th("Enemy", "enemy")}
+          <th>★</th>
           <th>Resources <small>(measured if generated, else est.)</small></th><th></th>
         </tr></thead>
         <tbody>
           ${zones.map(z => {
-            const relevant = (c.selectedZones || []).includes(z.name);
+            const relevant = sel.has(z.name);
+            const gen = GEN_TYPES.includes(z.zone_type);
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
+            const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
             return `
-          <tr>
-            <td><input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}></td>
+          <tr class="${gen ? "" : "zone-info"}" ${data}>
+            <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
             <td><strong>${z.name}</strong></td>
             <td><span class="badge zone-type">${z.zone_type}</span></td>
             <td>${z.radius ? Math.round(z.radius) : "—"}</td>
@@ -491,12 +509,49 @@ function renderSeedDetail(s, c, zones, relevantOnly, filterId) {
             <td>${enemy}</td>
             <td>${relevant ? "⭐" : ""}</td>
             <td class="yields-cell" id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</td>
-            ${renderZoneCell(s.bucket, s.seed, z)}
+            ${gen ? renderZoneCell(s.bucket, s.seed, z) : `<td class="row-actions muted">—</td>`}
           </tr>`;}).join("")}
-          ${zones.length === 0 ? `<tr><td colspan="10">No zones in this view.</td></tr>` : ""}
+          ${zones.length === 0 ? `<tr><td colspan="10">No zones.</td></tr>` : ""}
         </tbody>
       </table>
     </form>
+    <script>
+      (function () {
+        var sortState = { key: null, dir: "asc" };
+        var NUMERIC = { radius: 1, dv: 1 };
+        window.sortZones = function (key) {
+          sortState.dir = (sortState.key === key && sortState.dir === "asc") ? "desc" : "asc";
+          sortState.key = key;
+          var tb = document.querySelector("#zone-table tbody");
+          var rows = [].slice.call(tb.querySelectorAll("tr[data-zone]"));
+          rows.sort(function (a, b) {
+            var ra = +a.dataset.relevant, rb = +b.dataset.relevant;
+            if (ra !== rb) return rb - ra;            // ⭐ relevant pinned to top
+            var va = a.dataset[key], vb = b.dataset[key], cmp;
+            if (NUMERIC[key]) cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
+            else cmp = String(va).localeCompare(String(vb));
+            return sortState.dir === "asc" ? cmp : -cmp;
+          });
+          rows.forEach(function (r) { tb.appendChild(r); });
+          document.querySelectorAll("#zone-table th.sortable .sort-ind").forEach(function (s) { s.textContent = ""; });
+          var thh = document.querySelector('#zone-table th[data-key="' + key + '"] .sort-ind');
+          if (thh) thh.textContent = sortState.dir === "asc" ? "▲" : "▼";
+        };
+        window.filterZones = function () {
+          var q = (document.getElementById("zone-search").value || "").trim().toLowerCase();
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            r.style.display = (!q || (r.dataset.search || "").indexOf(q) !== -1) ? "" : "none";
+          });
+        };
+        window.selectAllVisible = function (master) {
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            if (r.style.display === "none") return;
+            var cb = r.querySelector('input[name=zone]');
+            if (cb) cb.checked = master.checked;
+          });
+        };
+      })();
+    </script>
   </div>`;
 }
 

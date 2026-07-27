@@ -418,3 +418,12 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 .res-more[open] > summary::after { content: " ▾"; }
 .res-more[open] .more-count { display: none; }
 .res-rest { display: inline; }
+
+/* seed zone table: sortable headers + search + info rows */
+.data-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.data-table th.sortable:hover { color: var(--text); }
+.sort-ind { color: var(--accent); font-size: 0.7rem; }
+#zone-search { min-width: 260px; padding: 7px 10px; }
+tr.zone-info { opacity: 0.66; }
+tr.zone-info:hover { opacity: 1; }
+.row-actions.muted { color: var(--muted); }
