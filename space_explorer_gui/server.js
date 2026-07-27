@@ -460,7 +460,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
             // generatable rows navigate to the surface detail on click; rowNav
             // ignores clicks on buttons/inputs so those keep working normally.
-            const nav = gen ? `onclick="rowNav(event,'/surface/watch?seed=${s.seed}&zone_id=${z.id}')"` : "";
+            const nav = gen ? `onclick="rowNav(event,'/seed/${s.seed}/surface/${z.id}')"` : "";
             return `
           <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
             <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
@@ -606,10 +606,13 @@ app.get("/api/surface/grid", (req, res) => {
   res.send(`${g.grid}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>`);
 });
 
-// Full watch page (breadcrumb + embedded live grid).
-app.get("/surface/watch", (req, res) => {
-  const seed = parseInt(req.query.seed);
-  const zoneId = parseInt(req.query.zone_id);
+// Full surface detail page (breadcrumb + embedded live grid) — nested under the
+// seed. The old /surface/watch?seed&zone_id form redirects here.
+app.get("/surface/watch", (req, res) =>
+  res.redirect(`/seed/${parseInt(req.query.seed)}/surface/${parseInt(req.query.zone_id)}`));
+app.get("/seed/:seed/surface/:zoneId", (req, res) => {
+  const seed = parseInt(req.params.seed);
+  const zoneId = parseInt(req.params.zoneId);
   const s = db.getSeed(seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
   if (!s || !zone) return page(req, res, "Watch", `<div class="page"><p class="hint">Seed or zone not found.</p></div>`);
@@ -625,7 +628,7 @@ app.get("/surface/watch", (req, res) => {
       </tbody></table>`
     : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
-  const reload = `hx-on::after-request="htmx.ajax('GET','/surface/watch?seed=${seed}&zone_id=${zoneId}',{target:'#main'})"`;
+  const reload = `hx-on::after-request="htmx.ajax('GET','/seed/${seed}/surface/${zoneId}',{target:'#main'})"`;
   const g = buildSurfaceGrid(seed, zoneId);
 
   const content = `
@@ -698,7 +701,7 @@ function renderSurfaceJobsPage(jobsList) {
     const cls = c.failed ? "failed" : g.active ? "running" : (c.cancelled && !c.done) ? "cancelled" : "done";
     const gid = `grp-${first.seed}-${(first.zone_name || "").replace(/[^a-z0-9]/gi, "-")}`;
     const watch = first.zone_id
-      ? `<a class="btn-sm" href="/surface/watch?seed=${first.seed}&zone_id=${first.zone_id}" hx-get="/surface/watch?seed=${first.seed}&zone_id=${first.zone_id}" hx-target="#main" hx-push-url="true" title="watch grid">👁</a>`
+      ? `<a class="btn-sm" href="/seed/${first.seed}/surface/${first.zone_id}" hx-get="/seed/${first.seed}/surface/${first.zone_id}" hx-target="#main" hx-push-url="true" title="watch grid">👁</a>`
       : "";
     return `<details class="surf-group" id="${gid}">
       <summary>
@@ -805,7 +808,7 @@ app.get("/workers", (req, res) => page(req, res, "Workers", renderWorkersPage(jo
 
 function renderWorkersPage(st) {
   const watchLink = (j) => j.zone_id
-    ? ` <a class="btn-sm" href="/surface/watch?seed=${j.seed}&zone_id=${j.zone_id}" hx-get="/surface/watch?seed=${j.seed}&zone_id=${j.zone_id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace" title="watch grid">👁</a>`
+    ? ` <a class="btn-sm" href="/seed/${j.seed}/surface/${j.zone_id}" hx-get="/seed/${j.seed}/surface/${j.zone_id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace" title="watch grid">👁</a>`
     : "";
   const jobLabel = (type, j) => type === "universe"
     ? `<span class="wtag uni">universe</span> Bucket <strong>${j.bucket || "—"}</strong> · ${(j.seed_start || 0).toLocaleString()}–${(j.seed_end || 0).toLocaleString()}${j.k2_enabled ? " · K2" : ""}`
