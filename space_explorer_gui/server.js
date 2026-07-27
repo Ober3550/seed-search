@@ -204,6 +204,8 @@ app.get("/universe/table", (req, res) => res.send(renderBucketsTable(db.getUnive
 app.get("/universe", (req, res) => page(req, res, "Universe Buckets", renderUniversePage(db.getUniverseJobs())));
 
 function renderUniversePage(jobsList) {
+  const bs = jobs.BUCKET_SIZE;
+  const bsLabel = bs >= 1e6 ? `${bs / 1e6}M` : `${bs / 1000}k`;
   return `
   <div class="page">
     <div class="page-head">
@@ -221,12 +223,12 @@ function renderUniversePage(jobsList) {
         </button>
       </div>
     </div>
-    <p class="hint">Every job is a fixed 100k-seed bucket. Requesting 10M queues 100 buckets;
-    each writes <code>output/&lt;bucket&gt;/seeds.jsonl</code> (seedgen's rough pass).</p>
+    <p class="hint">Every job is a fixed ${bsLabel}-seed bucket; each writes
+    <code>output/&lt;bucket&gt;/seeds.jsonl</code> (seedgen's rough pass).</p>
     <div class="job-form">
       <form hx-post="/api/universe/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
-        <label title="Each unit = one 100k bucket">Buckets (×100k): <input type="number" name="units" value="10" min="1" max="1000" required></label>
+        <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Min 4 Prod Modules</label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Nearby Naq Field</label>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
