@@ -173,8 +173,6 @@ fn runZoneDriver(
         while (it.next()) |zn| try wanted.put(a, zn, true);
     }
 
-    var report: std.ArrayList(u8) = .empty;
-
     for (zarr.items) |zv| {
         const z = zv.object;
         const name = (z.get("n") orelse continue).string;
@@ -327,8 +325,7 @@ fn runZoneDriver(
             defer sfile.close(init.io);
             try sfile.writePositionalAll(init.io, summary.items, 0);
         }
-        if (report.items.len > 0) try report.appendSlice(a, ",");
-        try report.appendSlice(a, summary.items);
+
         if (write_bmp) {
             var bpathbuf: [512]u8 = undefined;
             const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.bmp", .{zdir});
@@ -355,17 +352,32 @@ fn runZoneDriver(
         }
     }
 
-    // world-level report: ore-count estimates for every generated zone
+    // world-level report: rebuilt from EVERY zone summary on disk (so partial
+    // re-runs of single zones never lose previously generated zones).
     {
         var rbuf: [512]u8 = undefined;
         const rdir = try std.fmt.bufPrint(&rbuf, "{s}/{d}", .{ out_dir, world_seed });
         std.Io.Dir.createDirPath(.cwd(), init.io, rdir) catch {};
-        var rpbuf: [512]u8 = undefined;
-        const rpath = try std.fmt.bufPrint(&rpbuf, "{s}/report.json", .{rdir});
         var out: std.ArrayList(u8) = .empty;
         try appendFmt(a, &out, "{{\"world_seed\":{d},\"zones\":[", .{world_seed});
-        try out.appendSlice(a, report.items);
+        {
+            var d = try std.Io.Dir.openDir(.cwd(), init.io, rdir, .{ .iterate = true });
+            defer d.close(init.io);
+            var it = d.iterate();
+            var first = true;
+            while (try it.next(init.io)) |entry| {
+                if (entry.kind != .directory) continue;
+                var spbuf: [512]u8 = undefined;
+                const spath = try std.fmt.bufPrint(&spbuf, "{s}/{s}/summary.json", .{ rdir, entry.name });
+                const content = std.Io.Dir.readFileAlloc(.cwd(), init.io, spath, a, .unlimited) catch continue;
+                if (!first) try out.appendSlice(a, ",");
+                first = false;
+                try out.appendSlice(a, content);
+            }
+        }
         try out.appendSlice(a, "]}");
+        var rpbuf: [512]u8 = undefined;
+        const rpath = try std.fmt.bufPrint(&rpbuf, "{s}/report.json", .{rdir});
         const rfile = try std.Io.Dir.createFile(.cwd(), init.io, rpath, .{});
         defer rfile.close(init.io);
         try rfile.writePositionalAll(init.io, out.items, 0);

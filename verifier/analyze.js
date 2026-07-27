@@ -185,6 +185,30 @@ const resourceNames = {
   "kr-imersite": true,
 };
 
+// ── generated-surface metadata (segen zone driver output) ───────────
+// If output/<seed>/report.json exists (produced by
+// `segen --zones ... --world-seed <seed>`), present its MEASURED ore amounts
+// instead of the default proportion estimates.
+
+function loadGeneratedWorld(seed) {
+  try {
+    const p = `${genDir}/${seed}/report.json`;
+    const rep = JSON.parse(fs.readFileSync(p, "utf8"));
+    const map = {};
+    for (const z of rep.zones || []) map[z.zone] = z.resources || {};
+    return map;
+  } catch (e) {
+    return null;
+  }
+}
+
+function genAmount(gen, zoneName, res) {
+  const zr = gen && gen[zoneName];
+  const entry = zr && zr[res];
+  if (!entry) return null;
+  return entry.display || String(entry.amount);
+}
+
 // ── evaluation modes ────────────────────────────────────────────────
 
 const SPECIAL = [
@@ -255,8 +279,9 @@ function evalCore(seedOld, selected) {
     }
   }
   if (covered.size >= minSpecials) {
+    const gen = loadGeneratedWorld(seedOld.seed);
     console.log(
-      `\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`,
+      `\n=== CORE: seed ${seedOld.seed} loot: ${seedOld.loot.join("")}${gen ? " [generated]" : ""} ===`,
     );
     console.log(
       `  ${covered.size}/${SPECIAL.length} specials as primary across ${bodies.length} viable bodies`,
@@ -272,8 +297,9 @@ function evalCore(seedOld, selected) {
           (b.tags.water || "water_none").replace("water_", "") === "none"
             ? "dry"
             : (b.tags.water || "").replace("water_", "");
+        const g = genAmount(gen, b.name, res);
         console.log(
-          `    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}`,
+          `    ${rename(res)}: ${b.name} (${b.zone_type[0]}) dv=${b.delta_v} r=${b.radius} e=${e} w=${w}${g ? ` ${g} ore` : ""}`,
         );
       }
     }
@@ -352,8 +378,9 @@ function evalPairs(seedOld, selected) {
   if (results.length >= combos.length) {
     // Sort by delta-v (closest first)
     results.sort((a, b) => a.body.delta_v - b.body.delta_v);
+    const gen = loadGeneratedWorld(seedOld.seed);
     console.log(
-      `=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")} ===`,
+      `=== PAIRS: seed ${seedOld.seed} loot: ${seedOld.loot.join("")}${gen ? " [generated]" : ""} ===`,
     );
     for (const r of results) {
       const b = r.body;
@@ -361,7 +388,10 @@ function evalPairs(seedOld, selected) {
       // Sort resources by score (highest first)
       const parts = [...r.want]
         .sort((a, b2) => (b.resource[b2] || 0) - (b.resource[a] || 0))
-        .map((w) => `${rename(w)}:${formatVal((b.resource || {})[w] || 0)}`);
+        .map((w) => {
+          const g = genAmount(gen, b.name, w);
+          return `${rename(w)}:${g ?? formatVal((b.resource || {})[w] || 0)}`;
+        });
       const enemy = (b.tags.enemy || "enemy_none")
         .replace("enemy_", "")
         .replace("very_", "v");
@@ -396,6 +426,8 @@ const mode = args.includes("--core")
 const allMode = args.includes("--all");
 const msIdx = args.indexOf("--min-specials");
 const minSpecials = msIdx >= 0 ? parseInt(args[msIdx + 1]) : SPECIAL.length;
+const gdIdx = args.indexOf("--gen-dir");
+const genDir = gdIdx >= 0 ? args[gdIdx + 1] : "output";
 const emitIdx = args.indexOf("--emit");
 const emitPath = emitIdx >= 0 ? args[emitIdx + 1] : null;
 const emitLines = [];
@@ -403,7 +435,8 @@ const files = args.filter(
   (a, i) =>
     !a.startsWith("--") &&
     (emitIdx < 0 || i !== emitIdx + 1) &&
-    (msIdx < 0 || i !== msIdx + 1),
+    (msIdx < 0 || i !== msIdx + 1) &&
+    (gdIdx < 0 || i !== gdIdx + 1),
 );
 
 let fnames = [];
