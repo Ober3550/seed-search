@@ -485,3 +485,11 @@ tr.zone-info:hover { opacity: 1; }
 /* grid status now lives in the meta panel (under Regenerate) */
 .grid-status { font-size: 0.85rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .watch-grid-col .surf-grid-wrap { margin-top: 0; }
+
+/* wider meta card + ore table inset within the card padding */
+.watch-layout .surface-meta { flex: 0 0 300px; max-width: 300px; }
+.watch-grid-col .surf-grid { width: min(calc(100vh - 130px), calc(100vw - 620px)); }
+.surface-meta .data-table { font-size: 0.8rem; }
+.surface-meta .data-table th, .surface-meta .data-table td { padding: 4px 6px; }
+.surface-meta .data-table th:first-child, .surface-meta .data-table td:first-child { padding-left: 0; }
+.surface-meta .data-table th:last-child, .surface-meta .data-table td:last-child { padding-right: 0; }
