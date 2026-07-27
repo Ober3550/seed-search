@@ -608,8 +608,8 @@ app.get("/surface/watch", (req, res) => {
 
   const content = `
   <div class="page">
-    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seed ${seed}`, href: `/seed/${seed}` }, { label: `${zone.name} surface` }])}
-    <h2>👁 <strong>${zone.name}</strong> surface <span class="badge zone-type">${zone.zone_type}</span></h2>
+    ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seed ${seed}`, href: `/seed/${seed}` }, { label: zone.name }])}
+    <h2><strong>${zone.name}</strong> <span class="badge zone-type">${zone.zone_type}</span></h2>
     <div class="watch-layout">
       <aside class="surface-meta">
         <h3>Zone</h3>
@@ -631,7 +631,7 @@ app.get("/surface/watch", (req, res) => {
       <div class="watch-grid-col">${g.grid}</div>
     </div>
   </div>`;
-  page(req, res, `${zone.name} surface`, content);
+  page(req, res, zone.name, content);
 });
 
 // ── Surface jobs + viewer ──────────────────────────────────────────────
