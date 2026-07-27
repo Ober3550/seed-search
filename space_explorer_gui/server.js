@@ -180,6 +180,8 @@ function renderZoneCtl(bucket, seed, zone, which) {
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
   const id = which === "ore" ? `orectl-${zone.id}` : `surfctl-${zone.id}`;
 
+  // Once a layer is generated we drop its button entirely (the row itself opens
+  // the surface detail); the generate button only shows while nothing exists yet.
   let inner, activeNow;
   if (which === "ore") {
     // ore amounts + ore-map render
@@ -187,21 +189,24 @@ function renderZoneCtl(bucket, seed, zone, which) {
     const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
     inner = activeNow
       ? `<span class="gen-status running">⏳ ore…</span>`
-      : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>${oremapPng ? "↻ ore" : "⛏ ore"}</button>`;
-    if (!activeNow && failed(["ore", "oremap"]))
+      : oremapPng
+        ? ""
+        : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>⛏ ore</button>`;
+    if (!activeNow && !oremapPng && failed(["ore", "oremap"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   } else {
     const surfActive = active(SURF_KINDS);
     activeNow = surfActive.length > 0;
     const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
-    // Only terrain (or the legacy combined render) counts as "surface generated" —
-    // an ore-map-only zone must still show the plain 🗺️ icon, not regenerate.
+    // Only terrain (or the legacy combined render) counts as "surface generated".
     const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
       || zoneSurfacePng(bucket, seed, zone.name, "surface");
     inner = activeNow
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
-      : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>${surfPng ? "↻ surface" : "🗺️ surface"}</button>`;
-    if (!activeNow && failed(["terrain"]))
+      : surfPng
+        ? ""
+        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=surface" ${genArgs} ${tgt}>🗺️ surface</button>`;
+    if (!activeNow && !surfPng && failed(["terrain"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   }
 
