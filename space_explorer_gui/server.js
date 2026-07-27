@@ -635,9 +635,8 @@ app.get("/surface/watch", (req, res) => {
           <input type="range" min="0" max="100" value="45" oninput="setTerrB(this.value)">
         </label>
         <div class="preset-actions">
-          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🌍 terrain</button>
-          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore map</button>
-          <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=surface" ${genArgs} hx-swap="none" ${reload} title="both layers">↻ both</button>
+          <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore</button>
+          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🗺️ surface</button>
         </div>
       </aside>
       <div class="watch-grid-col">${g.grid}</div>

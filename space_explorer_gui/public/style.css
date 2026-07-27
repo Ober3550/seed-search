@@ -324,7 +324,11 @@ dd { font-weight: 500; }
 
 /* zone batch actions + row buttons (per-seed generation) */
 .batch-actions { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
-.row-actions { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+/* keep this a real table-cell (was display:flex, which dropped it from the row
+   layout so its bottom border didn't line up with the other cells) */
+.row-actions { white-space: nowrap; vertical-align: middle; }
+.row-actions > * { vertical-align: middle; }
+.row-actions > * + * { margin-left: 4px; }
 .btn-secondary { background: #3a4a63; }
 .crumbs { font-size: 0.85rem; opacity: 0.8; margin-bottom: 8px; }
 .crumbs a { color: #7fb3ff; text-decoration: none; }
