@@ -194,8 +194,9 @@ function renderZoneCtl(bucket, seed, zone, which) {
     const surfActive = active(SURF_KINDS);
     activeNow = surfActive.length > 0;
     const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
+    // Only terrain (or the legacy combined render) counts as "surface generated" —
+    // an ore-map-only zone must still show the plain 🗺️ icon, not regenerate.
     const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
-      || zoneSurfacePng(bucket, seed, zone.name, "oremap")
       || zoneSurfacePng(bucket, seed, zone.name, "surface");
     inner = activeNow
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
