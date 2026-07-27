@@ -348,6 +348,9 @@ function getSeeds(filter = {}) {
   if (filter.bucket) { sql += " AND bucket = ?"; params.push(filter.bucket); }
   if (filter.job_id) { sql += " AND job_id = ?"; params.push(filter.job_id); }
   if (filter.loot) { sql += " AND loot LIKE ?"; params.push(`${filter.loot}%`); }
+  if (filter.k2 !== undefined && filter.k2 !== null && filter.k2 !== "") {
+    sql += " AND k2 = ?"; params.push(filter.k2 ? 1 : 0);
+  }
   sql += " ORDER BY seed LIMIT 2000";
   return d.prepare(sql).all(...params);
 }

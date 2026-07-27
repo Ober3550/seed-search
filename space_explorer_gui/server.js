@@ -261,18 +261,20 @@ app.get("/seeds", (req, res) => {
   const bucket = req.query.bucket || "";
   const defId = req.query.def ? parseInt(req.query.def) : null;
   const loot = req.query.loot || "";
+  const k2q = req.query.k2 || ""; // "" any | "1" k2-only | "0" vanilla-only
+  const k2filter = k2q === "1" ? true : k2q === "0" ? false : undefined;
 
   const def = defId ? db.getFilterDef(defId) : null;
   const rules = def ? JSON.parse(def.rules) : [];
 
-  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined });
+  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter });
   seeds = seeds.filter(s => {
     const c = seedCriteria(s); if (!c) return rules.length === 0;
     return analyze.matchFilter(c, rules).match;
   });
   const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
   const defs = db.getFilterDefs();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot }));
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q }));
 });
 
 function renderSeedsPage(seeds, buckets, defs, f) {
@@ -287,6 +289,11 @@ function renderSeedsPage(seeds, buckets, defs, f) {
         <select name="bucket" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
           <option value="">All buckets</option>
           ${buckets.map(b => `<option value="${b}" ${f.bucket === b ? "selected" : ""}>${b}</option>`).join("")}
+        </select>
+        <select name="k2" title="Krastorio 2" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
+          <option value="" ${f.k2 === "" ? "selected" : ""}>K2: any</option>
+          <option value="1" ${f.k2 === "1" ? "selected" : ""}>K2 only</option>
+          <option value="0" ${f.k2 === "0" ? "selected" : ""}>Vanilla only</option>
         </select>
         <label>Filter:
           <select name="def" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
@@ -309,18 +316,18 @@ function renderSeedsPage(seeds, buckets, defs, f) {
       </form>` : `<p class="hint">Pick a bucket and a filter to save a filtered set.</p>`}
     </div>
     <table class="data-table">
-      <thead><tr><th>Seed</th><th>Bucket</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th>Naq</th><th></th></tr></thead>
+      <thead><tr><th>Seed</th><th>Bucket</th><th>K2</th><th>Loot</th><th>Zones</th><th>Specials</th><th>Pairs</th><th>Naq</th><th></th></tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
           const c = seedCriteria(s) || {};
           return `
         <tr>
-          <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td><code>${s.loot}</code></td>
+          <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${s.zone_count}</td><td>${c.numSpecials ?? "—"}/6</td><td>${c.numPairs ?? "—"}/5</td>
           <td>${c.naqField || "—"}</td>
           <td><a href="/seed/${s.seed}" hx-get="/seed/${s.seed}" hx-target="#main" hx-push-url="true" class="btn-sm">Zones →</a></td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="8">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="9">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}

@@ -22,12 +22,17 @@ if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 const BUCKET_SIZE = 100_000;
 
 // Bucket label from the job's upper bound: 100k, 200k, ..., 1M, 1.1M, ...
-function bucketLabel(seedEnd) {
+// K2-enabled buckets get a "-k2" suffix so they live in separate folders/jobs
+// from the vanilla run of the same seed range (output/100k vs output/100k-k2).
+function bucketLabel(seedEnd, k2) {
+  let base;
   if (seedEnd >= 1_000_000) {
     const m = seedEnd / 1_000_000;
-    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+    base = `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  } else {
+    base = `${seedEnd / 1000}k`;
   }
-  return `${seedEnd / 1000}k`;
+  return k2 ? `${base}-k2` : base;
 }
 
 function bucketDir(label) {
@@ -94,13 +99,20 @@ function requireSeedgen() {
 // after the highest already-queued/finished bucket. Returns the job ids.
 function createUniverseBuckets(units, k2Enabled) {
   const d = db.getDb();
-  const row = d.prepare("SELECT MAX(seed_end) AS m FROM universe_jobs").get();
+  const k2 = k2Enabled ? 1 : 0;
+  // Progress the seed range PER k2-mode: vanilla and K2 each cover 0→N
+  // independently (so "0-10M vanilla" and "0-10M K2" can both exist). Cancelled
+  // and failed buckets imported no seeds, so ignore them — their ranges are free
+  // to reuse, and cancelling everything lets a fresh run restart at 0.
+  const row = d.prepare(
+    "SELECT MAX(seed_end) AS m FROM universe_jobs WHERE k2_enabled = ? AND status NOT IN ('cancelled','failed')"
+  ).get(k2);
   const base = row && row.m ? row.m : 0;
   const ids = [];
   for (let i = 0; i < units; i++) {
     const start = base + i * BUCKET_SIZE;
     const end = start + BUCKET_SIZE;
-    const label = bucketLabel(end);
+    const label = bucketLabel(end, k2Enabled);
     const id = db.createUniverseJob(start, end, 1, k2Enabled);
     db.updateUniverseJob(id, { bucket: label });
     ids.push(id);
@@ -207,7 +219,7 @@ function runUniverseBucket(job) {
       return resolve();
     }
 
-    const label = job.bucket || bucketLabel(job.seed_end);
+    const label = job.bucket || bucketLabel(job.seed_end, job.k2_enabled);
     const dir = bucketDir(label);
     fs.mkdirSync(dir, { recursive: true });
     const outFile = path.join(dir, "seeds.jsonl");
