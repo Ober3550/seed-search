@@ -89,7 +89,10 @@ function htmxPage(title, content) {
 }
 
 function page(req, res, title, content) {
-  if (req.headers["hx-request"]) res.send(content);
+  // htmx history restore (Back on a cache miss) sets hx-request too, but needs the
+  // full page to rebuild the body — only serve the bare fragment for live swaps.
+  if (req.headers["hx-request"] && !req.headers["hx-history-restore-request"])
+    res.send(content);
   else res.send(htmxPage(title, content));
 }
 
@@ -458,9 +461,13 @@ function renderSeedDetail(s, c, zones, filterId) {
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
             const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
-            // generatable rows navigate to the surface detail on click; rowNav
-            // ignores clicks on buttons/inputs so those keep working normally.
-            const nav = gen ? `onclick="rowNav(event,'/seed/${s.seed}/surface/${z.id}')"` : "";
+            // generatable rows navigate to the surface detail on click via native
+            // htmx (hx-push-url snapshots history so Chrome's Back restores the seed
+            // page instantly); the trigger filter ignores clicks on buttons/inputs so
+            // those keep working normally.
+            const nav = gen
+              ? `hx-get="/seed/${s.seed}/surface/${z.id}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" hx-trigger="click[shouldNav(event)]" hx-sync="#main:replace" style="cursor:pointer"`
+              : "";
             return `
           <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
             <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
@@ -515,10 +522,10 @@ function renderSeedDetail(s, c, zones, filterId) {
         };
         // Row click → surface detail, unless the click was on an interactive
         // control (button/input/link) — those keep their own behaviour.
-        window.rowNav = function (e, url) {
-          if (e.target.closest("button, input, a, select, label")) return;
-          htmx.ajax("GET", url, { target: "#main" });
-          history.pushState({}, "", url);
+        // htmx trigger filter: only let a row's hx-get fire when the click didn't
+        // land on an interactive control. htmx handles the history push itself.
+        window.shouldNav = function (e) {
+          return !e.target.closest("button, input, a, select, label");
         };
       })();
     </script>
