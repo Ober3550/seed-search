@@ -252,17 +252,61 @@ function startSurface(job) {
     .finally(() => runningSurface.delete(job.id));
 }
 
+const MAX_RETRIES = parseInt(process.env.WORKER_MAX_RETRIES || "3");
+const RETRY_BACKOFF_MS = 15_000;                         // wait before retrying a failure
+const JOB_TIMEOUT_MS = parseInt(process.env.WORKER_TIMEOUT_MIN || "20") * 60_000;
+
+// Self-healing sweep (runs every tick): recover from restarts, hangs, and
+// transient failures so the queue never wedges.
+function recoverJobs() {
+  const d = db.getDb();
+
+  // 1. Orphaned 'running' jobs — status says running but no live worker owns
+  //    them (e.g. after a server restart/crash). Reset to 'queued' so a worker
+  //    picks them up (and the UI stops showing a phantom "running").
+  for (const j of d.prepare("SELECT id FROM universe_jobs WHERE status='running'").all())
+    if (!runningUniverse.has(j.id)) db.updateUniverseJob(j.id, { status: "queued", started_at: null });
+  for (const j of d.prepare("SELECT id FROM surface_jobs WHERE status='running'").all())
+    if (!runningSurface.has(j.id)) db.updateSurfaceJob(j.id, { status: "queued", started_at: null });
+
+  // 2. Hung workers — a tracked job running longer than JOB_TIMEOUT_MS. Kill the
+  //    process; its close handler fails it and step 3 retries it.
+  const cutoff = Date.now() - JOB_TIMEOUT_MS;
+  const startedMs = (table, id) => {
+    const r = d.prepare(`SELECT started_at FROM ${table} WHERE id=?`).get(id);
+    return r && r.started_at ? Date.parse(r.started_at) : Date.now();
+  };
+  for (const [id, child] of universeChildren)
+    if (startedMs("universe_jobs", id) < cutoff) { console.log(`[recover] killing hung universe job ${id}`); try { child.kill("SIGTERM"); } catch (_) {} }
+  for (const [id, child] of surfaceChildren)
+    if (startedMs("surface_jobs", id) < cutoff) { console.log(`[recover] killing hung surface job ${id}`); try { child.kill("SIGTERM"); } catch (_) {} }
+
+  // 3. Retry failed jobs (bounded), after a short backoff to avoid thrashing.
+  const backoff = new Date(Date.now() - RETRY_BACKOFF_MS).toISOString();
+  d.prepare(
+    "UPDATE universe_jobs SET status='queued', retries=retries+1, error=NULL, started_at=NULL " +
+    "WHERE status='failed' AND retries < ? AND (finished_at IS NULL OR finished_at < ?)"
+  ).run(MAX_RETRIES, backoff);
+  d.prepare(
+    "UPDATE surface_jobs SET status='queued', retries=retries+1, error=NULL, started_at=NULL " +
+    "WHERE status='failed' AND retries < ? AND (finished_at IS NULL OR finished_at < ?)"
+  ).run(MAX_RETRIES, backoff);
+}
+
 // One shared pool: fill up to `maxWorkers` threads, each taking whichever job is
 // next-eligible (respecting the per-type caps). When both a universe and a
 // surface job are eligible, the earlier-created one goes first.
 async function processQueue() {
   const d = db.getDb();
 
-  // A failed ore-prep cascades failure to its dependent cell jobs.
+  recoverJobs();
+
+  // A permanently-failed ore-prep (retries exhausted) cascades failure to its
+  // dependent cell jobs so they don't wait forever.
   d.prepare(
     "UPDATE surface_jobs SET status='failed', error='prerequisite ore pass failed', finished_at=? " +
-    "WHERE status='queued' AND depends_on IN (SELECT id FROM surface_jobs WHERE status='failed')"
-  ).run(new Date().toISOString());
+    "WHERE status='queued' AND depends_on IN (SELECT id FROM surface_jobs WHERE status='failed' AND retries >= ?)"
+  ).run(new Date().toISOString(), MAX_RETRIES);
 
   while (runningUniverse.size + runningSurface.size < maxWorkers) {
     const uni = runningUniverse.size < maxUniverse
@@ -745,6 +789,7 @@ function stopPolling() {
 
 module.exports = {
   processQueue,
+  recoverJobs,
   startPolling,
   stopPolling,
   findSegenBinary,

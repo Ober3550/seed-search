@@ -158,6 +158,8 @@ function initSchema() {
     "ALTER TABLE surface_jobs ADD COLUMN depends_on INTEGER", // prerequisite job id (cell → its ore-prep)
     "ALTER TABLE surface_jobs ADD COLUMN load_ore INTEGER DEFAULT 0", // 1 = render from cached ore.jsonl
     "ALTER TABLE seed_filters ADD COLUMN rules TEXT", // JSON ruleset (replaces min_specials/min_pairs)
+    "ALTER TABLE universe_jobs ADD COLUMN retries INTEGER DEFAULT 0", // auto-retry counter
+    "ALTER TABLE surface_jobs ADD COLUMN retries INTEGER DEFAULT 0",
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
