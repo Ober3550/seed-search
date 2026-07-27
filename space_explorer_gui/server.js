@@ -210,11 +210,18 @@ function renderUniversePage(jobsList) {
   <div class="page">
     <div class="page-head">
       <h2>🌠 Universe Generation</h2>
-      <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
-        hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
-        hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
-        ✖ Cancel all jobs
-      </button>
+      <div class="head-actions">
+        <button class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
+          hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
+          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          ✖ Cancel all jobs
+        </button>
+        <button class="btn" hx-post="/api/jobs/clear-cancelled" hx-swap="none"
+          hx-confirm="Delete all CANCELLED job entries and their on-disk bucket data? (surviving buckets are kept)"
+          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          🧹 Clear cancelled
+        </button>
+      </div>
     </div>
     <p class="hint">Every job is a fixed 100k-seed bucket. Requesting 10M queues 100 buckets;
     each writes <code>output/&lt;bucket&gt;/seeds.jsonl</code> (seedgen's rough pass).</p>
@@ -787,6 +794,12 @@ app.get("/api/zone/cell", (req, res) => {
 // processes. Used e.g. when a batch was started with the wrong settings.
 app.post("/api/jobs/cancel-all", (req, res) => {
   const r = jobs.cancelAllJobs();
+  res.json({ ok: true, ...r });
+});
+
+// Remove cancelled job rows + their on-disk data (exclusively-cancelled buckets).
+app.post("/api/jobs/clear-cancelled", (req, res) => {
+  const r = jobs.clearCancelledJobs();
   res.json({ ok: true, ...r });
 });
 

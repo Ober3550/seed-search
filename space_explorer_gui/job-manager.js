@@ -152,6 +152,48 @@ function cancelAllJobs() {
   return { universe: u.changes, surface: s.changes };
 }
 
+// Remove all CANCELLED job rows and their on-disk data. A bucket folder is
+// deleted only if no surviving (non-cancelled) job shares its label, so live
+// data is never touched. Also drops any partial seeds/zones imported under a
+// cancelled job. Never kills processes (cancel-all already did).
+function clearCancelledJobs() {
+  const d = db.getDb();
+  const cancelledUniverse = d.prepare("SELECT id, bucket FROM universe_jobs WHERE status='cancelled'").all();
+
+  // Which bucket folders are safe to delete (no non-cancelled job on that label).
+  let dirsRemoved = 0;
+  const buckets = [...new Set(cancelledUniverse.map(j => j.bucket).filter(Boolean))];
+  for (const b of buckets) {
+    const survivor = d.prepare(
+      "SELECT 1 FROM universe_jobs WHERE bucket=? AND status!='cancelled' LIMIT 1"
+    ).get(b);
+    if (survivor) continue;
+    const dir = bucketDir(b);
+    try {
+      if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); dirsRemoved++; }
+    } catch (e) { console.log(`[clear-cancelled] could not remove ${dir}: ${e.message}`); }
+  }
+
+  // Cancelled surface jobs first (they may reference zones via FK). No outer
+  // transaction: guard each universe-job delete so one blocked by a surviving
+  // dependent row (unexpected — cancelled buckets import nothing) is skipped,
+  // not the whole sweep.
+  const s = d.prepare("DELETE FROM surface_jobs WHERE status='cancelled'").run();
+  let uCount = 0;
+  for (const j of cancelledUniverse) {
+    try {
+      d.prepare("DELETE FROM zones WHERE job_id=?").run(j.id); // partial import cleanup (usually 0)
+      d.prepare("DELETE FROM seeds WHERE job_id=?").run(j.id);
+      d.prepare("DELETE FROM universe_jobs WHERE id=?").run(j.id);
+      uCount++;
+    } catch (e) {
+      console.log(`[clear-cancelled] kept universe job ${j.id} (${j.bucket}): ${e.message}`);
+    }
+  }
+  console.log(`[clear-cancelled] removed ${uCount} universe + ${s.changes} surface entries, ${dirsRemoved} bucket dir(s)`);
+  return { universe: uCount, surface: s.changes, dirsRemoved };
+}
+
 function setUniverseConcurrency(n) {
   universeConcurrency = Math.max(1, Math.min(16, n | 0));
 }
@@ -674,6 +716,7 @@ module.exports = {
   setUniverseConcurrency,
   setSurfaceConcurrency,
   cancelAllJobs,
+  clearCancelledJobs,
   createFilteredSet,
   writeSeedZonesFile,
   surfaceGridFor,

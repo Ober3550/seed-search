@@ -376,3 +376,4 @@ button[disabled] { opacity: 0.55; cursor: not-allowed; }
 .btn.danger { background: #5a2626; border-color: #7a3333; color: #ffd7d7; }
 .btn.danger:hover { background: #7a3333; }
 .badge.cancelled, .badge.canceled { background: #4a3a20; color: #e8c98a; }
+.head-actions { display: flex; gap: 8px; }
