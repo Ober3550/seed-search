@@ -106,4 +106,23 @@ pub fn build(b: *std.Build) void {
     const elev_cmd = b.addRunArtifact(elev);
     elev_step.dependOn(&elev_cmd.step);
     elev_cmd.step.dependOn(b.getInstallStep());
+
+    // Phase 3a — temperature/moisture/aux conformance.
+    const tma = b.addExecutable(.{
+        .name = "tma_conformance",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tma_conformance.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(tma, b, inc, lib);
+    b.installArtifact(tma);
+
+    const tma_step = b.step("tma", "Run the Phase 3a temperature/moisture/aux conformance test");
+    const tma_cmd = b.addRunArtifact(tma);
+    tma_step.dependOn(&tma_cmd.step);
+    tma_cmd.step.dependOn(b.getInstallStep());
 }
