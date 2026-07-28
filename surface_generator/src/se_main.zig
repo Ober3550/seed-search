@@ -886,10 +886,7 @@ pub fn main(init: std.process.Init) !void {
             const px = std.fmt.parseFloat(f64, line[0..comma]) catch continue;
             const py = std.fmt.parseFloat(f64, line[comma + 1 ..]) catch continue;
             const e = elev.at(px, py);
-            const name: []const u8 = if (e < 0.0)
-                (if (e < -5.0) "deepwater" else "water")
-            else
-                surfacegen.biome.biomes[classifier.classifyIndex(px, py, zt.temperature(px, py), zt.moisture(px, py), zt.aux(px, py), e)].name;
+            const name = classifier.classifyTile(px, py, zt.temperature(px, py), zt.moisture(px, py), zt.aux(px, py), e).name;
             try outbuf.appendSlice(a, try std.fmt.allocPrint(a, "{d},{d},{s}\n", .{ px, py, name }));
         }
         const of = biome_names_out orelse "biome-names-gen.csv";
@@ -925,10 +922,7 @@ pub fn main(init: std.process.Init) !void {
                 const fx: f64 = @floatFromInt(ix);
                 const fy: f64 = @floatFromInt(iy);
                 const e = elev.at(fx, fy);
-                const color: [3]u8 = if (e < 0.0)
-                    (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
-                else
-                    classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                const color: [3]u8 = classifier.classifyTile(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e).color;
                 // Orientation matches the tile-dump mod's BMP after bmp2png.
                 const x_arr: usize = @intCast(ix + r);
                 const y_arr: usize = @intCast((r - 1) - iy);

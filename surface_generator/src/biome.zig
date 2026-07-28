@@ -43,7 +43,9 @@ pub const Classifier = struct {
         return c;
     }
 
-    pub fn classifyIndex(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) usize {
+    /// Winning land-biome index + its fitness (so water tiles can compete on the
+    /// same scale in classifyTile).
+    pub fn classifyBest(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) struct { idx: usize, fit: f64 } {
         // shared noise fields (same for every candidate tile at this position)
         const water_noise = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 8.0, 0.666);
         const crater_noise = noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666);
@@ -66,11 +68,50 @@ pub const Classifier = struct {
                 best_i = i;
             }
         }
-        return best_i;
+        return .{ .idx = best_i, .fit = best_f };
+    }
+
+    pub fn classifyIndex(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) usize {
+        return self.classifyBest(x, y, t, m, a, e).idx;
     }
 
     pub fn classifyColor(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) [3]u8 {
         return biomes[self.classifyIndex(x, y, t, m, a, e)].color;
+    }
+
+    /// Full tile classification INCLUDING the water/wetland tiles (water,
+    /// deepwater, water-shallow, water-mud), which compete in the same argmax as
+    /// the land biomes. These aren't in the biome table — they have bespoke
+    /// probability expressions (elevation-gated for water/deepwater/shallow;
+    /// temperature+high-freq-water-noise for the wetland water-mud). Returns the
+    /// winning tile's map colour. Replaces the old hard `e<0 -> water` gate.
+    pub const Tile = struct { color: [3]u8, name: []const u8, fit: f64 };
+
+    pub fn classifyTile(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) Tile {
+        const land = self.classifyBest(x, y, t, m, a, e);
+        var best = Tile{ .color = biomes[land.idx].color, .name = biomes[land.idx].name, .fit = land.fit };
+
+        // high-frequency 'water' layers used by water-shallow / water-mud.
+        const wn_a = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.25, 0.666);
+        const wn_b = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.314, 0.666);
+        const consider = struct {
+            fn go(f: f64, c: [3]u8, n: []const u8, b: *Tile) void {
+                if (f > b.fit) b.* = .{ .color = c, .name = n, .fit = f };
+            }
+        }.go;
+
+        // water-mud: plateau_peak(temp,50,50) + 0.5*min(wn_a,wn_b) + min(0,-1+e/5) - 1.15
+        const mud = plateauPeak(t, .{ 0.0, 100.0 }) + 0.5 * @min(wn_a, wn_b) + @min(0.0, -1.0 + e / 5.0) - 1.15;
+        consider(mud, water_mud, "water-mud", &best);
+
+        if (e < 0.0) {
+            // water: 100*min(-e,1);  deepwater: 200*min(-5-e,1) for e<-5;
+            // water-shallow: 200*min(-e,1) + wn_a*50 + e*100 + min(t,0)*10000
+            consider(100.0 * @min(-e, 1.0), water, "water", &best);
+            if (e < -5.0) consider(200.0 * @min(-5.0 - e, 1.0), deepwater, "deepwater", &best);
+            consider(200.0 * @min(-e, 1.0) + wn_a * 50.0 + e * 100.0 + @min(t, 0.0) * 10000.0, water_shallow, "water-shallow", &best);
+        }
+        return best;
     }
 
     /// Debug: print the full fitness breakdown for the top-N tiles at (x,y), so a
@@ -116,9 +157,11 @@ pub const Classifier = struct {
     }
 };
 
-/// Water tile colors keyed by depth (Horaerratum legend values).
+/// Water tile colors (Horaerratum legend values).
 pub const deepwater: [3]u8 = .{ 38, 64, 73 };
 pub const water: [3]u8 = .{ 51, 83, 95 };
+pub const water_shallow: [3]u8 = .{ 53, 97, 110 };
+pub const water_mud: [3]u8 = .{ 54, 88, 90 };
 
 /// Simplified biome-category background colors for the ore map. Deliberately
 /// dark/muted so the bright ore colors (vulcanite red, cryonite blue,
