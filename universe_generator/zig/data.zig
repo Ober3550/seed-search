@@ -61,7 +61,34 @@ pub const Temperature = enum(u4) {
             .vhot => "temperature_vhot", .volcanic => "temperature_volcanic",
         };
     }
+
+    /// SE Universe.control_settings_from_tag: the cold/hot autoplace control
+    /// {frequency, size} for this temperature tag. `frequency` is a base that the
+    /// consumer multiplies by the zone frequency multiplier (fm); `size` feeds
+    /// the alien-biomes temperature spot bands directly. Verified vs the live
+    /// game (midrange → 0.65, extreme → 6). This is the per-zone control that
+    /// replaces the old hardcoded Horaerratum value (cold/hot size 6).
+    pub fn controlSettings(self: Temperature) ColdHotControl {
+        return switch (self) {
+            .bland => .{ .cold_freq = 0.5, .cold_size = 0, .hot_freq = 0.5, .hot_size = 0 },
+            .temperate => .{ .cold_freq = 1, .cold_size = 0.25, .hot_freq = 1, .hot_size = 0.25 },
+            .midrange => .{ .cold_freq = 1, .cold_size = 0.65, .hot_freq = 1, .hot_size = 0.65 },
+            .balanced => .{ .cold_freq = 1, .cold_size = 1, .hot_freq = 1, .hot_size = 1 },
+            .wild => .{ .cold_freq = 1, .cold_size = 3, .hot_freq = 1, .hot_size = 3 },
+            .extreme => .{ .cold_freq = 1, .cold_size = 6, .hot_freq = 1, .hot_size = 6 },
+            .cool => .{ .cold_freq = 0.75, .cold_size = 0.5, .hot_freq = 0.75, .hot_size = 0 },
+            .cold => .{ .cold_freq = 0.75, .cold_size = 1, .hot_freq = 0.75, .hot_size = 0 },
+            .vcold => .{ .cold_freq = 0.75, .cold_size = 2.2, .hot_freq = 0.75, .hot_size = 0 },
+            .frozen => .{ .cold_freq = 0.75, .cold_size = 6, .hot_freq = 0.75, .hot_size = 0 },
+            .warm => .{ .cold_freq = 0.75, .cold_size = 0, .hot_freq = 0.75, .hot_size = 0.5 },
+            .hot => .{ .cold_freq = 0.75, .cold_size = 0, .hot_freq = 0.75, .hot_size = 1 },
+            .vhot => .{ .cold_freq = 0.75, .cold_size = 0, .hot_freq = 0.75, .hot_size = 2.2 },
+            .volcanic => .{ .cold_freq = 0.75, .cold_size = 0, .hot_freq = 0.75, .hot_size = 6 },
+        };
+    }
 };
+
+pub const ColdHotControl = struct { cold_freq: f64, cold_size: f64, hot_freq: f64, hot_size: f64 };
 
 pub const Water = enum(u3) {
     none, low, med, high, max,

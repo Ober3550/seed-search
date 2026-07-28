@@ -351,16 +351,23 @@ fn runZoneDriver(
         var classifier: ?surfacegen.biome.Classifier = null;
         if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, 1.5);
         const fm = universe.zoneFrequencyMultiplier(radius);
+        // Per-zone temperature control from the SE tag (verified vs the game:
+        // midrange→0.65, extreme→6). Was hardcoded to Horaerratum's 6.0, which
+        // pushed every non-extreme zone into hot/cold biome extremes. Moisture/
+        // aux stay at freq 1 / bias 0: the SE tag bias re-centers to ~0 in the
+        // alien-biomes noise var, so those properties match the game as-is (the
+        // remaining biome gap is classifier range calibration, not properties).
+        const tc = (tags.temperature orelse universe.data.Temperature.midrange).controlSettings();
         zt = surfacegen.terrain.ZoneTerrain.init(.{
             .map_seed = zone_seed,
             .moisture_frequency = 1.0,
             .moisture_bias = 0.0,
             .aux_frequency = 1.0,
             .aux_bias = 0.0,
-            .cold_size = 6.0,
-            .hot_size = 6.0,
-            .cold_frequency = fm,
-            .hot_frequency = fm,
+            .cold_size = tc.cold_size,
+            .hot_size = tc.hot_size,
+            .cold_frequency = tc.cold_freq * fm,
+            .hot_frequency = tc.hot_freq * fm,
             .water_frequency = 1.0,
             .water_size = if (has_water) 1.5 else 0.0,
         });
