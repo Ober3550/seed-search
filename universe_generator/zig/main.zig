@@ -84,6 +84,7 @@ pub fn main(init: std.process.Init) !void {
 
         const bodyMap = try gen.buildBodyMap(a);
         const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap) catch unreachable;
+        const field_primaries = gen.resolveFieldPrimaries(a, universe.zones) catch unreachable;
         gen.computeGravityWells(&universe.zones, universe.zoneByName);
 
         const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
@@ -134,18 +135,13 @@ pub fn main(init: std.process.Init) !void {
             const cx = universe.zones.items[calidus_zi2].stellar_x;
             const cy = universe.zones.items[calidus_zi2].stellar_y;
             const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
+            _ = empty_tags;
             var best_dv: u32 = std.math.maxInt(u32);
             for (universe.zones.items) |z| {
                 if (z.ztype != .@"asteroid-field") continue;
-                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
-                var naq_y: f64 = 0;
-                var max_y: f64 = 0;
-                for (gen.resource_order, 0..) |rname, ri| {
-                    const y = gen.computeYield(scores[ri], true, 0, null, rname);
-                    if (y > max_y) max_y = y;
-                    if (std.mem.eql(u8, rname, "se-naquium-ore")) naq_y = y;
-                }
-                if (naq_y <= 0 or naq_y < max_y) continue; // naquium must be #1
+                // naquium is this field's quota-assigned PRIMARY
+                const fp = field_primaries.get(z.name) orelse continue;
+                if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
                 const dx = z.stellar_x - cx;
                 const dy = z.stellar_y - cy;
                 const dist = @sqrt(dx * dx + dy * dy);
@@ -287,7 +283,12 @@ pub fn main(init: std.process.Init) !void {
             }
             if (z.ztype == .@"asteroid-field") {
                 const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
-                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                const fprim = field_primaries.get(z.name);
+                if (fprim) |fp| {
+                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{fp}) catch unreachable;
+                    pos += pp.len;
+                }
+                const scores = gen.computeZoneResources(z.seed, z.ztype, fprim, empty_tags);
                 var first = true;
                 for (gen.resource_order, 0..) |rname, ri| {
                     const y = gen.computeYield(scores[ri], true, 0, null, rname);

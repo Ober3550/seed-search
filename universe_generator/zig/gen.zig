@@ -678,6 +678,126 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
     return true;
 }
 
+/// Assign primary resources to ASTEROID FIELDS via SE's global quota (the
+/// asteroid-field resource_balance_category). Fields carry no tags, so there are
+/// no fixed/tag-gated primaries — every field is bias-ranked and each resource
+/// gets a quota of ~N/K fields. Eligible field primaries (SE not_space +
+/// not_asteroid_field rules): iron, copper, uranium, stone, naquium, methane-ice,
+/// water-ice (coal/oil/vulcanite/cryonite/vitamelange/iridium/holmium excluded by
+/// not_space; beryllium by not_asteroid_field; water-ice re-allowed). This
+/// replaces the old null-primary bias ranking that over-labelled fields as
+/// naquium-primary. Returns field name -> primary resource.
+pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
+    var map = std.StringHashMap([]const u8).init(alloc);
+    const eligible = [_]u32{
+        @intFromEnum(data.Resource.iron_ore), @intFromEnum(data.Resource.copper_ore),
+        @intFromEnum(data.Resource.uranium_ore), @intFromEnum(data.Resource.stone),
+        @intFromEnum(data.Resource.se_naquium_ore), @intFromEnum(data.Resource.se_methane_ice),
+        @intFromEnum(data.Resource.se_water_ice),
+    };
+    const K = eligible.len;
+
+    const FieldInfo = struct { zi: usize, biases: [18]f64 };
+    var fields = ArrayList(FieldInfo).init(alloc);
+    defer fields.deinit();
+    for (zones.items, 0..) |z, zi| {
+        if (z.ztype != .@"asteroid-field") continue;
+        var rng = Rng.initFactorio(z.seed);
+        var b: [18]f64 = undefined;
+        for (0..18) |ri| b[ri] = rng.float();
+        try fields.append(.{ .zi = zi, .biases = b });
+    }
+    const N = fields.items.len;
+    if (N == 0) return map;
+
+    // ordered_bias(field, ri) = 1 + (bias[ri] - position_1indexed) / 18  (SE formula)
+    const ob = struct {
+        fn f(biases: [18]f64, ri: u32) f64 {
+            var pos1: u32 = 0;
+            for (0..18) |r2| {
+                if (biases[r2] > biases[ri]) pos1 += 1;
+            }
+            return 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+        }
+    }.f;
+
+    // quota per resource
+    var quota: [K]u32 = undefined;
+    const per_min: u32 = @intCast(N / K);
+    const rem: u32 = @intCast(N % K);
+    for (0..K) |k| quota[k] = per_min + (if (k < rem) @as(u32, 1) else 0);
+
+    // Assign each field to its argmax-ordered_bias eligible resource; within each
+    // resource take the highest-ordered_bias fields up to quota; overflow fields
+    // fall back to any resource with remaining quota by next-best ordered_bias.
+    var assigned = try alloc.alloc(bool, N);
+    defer alloc.free(assigned);
+    @memset(assigned, false);
+    var used: [K]u32 = @splat(0);
+
+    // group by best resource
+    var group = try alloc.alloc(usize, N); // resource index k per field
+    defer alloc.free(group);
+    for (fields.items, 0..) |fi, i| {
+        var best_ob: f64 = -1e30;
+        var best_k: usize = 0;
+        for (eligible, 0..) |ri, k| {
+            const v = ob(fi.biases, ri);
+            if (v > best_ob) {
+                best_ob = v;
+                best_k = k;
+            }
+        }
+        group[i] = best_k;
+    }
+    // for each resource, sort its members by ordered_bias desc, assign up to quota
+    for (eligible, 0..) |ri, k| {
+        // collect members
+        var members = ArrayList(usize).init(alloc);
+        defer members.deinit();
+        for (0..N) |i| {
+            if (group[i] == k) try members.append(i);
+        }
+        // insertion sort by ordered_bias desc
+        for (members.items, 0..) |_, a2| {
+            var b2: usize = a2 + 1;
+            while (b2 < members.items.len) : (b2 += 1) {
+                if (ob(fields.items[members.items[b2]].biases, ri) > ob(fields.items[members.items[a2]].biases, ri)) {
+                    const t = members.items[a2];
+                    members.items[a2] = members.items[b2];
+                    members.items[b2] = t;
+                }
+            }
+        }
+        for (members.items) |i| {
+            if (used[k] >= quota[k]) break;
+            assigned[i] = true;
+            used[k] += 1;
+            try map.put(zones.items[fields.items[i].zi].name, resource_order[ri]);
+        }
+    }
+    // fallback: overflow fields → best eligible resource with remaining quota
+    for (0..N) |i| {
+        if (assigned[i]) continue;
+        var best_ob2: f64 = -1e30;
+        var best_k2: usize = 0;
+        var found = false;
+        for (eligible, 0..) |ri, k| {
+            if (used[k] >= quota[k]) continue;
+            const v = ob(fields.items[i].biases, ri);
+            if (!found or v > best_ob2) {
+                best_ob2 = v;
+                best_k2 = k;
+                found = true;
+            }
+        }
+        if (!found) best_k2 = group[i]; // quotas exhausted (rounding) — keep best
+        used[best_k2] += 1;
+        try map.put(zones.items[fields.items[i].zi].name, resource_order[eligible[best_k2]]);
+    }
+    return map;
+}
+
 pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMap: std.StringHashMapUnmanaged(data.Body)) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
 
