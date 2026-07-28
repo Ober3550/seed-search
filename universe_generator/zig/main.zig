@@ -189,8 +189,12 @@ pub fn main(init: std.process.Init) !void {
             const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
             pos += ob.len;
             if (z.radius > 0) {
-                const dr: u32 = @intFromFloat(@floor(z.radius + 0.5));
-                const rp = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{dr}) catch unreachable;
+                // Emit the exact fractional radius: the surface gen derives the
+                // noise frequency (fm = 5000/radius) from it, and rounding to an
+                // integer shifts every temperature/moisture boundary slightly
+                // (Grishord true radius 2926.3885 vs rounded 2926 → cold_freq
+                // 1.708591 vs 1.708817). {d} on an f64 prints full precision.
+                const rp = std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{z.radius}) catch unreachable;
                 pos += rp.len;
             }
             if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
