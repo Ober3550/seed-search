@@ -261,7 +261,7 @@ function isPrimaryResource(body, res) {
 function bestNaqField(seedOld) {
   const fields = (seedOld.fields || []).filter(
     (f) =>
-      (f.resource["se-naquium-ore"] || 0) > 0.0001 &&
+      f.primary === "se-naquium-ore" &&
       (f.delta_v || 0) > 0 &&
       (f.delta_v || 0) <= 20000,
   );

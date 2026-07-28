@@ -92,23 +92,25 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
         // --- Filters ---
+        // First-round filter: keep only seeds with a naquium-PRIMARY asteroid
+        // field within min_naq_dv delta-v. Uses field_primaries (quota-assigned
+        // primary), NOT mere naquium presence — nearly every field has naquium
+        // present, so a presence check barely filters. Mirrors NAQ_SCAN below.
         const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
         if (min_naq_dv > 0) {
             const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
             const cx = universe.zones.items[calidus_zi].stellar_x;
             const cy = universe.zones.items[calidus_zi].stellar_y;
-            const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
             var nearest: u32 = std.math.maxInt(u32);
             for (universe.zones.items) |z| {
-                if (z.ztype == .@"asteroid-field") {
-                    const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
-                    if (scores[@intFromEnum(data.Resource.se_naquium_ore)] <= 0.0001) continue;
-                    const dx = z.stellar_x - cx;
-                    const dy = z.stellar_y - cy;
-                    const dist = @sqrt(dx * dx + dy * dy);
-                    const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
-                    if (dv < nearest) nearest = dv;
-                }
+                if (z.ztype != .@"asteroid-field") continue;
+                const fp = field_primaries.get(z.name) orelse continue;
+                if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
+                const dx = z.stellar_x - cx;
+                const dy = z.stellar_y - cy;
+                const dist = @sqrt(dx * dx + dy * dy);
+                const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
+                if (dv < nearest) nearest = dv;
             }
             if (nearest > min_naq_dv) {
                 continue;
@@ -334,7 +336,20 @@ pub fn main(init: std.process.Init) !void {
                 const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
                 pos += ob.len;
                 const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
-                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                // Emit the quota-assigned primary (fields via field_primaries,
+                // planets/moons via primaries) so it drives both the "p" field
+                // and the primary-weighted resource scores — matching the main
+                // zone loop above. Without this, tail-appended asteroid fields
+                // ship no primary and their naquium-primary status is lost.
+                const tprim: ?[]const u8 = if (z.ztype == .@"asteroid-field")
+                    field_primaries.get(z.name)
+                else
+                    primaries.get(z.name);
+                if (tprim) |tp| {
+                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{tp}) catch unreachable;
+                    pos += pp.len;
+                }
+                const scores = gen.computeZoneResources(z.seed, z.ztype, tprim, empty_tags);
                 var fr: bool = true;
                 for (gen.resource_order, 0..) |rname, ri| {
                     const is_field = z.ztype == .@"asteroid-field";
