@@ -26,12 +26,18 @@ const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "10000");
 // K2-enabled buckets get a "-k2" suffix so they live in separate folders/jobs
 // from the vanilla run of the same seed range (output/100k vs output/100k-k2).
 function bucketLabel(seedEnd, k2) {
+  // Label must be UNIQUE per BUCKET_SIZE boundary — it names the output dir and
+  // the DB bucket column. The old "1.8M" (toFixed(1)) form only had 0.1M
+  // resolution, so with 10k buckets every 10 consecutive buckets above 1M
+  // collided on one label and overwrote each other's seeds.jsonl. Use "M" only
+  // for whole millions, else "k" (seedEnd is always a multiple of BUCKET_SIZE).
   let base;
-  if (seedEnd >= 1_000_000) {
-    const m = seedEnd / 1_000_000;
-    base = `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  if (seedEnd >= 1_000_000 && seedEnd % 1_000_000 === 0) {
+    base = `${seedEnd / 1_000_000}M`;   // 2000000 -> "2M"
+  } else if (seedEnd % 1000 === 0) {
+    base = `${seedEnd / 1000}k`;        // 1810000 -> "1810k", 20000 -> "20k"
   } else {
-    base = `${seedEnd / 1000}k`;
+    base = `${seedEnd}`;                // sub-1k bucket sizes: raw seed
   }
   return k2 ? `${base}-k2` : base;
 }
@@ -98,17 +104,25 @@ function requireSeedgen() {
 
 // Queue `units` bucket jobs of exactly BUCKET_SIZE seeds each, continuing
 // after the highest already-queued/finished bucket. Returns the job ids.
-function createUniverseBuckets(units, k2Enabled) {
+function createUniverseBuckets(units, k2Enabled, startSeed) {
   const d = db.getDb();
   const k2 = k2Enabled ? 1 : 0;
-  // Progress the seed range PER k2-mode: vanilla and K2 each cover 0→N
-  // independently (so "0-10M vanilla" and "0-10M K2" can both exist). Cancelled
-  // and failed buckets imported no seeds, so ignore them — their ranges are free
-  // to reuse, and cancelling everything lets a fresh run restart at 0.
-  const row = d.prepare(
-    "SELECT MAX(seed_end) AS m FROM universe_jobs WHERE k2_enabled = ? AND status NOT IN ('cancelled','failed')"
-  ).get(k2);
-  const base = row && row.m ? row.m : 0;
+  let base;
+  if (startSeed != null && Number.isFinite(startSeed) && startSeed >= 0) {
+    // Explicit start override (dev shortcut: jump straight to a seed range
+    // known to contain valid seeds). Snap to a bucket boundary so labels/ranges
+    // stay aligned with auto-continued buckets.
+    base = Math.floor(startSeed / BUCKET_SIZE) * BUCKET_SIZE;
+  } else {
+    // Progress the seed range PER k2-mode: vanilla and K2 each cover 0→N
+    // independently (so "0-10M vanilla" and "0-10M K2" can both exist). Cancelled
+    // and failed buckets imported no seeds, so ignore them — their ranges are free
+    // to reuse, and cancelling everything lets a fresh run restart at 0.
+    const row = d.prepare(
+      "SELECT MAX(seed_end) AS m FROM universe_jobs WHERE k2_enabled = ? AND status NOT IN ('cancelled','failed')"
+    ).get(k2);
+    base = row && row.m ? row.m : 0;
+  }
   const ids = [];
   for (let i = 0; i < units; i++) {
     const start = base + i * BUCKET_SIZE;

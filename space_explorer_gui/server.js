@@ -266,6 +266,7 @@ function renderUniversePage(jobsList) {
       <form hx-post="/api/universe/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
+        <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="1800000" min="0" step="${bs}" placeholder="auto"></label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Min 4 Prod Modules</label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Nearby Naq Field</label>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
@@ -856,8 +857,10 @@ function renderSurfaceViewer(job) {
 app.post("/api/universe/create", (req, res) => {
   const units = parseInt(req.body.units || req.body.total_units) || 1;
   const k2 = req.body.k2_enabled === "on" || req.body.k2_enabled === "1";
-  const ids = jobs.createUniverseBuckets(units, k2);
-  res.json({ ok: true, job_ids: ids, message: `Queued ${units} × 100k buckets` });
+  const raw = (req.body.start_seed ?? "").toString().trim();
+  const startSeed = raw === "" ? null : parseInt(raw);
+  const ids = jobs.createUniverseBuckets(units, k2, startSeed);
+  res.json({ ok: true, job_ids: ids, message: `Queued ${units} buckets` });
 });
 
 // ── Workers ────────────────────────────────────────────────────────────
