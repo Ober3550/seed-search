@@ -186,6 +186,43 @@ fn writePngFileRgba(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, 
     try file.writePositionalAll(io, bytes, 0);
 }
 
+/// Write a tiled-surface cell as PNG for the GUI's CSS grid (which composes the
+/// cells in the browser — no python stitcher). Emits the SAME orientation the
+/// old cell_png.py did (vertical flip) so the existing pixel-exact cell
+/// positioning is unchanged. The `oremap` layer becomes RGBA with its black
+/// background keyed transparent, so it overlays terrain.
+fn writeCellPng(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, h: u32, rgb: []const u8, oremap: bool) !void {
+    const wu: usize = w;
+    const hu: usize = h;
+    if (oremap) {
+        const rgba = try a.alloc(u8, wu * hu * 4);
+        defer a.free(rgba);
+        for (0..hu) |dy| {
+            const sy = hu - 1 - dy; // vertical flip
+            for (0..wu) |x| {
+                const s = (sy * wu + x) * 3;
+                const d = (dy * wu + x) * 4;
+                const rr = rgb[s];
+                const gg = rgb[s + 1];
+                const bb = rgb[s + 2];
+                rgba[d] = rr;
+                rgba[d + 1] = gg;
+                rgba[d + 2] = bb;
+                rgba[d + 3] = if (rr == 0 and gg == 0 and bb == 0) 0 else 255;
+            }
+        }
+        try writePngFileRgba(a, io, path, w, h, rgba);
+    } else {
+        const flipped = try a.alloc(u8, wu * hu * 3);
+        defer a.free(flipped);
+        for (0..hu) |dy| {
+            const sy = hu - 1 - dy; // vertical flip
+            @memcpy(flipped[dy * wu * 3 ..][0 .. wu * 3], rgb[sy * wu * 3 ..][0 .. wu * 3]);
+        }
+        try writePngFile(a, io, path, w, h, flipped);
+    }
+}
+
 fn runZoneDriver(
     a: std.mem.Allocator,
     init: std.process.Init,
@@ -533,12 +570,6 @@ fn runZoneDriver(
                         pixels[idx + 2] = oc[2];
                     }
                 }
-                // NOTE: the tiled-surface cells stay BMP for now — they feed the
-                // GUI's live-grid (cell_png.py) AND stitch_surface.py, which reads
-                // the raw cell BMPs. Porting that path to PNG needs the stitcher
-                // ported too (a separate orientation-sensitive task).
-                var sbuf: std.ArrayList(u8) = .empty;
-                try surfacegen.bmp.writeBmp(a, &sbuf, cw, ch, pixels);
                 const prefix: []const u8 = switch (surface_layer) {
                     1 => "terrain",
                     2 => "oremap",
@@ -546,12 +577,12 @@ fn runZoneDriver(
                 };
                 var spb: [512]u8 = undefined;
                 const sp = if (grid == 1)
-                    try std.fmt.bufPrint(&spb, "{s}/{s}.bmp", .{ zdir, prefix })
+                    try std.fmt.bufPrint(&spb, "{s}/{s}.png", .{ zdir, prefix })
                 else
-                    try std.fmt.bufPrint(&spb, "{s}/{s}_{d}_{d}.bmp", .{ zdir, prefix, grid, cell });
-                const sfile = try std.Io.Dir.createFile(.cwd(), init.io, sp, .{});
-                defer sfile.close(init.io);
-                try sfile.writePositionalAll(init.io, sbuf.items, 0);
+                    try std.fmt.bufPrint(&spb, "{s}/{s}_{d}_{d}.png", .{ zdir, prefix, grid, cell });
+                // PNG directly — the GUI composes cells in the browser (CSS grid),
+                // so no BMP + python cell_png/stitch step. oremap → transparent.
+                try writeCellPng(a, init.io, sp, cw, ch, pixels, surface_layer == 2);
                 std.debug.print("   wrote {s} ({d}x{d})\n", .{ sp, cw, ch });
             }
         }

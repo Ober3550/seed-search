@@ -587,9 +587,8 @@ function writeSeedZonesFile(seedRow, zoneNames) {
   return file;
 }
 
-// ── Tiled surface planning + stitching ─────────────────────────────────
-
-const STITCH = path.join(PROJECT_ROOT, "calibration", "mod-dump", "stitch_surface.py");
+// ── Tiled surface planning ─────────────────────────────────────────────
+// Cells are composed in the browser (CSS grid) — no server-side stitching.
 
 // Static cell edge (tiles). Grid is chosen so every cell is ~this size on ANY
 // planet, so each surface job processes a near-constant tile count and finishes
@@ -664,20 +663,7 @@ function surfaceCellLayout(radius) {
   return { n, cells };
 }
 
-function stitchSurface(zoneDir, gridN, radius, prefix = "surface") {
-  return new Promise((resolve) => {
-    const child = spawn("python3", [STITCH, zoneDir, String(gridN), String(radius), prefix],
-      { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    child.stderr.on("data", d => err += d);
-    child.on("close", code => {
-      const png = path.join(zoneDir, prefix + ".png");
-      if (code === 0 && fs.existsSync(png)) resolve(png);
-      else { console.log("[job-manager] stitch failed:", err.slice(0, 200)); resolve(null); }
-    });
-    child.on("error", () => resolve(null));
-  });
-}
+// (stitch_surface.py removed — the browser composes tiled cells via CSS grid.)
 
 // Render kinds → segen layer flag + output filename prefix. 'ore' = compute-only
 // (no render). 'surface' is the legacy combined layer.
@@ -766,33 +752,18 @@ function runSurfaceJob(job) {
         return resolve();
       }
 
-      // render job — success = the layer BMP was written
-      const bmpFile = isCell
-        ? path.join(zDir, `${prefix}_${job.grid_n}_${job.grid_cell}.bmp`)
-        : path.join(zDir, `${prefix}.bmp`);
-      if (!fs.existsSync(bmpFile)) return fail(`no ${prefix} output (${stderr.slice(-200)})`);
+      // render job — success = the layer PNG was written. segen now emits PNG
+      // directly (zigimg); the browser composes tiled cells via CSS (no stitcher,
+      // no BMP→PNG python). For a whole render png_file points at the single
+      // image; for tiled cells png_file stays null and the CSS grid composes them.
+      const pngFile = isCell
+        ? path.join(zDir, `${prefix}_${job.grid_n}_${job.grid_cell}.png`)
+        : path.join(zDir, `${prefix}.png`);
+      if (!fs.existsSync(pngFile)) return fail(`no ${prefix} output (${stderr.slice(-200)})`);
 
-      let pngRel = null;
-      if (isCell) {
-        await cellToPng(bmpFile); // → prefix_N_i.png for the live grid
-        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, finished_at: new Date().toISOString() });
-        const siblings = db.getSurfaceCells(job.seed, job.zone_name, job.grid_n, job.kind);
-        const allDone = siblings.length >= expectedCells(job.grid_n, job.radius) &&
-                        siblings.every(s => s.status === "done" || s.status === "failed");
-        if (allDone) {
-          const png = await stitchSurface(zDir, job.grid_n, job.radius, prefix);
-          if (png) {
-            pngRel = path.relative(OUTPUT_DIR, png);
-            for (const s of siblings) db.updateSurfaceJob(s.id, { png_file: pngRel });
-            db.addJobLog("surface", job.id, `Stitched ${job.zone_name} ${prefix} (grid ${job.grid_n})`);
-          }
-        }
-      } else {
-        const png = await convertBmpToPng(bmpFile); // whole → prefix.png
-        if (png && png.endsWith(".png")) pngRel = path.relative(OUTPUT_DIR, png);
-        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
-        db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix}`);
-      }
+      const pngRel = isCell ? null : path.relative(OUTPUT_DIR, pngFile);
+      db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
+      db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix}${isCell ? ` cell ${job.grid_cell}` : ""}`);
       resolve();
     });
 
@@ -805,38 +776,7 @@ function runSurfaceJob(job) {
   });
 }
 
-// ── PNG Conversion ─────────────────────────────────────────────────────
-
-// segen writes a bespoke BMP (unpadded rows, BGR) that image libs reject;
-// calibration/mod-dump/bmp2png.py is the matching stdlib decoder.
-const BMP2PNG = path.join(PROJECT_ROOT, "calibration", "mod-dump", "bmp2png.py");
-
-function convertBmpToPng(bmpPath) {
-  return new Promise((resolve) => {
-    const pngPath = bmpPath.replace(/\.bmp$/, ".png");
-    const child = spawn("python3", [BMP2PNG, bmpPath, pngPath], { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    child.stderr.on("data", d => err += d);
-    child.on("close", code => {
-      if (code === 0 && fs.existsSync(pngPath)) resolve(pngPath);
-      else { console.log("[job-manager] bmp2png failed:", err.slice(0, 200)); resolve(bmpPath); }
-    });
-    child.on("error", () => resolve(bmpPath));
-  });
-}
-
-// One tiled cell BMP → final-oriented PNG (flip + BGR→RGB) for the live grid.
-const CELL_PNG = path.join(PROJECT_ROOT, "calibration", "mod-dump", "cell_png.py");
-function cellToPng(bmpPath) {
-  return new Promise((resolve) => {
-    const pngPath = bmpPath.replace(/\.bmp$/, ".png");
-    const child = spawn("python3", [CELL_PNG, bmpPath, pngPath], { stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    child.stderr.on("data", d => err += d);
-    child.on("close", code => resolve(code === 0 && fs.existsSync(pngPath) ? pngPath : null));
-    child.on("error", () => resolve(null));
-  });
-}
+// (bmp2png.py / cell_png.py removed — segen emits PNG directly via zigimg.)
 
 // ── Polling ────────────────────────────────────────────────────────────
 
