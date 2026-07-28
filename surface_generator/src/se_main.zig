@@ -237,6 +237,7 @@ fn runZoneDriver(
     surface_cell: i32, // which cell (0..grid*grid-1) to render; -1 = all cells
     load_ore: bool, // read ore.jsonl instead of computing (per-cell renders)
     surface_layer: i32, // 0 = both (surface_), 1 = terrain only, 2 = ore only
+    override_radius: ?i32, // cap the render/ore rect to this half-extent (null = full disk)
 ) !void {
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
     var world: ?std.json.Value = null;
@@ -285,15 +286,24 @@ fn runZoneDriver(
             std.debug.print("zone {s}: unsupported type {s}, skipping\n", .{ name, ztype_str });
             continue;
         };
-        if (ztype != .planet and ztype != .moon) {
+        if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") {
             std.debug.print("zone {s}: type {s} not surface-generatable, skipping\n", .{ name, ztype_str });
             continue;
         }
+        const is_field = ztype == .@"asteroid-field";
         const zone_seed: u32 = @intCast((z.get("s") orelse continue).integer);
-        const radius: f64 = switch (z.get("r") orelse continue) {
-            .integer => |v| @floatFromInt(v),
-            .float => |v| v,
-            else => continue,
+        // Asteroid fields carry no radius in the universe data; SE places their
+        // resources against the field's effective radius (gen.FIELD_EFFECTIVE_RADIUS).
+        const radius: f64 = blk: {
+            if (z.get("r")) |rv| {
+                switch (rv) {
+                    .integer => |v| break :blk @floatFromInt(v),
+                    .float => |v| break :blk v,
+                    else => {},
+                }
+            }
+            if (is_field) break :blk 5000.0;
+            continue;
         };
         const primary: ?[]const u8 = if (z.get("p")) |pv| (if (pv == .string) pv.string else null) else null;
 
@@ -356,7 +366,10 @@ fn runZoneDriver(
         });
         classifier = surfacegen.biome.Classifier.init(zone_seed);
 
-        const r: i32 = @intFromFloat(radius);
+        // The render/ore RECT half-extent. --radius caps it (so we can generate
+        // just the inner disk) while `radius` above stays the zone's true radius
+        // for the resource-control + frequency math.
+        const r: i32 = if (override_radius) |o| o else @intFromFloat(radius);
 
         // Output dir up-front so --load-ore can read ore.jsonl from it.
         var dirbuf: [512]u8 = undefined;
@@ -1146,7 +1159,7 @@ pub fn main(init: std.process.Init) !void {
             std.debug.print("--zones requires --world-seed\n", .{});
             return;
         };
-        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell, load_ore, surface_layer);
+        try runZoneDriver(a, init, zf, ws, zone_names, out_dir, ores_only, bmp_filename != null, render_surface, surface_grid, surface_cell, load_ore, surface_layer, override_radius);
         return;
     }
 
