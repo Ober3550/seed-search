@@ -524,6 +524,13 @@ function matchFilter(crit, rules) {
     }
     const nr = normalizeRule(rule);
     if (!nr || nr.res.length === 0) continue;
+    // naquium lives on asteroid fields, not planet/moon bodies — match the
+    // nearest naq-primary field (crit.naqField, already sorted by deltav).
+    if (isNaqPrimary(nr)) {
+      if (!crit.naqField) return { match: false, zones: [] };
+      zones.add(crit.naqField);
+      continue;
+    }
     const b = pick((x) =>
       nr.res.every((r) => (x.present || []).includes(r)) &&
       (!nr.primary || x.primary === nr.res[0]));
@@ -532,6 +539,12 @@ function matchFilter(crit, rules) {
     zones.add(b.name);
   }
   return { match: true, zones: [...zones] };
+}
+
+// The nearest naq-primary asteroid field is tracked separately (crit.naqField),
+// not in crit.bodies (planets/moons), so a naquium-primary rule matches it.
+function isNaqPrimary(nr) {
+  return nr.primary && nr.res.length === 1 && nr.res[0] === "se-naquium-ore";
 }
 
 // Like matchFilter, but instead of an all-or-nothing verdict, returns how many
@@ -554,6 +567,10 @@ function countMatches(crit, rules) {
     }
     const nr = normalizeRule(rule);
     if (!nr || nr.res.length === 0) continue;
+    if (isNaqPrimary(nr)) {
+      if (crit.naqField) n++;
+      continue;
+    }
     const b = bodies.find((x) =>
       !used.has(x.name) &&
       nr.res.every((r) => (x.present || []).includes(r)) &&

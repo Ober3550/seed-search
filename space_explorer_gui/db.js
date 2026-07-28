@@ -178,9 +178,11 @@ function seedPresetFilters() {
   // `res` present, and if `primary` its PRIMARY is res[0] (core fragments).
   const presets = [
     {
-      // the core-mineable specials, each required as a primary (distinct body).
+      // the core-mineable specials, each required as a primary (distinct body),
+      // plus the nearest naquium-primary asteroid field (sorted by deltav).
       name: "core",
       rules: [
+        { primary: true, res: ["se-naquium-ore"] },
         { primary: true, res: ["se-vulcanite"] },
         { primary: true, res: ["se-cryonite"] },
         { primary: true, res: ["se-holmium-ore"] },
@@ -192,6 +194,7 @@ function seedPresetFilters() {
     {
       name: "pairs",
       rules: [
+        { primary: true, res: ["se-naquium-ore"] },
         { primary: false, res: ["se-vulcanite", "se-iridium-ore"] },
         { primary: false, res: ["se-cryonite", "se-beryllium-ore"] },
         { primary: false, res: ["se-vitamelange", "stone"] },
@@ -216,6 +219,18 @@ function seedPresetFilters() {
       { kind: "both", res: "se-cryonite", res2: "se-beryllium-ore" },
       { kind: "both", res: "se-vitamelange", res2: "stone" },
       { kind: "present", res: "se-holmium-ore" },
+    ]),
+    // prior canonical core/pairs (pre-naquium) — upgrade to add the naq-primary rule.
+    JSON.stringify([
+      { primary: true, res: ["se-vulcanite"] }, { primary: true, res: ["se-cryonite"] },
+      { primary: true, res: ["se-holmium-ore"] }, { primary: true, res: ["se-beryllium-ore"] },
+      { primary: true, res: ["se-iridium-ore"] }, { primary: true, res: ["se-vitamelange"] },
+    ]),
+    JSON.stringify([
+      { primary: false, res: ["se-vulcanite", "se-iridium-ore"] },
+      { primary: false, res: ["se-cryonite", "se-beryllium-ore"] },
+      { primary: false, res: ["se-vitamelange", "stone"] },
+      { primary: false, res: ["se-holmium-ore"] },
     ]),
   ]);
   const get = db.prepare("SELECT id, rules FROM filter_defs WHERE name = ?");
