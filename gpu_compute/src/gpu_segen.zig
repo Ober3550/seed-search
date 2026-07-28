@@ -1,9 +1,19 @@
 //! GPU surface renderer for the GUI — a fast terrain preview.
 //!
 //! Same CLI shape segen uses (--zones <jsonl> --world-seed N --zone <name>
-//! --out <dir>), but renders the whole zone's biome+water on the GPU in one
-//! dispatch and writes <out>/seed_<world>/<zone>/terrain.png (segen orientation:
-//! vertical flip, grey background outside the disk). Terrain only for now.
+//! --out <dir>). Renders the zone's biome+water (planet/moon) or se-space /
+//! se-asteroid (asteroid field) on the GPU and writes it under
+//! <out>/seed_<world>/<zone>/ (segen orientation: vertical flip, grey
+//! background outside the disk).
+//!
+//! Tiling: with `--surface-grid N` (N>1) the disk is split into an N×N grid of
+//! cells (identical geometry to segen's --surface-grid/--surface-cell and to the
+//! GUI's surfaceCellLayout), and each disk-intersecting cell is rendered — in
+//! ONE process (the GPU context + pipeline + per-map_seed generator buffers are
+//! built once and reused) — center-outward, writing terrain_<N>_<cell>.png as it
+//! goes. The GUI polls the zone dir and fills cells in as they land, so a big
+//! surface shows visible progress instead of one long stall. Without the flag
+//! (or N<=1) it renders the whole disk in one dispatch → terrain.png.
 //!
 //! The zone's terrain config depends only on zone_seed (z.s), radius (z.r) and
 //! has_water (z.water present & != "none") — all in the jsonl — so no universe
@@ -90,6 +100,70 @@ fn getStr(args: []const [:0]const u8, flag: []const u8) ?[]const u8 {
     return null;
 }
 
+// ── Cell layout (mirrors segen se_main + the GUI's planSurfaceCells) ─────────
+// One rectangle of the N×N grid over [-R,R]² that intersects the disk. Cells
+// fully outside are dropped; the rest are ordered center-outward (by centre
+// distance from the origin) so the landing area renders first.
+const Cell = struct { cell: u32, x0: i32, y0: i32, cw: u32, ch: u32, d2: f64 };
+
+fn lessCell(_: void, p: Cell, q: Cell) bool {
+    return p.d2 < q.d2;
+}
+
+fn cellList(a: std.mem.Allocator, R: i32, radius: f64, grid: i32) ![]Cell {
+    var list: std.ArrayList(Cell) = .empty;
+    if (grid <= 1) {
+        const W: u32 = @intCast(R * 2);
+        try list.append(a, .{ .cell = 0, .x0 = -R, .y0 = -R, .cw = W, .ch = W, .d2 = 0 });
+        return list.toOwnedSlice(a);
+    }
+    const full: i32 = R * 2;
+    const cellW: i32 = @divTrunc(full + grid - 1, grid); // ceil
+    const rr = radius * radius;
+    var cell: i32 = 0;
+    while (cell < grid * grid) : (cell += 1) {
+        const gx = @mod(cell, grid);
+        const gy = @divTrunc(cell, grid);
+        const x0 = -R + gx * cellW;
+        const x1 = @min(R, x0 + cellW);
+        const y0 = -R + gy * cellW;
+        const y1 = @min(R, y0 + cellW);
+        if (x1 <= x0 or y1 <= y0) continue;
+        // nearest rect point to origin — skip cells fully outside the disk.
+        const nx: f64 = @floatFromInt(@max(x0, @min(0, x1 - 1)));
+        const ny: f64 = @floatFromInt(@max(y0, @min(0, y1 - 1)));
+        if (nx * nx + ny * ny > rr) continue;
+        const cx = @as(f64, @floatFromInt(x0 + x1)) / 2.0;
+        const cy = @as(f64, @floatFromInt(y0 + y1)) / 2.0;
+        try list.append(a, .{
+            .cell = @intCast(cell),
+            .x0 = x0,
+            .y0 = y0,
+            .cw = @intCast(x1 - x0),
+            .ch = @intCast(y1 - y0),
+            .d2 = cx * cx + cy * cy,
+        });
+    }
+    std.mem.sort(Cell, list.items, {}, lessCell);
+    return list.toOwnedSlice(a);
+}
+
+// Write <out>/seed_<world>/<zone>/terrain.png (grid<=1) or terrain_<grid>_<cell>.png.
+fn writeZonePng(init: std.process.Init, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32, cell: u32, png: []const u8) !void {
+    var pb: [1024]u8 = undefined;
+    const dir = try std.fmt.bufPrint(&pb, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
+    try std.Io.Dir.createDirPath(.cwd(), init.io, dir);
+    var pb2: [1100]u8 = undefined;
+    const path = if (grid <= 1)
+        try std.fmt.bufPrint(&pb2, "{s}/terrain.png", .{dir})
+    else
+        try std.fmt.bufPrint(&pb2, "{s}/terrain_{d}_{d}.png", .{ dir, grid, cell });
+    const file = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
+    defer file.close(init.io);
+    try file.writePositionalAll(init.io, png, 0);
+    std.debug.print("   wrote {s} ({d} bytes)\n", .{ path, png.len });
+}
+
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena.deinit();
@@ -104,6 +178,8 @@ pub fn main(init: std.process.Init) !void {
 
     // Optional radius override (required for asteroid fields — they carry no z.r).
     const radius_override: ?f64 = if (getStr(args, "--radius")) |rs| try std.fmt.parseFloat(f64, rs) else null;
+    // Optional N×N tiling. Default 1 = whole disk in one dispatch → terrain.png.
+    const grid: i32 = if (getStr(args, "--surface-grid")) |gs| try std.fmt.parseInt(i32, gs, 10) else 1;
 
     // ── Find the zone in the jsonl → zone_seed, radius, type, has_water ──────
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
@@ -148,24 +224,25 @@ pub fn main(init: std.process.Init) !void {
     const R: u32 = @intFromFloat(radius);
     const W: u32 = R * 2;
     const H: u32 = R * 2;
-    const n = W * H;
 
     // ── Asteroid field: se-space / se-asteroid argmax (separate kernel) ──────
     if (is_field) {
-        std.debug.print("# gpu_segen: {s} seed {d} r {d} ASTEROID-FIELD → {d}x{d}\n", .{ zone_name, zone_seed, R, W, H });
-        try renderAsteroidField(a, init, zone_seed, radius, out_dir, world_seed, zone_name);
+        std.debug.print("# gpu_segen: {s} seed {d} r {d} ASTEROID-FIELD grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, grid, W, H });
+        try renderAsteroidField(a, init, zone_seed, radius, out_dir, world_seed, zone_name, grid);
         return;
     }
 
-    std.debug.print("# gpu_segen: {s} seed {d} r {d} water {} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, W, H });
+    std.debug.print("# gpu_segen: {s} seed {d} r {d} water {} grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, grid, W, H });
 
     // ── Build params (mirrors segen's per-zone ZoneTerrain/Elevation config) ─
+    // origin/width/height are placeholders here — renderTerrain overrides them
+    // per cell; the rest are geometry-independent.
     const water_freq: f64 = 1.0;
     const water_size: f64 = if (has_water) 1.5 else 1.0;
     const fm: f64 = 5000.0 / radius; // universe.zoneFrequencyMultiplier
     const nsm: f64 = 1.5 * water_freq;
     const os_pers = (1.0 - 0.7) / std.math.pow(f64, 2.0, 5.0) / (1.0 - std.math.pow(f64, 0.7, 5.0)) * 0.5;
-    const params = Params{
+    const base = Params{
         .origin_x = -@as(f32, @floatFromInt(R)),
         .origin_y = -@as(f32, @floatFromInt(R)),
         .nsm = @floatCast(nsm),
@@ -197,40 +274,11 @@ pub fn main(init: std.process.Init) !void {
         .has_water = if (has_water) 1 else 0,
     };
 
-    const indices = try renderZone(a, zone_seed, params, n);
-
-    // ── Compose PNG: disk mask (grey 20) + idx→colour + vertical flip ───────
-    const rgb = try a.alloc(u8, n * 3);
-    const bg = [3]u8{ 20, 20, 20 };
-    const rr = radius * radius;
-    for (0..H) |out_y| {
-        const src_y = H - 1 - out_y; // segen writes cells vertically flipped
-        const fy: f64 = -radius + @as(f64, @floatFromInt(src_y));
-        for (0..W) |x| {
-            const fx: f64 = -radius + @as(f64, @floatFromInt(x));
-            const col = if (fx * fx + fy * fy > rr) bg else biome.idxColor(@intCast(indices[src_y * W + x]));
-            const o = (out_y * W + x) * 3;
-            rgb[o] = col[0];
-            rgb[o + 1] = col[1];
-            rgb[o + 2] = col[2];
-        }
-    }
-    const png = try surfgen.png.encode(a, W, H, rgb);
-
-    // ── Write <out>/seed_<world>/<zone>/terrain.png ─────────────────────────
-    var pb: [1024]u8 = undefined;
-    const dir = try std.fmt.bufPrint(&pb, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
-    try std.Io.Dir.createDirPath(.cwd(), init.io, dir);
-    var pb2: [1100]u8 = undefined;
-    const path = try std.fmt.bufPrint(&pb2, "{s}/terrain.png", .{dir});
-    const file = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
-    defer file.close(init.io);
-    try file.writePositionalAll(init.io, png, 0);
-    std.debug.print("   wrote {s} ({d}x{d})\n", .{ path, W, H });
+    try renderTerrain(a, init, zone_seed, base, radius, out_dir, world_seed, zone_name, grid);
 }
 
 fn err(msg: []const u8) error{Usage} {
-    std.debug.print("gpu_segen error: {s}\n  usage: gpu_segen --zones <jsonl> --world-seed N --zone <name> --out <dir>\n", .{msg});
+    std.debug.print("gpu_segen error: {s}\n  usage: gpu_segen --zones <jsonl> --world-seed N --zone <name> --out <dir> [--radius R] [--surface-grid N]\n", .{msg});
     return error.Usage;
 }
 
@@ -244,9 +292,10 @@ fn packGen(gi: usize, g: noise.BasisNoiseGen, p1: []u32, p2: []u32, gr: []f32, s
     }
 }
 
-/// Pack the 192 generators + biome table for map_seed, dispatch render.wgsl, and
-/// return the per-tile winning tile index.
-fn renderZone(a: std.mem.Allocator, map_seed: u32, params: Params, n: u32) ![]u32 {
+/// Pack the 192 generators + biome table for map_seed once, build the GPU
+/// context + pipeline once, then render each disk cell (render.wgsl) and write
+/// its PNG. grid<=1 → a single whole-disk cell → terrain.png.
+fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, base: Params, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32) !void {
     const nb = biome.biomes.len;
     const perm1 = try a.alloc(u32, NGEN * 256);
     const perm2 = try a.alloc(u32, NGEN * 256);
@@ -294,57 +343,101 @@ fn renderZone(a: std.mem.Allocator, map_seed: u32, params: Params, n: u32) ![]u3
     const pipeline = try ctx.computePipeline(render_wgsl, "main");
     defer c.wgpuComputePipelineRelease(pipeline);
 
-    const buf_params = ctx.uploadBuffer(Params, &.{params}, c.WGPUBufferUsage_Uniform);
+    // Static per-map_seed buffers — uploaded once, reused for every cell.
     const buf_perm1 = ctx.uploadBuffer(u32, perm1, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_perm1);
     const buf_perm2 = ctx.uploadBuffer(u32, perm2, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_perm2);
     const buf_grad = ctx.uploadBuffer(f32, grad, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_grad);
     const buf_sb = ctx.uploadBuffer(u32, seed_bytes, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_sb);
     const buf_table = ctx.uploadBuffer(BiomeGPU, table, c.WGPUBufferUsage_Storage);
-    const out_bytes: u64 = @as(u64, n) * @sizeOf(u32);
-    const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
-    const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+    defer c.wgpuBufferRelease(buf_table);
 
     const bgl = c.wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
     defer c.wgpuBindGroupLayoutRelease(bgl);
-    var entries = [_]c.WGPUBindGroupEntry{
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = buf_params, .size = @sizeOf(Params) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = buf_perm1, .size = perm1.len * @sizeOf(u32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = buf_perm2, .size = perm2.len * @sizeOf(u32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = buf_grad, .size = grad.len * @sizeOf(f32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_sb, .size = seed_bytes.len * @sizeOf(u32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = buf_table, .size = table.len * @sizeOf(BiomeGPU) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_out, .size = out_bytes }),
-    };
-    var bg_desc = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = &entries });
-    const bind_group = c.wgpuDeviceCreateBindGroup(ctx.device, &bg_desc);
-    defer c.wgpuBindGroupRelease(bind_group);
 
-    const encoder = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
-    var pass_desc = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
-    const pass = c.wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-    c.wgpuComputePassEncoderSetPipeline(pass, pipeline);
-    c.wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, null);
-    c.wgpuComputePassEncoderDispatchWorkgroups(pass, (params.width + 7) / 8, (params.height + 7) / 8, 1);
-    c.wgpuComputePassEncoderEnd(pass);
-    c.wgpuComputePassEncoderRelease(pass);
-    c.wgpuCommandEncoderCopyBufferToBuffer(encoder, buf_out, 0, staging, 0, out_bytes);
-    const cmd = c.wgpuCommandEncoderFinish(encoder, null);
-    c.wgpuCommandEncoderRelease(encoder);
-    c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
-    c.wgpuCommandBufferRelease(cmd);
+    const R: i32 = @intFromFloat(radius);
+    const rr = radius * radius;
+    const bg = [3]u8{ 20, 20, 20 };
+    const cells = try cellList(a, R, radius, grid);
+    std.debug.print("   {d} cell(s) to render (grid {d})\n", .{ cells.len, grid });
 
-    const indices = try a.alloc(u32, n);
-    try ctx.readBuffer(staging, u32, indices);
-    return indices;
+    for (cells) |cl| {
+        // Per-cell CPU scratch (indices/rgb/png) freed each iteration.
+        var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+        defer cellArena.deinit();
+        const ca = cellArena.allocator();
+
+        var params = base;
+        params.origin_x = @floatFromInt(cl.x0);
+        params.origin_y = @floatFromInt(cl.y0);
+        params.width = cl.cw;
+        params.height = cl.ch;
+        const npx: u32 = cl.cw * cl.ch;
+        const out_bytes: u64 = @as(u64, npx) * @sizeOf(u32);
+
+        const buf_params = ctx.uploadBuffer(Params, &.{params}, c.WGPUBufferUsage_Uniform);
+        defer c.wgpuBufferRelease(buf_params);
+        const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+        defer c.wgpuBufferRelease(buf_out);
+        const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+        defer c.wgpuBufferRelease(staging);
+
+        var entries = [_]c.WGPUBindGroupEntry{
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = buf_params, .size = @sizeOf(Params) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = buf_perm1, .size = perm1.len * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = buf_perm2, .size = perm2.len * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = buf_grad, .size = grad.len * @sizeOf(f32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_sb, .size = seed_bytes.len * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = buf_table, .size = table.len * @sizeOf(BiomeGPU) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_out, .size = out_bytes }),
+        };
+        var bg_desc = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = &entries });
+        const bind_group = c.wgpuDeviceCreateBindGroup(ctx.device, &bg_desc);
+        defer c.wgpuBindGroupRelease(bind_group);
+
+        const encoder = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
+        var pass_desc = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
+        const pass = c.wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        c.wgpuComputePassEncoderSetPipeline(pass, pipeline);
+        c.wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, null);
+        c.wgpuComputePassEncoderDispatchWorkgroups(pass, (cl.cw + 7) / 8, (cl.ch + 7) / 8, 1);
+        c.wgpuComputePassEncoderEnd(pass);
+        c.wgpuComputePassEncoderRelease(pass);
+        c.wgpuCommandEncoderCopyBufferToBuffer(encoder, buf_out, 0, staging, 0, out_bytes);
+        const cmd = c.wgpuCommandEncoderFinish(encoder, null);
+        c.wgpuCommandEncoderRelease(encoder);
+        c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
+        c.wgpuCommandBufferRelease(cmd);
+
+        const indices = try ca.alloc(u32, npx);
+        try ctx.readBuffer(staging, u32, indices);
+
+        // Compose cell PNG: disk mask (grey 20) + idx→colour + vertical flip
+        // (segen writes cells vertically flipped within the cell).
+        const rgb = try ca.alloc(u8, npx * 3);
+        for (0..cl.ch) |out_y| {
+            const src_y = cl.ch - 1 - out_y;
+            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(src_y));
+            for (0..cl.cw) |x| {
+                const fx: f64 = @as(f64, @floatFromInt(cl.x0)) + @as(f64, @floatFromInt(x));
+                const col = if (fx * fx + fy * fy > rr) bg else biome.idxColor(@intCast(indices[src_y * cl.cw + x]));
+                const o = (out_y * cl.cw + x) * 3;
+                rgb[o] = col[0];
+                rgb[o + 1] = col[1];
+                rgb[o + 2] = col[2];
+            }
+        }
+        const png = try surfgen.png.encode(ca, cl.cw, cl.ch, rgb);
+        try writeZonePng(init, out_dir, world_seed, zone_name, grid, cl.cell, png);
+    }
 }
 
-/// Render an asteroid field (se-space / se-asteroid) via asteroid.wgsl and write
-/// <out>/seed_<world>/<zone>/terrain.png (segen orientation: vertical flip).
-fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8) !void {
-    const R: u32 = @intFromFloat(radius);
-    const W: u32 = R * 2;
-    const H: u32 = R * 2;
-    const n = W * H;
+/// Render an asteroid field (se-space / se-asteroid) via asteroid.wgsl. Same
+/// setup-once + per-cell loop as renderTerrain. grid<=1 → terrain.png.
+fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32) !void {
     const size: f64 = surfgen.asteroid.FIELD_SIZE;
     const freq: f64 = surfgen.asteroid.FIELD_FREQ;
     const planet_radius = 10000.0 / 6.0 * (6.0 + std.math.log2(1.0 / freq / 6.0));
@@ -360,91 +453,101 @@ fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u
         grad[2 * i + 1] = g.grad[i][1];
     }
 
-    const params = AsteroidParams{
-        .origin_x = -@as(f32, @floatFromInt(R)),
-        .origin_y = -@as(f32, @floatFromInt(R)),
-        .size = @floatCast(size),
-        .freq = @floatCast(freq),
-        .planet_radius = @floatCast(planet_radius),
-        .width = W,
-        .height = H,
-        .seed_byte = g.seed_byte,
-    };
-
     var ctx = try wgpu.Context.init();
     defer ctx.deinit();
     const pipeline = try ctx.computePipeline(asteroid_wgsl, "main");
     defer c.wgpuComputePipelineRelease(pipeline);
 
-    const buf_params = ctx.uploadBuffer(AsteroidParams, &.{params}, c.WGPUBufferUsage_Uniform);
     const buf_perm1 = ctx.uploadBuffer(u32, perm1, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_perm1);
     const buf_perm2 = ctx.uploadBuffer(u32, perm2, c.WGPUBufferUsage_Storage);
+    defer c.wgpuBufferRelease(buf_perm2);
     const buf_grad = ctx.uploadBuffer(f32, grad, c.WGPUBufferUsage_Storage);
-    const out_bytes: u64 = @as(u64, n) * @sizeOf(u32);
-    const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
-    const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+    defer c.wgpuBufferRelease(buf_grad);
 
     const bgl = c.wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
     defer c.wgpuBindGroupLayoutRelease(bgl);
-    var entries = [_]c.WGPUBindGroupEntry{
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = buf_params, .size = @sizeOf(AsteroidParams) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = buf_perm1, .size = perm1.len * @sizeOf(u32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = buf_perm2, .size = perm2.len * @sizeOf(u32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = buf_grad, .size = grad.len * @sizeOf(f32) }),
-        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_out, .size = out_bytes }),
-    };
-    var bg_desc = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = &entries });
-    const bind_group = c.wgpuDeviceCreateBindGroup(ctx.device, &bg_desc);
-    defer c.wgpuBindGroupRelease(bind_group);
 
-    const encoder = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
-    var pass_desc = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
-    const pass = c.wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
-    c.wgpuComputePassEncoderSetPipeline(pass, pipeline);
-    c.wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, null);
-    c.wgpuComputePassEncoderDispatchWorkgroups(pass, (W + 7) / 8, (H + 7) / 8, 1);
-    c.wgpuComputePassEncoderEnd(pass);
-    c.wgpuComputePassEncoderRelease(pass);
-    c.wgpuCommandEncoderCopyBufferToBuffer(encoder, buf_out, 0, staging, 0, out_bytes);
-    const cmd = c.wgpuCommandEncoderFinish(encoder, null);
-    c.wgpuCommandEncoderRelease(encoder);
-    c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
-    c.wgpuCommandBufferRelease(cmd);
-
-    const indices = try a.alloc(u32, n);
-    try ctx.readBuffer(staging, u32, indices);
-
-    // Compose PNG: 0=space, 1=asteroid, 2=out-of-map; disk mask + vertical flip.
     const space = surfgen.asteroid.SPACE_COLOR;
     const ast = surfgen.asteroid.ASTEROID_COLOR;
     const bg = [3]u8{ 20, 20, 20 };
-    const rgb = try a.alloc(u8, n * 3);
+    const R: i32 = @intFromFloat(radius);
     const rr = radius * radius;
-    for (0..H) |out_y| {
-        const src_y = H - 1 - out_y;
-        const fy: f64 = -radius + @as(f64, @floatFromInt(src_y));
-        for (0..W) |x| {
-            const fx: f64 = -radius + @as(f64, @floatFromInt(x));
-            const col = if (fx * fx + fy * fy > rr) bg else switch (indices[src_y * W + x]) {
-                1 => ast,
-                2 => bg,
-                else => space,
-            };
-            const o = (out_y * W + x) * 3;
-            rgb[o] = col[0];
-            rgb[o + 1] = col[1];
-            rgb[o + 2] = col[2];
-        }
-    }
-    const png = try surfgen.png.encode(a, W, H, rgb);
+    const cells = try cellList(a, R, radius, grid);
+    std.debug.print("   {d} field cell(s) to render (grid {d})\n", .{ cells.len, grid });
 
-    var pb: [1024]u8 = undefined;
-    const dir = try std.fmt.bufPrint(&pb, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
-    try std.Io.Dir.createDirPath(.cwd(), init.io, dir);
-    var pb2: [1100]u8 = undefined;
-    const path = try std.fmt.bufPrint(&pb2, "{s}/terrain.png", .{dir});
-    const file = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
-    defer file.close(init.io);
-    try file.writePositionalAll(init.io, png, 0);
-    std.debug.print("   wrote {s} ({d}x{d})\n", .{ path, W, H });
+    for (cells) |cl| {
+        var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+        defer cellArena.deinit();
+        const ca = cellArena.allocator();
+
+        const params = AsteroidParams{
+            .origin_x = @floatFromInt(cl.x0),
+            .origin_y = @floatFromInt(cl.y0),
+            .size = @floatCast(size),
+            .freq = @floatCast(freq),
+            .planet_radius = @floatCast(planet_radius),
+            .width = cl.cw,
+            .height = cl.ch,
+            .seed_byte = g.seed_byte,
+        };
+        const npx: u32 = cl.cw * cl.ch;
+        const out_bytes: u64 = @as(u64, npx) * @sizeOf(u32);
+
+        const buf_params = ctx.uploadBuffer(AsteroidParams, &.{params}, c.WGPUBufferUsage_Uniform);
+        defer c.wgpuBufferRelease(buf_params);
+        const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+        defer c.wgpuBufferRelease(buf_out);
+        const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+        defer c.wgpuBufferRelease(staging);
+
+        var entries = [_]c.WGPUBindGroupEntry{
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = buf_params, .size = @sizeOf(AsteroidParams) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = buf_perm1, .size = perm1.len * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = buf_perm2, .size = perm2.len * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = buf_grad, .size = grad.len * @sizeOf(f32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_out, .size = out_bytes }),
+        };
+        var bg_desc = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = &entries });
+        const bind_group = c.wgpuDeviceCreateBindGroup(ctx.device, &bg_desc);
+        defer c.wgpuBindGroupRelease(bind_group);
+
+        const encoder = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
+        var pass_desc = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
+        const pass = c.wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+        c.wgpuComputePassEncoderSetPipeline(pass, pipeline);
+        c.wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, null);
+        c.wgpuComputePassEncoderDispatchWorkgroups(pass, (cl.cw + 7) / 8, (cl.ch + 7) / 8, 1);
+        c.wgpuComputePassEncoderEnd(pass);
+        c.wgpuComputePassEncoderRelease(pass);
+        c.wgpuCommandEncoderCopyBufferToBuffer(encoder, buf_out, 0, staging, 0, out_bytes);
+        const cmd = c.wgpuCommandEncoderFinish(encoder, null);
+        c.wgpuCommandEncoderRelease(encoder);
+        c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
+        c.wgpuCommandBufferRelease(cmd);
+
+        const indices = try ca.alloc(u32, npx);
+        try ctx.readBuffer(staging, u32, indices);
+
+        // 0=space, 1=asteroid, 2=out-of-map; disk mask + vertical flip.
+        const rgb = try ca.alloc(u8, npx * 3);
+        for (0..cl.ch) |out_y| {
+            const src_y = cl.ch - 1 - out_y;
+            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(src_y));
+            for (0..cl.cw) |x| {
+                const fx: f64 = @as(f64, @floatFromInt(cl.x0)) + @as(f64, @floatFromInt(x));
+                const col = if (fx * fx + fy * fy > rr) bg else switch (indices[src_y * cl.cw + x]) {
+                    1 => ast,
+                    2 => bg,
+                    else => space,
+                };
+                const o = (out_y * cl.cw + x) * 3;
+                rgb[o] = col[0];
+                rgb[o + 1] = col[1];
+                rgb[o + 2] = col[2];
+            }
+        }
+        const png = try surfgen.png.encode(ca, cl.cw, cl.ch, rgb);
+        try writeZonePng(init, out_dir, world_seed, zone_name, grid, cl.cell, png);
+    }
 }

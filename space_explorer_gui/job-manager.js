@@ -717,7 +717,17 @@ function runSurfaceJob(job) {
       // job.radius is already capped to the max-radius setting; pass it so
       // gpu_segen renders the inner disk (required for asteroid fields, which
       // carry no radius, and caps big planets/moons).
-      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius)];
+      // Tile the disk like the CPU path: gpu_segen renders each cell in ONE
+      // process (context/pipeline/generators built once) and writes
+      // terrain_<n>_<cell>.png center-outward, so the GUI fills cells in as they
+      // land. n<=1 (small zones) → a single whole-disk terrain.png.
+      const gpuN = surfaceGridFor(job.radius);
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--surface-grid", String(gpuN)];
+      if (gpuN > 1) {
+        // Drop any stale whole-disk image so buildSurfaceGrid shows the
+        // progressive cell grid instead of a full picture from a prior run.
+        try { fs.unlinkSync(path.join(sDir, job.zone_name, "terrain.png")); } catch (_) {}
+      }
     } else {
       // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
       // draw a layer (terrain biome+water, oremap ore-on-black, or combined).
@@ -771,6 +781,21 @@ function runSurfaceJob(job) {
       // directly (zigimg); the browser composes tiled cells via CSS (no stitcher,
       // no BMP→PNG python). For a whole render png_file points at the single
       // image; for tiled cells png_file stays null and the CSS grid composes them.
+      // A GPU render is one process that tiles internally (grid = surfaceGridFor):
+      // for grid>1 it writes terrain_<grid>_<cell>.png per cell (no whole image),
+      // so success = every disk-intersecting cell landed. grid<=1 → terrain.png.
+      if (useGpu) {
+        const gpuN = surfaceGridFor(job.radius);
+        if (gpuN > 1) {
+          const expected = planSurfaceCells(job.radius, gpuN).length;
+          const got = fs.readdirSync(zDir).filter(f => f.startsWith(`${prefix}_${gpuN}_`) && f.endsWith(".png")).length;
+          if (got < expected) return fail(`gpu ${prefix}: ${got}/${expected} cells (${stderr.slice(-200)})`);
+          db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: null, finished_at: new Date().toISOString() });
+          db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (gpu ${got} cells)`);
+          return resolve();
+        }
+      }
+
       const pngFile = isCell
         ? path.join(zDir, `${prefix}_${job.grid_n}_${job.grid_cell}.png`)
         : path.join(zDir, `${prefix}.png`);

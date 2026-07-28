@@ -225,9 +225,12 @@ function renderZoneCtl(bucket, seed, zone, which) {
     // Only terrain (or the legacy combined render) counts as "surface generated".
     const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
       || zoneSurfacePng(bucket, seed, zone.name, "surface");
+    // "generated" = a whole terrain.png exists OR every surface job finished
+    // (tiled renders — CPU cells or GPU cells — write no whole image, so fall
+    // back to the done-job count now that nothing is active).
     inner = activeNow
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
-      : surfPng
+      : (surfPng || surfDone > 0)
         ? ""
         // One surface button for every zone type. gpu_segen is the surface
         // compute path now (same terrain.png output as the CPU oracle, ~80x
@@ -657,7 +660,7 @@ function buildSurfaceGrid(seed, zoneId) {
   const allJobs = db.getSurfaceJobsForZone(zoneId);
   const grp = (k) => allJobs.filter(j => j.kind === k);
   const active = (k) => grp(k).some(j => j.status === "queued" || j.status === "running");
-  const anyActive = active("terrain") || active("oremap") || active("surface") || active("ore");
+  const anyActive = active("terrain") || active("gputerrain") || active("oremap") || active("surface") || active("ore");
   const poll = anyActive ? `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML" hx-sync="#main:drop"` : "";
 
   const terrainFull = cp(1, 0, "terrain");   // stitched (n>1) or whole (n<=1)
@@ -697,8 +700,8 @@ function buildSurfaceGrid(seed, zoneId) {
   }
 
   // status head: per-layer done counts
-  const cnt = (k) => { const g = grp(k); return { done: g.filter(j => j.status === "done").length, tot: g.length, fail: g.filter(j => j.status === "failed").length }; };
-  const t = cnt("terrain"), o = cnt("oremap"), s = cnt("surface");
+  const cnt = (...ks) => { const g = ks.flatMap(grp); return { done: g.filter(j => j.status === "done").length, tot: g.length, fail: g.filter(j => j.status === "failed").length }; };
+  const t = cnt("terrain", "gputerrain"), o = cnt("oremap"), s = cnt("surface");
   const line = (label, c) => c.tot ? `${label} <span class="gen-status ${c.done + c.fail >= c.tot ? "" : "running"}">${c.fail ? "⚠️" : (c.done >= c.tot ? "✅" : "⏳")} ${c.done}/${c.tot}</span>` : "";
   const head = [line("terrain", t), line("ore", o), line("surface", s)].filter(Boolean).join(" · ") +
     (terrainFull ? ` <a class="btn-sm" href="${terrainFull}" target="_blank" title="terrain">⤢</a>` : "");
