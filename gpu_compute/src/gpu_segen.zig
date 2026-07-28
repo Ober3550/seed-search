@@ -100,6 +100,51 @@ fn getStr(args: []const [:0]const u8, flag: []const u8) ?[]const u8 {
     return null;
 }
 
+// ── SE per-zone control settings (Universe.control_settings_from_tag, verified
+// against the live game: e.g. Grishord temperature=midrange → cold/hot size 0.65,
+// moisture=max → freq 2 bias 0.5, aux=very_high → bias 0.5). The zone's qualitative
+// labels (z.temperature/z.moisture/z.aux) select these; without them our biomes
+// swing to hot/cold extremes. cold/hot frequency is × the zone frequency
+// multiplier (fm); moisture/aux frequency is the raw control multiplier.
+const ColdHot = struct { cold_f: f64, cold_s: f64, hot_f: f64, hot_s: f64 };
+fn tempControl(label: []const u8) ColdHot {
+    const eq = std.mem.eql;
+    if (eq(u8, label, "bland")) return .{ .cold_f = 0.5, .cold_s = 0, .hot_f = 0.5, .hot_s = 0 };
+    if (eq(u8, label, "temperate")) return .{ .cold_f = 1, .cold_s = 0.25, .hot_f = 1, .hot_s = 0.25 };
+    if (eq(u8, label, "midrange")) return .{ .cold_f = 1, .cold_s = 0.65, .hot_f = 1, .hot_s = 0.65 };
+    if (eq(u8, label, "balanced")) return .{ .cold_f = 1, .cold_s = 1, .hot_f = 1, .hot_s = 1 };
+    if (eq(u8, label, "wild")) return .{ .cold_f = 1, .cold_s = 3, .hot_f = 1, .hot_s = 3 };
+    if (eq(u8, label, "extreme")) return .{ .cold_f = 1, .cold_s = 6, .hot_f = 1, .hot_s = 6 };
+    if (eq(u8, label, "cool")) return .{ .cold_f = 0.75, .cold_s = 0.5, .hot_f = 0.75, .hot_s = 0 };
+    if (eq(u8, label, "cold")) return .{ .cold_f = 0.75, .cold_s = 1, .hot_f = 0.75, .hot_s = 0 };
+    if (eq(u8, label, "vcold")) return .{ .cold_f = 0.75, .cold_s = 2.2, .hot_f = 0.75, .hot_s = 0 };
+    if (eq(u8, label, "frozen")) return .{ .cold_f = 0.75, .cold_s = 6, .hot_f = 0.75, .hot_s = 0 };
+    if (eq(u8, label, "warm")) return .{ .cold_f = 0.75, .cold_s = 0, .hot_f = 0.75, .hot_s = 0.5 };
+    if (eq(u8, label, "hot")) return .{ .cold_f = 0.75, .cold_s = 0, .hot_f = 0.75, .hot_s = 1 };
+    if (eq(u8, label, "vhot")) return .{ .cold_f = 0.75, .cold_s = 0, .hot_f = 0.75, .hot_s = 2.2 };
+    if (eq(u8, label, "volcanic")) return .{ .cold_f = 0.75, .cold_s = 0, .hot_f = 0.75, .hot_s = 6 };
+    return .{ .cold_f = 1, .cold_s = 0.65, .hot_f = 1, .hot_s = 0.65 }; // default midrange
+}
+const FreqBias = struct { f: f64, bias: f64 };
+fn moistControl(label: []const u8) FreqBias {
+    const eq = std.mem.eql;
+    if (eq(u8, label, "none")) return .{ .f = 2, .bias = -1 };
+    if (eq(u8, label, "low")) return .{ .f = 1, .bias = -0.15 };
+    if (eq(u8, label, "med")) return .{ .f = 1, .bias = 0 };
+    if (eq(u8, label, "high")) return .{ .f = 1, .bias = 0.15 };
+    if (eq(u8, label, "max")) return .{ .f = 2, .bias = 0.5 };
+    return .{ .f = 1, .bias = 0 }; // default med
+}
+fn auxControl(label: []const u8) FreqBias {
+    const eq = std.mem.eql;
+    if (eq(u8, label, "very_low")) return .{ .f = 1, .bias = -0.5 };
+    if (eq(u8, label, "low")) return .{ .f = 1, .bias = -0.3 };
+    if (eq(u8, label, "med")) return .{ .f = 1, .bias = -0.1 };
+    if (eq(u8, label, "high")) return .{ .f = 1, .bias = 0.2 };
+    if (eq(u8, label, "very_high")) return .{ .f = 1, .bias = 0.5 };
+    return .{ .f = 1, .bias = -0.1 }; // default med
+}
+
 // ── Cell layout (mirrors segen se_main + the GUI's planSurfaceCells) ─────────
 // One rectangle of the N×N grid over [-R,R]² that intersects the disk. Cells
 // fully outside are dropped; the rest are ordered center-outward (by centre
@@ -188,6 +233,11 @@ pub fn main(init: std.process.Init) !void {
     var has_water = false;
     var is_field = false;
     var found = false;
+    // Per-zone control labels (SE tags without the property prefix). Defaults
+    // reproduce the previous behaviour if a zone omits them.
+    var temp_label: []const u8 = "midrange";
+    var moist_label: []const u8 = "med";
+    var aux_label: []const u8 = "med";
     var it = std.mem.tokenizeScalar(u8, raw, '\n');
     outer: while (it.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \r\t");
@@ -213,6 +263,15 @@ pub fn main(init: std.process.Init) !void {
             if (z.object.get("water")) |w| {
                 has_water = (w == .string) and !std.mem.eql(u8, w.string, "none");
             }
+            if (z.object.get("temperature")) |v| if (v == .string) {
+                temp_label = try a.dupe(u8, v.string);
+            };
+            if (z.object.get("moisture")) |v| if (v == .string) {
+                moist_label = try a.dupe(u8, v.string);
+            };
+            if (z.object.get("aux")) |v| if (v == .string) {
+                aux_label = try a.dupe(u8, v.string);
+            };
             found = true;
             break :outer;
         }
@@ -241,6 +300,11 @@ pub fn main(init: std.process.Init) !void {
     const water_size: f64 = if (has_water) 1.5 else 1.0;
     const fm: f64 = 5000.0 / radius; // universe.zoneFrequencyMultiplier
     const nsm: f64 = 1.5 * water_freq;
+    // Per-zone temperature/moisture/aux controls from the SE tag tables.
+    const temp = tempControl(temp_label);
+    const moist = moistControl(moist_label);
+    const aux = auxControl(aux_label);
+    std.debug.print("   controls: temp={s}(cold s{d} f{d}, hot s{d} f{d}) moist={s}(f{d} b{d}) aux={s}(b{d})\n", .{ temp_label, temp.cold_s, temp.cold_f, temp.hot_s, temp.hot_f, moist_label, moist.f, moist.bias, aux_label, aux.bias });
     const os_pers = (1.0 - 0.7) / std.math.pow(f64, 2.0, 5.0) / (1.0 - std.math.pow(f64, 0.7, 5.0)) * 0.5;
     const base = Params{
         .origin_x = -@as(f32, @floatFromInt(R)),
@@ -260,10 +324,19 @@ pub fn main(init: std.process.Init) !void {
         .is_pers = @floatCast(nsm / 2.0),
         .os_pers = @floatCast(os_pers),
         .offx_pers = @floatCast(10000.0 / nsm),
-        .cold_size = 6.0,
-        .hot_size = 6.0,
-        .cold_freq = @floatCast(fm),
-        .hot_freq = @floatCast(fm),
+        // Temperature: per-zone cold/hot size + frequency from the SE tag table
+        // (verified vs the game). This alone lifted Grishord from 31.7%→54.4%.
+        .cold_size = @floatCast(temp.cold_s),
+        .hot_size = @floatCast(temp.hot_s),
+        .cold_freq = @floatCast(temp.cold_f * fm),
+        .hot_freq = @floatCast(temp.hot_f * fm),
+        // Moisture/aux: LEFT AT DEFAULTS. The SE control tags carry per-zone
+        // moisture/aux frequency+bias (Grishord: max→f2/b0.5, very_high→b0.5),
+        // but our moisture()/aux() bias convention doesn't match alien-biomes —
+        // applying the real values REGRESSES accuracy (54%→12-40%). The game
+        // reports moisture ~0.5 at origin even for "max", so its bias is applied
+        // in biome selection, not as a property offset. Needs the alien-biomes
+        // moisture/aux expression traced before it can be enabled. [[terrain-ore-verification-1845418]]
         .moist_freq = 1.0,
         .moist_bias = 0.0,
         .aux_freq = 1.0,
