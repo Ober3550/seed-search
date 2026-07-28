@@ -1,0 +1,8 @@
+{
+  "name": "tile-dump",
+  "version": "1.0.0",
+  "title": "Tile Dump",
+  "author": "calibration",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0", "? space-exploration", "? alien-biomes"]
+}

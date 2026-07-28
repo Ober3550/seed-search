@@ -36,6 +36,8 @@ def main():
     ap.add_argument("map_seed", type=int)
     ap.add_argument("zone_name")
     ap.add_argument("--radius", type=int, default=300)
+    ap.add_argument("--square", action="store_true",
+                    help="dump the full 2*radius square (for asteroid fields/belts, which aren't disks)")
     ap.add_argument("-o", "--out", default=str(REPO / "calibration" / "mod-dump"))
     ap.add_argument("--factorio-bin", default=os.environ.get("FACTORIO_BIN", str(DEFAULT_BIN)))
     ap.add_argument("--rcon-port", type=int, default=int(os.environ.get("RCON_PORT", "27718")))
@@ -112,14 +114,15 @@ def main():
         row_pad = (4 - (size * 3) % 4) % 4
         expect = 54 + size * (size * 3 + row_pad)
 
-        log(f"Rendering /tile-bmp {args.zone_name} {args.radius} (generates chunks; slow)...")
+        shape = " square" if args.square else ""
+        log(f"Rendering /tile-bmp {args.zone_name} {args.radius}{shape} (generates chunks; slow)...")
         t0 = time.time()
         try:
             client._sock.settimeout(900)
         except Exception:
             pass
         try:
-            client.command(f"/tile-bmp {args.zone_name} {args.radius}")
+            client.command(f"/tile-bmp {args.zone_name} {args.radius}{shape}")
         except Exception as e:
             log(f"rcon return dropped (ignored): {type(e).__name__}")
         # Poll for the completed file (the mod writes it atomically at the end).
