@@ -229,11 +229,11 @@ function renderZoneCtl(bucket, seed, zone, which) {
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
       : surfPng
         ? ""
-        : (isField
-            // fields: GPU only (segen skips them)
-            ? `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="GPU asteroid-field render">⚡ gpu</button>`
-            : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`
-              + ` <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="fast GPU terrain preview (~80x)">⚡ gpu</button>`);
+        // One surface button for every zone type. gpu_segen is the surface
+        // compute path now (same terrain.png output as the CPU oracle, ~80x
+        // faster, and the only renderer for asteroid fields) — no separate
+        // GPU button.
+        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt}>🗺️ surface</button>`;
     if (!activeNow && !surfPng && failed(["terrain", "gputerrain"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   }
@@ -520,9 +520,9 @@ function renderSeedDetail(s, c, zones, filterId) {
           ⛏ Generate ore maps — selected zones
         </button>
         <button type="button" class="btn btn-secondary"
-          hx-post="/api/surface/batch?kind=terrain" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
+          hx-post="/api/surface/batch?kind=gputerrain" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
-          🗺️ Generate surfaces (terrain) — selected zones
+          🗺️ Generate surfaces — selected zones
         </button>
       </div>
       <table class="data-table" id="zone-table">
@@ -762,7 +762,7 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
         </label>
         <div class="preset-actions">
           <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore</button>
-          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🗺️ surface</button>
+          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🗺️ surface</button>
         </div>
       </aside>
       <div class="watch-grid-col">${g.grid}</div>
