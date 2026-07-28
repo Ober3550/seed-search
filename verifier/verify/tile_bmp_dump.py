@@ -118,7 +118,7 @@ def main():
         log(f"Rendering /tile-bmp {args.zone_name} {args.radius}{shape} (generates chunks; slow)...")
         t0 = time.time()
         try:
-            client._sock.settimeout(900)
+            client._sock.settimeout(1800)
         except Exception:
             pass
         try:
@@ -126,7 +126,7 @@ def main():
         except Exception as e:
             log(f"rcon return dropped (ignored): {type(e).__name__}")
         # Poll for the completed file (the mod writes it atomically at the end).
-        deadline = time.time() + 900
+        deadline = time.time() + 1800
         while time.time() < deadline:
             if bmp_out.exists() and bmp_out.stat().st_size == expect:
                 break

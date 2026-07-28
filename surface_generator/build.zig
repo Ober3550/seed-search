@@ -60,6 +60,23 @@ pub fn build(b: *std.Build) void {
     se_run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| se_run_cmd.addArgs(args);
 
+    // Asteroid-field surface renderer (CPU ground-truth check).
+    const ast_exe = b.addExecutable(.{
+        .name = "asteroid_render",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/asteroid_render.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "surface_generator", .module = mod }},
+        }),
+    });
+    b.installArtifact(ast_exe);
+    const ast_step = b.step("asteroid", "Render an asteroid field: -- --map-seed N --radius R --out p.png");
+    const ast_cmd = b.addRunArtifact(ast_exe);
+    ast_step.dependOn(&ast_cmd.step);
+    ast_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| ast_cmd.addArgs(args);
+
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
