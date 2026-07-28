@@ -144,4 +144,23 @@ pub fn build(b: *std.Build) void {
     const bio_cmd = b.addRunArtifact(bio);
     bio_step.dependOn(&bio_cmd.step);
     bio_cmd.step.dependOn(b.getInstallStep());
+
+    // Chained end-to-end render + benchmark (elevation+tma+classify in one dispatch).
+    const rnd = b.addExecutable(.{
+        .name = "render",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/render.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(rnd, b, inc, lib);
+    b.installArtifact(rnd);
+
+    const rnd_step = b.step("render", "Chained GPU terrain render + CPU/GPU benchmark");
+    const rnd_cmd = b.addRunArtifact(rnd);
+    rnd_step.dependOn(&rnd_cmd.step);
+    rnd_cmd.step.dependOn(b.getInstallStep());
 }

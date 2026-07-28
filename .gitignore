@@ -52,3 +52,4 @@ calibration/vanilla-sweep/mods-empty/mod-list.json
 gpu_compute/vendor/
 gpu_compute/.zig-cache/
 gpu_compute/zig-out/
+gpu_compute/render-out.*

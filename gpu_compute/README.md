@@ -5,17 +5,21 @@ Compute-shader path for terrain generation. One WGSL kernel runs on **Metal**
 [wgpu-native](https://github.com/gfx-rs/wgpu-native), so we don't rewrite the
 kernel per platform. See the `gpu-webgpu-direction` project memory for the why.
 
-## Status: Phase 2 (full elevation + water threshold on GPU)
-The complete `Elevation.at` composition runs on the GPU. Water-mask agreement
-vs the CPU oracle is 100.000% (1 shoreline tile of 262k, at elevation ~2e-4).
+## Status: Phase 3 complete — full terrain render on GPU (~18x vs 10-core CPU)
+The entire pipeline (elevation + temp/moisture/aux + biome classify) runs in one
+GPU dispatch. 1024² render: GPU 215 ms vs CPU 10-thread 3970 ms (**18.5x**) /
+1-thread 28.9 s (**134x**), with 99.997% biome agreement.
 
 ## Setup & run
 ```sh
 cd gpu_compute
-./fetch-wgpu.sh          # download the pinned wgpu-native prebuilt (gitignored)
-zig build run            # Phase 0: add-arrays toolchain proof
-zig build conformance    # Phase 1: CPU-vs-GPU multioctave noise diff
-zig build elevation      # Phase 2: full elevation + water-mask agreement
+./fetch-wgpu.sh                        # download the pinned wgpu-native prebuilt (gitignored)
+zig build run                         # Phase 0: add-arrays toolchain proof
+zig build conformance                 # Phase 1: CPU-vs-GPU multioctave noise diff
+zig build elevation                   # Phase 2: full elevation + water-mask agreement
+zig build tma                         # Phase 3a: temperature/moisture/aux diff
+zig build biome                       # Phase 3b: biome-index agreement (100%)
+zig build render -Doptimize=ReleaseFast   # chained render -> render-out.bmp + benchmark
 ```
 
 ## Layout
@@ -45,11 +49,13 @@ whatever `fetch-wgpu.sh` pulled. To bump: change `WGPU_VERSION` in
 - **Phase 2** ✅ full `Elevation.at` (nauvis_hills/plateaus/bridges/macro/detail
   via 7 single generators) + water threshold. Water-mask agreement 100.000%
   (1/262k shoreline tile). starting_lake skipped when `slake_n==0` (SE moons).
-- **Phase 3** — temp/moisture/aux (uses per-octave `quick_multioctave` → upload
-  N generator sets) + biome classify → biome-index buffer → render. Then
-  benchmark vs CPU `std.Thread.Pool` and wire in as the GUI "fast preview".
-  **CPU path stays the oracle** — the f64→f32 composition drift (~1e-4) means a
-  rare shoreline/biome-edge tile flips, so GPU is preview-only.
+- **Phase 3** ✅ temp/moisture/aux (per-octave `quick_multioctave`, 27 gens) +
+  biome classify (156 biomes + 4 water tiles, 158 gens, 100% index agreement in
+  isolation) + chained render (`render.wgsl`, 192 gens, one dispatch) + benchmark.
+- **Phase 4 (next)** — per-cell center-outward dispatch for progressive display,
+  and wire in as the GUI "fast preview" renderer. **CPU path stays the oracle**
+  — chained f64→f32 drift flips a handful of biome-edge tiles (~30/1M), so GPU
+  is preview-only.
 
 Tile correction is out of scope (see `biome-accuracy-ceiling` memory).
 ```

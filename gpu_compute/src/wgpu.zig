@@ -10,7 +10,23 @@ const std = @import("std");
 pub const c = @cImport({
     @cInclude("webgpu/webgpu.h");
     @cInclude("webgpu/wgpu.h");
+    @cInclude("time.h");
+    @cInclude("stdio.h");
 });
+
+/// Write bytes to a file via libc (std.fs moved behind the Io interface in 0.16).
+pub fn writeFileC(path: [*:0]const u8, data: []const u8) !void {
+    const f = c.fopen(path, "wb") orelse return error.OpenFailed;
+    defer _ = c.fclose(f);
+    if (c.fwrite(data.ptr, 1, data.len, f) != data.len) return error.WriteFailed;
+}
+
+/// Monotonic nanoseconds (std.time.Timer was removed in Zig 0.16; we link libc).
+pub fn nowNs() u64 {
+    var ts: c.struct_timespec = undefined;
+    _ = c.clock_gettime(c.CLOCK_MONOTONIC, &ts);
+    return @as(u64, @intCast(ts.tv_sec)) * 1_000_000_000 + @as(u64, @intCast(ts.tv_nsec));
+}
 
 /// A WGPUStringView over a Zig slice. WebGPU v29 takes strings as (ptr,len)
 /// pairs rather than NUL-terminated char*, so every label/entryPoint/code goes
