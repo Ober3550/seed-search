@@ -4,9 +4,13 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // zigimg for PNG encoding (src/png.zig).
+    const zigimg = b.dependency("zigimg", .{ .target = target, .optimize = optimize }).module("zigimg");
+
     const mod = b.addModule("surface_generator", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
+        .imports = &.{.{ .name = "zigimg", .module = zigimg }},
     });
 
     const exe = b.addExecutable(.{

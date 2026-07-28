@@ -31,12 +31,16 @@ pub fn build(b: *std.Build) void {
     const inc = b.fmt("vendor/{s}/include", .{triple});
     const lib = b.fmt("vendor/{s}/lib", .{triple});
 
+    // zigimg for PNG encoding (surface_generator/src/png.zig imports it).
+    const zigimg = b.dependency("zigimg", .{ .target = target, .optimize = optimize }).module("zigimg");
+
     // The CPU oracle: import surface_generator's root module (it re-exports
-    // noise, terrain, etc. as one module — importing noise.zig and terrain.zig
-    // as separate modules conflicts, since terrain.zig imports noise.zig).
+    // noise, terrain, png, etc. as one module — importing them as separate
+    // modules conflicts, since they cross-import relatively).
     const surfgen = b.addModule("surfgen", .{
         .root_source_file = b.path("../surface_generator/src/root.zig"),
         .target = target,
+        .imports = &.{.{ .name = "zigimg", .module = zigimg }},
     });
 
     // Links wgpu-native (dylib install_name is @rpath/..., so bake an rpath) onto

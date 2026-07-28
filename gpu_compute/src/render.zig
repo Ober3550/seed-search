@@ -67,7 +67,7 @@ const MAP_SEED: u32 = 0x1234567;
 const ORIGIN_X: f64 = 3000.0;
 const ORIGIN_Y: f64 = 3000.0;
 const NGEN = 192;
-const OUT_BMP = "render-out.bmp";
+const OUT_PNG: [*:0]const u8 = "render-out.png";
 
 const CFG = terrain.ZoneTerrain.Config{
     .map_seed = MAP_SEED,
@@ -299,8 +299,18 @@ pub fn main() !void {
     }
     const agree = 100.0 * @as(f64, @floatFromInt(n - mismatch)) / @as(f64, @floatFromInt(n));
 
-    // ── Write BMP from the GPU indices (self-contained 24-bit writer) ───────
-    try writeBmp24(alloc, OUT_BMP, W, H, gpu_idx);
+    // ── Write PNG from the GPU indices (zigimg encode + libc write) ─────────
+    const rgb = try alloc.alloc(u8, n * 3);
+    defer alloc.free(rgb);
+    for (0..n) |i| {
+        const col = biome.idxColor(@intCast(gpu_idx[i]));
+        rgb[3 * i] = col[0];
+        rgb[3 * i + 1] = col[1];
+        rgb[3 * i + 2] = col[2];
+    }
+    const png_bytes = try surfgen.png.encode(alloc, W, H, rgb);
+    defer alloc.free(png_bytes);
+    try wgpu.writeFileC(OUT_PNG, png_bytes);
 
     // ── Report ──────────────────────────────────────────────────────────────
     std.debug.print(
@@ -316,7 +326,7 @@ pub fn main() !void {
             cpuN_ms,                                      mtiles(n, cpuN_ms),            cpu1_ms / cpuN_ms,
             gpu_ms,                                       mtiles(n, gpu_ms),             cpu1_ms / gpu_ms,
             cpuN_ms / gpu_ms,                             agree,                         mismatch,
-            OUT_BMP,
+            OUT_PNG,
         },
     );
 }
@@ -325,36 +335,4 @@ fn mtiles(n: u32, ms: f64) f64 {
     return @as(f64, @floatFromInt(n)) / (ms / 1000.0) / 1e6;
 }
 
-// Minimal 24-bit BMP (BGR, bottom-up, 4-byte-padded rows). idx -> map colour.
-fn writeBmp24(alloc: std.mem.Allocator, path: [*:0]const u8, w: u32, h: u32, idx: []const u32) !void {
-    const row = ((w * 3 + 3) / 4) * 4;
-    const img = row * h;
-    const file_size = 54 + img;
-    const bytes = try alloc.alloc(u8, file_size);
-    defer alloc.free(bytes);
-    @memset(bytes, 0);
-    // BITMAPFILEHEADER
-    bytes[0] = 'B';
-    bytes[1] = 'M';
-    std.mem.writeInt(u32, bytes[2..6], file_size, .little);
-    std.mem.writeInt(u32, bytes[10..14], 54, .little);
-    // BITMAPINFOHEADER
-    std.mem.writeInt(u32, bytes[14..18], 40, .little);
-    std.mem.writeInt(i32, bytes[18..22], @intCast(w), .little);
-    std.mem.writeInt(i32, bytes[22..26], @intCast(h), .little);
-    std.mem.writeInt(u16, bytes[26..28], 1, .little);
-    std.mem.writeInt(u16, bytes[28..30], 24, .little);
-    std.mem.writeInt(u32, bytes[34..38], img, .little);
-    for (0..h) |gy| {
-        const src_y = h - 1 - gy; // BMP is bottom-up
-        const base = 54 + gy * row;
-        for (0..w) |gx| {
-            const col = biome.idxColor(@intCast(idx[src_y * w + gx]));
-            const o = base + gx * 3;
-            bytes[o] = col[2]; // B
-            bytes[o + 1] = col[1]; // G
-            bytes[o + 2] = col[0]; // R
-        }
-    }
-    try wgpu.writeFileC(path, bytes);
-}
+// (BMP writer removed — output is PNG via zigimg now)

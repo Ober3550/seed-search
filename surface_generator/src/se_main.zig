@@ -167,6 +167,25 @@ fn staticResName(n: []const u8) ?[]const u8 {
 /// zones by name, compute each zone's surface autoplace controls via the
 /// universe generator port, generate ore, and write results into
 /// <out>/<world_seed>/<zone_name>/ore.jsonl (+ ore.bmp with --bmp).
+/// Encode an RGB pixel buffer to PNG (via zigimg) and write it to `path`.
+/// Replaces the old write-BMP-then-convert-with-python flow.
+fn writePngFile(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, h: u32, pixels: []const u8) !void {
+    const bytes = try surfacegen.png.encode(a, w, h, pixels);
+    defer a.free(bytes);
+    const file = try std.Io.Dir.createFile(.cwd(), io, path, .{});
+    defer file.close(io);
+    try file.writePositionalAll(io, bytes, 0);
+}
+
+/// Same as writePngFile but for an RGBA buffer (transparent-background overlays).
+fn writePngFileRgba(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, h: u32, rgba: []const u8) !void {
+    const bytes = try surfacegen.png.encodeRgba(a, w, h, rgba);
+    defer a.free(bytes);
+    const file = try std.Io.Dir.createFile(.cwd(), io, path, .{});
+    defer file.close(io);
+    try file.writePositionalAll(io, bytes, 0);
+}
+
 fn runZoneDriver(
     a: std.mem.Allocator,
     init: std.process.Init,
@@ -418,26 +437,25 @@ fn runZoneDriver(
 
         if (write_bmp and !load_ore) {
             var bpathbuf: [512]u8 = undefined;
-            const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.bmp", .{zdir});
+            const bpath = try std.fmt.bufPrint(&bpathbuf, "{s}/ore.png", .{zdir});
             const size: u32 = @intCast(r * 2);
-            var pixels = try a.alloc(u8, @as(usize, size) * size * 3);
+            // RGBA with a transparent background so the ore map overlays terrain:
+            // ore pixels are opaque, everything else is fully transparent.
+            var pixels = try a.alloc(u8, @as(usize, size) * size * 4);
             defer a.free(pixels);
-            @memset(pixels, 20);
+            @memset(pixels, 0);
             for (ores.items) |ore| {
                 const px: i64 = @as(i64, ore.x) + r;
                 const py: i64 = @as(i64, ore.y) + r;
                 if (px < 0 or py < 0 or px >= size or py >= size) continue;
                 const color = MapColors.get(ore.resource_name);
-                const idx: usize = (@as(usize, @intCast(py)) * size + @as(usize, @intCast(px))) * 3;
+                const idx: usize = (@as(usize, @intCast(py)) * size + @as(usize, @intCast(px))) * 4;
                 pixels[idx] = color[0];
                 pixels[idx + 1] = color[1];
                 pixels[idx + 2] = color[2];
+                pixels[idx + 3] = 255;
             }
-            var bbuf: std.ArrayList(u8) = .empty;
-            try surfacegen.bmp.writeBmp(a, &bbuf, size, size, pixels);
-            const bfile = try std.Io.Dir.createFile(.cwd(), init.io, bpath, .{});
-            defer bfile.close(init.io);
-            try bfile.writePositionalAll(init.io, bbuf.items, 0);
+            try writePngFileRgba(a, init.io, bpath, size, size, pixels);
             std.debug.print("   wrote {s}\n", .{bpath});
         }
 
@@ -515,6 +533,10 @@ fn runZoneDriver(
                         pixels[idx + 2] = oc[2];
                     }
                 }
+                // NOTE: the tiled-surface cells stay BMP for now — they feed the
+                // GUI's live-grid (cell_png.py) AND stitch_surface.py, which reads
+                // the raw cell BMPs. Porting that path to PNG needs the stitcher
+                // ported too (a separate orientation-sensitive task).
                 var sbuf: std.ArrayList(u8) = .empty;
                 try surfacegen.bmp.writeBmp(a, &sbuf, cw, ch, pixels);
                 const prefix: []const u8 = switch (surface_layer) {
@@ -982,13 +1004,9 @@ pub fn main(init: std.process.Init) !void {
                 pixels[idx + 2] = color[2];
             }
         }
-        const filename = bmp_filename orelse "horaerratum-biome.bmp";
-        const file = try std.Io.Dir.createFile(.cwd(), init.io, filename, .{});
-        defer file.close(init.io);
-        var buf: std.ArrayList(u8) = .empty;
-        try surfacegen.bmp.writeBmp(a, &buf, size, size, pixels);
-        try file.writePositionalAll(init.io, buf.items, 0);
-        std.debug.print("# Wrote biome BMP: {s} ({d}x{d})\n", .{ filename, size, size });
+        const filename = bmp_filename orelse "horaerratum-biome.png";
+        try writePngFile(a, init.io, filename, size, size, pixels);
+        std.debug.print("# Wrote biome PNG: {s} ({d}x{d})\n", .{ filename, size, size });
         return;
     }
 

@@ -53,3 +53,4 @@ gpu_compute/vendor/
 gpu_compute/.zig-cache/
 gpu_compute/zig-out/
 gpu_compute/render-out.*
+zig-pkg/
