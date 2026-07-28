@@ -635,14 +635,9 @@ function planSurfaceCells(radius, n) {
   return cells.map(c => c.i);
 }
 
-// How many cells the group SHOULD have (used to detect group completion).
-function expectedCells(n, radius) {
-  return planSurfaceCells(radius, n).length;
-}
-
-// Per-cell placement (as % of the 2r canvas) for the live browser grid, in the
-// SAME orientation as the stitched surface.png. Verified pixel-exact against the
-// stitcher: place surface_<n>_<cell>.png at (leftPct, topPct) sized wPct×hPct.
+// Per-cell placement (as % of the 2r canvas) for the browser CSS grid, in the
+// orientation segen writes cells (vertical flip). Verified pixel-exact: place
+// surface_<n>_<cell>.png at (leftPct, topPct) sized wPct×hPct.
 function surfaceCellLayout(radius) {
   const n = surfaceGridFor(radius);
   const full = radius * 2;

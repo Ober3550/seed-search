@@ -781,7 +781,7 @@ function renderSurfaceJobsPage(jobsList) {
               <td>${j.kind === "surface" && j.grid_cell >= 0 ? `${j.grid_cell}/${j.grid_n * j.grid_n}` : "—"}</td>
               <td><span class="badge ${j.status}">${j.status}</span></td>
               <td>${j.created_at}</td>
-              <td>${j.status === "done" && j.kind !== "ore" ? `<a href="/surface/${j.id}" hx-get="/surface/${j.id}" hx-target="#main" hx-push-url="true" class="btn-sm">🖼️</a>` : ""}</td>
+              <td>${j.status === "done" && j.kind !== "ore" && j.zone_id ? `<a href="/seed/${j.seed}/surface/${j.zone_id}" hx-get="/seed/${j.seed}/surface/${j.zone_id}" hx-target="#main" hx-push-url="true" class="btn-sm">🖼️</a>` : ""}</td>
             </tr>`).join("")}
           </tbody>
         </table>
@@ -820,37 +820,14 @@ function renderSurfaceJobsPage(jobsList) {
   </div>`;
 }
 
+// Legacy single-image viewer — surfaces are now the CSS cell grid, so redirect
+// to the zone's grid view (keeps old links/bookmarks working).
 app.get("/surface/:id", (req, res) => {
   const job = db.getSurfaceJob(req.params.id);
   if (!job) return res.status(404).send(htmxPage("Not Found", "<h2>Surface job not found</h2>"));
-  page(req, res, `Surface: ${job.zone_name}`, renderSurfaceViewer(job));
+  if (job.zone_id) return res.redirect(`/seed/${job.seed}/surface/${job.zone_id}`);
+  return res.redirect(`/seed/${job.seed}`);
 });
-
-function renderSurfaceViewer(job) {
-  const imgSrc = job.png_file ? `/output/${job.png_file}` : null;
-  let summary = null; try { summary = JSON.parse(job.summary); } catch (_) {}
-  return `
-  <div class="page">
-    <h2>🖼️ ${job.zone_name} <span class="badge done">seed ${job.seed}</span> <span class="badge zone-type">${job.bucket || ""}</span></h2>
-    <div class="surface-viewer">
-      <div class="surface-meta">
-        <p><strong>Seed:</strong> <a href="/seed/${job.seed}" hx-get="/seed/${job.seed}" hx-target="#main" hx-push-url="true">${job.seed}</a></p>
-        <p><strong>Status:</strong> <span class="badge ${job.status}">${job.status}</span></p>
-        ${job.error ? `<p class="error">Error: ${job.error}</p>` : ""}
-        ${summary ? `
-        <h3>Ore estimates</h3>
-        <table class="data-table"><thead><tr><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
-          ${Object.entries(summary.resources || {}).sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
-            .map(([r, v]) => `<tr><td>${r}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles}</td></tr>`).join("")}
-        </tbody></table>` : ""}
-      </div>
-      ${imgSrc ? `<div class="surface-image-container">
-        <img src="${imgSrc}" class="surface-image" style="max-width:100%; image-rendering:pixelated; border:1px solid #333;">
-        <p class="image-info">1 px = 1 tile</p></div>`
-      : job.status === "running" ? `<div class="loading"><p>⏳ Generating… <span hx-get="/surface/${job.id}" hx-trigger="every 2s" hx-target="closest .page" hx-swap="outerHTML" hx-sync="#main:drop"></span></p></div>` : ""}
-    </div>
-  </div>`;
-}
 
 // ── API ────────────────────────────────────────────────────────────────
 
