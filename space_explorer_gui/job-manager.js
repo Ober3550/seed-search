@@ -91,6 +91,18 @@ function requireSegen() {
   return bin;
 }
 
+let gpuSegenPath = null;
+const GPU_COMPUTE_DIR = path.join(PROJECT_ROOT, "gpu_compute");
+function requireGpuSegen() {
+  if (gpuSegenPath && fs.existsSync(gpuSegenPath)) return gpuSegenPath;
+  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", "gpu_segen");
+  if (fs.existsSync(cand)) { gpuSegenPath = cand; return cand; }
+  throw new Error(
+    "gpu_segen binary not found. Build it first:\n" +
+    "  cd gpu_compute && ./fetch-wgpu.sh && zig build -Doptimize=ReleaseFast"
+  );
+}
+
 function requireSeedgen() {
   const bin = findSeedgenBinary();
   if (!bin) throw new Error(
@@ -666,15 +678,20 @@ const RENDER_KINDS = {
   surface: { layer: null, prefix: "surface" },
   terrain: { layer: "terrain", prefix: "terrain" },
   oremap: { layer: "ore", prefix: "oremap" },
+  // GPU whole-zone terrain preview (gpu_segen, ~80x faster). Writes terrain.png
+  // directly, so buildSurfaceGrid shows it as the full terrain layer.
+  gputerrain: { layer: "terrain", prefix: "terrain", gpu: true },
 };
 
 // ── Surface generation via the segen zone driver ───────────────────────
 
 function runSurfaceJob(job) {
   return new Promise((resolve) => {
+    const rk = RENDER_KINDS[job.kind];         // undefined for the 'ore' compute job
+    const useGpu = !!(rk && rk.gpu);
     let binPath;
     try {
-      binPath = requireSegen();
+      binPath = useGpu ? requireGpuSegen() : requireSegen();
     } catch (e) {
       db.updateSurfaceJob(job.id, { status: "failed", error: e.message, finished_at: new Date().toISOString() });
       return resolve();
@@ -690,30 +707,30 @@ function runSurfaceJob(job) {
     const zonesFile = path.join(sDir, "zones.jsonl");
     if (!fs.existsSync(zonesFile)) writeSeedZonesFile(seedRow, null);
 
-    const rk = RENDER_KINDS[job.kind];         // undefined for the 'ore' compute job
     const isRender = !!rk;
     const prefix = rk ? rk.prefix : null;
-    const isCell = isRender && job.grid_cell >= 0 && job.grid_n > 1;
-    // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
-    // draw a layer (terrain biome+water, oremap ore-on-black, or combined).
-    const args = [
-      "--zones", zonesFile,
-      "--world-seed", String(job.seed),
-      "--zone", job.zone_name,
-      "--out", bucketDir(label),
-      "--ores-only",
-    ];
-    if (isRender) {
-      if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
-      else args.push("--render-surface");
-      if (rk.layer) args.push("--surface-layer", rk.layer);
-      // Render from the cached ore.jsonl (written by the zone's ore-prep job)
-      // instead of recomputing zone-wide ore for every cell.
-      if (job.load_ore) args.push("--load-ore");
+    const isCell = isRender && !useGpu && job.grid_cell >= 0 && job.grid_n > 1;
+
+    let args;
+    if (useGpu) {
+      // gpu_segen renders the whole zone in one dispatch → terrain.png.
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label)];
+    } else {
+      // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
+      // draw a layer (terrain biome+water, oremap ore-on-black, or combined).
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--ores-only"];
+      if (isRender) {
+        if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
+        else args.push("--render-surface");
+        if (rk.layer) args.push("--surface-layer", rk.layer);
+        // Render from the cached ore.jsonl (written by the zone's ore-prep job)
+        // instead of recomputing zone-wide ore for every cell.
+        if (job.load_ore) args.push("--load-ore");
+      }
     }
 
-    console.log(`[surface ${job.id}] segen ${args.join(" ")}`);
-    const child = spawn(binPath, args, { cwd: SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
+    console.log(`[surface ${job.id}] ${useGpu ? "gpu_segen" : "segen"} ${args.join(" ")}`);
+    const child = spawn(binPath, args, { cwd: useGpu ? GPU_COMPUTE_DIR : SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
     surfaceChildren.set(job.id, child);
 
     let stderr = "";

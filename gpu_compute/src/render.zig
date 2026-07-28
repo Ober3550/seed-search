@@ -44,7 +44,11 @@ const Params = extern struct {
     width: u32,
     height: u32,
     n_biomes: u32,
-}; // 25 f32 + 3 u32 = 112 bytes (16-aligned)
+    has_water: u32 = 1,
+    _pa: u32 = 0,
+    _pb: u32 = 0,
+    _pc: u32 = 0,
+}; // 25 f32 + 7 u32 = 128 bytes (16-aligned)
 
 const BiomeGPU = extern struct {
     t_lo: f32 = 0,

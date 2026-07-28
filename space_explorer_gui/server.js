@@ -173,7 +173,7 @@ function renderZoneCtl(bucket, seed, zone, which) {
   // ore control watches ore/oremap, the surface control watches terrain, and the
   // two buttons queue independent jobs (⛏ ore → oremap only, 🗺️ surface →
   // terrain only), so neither ever lights up (flashes) the other's control.
-  const SURF_KINDS = ["surface", "terrain"];
+  const SURF_KINDS = ["surface", "terrain", "gputerrain"];
   const active = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
   const failed = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && j.status === "failed").length > 0;
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
@@ -205,8 +205,9 @@ function renderZoneCtl(bucket, seed, zone, which) {
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
       : surfPng
         ? ""
-        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`;
-    if (!activeNow && !surfPng && failed(["terrain"]))
+        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`
+          + ` <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="fast GPU terrain preview (~80x)">⚡ gpu</button>`;
+    if (!activeNow && !surfPng && failed(["terrain", "gputerrain"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   }
 
@@ -1074,6 +1075,9 @@ function queueZone(zone, seed, kind) {
     : cellIdx.map(cell => db.createSurfaceJob({ ...base, kind: renderKind, grid_n: n, grid_cell: cell, depends_on: dep || null, load_ore: loadOre ? 1 : 0 })));
 
   if (kind === "ore") return [db.createSurfaceJob({ ...base, kind: "ore" })];
+  // GPU whole-zone terrain preview: always a single job (gpu_segen renders the
+  // whole disk in one dispatch — no tiling).
+  if (kind === "gputerrain") return [db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1 })];
   if (kind === "terrain") return renderCells("terrain", null, false); // no ore needed
 
   // oremap / surface: run the ore pass ONCE, then render the ore layer from it.
@@ -1085,7 +1089,7 @@ function queueZone(zone, seed, kind) {
 }
 
 app.post("/api/surface/create", (req, res) => {
-  const kind = ["ore", "oremap", "terrain", "surface"].includes(req.query.kind) ? req.query.kind : "ore";
+  const kind = ["ore", "oremap", "terrain", "surface", "gputerrain"].includes(req.query.kind) ? req.query.kind : "ore";
   const seed = parseInt(req.body.seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.body.zone_id));
   if (!zone) return res.status(404).json({ ok: false, error: "zone not found" });
@@ -1145,7 +1149,7 @@ app.post("/api/system/wipe", (req, res) => {
 
 // Batch: queue for each checked zone of a seed (kind = ore | surface).
 app.post("/api/surface/batch", (req, res) => {
-  const kind = ["ore", "oremap", "terrain", "surface"].includes(req.query.kind) ? req.query.kind : "ore";
+  const kind = ["ore", "oremap", "terrain", "surface", "gputerrain"].includes(req.query.kind) ? req.query.kind : "ore";
   const seed = parseInt(req.body.seed);
   let names = req.body.zone || [];
   if (!Array.isArray(names)) names = [names];

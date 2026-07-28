@@ -167,4 +167,18 @@ pub fn build(b: *std.Build) void {
     const rnd_cmd = b.addRunArtifact(rnd);
     rnd_step.dependOn(&rnd_cmd.step);
     rnd_cmd.step.dependOn(b.getInstallStep());
+
+    // GPU surface renderer for the GUI (segen-compatible CLI → terrain.png).
+    const gseg = b.addExecutable(.{
+        .name = "gpu_segen",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/gpu_segen.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(gseg, b, inc, lib);
+    b.installArtifact(gseg);
 }

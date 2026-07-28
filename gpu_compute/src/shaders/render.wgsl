@@ -16,6 +16,8 @@ struct Params {
     cold_size : f32, hot_size : f32, cold_freq : f32, hot_freq : f32,
     moist_freq : f32, moist_bias : f32, aux_freq : f32, aux_bias : f32,
     width : u32, height : u32, n_biomes : u32,
+    has_water : u32,        // 0 → force elevation = 1.0 (no water tiles)
+    pad0 : u32, pad1 : u32, pad2 : u32,
 };
 
 struct BiomeGPU {
@@ -172,7 +174,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     if (gid.x >= P.width || gid.y >= P.height) { return; }
     let x = P.origin_x + f32(gid.x);
     let y = P.origin_y + f32(gid.y);
-    let e = elevationAt(x, y);
+    let e = select(1.0, elevationAt(x, y), P.has_water != 0u);
     let t = temperatureAt(x, y);
     let m = moistureAt(x, y);
     let a = auxAt(x, y);
