@@ -208,59 +208,93 @@ pub const Classifier = struct {
 /// still and the perpendicular support tile is NOT higher than the candidate, has
 /// "weak diagonal support" and is corrected down to that lower neighbour. Iterated
 /// to a fixpoint so corrections cascade. `grid` is size×size unified tile indices.
-pub fn correctTiles(alloc: std.mem.Allocator, grid: []u16, size: usize) void {
-    const w: i32 = @intCast(size);
+const NEIGHBORS8 = [_][2]i32{ .{ -1, -1 }, .{ 0, -1 }, .{ 1, -1 }, .{ -1, 0 }, .{ 1, 0 }, .{ -1, 1 }, .{ 0, 1 }, .{ 1, 1 } };
+const ORTH4 = [_][2]i32{ .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 } };
+
+/// Is `tile` at (x,y) consistent given the already-FIXED neighbours? Mirrors
+/// isTileConsistentWithFixedTiles's diagonal-support test: a candidate with a
+/// lower FIXED orthogonal neighbour N, where the diagonal beyond N (perpendicular)
+/// is a fixed tile higher than N and the perpendicular support tile isn't higher
+/// than the candidate, has weak diagonal support → inconsistent. Returns the
+/// offending lower neighbour as the replacement candidate.
+fn tileConsistent(grid: []const u16, fixed: []const bool, w: i32, x: i32, y: i32, tile: u16, cand: *u16) bool {
     const get = struct {
-        fn f(g: []const u16, sz: i32, x: i32, y: i32) u16 {
-            if (x < 0 or y < 0 or x >= sz or y >= sz) return IDX_BG;
-            return g[@intCast(y * sz + x)];
+        fn f(g: []const u16, fx: []const bool, sz: i32, ax: i32, ay: i32, fixed_only: bool) u16 {
+            if (ax < 0 or ay < 0 or ax >= sz or ay >= sz) return IDX_BG;
+            const gi: usize = @intCast(ay * sz + ax);
+            if (fixed_only and !fx[gi]) return IDX_BG;
+            return g[gi];
         }
     }.f;
-    const next = alloc.alloc(u16, grid.len) catch return;
-    defer alloc.free(next);
-    const orth = [_][2]i32{ .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 } };
-    var iter: usize = 0;
-    while (iter < 12) : (iter += 1) {
-        @memcpy(next, grid);
-        var changed = false;
-        var y: i32 = 0;
-        while (y < w) : (y += 1) {
-            var x: i32 = 0;
-            while (x < w) : (x += 1) {
-                const idx = get(grid, w, x, y);
-                if (idx == IDX_BG) continue;
-                const L = idxLayer(idx);
-                var correct_to: u16 = idx;
-                var min_ln: u16 = L;
-                for (orth) |o| {
-                    const N = get(grid, w, x + o[0], y + o[1]);
-                    if (N == IDX_BG) continue;
-                    const Ln = idxLayer(N);
-                    if (Ln >= L) continue; // only lower orthogonal neighbours
-                    var s: i32 = -1;
-                    while (s <= 1) : (s += 2) {
-                        // diagonal beyond N (D) + the perpendicular support tile (S)
-                        const dxp = if (o[0] != 0) x + o[0] else x + s;
-                        const dyp = if (o[0] != 0) y + s else y + o[1];
-                        const sxp = if (o[0] != 0) x else x + s;
-                        const syp = if (o[0] != 0) y + s else y;
-                        const D = get(grid, w, dxp, dyp);
-                        const S = get(grid, w, sxp, syp);
-                        if (D == IDX_BG or S == IDX_BG) continue;
-                        if (idxLayer(D) > Ln and idxLayer(S) <= L and Ln < min_ln) {
-                            min_ln = Ln;
-                            correct_to = N;
+    const L = idxLayer(tile);
+    for (ORTH4) |o| {
+        const N = get(grid, fixed, w, x + o[0], y + o[1], true);
+        if (N == IDX_BG) continue;
+        const Ln = idxLayer(N);
+        if (Ln >= L) continue;
+        var s: i32 = -1;
+        while (s <= 1) : (s += 2) {
+            const dxp = if (o[0] != 0) x + o[0] else x + s;
+            const dyp = if (o[0] != 0) y + s else y + o[1];
+            const sxp = if (o[0] != 0) x else x + s;
+            const syp = if (o[0] != 0) y + s else y;
+            const D = get(grid, fixed, w, dxp, dyp, true);
+            const S = get(grid, fixed, w, sxp, syp, true);
+            if (D == IDX_BG or S == IDX_BG) continue;
+            if (idxLayer(D) > Ln and idxLayer(S) <= L) {
+                cand.* = N;
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+pub fn correctTiles(alloc: std.mem.Allocator, grid: []u16, size: usize) void {
+    const w: i32 = @intCast(size);
+    const fixed = alloc.alloc(bool, grid.len) catch return;
+    defer alloc.free(fixed);
+    @memset(fixed, false);
+    var queue = std.ArrayList(u32).empty;
+    defer queue.deinit(alloc);
+    // Seed a BFS from every tile in raster order (Factorio's driver seeds
+    // correctFromTile per chunk tile); the fixed[] mask makes each check see only
+    // settled context, so corrections don't avalanche.
+    var sy: i32 = 0;
+    while (sy < w) : (sy += 1) {
+        var sx: i32 = 0;
+        while (sx < w) : (sx += 1) {
+            const si: usize = @intCast(sy * w + sx);
+            if (fixed[si] or grid[si] == IDX_BG) continue;
+            queue.clearRetainingCapacity();
+            queue.append(alloc, @intCast(si)) catch return;
+            fixed[si] = true;
+            var qi: usize = 0;
+            while (qi < queue.items.len) : (qi += 1) {
+                const p = queue.items[qi];
+                const px: i32 = @intCast(p % @as(u32, @intCast(w)));
+                const py: i32 = @intCast(p / @as(u32, @intCast(w)));
+                for (NEIGHBORS8) |o| {
+                    const nx = px + o[0];
+                    const ny = py + o[1];
+                    if (nx < 0 or ny < 0 or nx >= w or ny >= w) continue;
+                    const ni: usize = @intCast(ny * w + nx);
+                    if (fixed[ni] or grid[ni] == IDX_BG) continue;
+                    var cand: u16 = grid[ni];
+                    var enqueue = false;
+                    if (!tileConsistent(grid, fixed, w, nx, ny, grid[ni], &cand)) {
+                        // replace with the offending lower neighbour if that's consistent
+                        var c2: u16 = cand;
+                        if (cand != grid[ni] and tileConsistent(grid, fixed, w, nx, ny, cand, &c2)) {
+                            grid[ni] = cand;
                         }
+                        enqueue = true;
                     }
-                }
-                if (correct_to != idx) {
-                    next[@intCast(y * w + x)] = correct_to;
-                    changed = true;
+                    fixed[ni] = true;
+                    if (enqueue) queue.append(alloc, @intCast(ni)) catch return;
                 }
             }
         }
-        @memcpy(grid, next);
-        if (!changed) break;
     }
 }
 
