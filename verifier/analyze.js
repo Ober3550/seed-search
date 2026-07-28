@@ -534,6 +534,35 @@ function matchFilter(crit, rules) {
   return { match: true, zones: [...zones] };
 }
 
+// Like matchFilter, but instead of an all-or-nothing verdict, returns how many
+// of the rules are satisfied (0..rules.length). Uses the same greedy
+// distinct-body allocation as matchFilter, minus the short-circuit — so a
+// partially-matching seed can be counted and ranked instead of dropped.
+function countMatches(crit, rules) {
+  if (!rules || rules.length === 0) return 0;
+  const bodies = crit.bodies || [];
+  const used = new Set();
+  let n = 0;
+  for (const rule of rules) {
+    if (rule.kind === "specials") {
+      if ((crit.numSpecials || 0) >= (rule.n || 0)) n++;
+      continue;
+    }
+    if (rule.kind === "pairs") {
+      if ((crit.numPairs || 0) >= (rule.n || 0)) n++;
+      continue;
+    }
+    const nr = normalizeRule(rule);
+    if (!nr || nr.res.length === 0) continue;
+    const b = bodies.find((x) =>
+      !used.has(x.name) &&
+      nr.res.every((r) => (x.present || []).includes(r)) &&
+      (!nr.primary || x.primary === nr.res[0]));
+    if (b) { used.add(b.name); n++; }
+  }
+  return n;
+}
+
 // A short human label for a rule (UI + preset descriptions).
 function ruleLabel(rule) {
   const nm = (r) => (r || "").replace("se-", "").replace("kr-", "").replace("-ore", "");
@@ -548,7 +577,7 @@ function ruleLabel(rule) {
   return names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, ruleLabel, normalizeRule };
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below

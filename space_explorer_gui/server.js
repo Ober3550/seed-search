@@ -309,16 +309,26 @@ app.get("/seeds", (req, res) => {
 
   const def = defId ? db.getFilterDef(defId) : null;
   const rules = def ? JSON.parse(def.rules) : [];
+  // Count mode: rank by how many rules each seed satisfies instead of dropping
+  // partial matches. Only meaningful when a filter is selected.
+  const countMode = (req.query.count === "1") && rules.length > 0;
 
   let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter });
-  seeds = seeds.filter(s => {
-    const c = seedCriteria(s); if (!c) return rules.length === 0;
-    return analyze.matchFilter(c, rules).match;
-  });
+  if (countMode) {
+    for (const s of seeds) {
+      const c = seedCriteria(s);
+      s._matches = c ? analyze.countMatches(c, rules) : 0;
+    }
+  } else {
+    seeds = seeds.filter(s => {
+      const c = seedCriteria(s); if (!c) return rules.length === 0;
+      return analyze.matchFilter(c, rules).match;
+    });
+  }
   const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
   const defs = db.getFilterDefs();
   const genCounts = db.getGeneratedZoneCounts();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q }, genCounts));
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length }, genCounts));
 });
 
 function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
@@ -328,6 +338,9 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
   // generated), then the rest by most total zones.
   const gen = (s) => genCounts[s.seed] || 0;
   seeds = [...seeds].sort((a, b) => {
+    // In count mode, rank by rule-match count first so the best partial
+    // matches float to the top; otherwise keep the generated/zones ordering.
+    if (f.count && (b._matches || 0) !== (a._matches || 0)) return (b._matches || 0) - (a._matches || 0);
     const ag = gen(a) > 0, bg = gen(b) > 0;
     if (ag !== bg) return ag ? -1 : 1;
     if (ag) return gen(b) - gen(a);
@@ -353,6 +366,10 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
             <option value="">— none —</option>
             ${defs.map(d => `<option value="${d.id}" ${f.defId === d.id ? "selected" : ""}>${d.name}${d.builtin ? "" : " *"}</option>`).join("")}
           </select></label>
+        <label title="Rank seeds by how many rules they satisfy instead of requiring all (needs a filter selected)">
+          <input type="checkbox" name="count" value="1" ${f.count ? "checked" : ""} ${f.defId ? "" : "disabled"}
+            hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
+          count &amp; rank</label>
         <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
@@ -363,7 +380,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
       <thead><tr>
         <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
         <th>Bucket</th><th>K2</th><th>Loot</th>
-        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">▼</span></th>
+        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
+        ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
         <th>Naq</th>
       </tr></thead>
       <tbody>
@@ -371,19 +389,20 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
+          ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
           <td>${c.naqField || "—"}</td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="6">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 7 : 6}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
     <script>
       (function () {
-        var st = { key: "zones", dir: "desc" }; // initial order (server pre-sorted)
+        var st = { key: "${f.count ? "matches" : "zones"}", dir: "desc" }; // initial order (server pre-sorted)
         // DESCENDING comparators (first click). Zones desc: generated seeds
         // first (by most generated), then the rest (by most total zones).
         function baseCmp(key, a, b) {
