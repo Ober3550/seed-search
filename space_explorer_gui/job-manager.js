@@ -714,7 +714,10 @@ function runSurfaceJob(job) {
     let args;
     if (useGpu) {
       // gpu_segen renders the whole zone in one dispatch → terrain.png.
-      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label)];
+      // job.radius is already capped to the max-radius setting; pass it so
+      // gpu_segen renders the inner disk (required for asteroid fields, which
+      // carry no radius, and caps big planets/moons).
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius)];
     } else {
       // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
       // draw a layer (terrain biome+water, oremap ore-on-black, or combined).

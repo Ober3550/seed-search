@@ -167,6 +167,25 @@ function resOobTd(bucket, seed, zone) {
 // from re-rendering (flashing) the surface button every 2s, and vice-versa. The
 // button still re-renders the whole cell (#zcell-N) on click, so a surface job —
 // which also queues the ore map — flips both controls at once.
+// Max generation radius (default 2000 → ≤ ~12.6M tiles per disk). Big planets
+// and asteroid fields are capped to this so we don't render the full surface.
+const DEFAULT_MAX_RADIUS = 2000;
+function getMaxRadius() {
+  const v = parseInt(db.getSetting("max_radius"));
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_RADIUS;
+}
+function effRadius(zone) {
+  const m = getMaxRadius();
+  return Math.min(Math.round(zone.radius || m), m);
+}
+// Global max-radius control (persisted setting). Caps NEW surface jobs to the
+// inner N-radius disk; existing renders are untouched.
+function maxRadiusInput() {
+  return `<label class="hint max-radius-ctl" title="Cap surface generation to the inner N-tile-radius disk (default 2000 ≈ 12.6M tiles). Applies to new renders only.">
+    ⌀ Max radius: <input type="number" name="max_radius" value="${getMaxRadius()}" min="100" step="100" style="width:6em"
+      hx-post="/api/settings/max-radius" hx-trigger="change" hx-swap="none"></label>`;
+}
+
 function renderZoneCtl(bucket, seed, zone, which) {
   const zjobs = db.getSurfaceJobsForZone(zone.id);
   // The ore map is a shared job, but each control tracks only its own half: the
@@ -176,9 +195,14 @@ function renderZoneCtl(bucket, seed, zone, which) {
   const SURF_KINDS = ["surface", "terrain", "gputerrain"];
   const active = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && (j.status === "queued" || j.status === "running"));
   const failed = (kinds) => zjobs.filter(j => kinds.includes(j.kind) && j.status === "failed").length > 0;
-  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
+  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: effRadius(zone) })}'`;
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
   const id = which === "ore" ? `orectl-${zone.id}` : `surfctl-${zone.id}`;
+  // Asteroid fields aren't biome surfaces — segen (CPU) skips them, only
+  // gpu_segen renders them (se-space/se-asteroid). So fields get GPU only and no
+  // ore layer.
+  const isField = zone.zone_type === "asteroid-field";
+  if (isField && which === "ore") return `<span class="zctl" id="${id}"></span>`;
 
   // Once a layer is generated we drop its button entirely (the row itself opens
   // the surface detail); the generate button only shows while nothing exists yet.
@@ -205,8 +229,11 @@ function renderZoneCtl(bucket, seed, zone, which) {
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
       : surfPng
         ? ""
-        : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`
-          + ` <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="fast GPU terrain preview (~80x)">⚡ gpu</button>`;
+        : (isField
+            // fields: GPU only (segen skips them)
+            ? `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="GPU asteroid-field render">⚡ gpu</button>`
+            : `<button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=terrain" ${genArgs} ${tgt}>🗺️ surface</button>`
+              + ` <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} ${tgt} title="fast GPU terrain preview (~80x)">⚡ gpu</button>`);
     if (!activeNow && !surfPng && failed(["terrain", "gputerrain"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   }
@@ -436,7 +463,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
 // ── Seed detail — zones ────────────────────────────────────────────────
 
 // Generatable zone types (surfaces). Others are shown for reference only.
-const GEN_TYPES = ["planet", "moon"];
+const GEN_TYPES = ["planet", "moon", "asteroid-field"];
 
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
@@ -481,6 +508,7 @@ function renderSeedDetail(s, c, zones, filterId) {
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code></h2>
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
+      ${maxRadiusInput()}
       <span class="hint">All zones shown; ⭐ criteria-relevant are pinned to the top and pre-selected. Click a header to sort.</span>
     </div>
     <form id="zone-batch">
@@ -602,7 +630,7 @@ function buildSurfaceGrid(seed, zoneId) {
   const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
   if (!zone) return { grid: `<div class="surf-grid-wrap" id="surfgrid-${zoneId}"><p class="hint">Zone not found.</p></div>`, head: "" };
   const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
-  const radius = Math.round(zone.radius || 500);
+  const radius = effRadius(zone);
   const { n, cells } = jobs.surfaceCellLayout(radius);
   const cp = (nn, cell, prefix) => zoneCellPng(bucket, seed, zone.name, nn, cell, prefix);
 
@@ -687,19 +715,19 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
           .map(([r, v]) => `<tr><td>${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
       </tbody></table>`
     : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
-  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: Math.round(zone.radius || 500) })}'`;
+  const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: effRadius(zone) })}'`;
   const reload = `hx-on::after-request="htmx.ajax('GET','/seed/${seed}/surface/${zoneId}',{target:'#main'})"`;
   const g = buildSurfaceGrid(seed, zoneId);
 
   const content = `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seed ${seed}`, href: `/seed/${seed}` }, { label: zone.name }])}
-    <h2><strong>${zone.name}</strong> <span class="badge zone-type">${zone.zone_type}</span></h2>
+    <h2><strong>${zone.name}</strong> <span class="badge zone-type">${zone.zone_type}</span> ${maxRadiusInput()}</h2>
     <div class="watch-layout">
       <aside class="surface-meta">
         <h3>Zone</h3>
         <dl>
-          <dt>Radius</dt><dd>${zone.radius ? Math.round(zone.radius) : "—"}</dd>
+          <dt>Radius</dt><dd>${zone.radius ? Math.round(zone.radius) : "—"}${effRadius(zone) < Math.round(zone.radius || Infinity) ? ` → <strong>${effRadius(zone)}</strong> (capped)` : ""}</dd>
           <dt>Δv</dt><dd>${zone.delta_v ? Math.round(zone.delta_v) : "—"}</dd>
           <dt>Water</dt><dd>${water}</dd>
           <dt>Enemy</dt><dd>${enemy}</dd>
@@ -897,6 +925,13 @@ app.post("/api/workers/concurrency", (req, res) => {
   res.json({ ok: true, status: jobs.workerStatus() });
 });
 
+// Persist the global max generation radius (caps new surface jobs to the inner disk).
+app.post("/api/settings/max-radius", (req, res) => {
+  const v = parseInt(req.body.max_radius);
+  if (Number.isFinite(v) && v >= 100) db.setSetting("max_radius", String(v));
+  res.json({ ok: true, max_radius: getMaxRadius() });
+});
+
 // ── Filter presets (reusable rulesets) ────────────────────────────────
 
 app.get("/presets", (req, res) => page(req, res, "Filter Presets", renderPresetsPage(db.getFilterDefs())));
@@ -1065,7 +1100,7 @@ app.delete("/api/preset/:id", (req, res) => { db.deleteFilterDef(parseInt(req.pa
 // kind: 'ore' (amounts only), 'terrain' (biome layer), 'oremap' (ore layer,
 // needs the ore pass), or 'surface' (both layers = terrain + oremap).
 function queueZone(zone, seed, kind) {
-  const radius = Math.round(zone.radius || 500);
+  const radius = effRadius(zone);
   const base = { zone_id: zone.id, seed, zone_name: zone.name, radius };
   const n = jobs.surfaceGridFor(radius);
   const cellIdx = jobs.planSurfaceCells(radius, n);
