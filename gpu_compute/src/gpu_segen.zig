@@ -17,6 +17,18 @@ const noise = surfgen.noise;
 const biome = surfgen.biome;
 
 const render_wgsl = @embedFile("shaders/render.wgsl");
+const asteroid_wgsl = @embedFile("shaders/asteroid.wgsl");
+
+const AsteroidParams = extern struct {
+    origin_x: f32,
+    origin_y: f32,
+    size: f32,
+    freq: f32,
+    planet_radius: f32,
+    width: u32,
+    height: u32,
+    seed_byte: u32,
+};
 
 const Params = extern struct {
     origin_x: f32,
@@ -90,11 +102,15 @@ pub fn main(init: std.process.Init) !void {
     const out_dir = getStr(args, "--out") orelse return err("missing --out");
     const world_seed = try std.fmt.parseInt(u64, world_seed_s, 10);
 
-    // ── Find the zone in the jsonl → zone_seed, radius, has_water ────────────
+    // Optional radius override (required for asteroid fields — they carry no z.r).
+    const radius_override: ?f64 = if (getStr(args, "--radius")) |rs| try std.fmt.parseFloat(f64, rs) else null;
+
+    // ── Find the zone in the jsonl → zone_seed, radius, type, has_water ──────
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
     var zone_seed: u32 = 0;
     var radius: f64 = 0;
     var has_water = false;
+    var is_field = false;
     var found = false;
     var it = std.mem.tokenizeScalar(u8, raw, '\n');
     outer: while (it.next()) |line| {
@@ -112,7 +128,8 @@ pub fn main(init: std.process.Init) !void {
             const nm = z.object.get("n") orelse continue;
             if (nm != .string or !std.mem.eql(u8, nm.string, zone_name)) continue;
             zone_seed = @intCast((z.object.get("s") orelse continue).integer);
-            radius = switch (z.object.get("r") orelse continue) {
+            if (z.object.get("t")) |t| is_field = (t == .string) and std.mem.eql(u8, t.string, "asteroid-field");
+            if (z.object.get("r")) |rv| radius = switch (rv) {
                 .integer => |v| @floatFromInt(v),
                 .float => |v| v,
                 else => 0,
@@ -125,12 +142,21 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     if (!found) return err("zone not found in jsonl");
-    if (radius < 1) return err("zone has no radius");
+    if (radius_override) |ro| radius = ro;
+    if (radius < 1) return err("zone has no radius — pass --radius (required for asteroid fields)");
 
     const R: u32 = @intFromFloat(radius);
     const W: u32 = R * 2;
     const H: u32 = R * 2;
     const n = W * H;
+
+    // ── Asteroid field: se-space / se-asteroid argmax (separate kernel) ──────
+    if (is_field) {
+        std.debug.print("# gpu_segen: {s} seed {d} r {d} ASTEROID-FIELD → {d}x{d}\n", .{ zone_name, zone_seed, R, W, H });
+        try renderAsteroidField(a, init, zone_seed, radius, out_dir, world_seed, zone_name);
+        return;
+    }
+
     std.debug.print("# gpu_segen: {s} seed {d} r {d} water {} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, W, H });
 
     // ── Build params (mirrors segen's per-zone ZoneTerrain/Elevation config) ─
@@ -310,4 +336,115 @@ fn renderZone(a: std.mem.Allocator, map_seed: u32, params: Params, n: u32) ![]u3
     const indices = try a.alloc(u32, n);
     try ctx.readBuffer(staging, u32, indices);
     return indices;
+}
+
+/// Render an asteroid field (se-space / se-asteroid) via asteroid.wgsl and write
+/// <out>/seed_<world>/<zone>/terrain.png (segen orientation: vertical flip).
+fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8) !void {
+    const R: u32 = @intFromFloat(radius);
+    const W: u32 = R * 2;
+    const H: u32 = R * 2;
+    const n = W * H;
+    const size: f64 = surfgen.asteroid.FIELD_SIZE;
+    const freq: f64 = surfgen.asteroid.FIELD_FREQ;
+    const planet_radius = 10000.0 / 6.0 * (6.0 + std.math.log2(1.0 / freq / 6.0));
+
+    const g = surfgen.noise.BasisNoiseGen.init(map_seed, 1);
+    const perm1 = try a.alloc(u32, 256);
+    const perm2 = try a.alloc(u32, 256);
+    const grad = try a.alloc(f32, 512);
+    for (0..256) |i| {
+        perm1[i] = g.perm1[i];
+        perm2[i] = g.perm2[i];
+        grad[2 * i] = g.grad[i][0];
+        grad[2 * i + 1] = g.grad[i][1];
+    }
+
+    const params = AsteroidParams{
+        .origin_x = -@as(f32, @floatFromInt(R)),
+        .origin_y = -@as(f32, @floatFromInt(R)),
+        .size = @floatCast(size),
+        .freq = @floatCast(freq),
+        .planet_radius = @floatCast(planet_radius),
+        .width = W,
+        .height = H,
+        .seed_byte = g.seed_byte,
+    };
+
+    var ctx = try wgpu.Context.init();
+    defer ctx.deinit();
+    const pipeline = try ctx.computePipeline(asteroid_wgsl, "main");
+    defer c.wgpuComputePipelineRelease(pipeline);
+
+    const buf_params = ctx.uploadBuffer(AsteroidParams, &.{params}, c.WGPUBufferUsage_Uniform);
+    const buf_perm1 = ctx.uploadBuffer(u32, perm1, c.WGPUBufferUsage_Storage);
+    const buf_perm2 = ctx.uploadBuffer(u32, perm2, c.WGPUBufferUsage_Storage);
+    const buf_grad = ctx.uploadBuffer(f32, grad, c.WGPUBufferUsage_Storage);
+    const out_bytes: u64 = @as(u64, n) * @sizeOf(u32);
+    const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+    const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+
+    const bgl = c.wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+    defer c.wgpuBindGroupLayoutRelease(bgl);
+    var entries = [_]c.WGPUBindGroupEntry{
+        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = buf_params, .size = @sizeOf(AsteroidParams) }),
+        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = buf_perm1, .size = perm1.len * @sizeOf(u32) }),
+        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = buf_perm2, .size = perm2.len * @sizeOf(u32) }),
+        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = buf_grad, .size = grad.len * @sizeOf(f32) }),
+        std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_out, .size = out_bytes }),
+    };
+    var bg_desc = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = &entries });
+    const bind_group = c.wgpuDeviceCreateBindGroup(ctx.device, &bg_desc);
+    defer c.wgpuBindGroupRelease(bind_group);
+
+    const encoder = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
+    var pass_desc = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
+    const pass = c.wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+    c.wgpuComputePassEncoderSetPipeline(pass, pipeline);
+    c.wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, null);
+    c.wgpuComputePassEncoderDispatchWorkgroups(pass, (W + 7) / 8, (H + 7) / 8, 1);
+    c.wgpuComputePassEncoderEnd(pass);
+    c.wgpuComputePassEncoderRelease(pass);
+    c.wgpuCommandEncoderCopyBufferToBuffer(encoder, buf_out, 0, staging, 0, out_bytes);
+    const cmd = c.wgpuCommandEncoderFinish(encoder, null);
+    c.wgpuCommandEncoderRelease(encoder);
+    c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
+    c.wgpuCommandBufferRelease(cmd);
+
+    const indices = try a.alloc(u32, n);
+    try ctx.readBuffer(staging, u32, indices);
+
+    // Compose PNG: 0=space, 1=asteroid, 2=out-of-map; disk mask + vertical flip.
+    const space = surfgen.asteroid.SPACE_COLOR;
+    const ast = surfgen.asteroid.ASTEROID_COLOR;
+    const bg = [3]u8{ 20, 20, 20 };
+    const rgb = try a.alloc(u8, n * 3);
+    const rr = radius * radius;
+    for (0..H) |out_y| {
+        const src_y = H - 1 - out_y;
+        const fy: f64 = -radius + @as(f64, @floatFromInt(src_y));
+        for (0..W) |x| {
+            const fx: f64 = -radius + @as(f64, @floatFromInt(x));
+            const col = if (fx * fx + fy * fy > rr) bg else switch (indices[src_y * W + x]) {
+                1 => ast,
+                2 => bg,
+                else => space,
+            };
+            const o = (out_y * W + x) * 3;
+            rgb[o] = col[0];
+            rgb[o + 1] = col[1];
+            rgb[o + 2] = col[2];
+        }
+    }
+    const png = try surfgen.png.encode(a, W, H, rgb);
+
+    var pb: [1024]u8 = undefined;
+    const dir = try std.fmt.bufPrint(&pb, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
+    try std.Io.Dir.createDirPath(.cwd(), init.io, dir);
+    var pb2: [1100]u8 = undefined;
+    const path = try std.fmt.bufPrint(&pb2, "{s}/terrain.png", .{dir});
+    const file = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
+    defer file.close(init.io);
+    try file.writePositionalAll(init.io, png, 0);
+    std.debug.print("   wrote {s} ({d}x{d})\n", .{ path, W, H });
 }
