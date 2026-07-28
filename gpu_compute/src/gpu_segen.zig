@@ -277,19 +277,25 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     if (!found) return err("zone not found in jsonl");
-    if (radius_override) |ro| radius = ro;
-    if (radius < 1) return err("zone has no radius — pass --radius (required for asteroid fields)");
+    // Render EXTENT (half-size of the rendered disk): --radius caps it, else the
+    // zone's true radius. CRITICAL: the zone's TRUE radius stays for the
+    // control/frequency math (fm = 5000/radius) below — capping the render
+    // window must NOT change the noise scale, or the biome pattern shifts (this
+    // was the moon-render bug: --radius 600 gave fm 8.3 instead of 1.7).
+    const extent: f64 = if (radius_override) |ro| ro else radius;
+    if (extent < 1) return err("zone has no radius — pass --radius (required for asteroid fields)");
 
-    const R: u32 = @intFromFloat(radius);
+    const R: u32 = @intFromFloat(extent);
     const W: u32 = R * 2;
     const H: u32 = R * 2;
 
     // ── Asteroid field: se-space / se-asteroid argmax (separate kernel) ──────
     if (is_field) {
         std.debug.print("# gpu_segen: {s} seed {d} r {d} ASTEROID-FIELD grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, grid, W, H });
-        try renderAsteroidField(a, init, zone_seed, radius, out_dir, world_seed, zone_name, grid);
+        try renderAsteroidField(a, init, zone_seed, extent, out_dir, world_seed, zone_name, grid);
         return;
     }
+    if (radius < 1) return err("planet/moon zone has no radius (z.r)");
 
     std.debug.print("# gpu_segen: {s} seed {d} r {d} water {} grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, grid, W, H });
 
@@ -347,7 +353,9 @@ pub fn main(init: std.process.Init) !void {
         .has_water = if (has_water) 1 else 0,
     };
 
-    try renderTerrain(a, init, zone_seed, base, radius, out_dir, world_seed, zone_name, grid);
+    // Geometry (disk mask + cell layout) uses the render EXTENT; the frequency
+    // params in `base` already encode the true radius via fm.
+    try renderTerrain(a, init, zone_seed, base, extent, out_dir, world_seed, zone_name, grid);
 }
 
 fn err(msg: []const u8) error{Usage} {
