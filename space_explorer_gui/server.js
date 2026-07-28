@@ -472,7 +472,7 @@ app.get("/seed/:seed", (req, res) => {
   const filterId = req.query.filter || null;
 
   // Show ALL zones; criteria-relevant ones are pinned to the top and pre-checked.
-  const sel = new Set(c.selectedZones || []);
+  const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
   const zones = db.getZonesForSeed(s.seed).sort((a, b) => {
     const ra = sel.has(a.name) ? 0 : 1, rb = sel.has(b.name) ? 0 : 1;
     return ra - rb || (a.name || "").localeCompare(b.name || "");
@@ -499,7 +499,7 @@ function zoneSearchText(bucket, seed, zone) {
 function renderSeedDetail(s, c, zones, filterId) {
   const back = { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
   const reload = `/seed/${s.seed}`;
-  const sel = new Set(c.selectedZones || []);
+  const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
   const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
 
   return `
@@ -509,7 +509,7 @@ function renderSeedDetail(s, c, zones, filterId) {
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
       ${maxRadiusInput()}
-      <span class="hint">All zones shown; ⭐ criteria-relevant are pinned to the top and pre-selected. Click a header to sort.</span>
+      <span class="hint">All zones shown; selected zones are pinned to the top (⭐ = criteria-relevant, pre-selected). Click a header to sort.</span>
     </div>
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
@@ -567,24 +567,43 @@ function renderSeedDetail(s, c, zones, filterId) {
       (function () {
         var sortState = { key: null, dir: "asc" };
         var NUMERIC = { radius: 1, dv: 1 };
-        window.sortZones = function (key) {
-          sortState.dir = (sortState.key === key && sortState.dir === "asc") ? "desc" : "asc";
-          sortState.key = key;
+        function isSel(r) {
+          var cb = r.querySelector('input[type=checkbox][name=zone]');
+          return cb && cb.checked ? 1 : 0;
+        }
+        // Re-order rows: selected (checked) zones pinned to the top, then the
+        // active sort key. Runs on load, on sort, and whenever a checkbox toggles,
+        // so manually-selected zones jump up beside the criteria-relevant ones.
+        function reflow() {
           var tb = document.querySelector("#zone-table tbody");
+          if (!tb) return;
           var rows = [].slice.call(tb.querySelectorAll("tr[data-zone]"));
+          var key = sortState.key;
           rows.sort(function (a, b) {
-            var ra = +a.dataset.relevant, rb = +b.dataset.relevant;
-            if (ra !== rb) return rb - ra;            // ⭐ relevant pinned to top
+            var ra = isSel(a), rb = isSel(b);
+            if (ra !== rb) return rb - ra;            // selected pinned to top
+            if (!key) return 0;                        // else keep DOM order (stable sort)
             var va = a.dataset[key], vb = b.dataset[key], cmp;
             if (NUMERIC[key]) cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
             else cmp = String(va).localeCompare(String(vb));
             return sortState.dir === "asc" ? cmp : -cmp;
           });
           rows.forEach(function (r) { tb.appendChild(r); });
+        }
+        window.reflowZones = reflow;
+        window.sortZones = function (key) {
+          sortState.dir = (sortState.key === key && sortState.dir === "asc") ? "desc" : "asc";
+          sortState.key = key;
+          reflow();
           document.querySelectorAll("#zone-table th.sortable .sort-ind").forEach(function (s) { s.textContent = ""; });
           var thh = document.querySelector('#zone-table th[data-key="' + key + '"] .sort-ind');
           if (thh) thh.textContent = sortState.dir === "asc" ? "▲" : "▼";
         };
+        // Re-pin whenever a zone checkbox toggles (delegated; survives htmx swaps).
+        document.addEventListener("change", function (e) {
+          if (e.target && e.target.matches && e.target.matches('#zone-table input[type=checkbox][name=zone]')) reflow();
+        });
+        reflow();  // pin pre-checked (criteria-relevant + naq field) on initial render
         window.filterZones = function () {
           var q = (document.getElementById("zone-search").value || "").trim().toLowerCase();
           document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
@@ -597,6 +616,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = master.checked;
           });
+          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
         // Row click → surface detail, unless the click was on an interactive
         // control (button/input/link) — those keep their own behaviour.
