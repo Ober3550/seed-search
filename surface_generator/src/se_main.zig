@@ -614,6 +614,8 @@ pub fn main(init: std.process.Init) !void {
     var nauvis_biome: bool = false;
     var horaerratum_biome: bool = false;
     var biome_probe: ?[]const u8 = null;
+    var biome_names_pts: ?[]const u8 = null;
+    var biome_names_out: ?[]const u8 = null;
     var water_exclude: bool = false;
     var biome_bg: bool = false;
     var k2_enable: bool = false;
@@ -683,6 +685,11 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--biome-probe")) {
             i += 1;
             if (i < args.len) biome_probe = args[i];
+        } else if (std.mem.eql(u8, args[i], "--biome-names")) {
+            i += 1;
+            if (i < args.len) biome_names_pts = args[i];
+            i += 1;
+            if (i < args.len) biome_names_out = args[i];
         } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
             biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--ores-only")) {
@@ -861,6 +868,35 @@ pub fn main(init: std.process.Init) !void {
         const e = elev.at(px, py);
         std.debug.print("probe ({d},{d}): t={d:.4} m={d:.4} a={d:.4} e={d:.4}\n", .{ px, py, t, m, av, e });
         classifier.probe(px, py, t, m, av, e);
+        return;
+    }
+
+    if (biome_names_pts) |pf| {
+        // Classify a list of "x,y" points (Horaerratum config) and emit "x,y,name"
+        // so placement can be diffed by TILE NAME against the live game oracle
+        // (surface.get_tile) — colours collide, names don't.
+        const zt = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
+        const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+        const classifier = surfacegen.biome.Classifier.init(surfacegen.terrain.HORAERRATUM.map_seed);
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, pf, a, .unlimited);
+        var outbuf: std.ArrayList(u8) = .empty;
+        var lines = std.mem.tokenizeAny(u8, raw, "\r\n");
+        while (lines.next()) |line| {
+            const comma = std.mem.indexOfScalar(u8, line, ',') orelse continue;
+            const px = std.fmt.parseFloat(f64, line[0..comma]) catch continue;
+            const py = std.fmt.parseFloat(f64, line[comma + 1 ..]) catch continue;
+            const e = elev.at(px, py);
+            const name: []const u8 = if (e < 0.0)
+                (if (e < -5.0) "deepwater" else "water")
+            else
+                surfacegen.biome.biomes[classifier.classifyIndex(px, py, zt.temperature(px, py), zt.moisture(px, py), zt.aux(px, py), e)].name;
+            try outbuf.appendSlice(a, try std.fmt.allocPrint(a, "{d},{d},{s}\n", .{ px, py, name }));
+        }
+        const of = biome_names_out orelse "biome-names-gen.csv";
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, of, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, outbuf.items, 0);
+        std.debug.print("# Wrote {s}\n", .{of});
         return;
     }
 
