@@ -125,4 +125,23 @@ pub fn build(b: *std.Build) void {
     const tma_cmd = b.addRunArtifact(tma);
     tma_step.dependOn(&tma_cmd.step);
     tma_cmd.step.dependOn(b.getInstallStep());
+
+    // Phase 3b — biome classification conformance.
+    const bio = b.addExecutable(.{
+        .name = "biome_conformance",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/biome_conformance.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(bio, b, inc, lib);
+    b.installArtifact(bio);
+
+    const bio_step = b.step("biome", "Run the Phase 3b biome classification conformance test");
+    const bio_cmd = b.addRunArtifact(bio);
+    bio_step.dependOn(&bio_cmd.step);
+    bio_cmd.step.dependOn(b.getInstallStep());
 }
