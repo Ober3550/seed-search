@@ -26,6 +26,19 @@ pub fn main(init: std.process.Init) !void {
     const radius_s = getStr(args, "--radius") orelse "500";
     const out = getStr(args, "--out") orelse "asteroid.png";
     const map_seed = try std.fmt.parseInt(u32, seed_s, 10);
+
+    // --probe "x,y;x,y;..." → print raw mo + margin at each point, then exit.
+    if (getStr(args, "--probe")) |pts| {
+        const field = sg.asteroid.AsteroidField.initField(map_seed);
+        var it = std.mem.tokenizeScalar(u8, pts, ';');
+        while (it.next()) |pair| {
+            var xy = std.mem.tokenizeScalar(u8, pair, ',');
+            const x = try std.fmt.parseFloat(f64, xy.next().?);
+            const y = try std.fmt.parseFloat(f64, xy.next().?);
+            std.debug.print("({d},{d}) mo={d:.6} |mo|={d:.6} margin={d:.6}\n", .{ x, y, field.moAt(x, y), @abs(field.moAt(x, y)), field.margin(x, y, 1.0) });
+        }
+        return;
+    }
     const R: u32 = try std.fmt.parseInt(u32, radius_s, 10);
     const rf: f64 = @floatFromInt(R);
 

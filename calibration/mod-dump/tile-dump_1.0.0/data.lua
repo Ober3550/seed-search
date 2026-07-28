@@ -64,3 +64,19 @@ data:extend({
   { type="noise-expression", name="probe_vheat3", expression=[[(min(plateau_peak_to_noise_expression(aux,0.35,0.35), plateau_peak_to_noise_expression(temperature,140,5)) + min(0, -1 + elevation / 5)) + 0.5 * multioctave_noise{x = x,y = y,offset_x = 1000,persistence = 0.75,seed0 = map_seed,seed1 = 1133,octaves = 6,input_scale = 1/6/4,output_scale = 0.666}]] },
   { type="noise-expression", name="probe_mtandirt6", expression=[[(min(min(plateau_peak_to_noise_expression(aux,0.15,0.15), plateau_peak_to_noise_expression(moisture,0.5,0.1)), plateau_peak_to_noise_expression(temperature,80,20)) + min(0, -1 + elevation / 5)) + 0.5 * multioctave_noise{x = x,y = y,offset_x = 1000,persistence = 0.75,seed0 = map_seed,seed1 = 1042,octaves = 6,input_scale = 1/6/4,output_scale = 0.666}]] },
 })
+
+-- Asteroid-field billows probe: the exact multioctave used by se-asteroid
+-- autoplace (prototypes/phase-3/noise-programs.lua). Compare vs asteroid.zig.
+data:extend({
+  { type="noise-expression", name="probe_asteroid_mo",
+    expression="multioctave_noise{x=x/5, y=y/5, persistence=0.7, seed0=map_seed, seed1=1, octaves=4, input_scale=1/6, output_scale=1}" },
+})
+
+-- Full se-asteroid minus se-space margin + the resolved control values.
+local am = "multioctave_noise{x=x/5,y=y/5,persistence=0.7,seed0=map_seed,seed1=1,octaves=4,input_scale=1/6,output_scale=1}"
+data:extend({
+  { type="noise-expression", name="probe_ast_margin",
+    expression="-1 + max(-25, min(0, var('control:planet-size:size') - 25)) + min(y/var('control:planet-size:size'), 0 - y/var('control:planet-size:size')) + max("..am..", 0 - "..am..")" },
+  { type="noise-expression", name="probe_ps_size", expression="var('control:planet-size:size')" },
+  { type="noise-expression", name="probe_ps_freq", expression="var('control:planet-size:frequency')" },
+})

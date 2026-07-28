@@ -48,18 +48,26 @@ pub const AsteroidField = struct {
         return init(map_seed, FIELD_SIZE, FIELD_FREQ);
     }
 
+    /// The raw asteroid billows multioctave (before abs).
+    pub fn moAt(self: *const AsteroidField, x: f64, y: f64) f64 {
+        return noise.multioctaveNoisePrebuilt(&self.gen, x / 5.0, y / 5.0, 4, 0.7, 1.0 / 6.0, 1.0);
+    }
+
+    /// asteroid - space margin (>0 → asteroid wins). billows_scale lets us test
+    /// an amplitude correction against the game.
+    pub fn margin(self: *const AsteroidField, x: f64, y: f64, billows_scale: f64) f64 {
+        const billows = @abs(self.moAt(x, y)) * billows_scale;
+        const size_term = @max(-25.0, @min(0.0, self.size - 25.0));
+        const ridge = @min(y / self.size, -y / self.size);
+        return -1.0 + size_term + ridge + billows;
+    }
+
     pub fn tileAt(self: *const AsteroidField, x: f64, y: f64) Tile {
         // out-of-map wins beyond the field disk (distance from the spawn point,
         // taken as origin here). 10000*(dist - planet_radius) vs space's ~+900k.
         const dist = @sqrt(x * x + y * y);
         if (10000.0 * (dist - self.planet_radius) > (1.0 / self.freq - 100.0) * 1000.0) return .out_of_map;
-
-        const mo = noise.multioctaveNoisePrebuilt(&self.gen, x / 5.0, y / 5.0, 4, 0.7, 1.0 / 6.0, 1.0);
-        const billows = @abs(mo);
-        const size_term = @max(-25.0, @min(0.0, self.size - 25.0));
-        const ridge = @min(y / self.size, -y / self.size);
-        const asteroid_minus_space = -1.0 + size_term + ridge + billows;
-        return if (asteroid_minus_space > 0.0) .asteroid else .space;
+        return if (self.margin(x, y, 1.0) > 0.0) .asteroid else .space;
     }
 
     pub fn colorAt(self: *const AsteroidField, x: f64, y: f64) [3]u8 {
