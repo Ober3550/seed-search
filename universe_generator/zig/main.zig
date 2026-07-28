@@ -125,6 +125,41 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
+        // --- Fast scan: nearest asteroid field where naquium is the #1 yield ---
+        // Emits one "dv\n" per qualifying seed (nothing otherwise). Skips JSONL.
+        // NOTE: uses the current (pre-quota-fix) null-primary yield ranking, so it
+        // OVER-counts naquium-primary fields — treat as an upper bound.
+        if (getEnvBool("NAQ_SCAN")) {
+            const calidus_zi2 = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+            const cx = universe.zones.items[calidus_zi2].stellar_x;
+            const cy = universe.zones.items[calidus_zi2].stellar_y;
+            const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
+            var best_dv: u32 = std.math.maxInt(u32);
+            for (universe.zones.items) |z| {
+                if (z.ztype != .@"asteroid-field") continue;
+                const scores = gen.computeZoneResources(z.seed, z.ztype, null, empty_tags);
+                var naq_y: f64 = 0;
+                var max_y: f64 = 0;
+                for (gen.resource_order, 0..) |rname, ri| {
+                    const y = gen.computeYield(scores[ri], true, 0, null, rname);
+                    if (y > max_y) max_y = y;
+                    if (std.mem.eql(u8, rname, "se-naquium-ore")) naq_y = y;
+                }
+                if (naq_y <= 0 or naq_y < max_y) continue; // naquium must be #1
+                const dx = z.stellar_x - cx;
+                const dy = z.stellar_y - cy;
+                const dist = @sqrt(dx * dx + dy * dy);
+                const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
+                if (dv < best_dv) best_dv = dv;
+            }
+            if (best_dv != std.math.maxInt(u32)) {
+                var lb: [16]u8 = undefined;
+                const ls = std.fmt.bufPrint(&lb, "{d}\n", .{best_dv}) catch unreachable;
+                _ = stdout_w.writeAll(ls) catch {};
+            }
+            continue;
+        }
+
         // --- Serialize JSONL (Calidus system only, plus all asteroid fields) ---
         var buf: [524288]u8 = undefined;
         var pos: usize = 0;
