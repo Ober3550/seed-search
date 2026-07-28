@@ -20,9 +20,9 @@ pub const biomes = table.biomes;
 pub const WATER_SEED: u32 = 4214428890; // crc32("water")
 pub const CRATER_SEED: u32 = 3394482400; // crc32("crater")
 
-fn plateauPeak(v: f64, lohi: [2]f64) f64 {
-    const lo = lohi[0];
-    const hi = lohi[1];
+fn plateauPeak(v: f32, lohi: [2]f64) f32 {
+    const lo: f32 = @floatCast(lohi[0]);
+    const hi: f32 = @floatCast(lohi[1]);
     const center = (lo + hi) / 2.0;
     const range = @abs(lo - hi) / 2.0;
     return @min((range - @abs(v - center)) * 20.0, 1.0);
@@ -45,24 +45,29 @@ pub const Classifier = struct {
 
     /// Winning land-biome index + its fitness (so water tiles can compete on the
     /// same scale in classifyTile).
-    pub fn classifyBest(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) struct { idx: usize, fit: f64 } {
+    pub fn classifyBest(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) struct { idx: usize, fit: f32 } {
+        // Fitness in f32 to match the engine's f32 probability evaluation.
+        const tf: f32 = @floatCast(t);
+        const mf: f32 = @floatCast(m);
+        const af: f32 = @floatCast(a);
+        const ef: f32 = @floatCast(e);
         // shared noise fields (same for every candidate tile at this position)
-        const water_noise = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 8.0, 0.666);
-        const crater_noise = noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666);
-        const beach = @min(0.0, e / 5.0 - 1.0);
+        const water_noise: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 8.0, 0.666));
+        const crater_noise: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666));
+        const beach: f32 = @min(@as(f32, 0.0), ef / 5.0 - 1.0);
 
         var best_i: usize = 0;
-        var best_f: f64 = -std.math.inf(f64);
+        var best_f: f32 = -std.math.inf(f32);
         for (biomes, 0..) |b, i| {
-            var f: f64 = std.math.inf(f64);
-            if (b.t) |r| f = @min(f, plateauPeak(t, r));
-            if (b.m) |r| f = @min(f, plateauPeak(m, r));
-            if (b.a) |r| f = @min(f, plateauPeak(a, r));
-            if (b.e) |r| f = @min(f, plateauPeak(e, r));
+            var f: f32 = std.math.inf(f32);
+            if (b.t) |r| f = @min(f, plateauPeak(tf, r));
+            if (b.m) |r| f = @min(f, plateauPeak(mf, r));
+            if (b.a) |r| f = @min(f, plateauPeak(af, r));
+            if (b.e) |r| f = @min(f, plateauPeak(ef, r));
             if (b.beach_weight < 0.0) f += beach;
-            if (b.water_coef != 0.0) f += b.water_coef * water_noise;
+            if (b.water_coef != 0.0) f += @as(f32, @floatCast(b.water_coef)) * water_noise;
             if (b.crater) f += -0.6 - 0.7 * crater_noise;
-            f += 0.5 * noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+            f += 0.5 * @as(f32, @floatCast(noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0)));
             if (f > best_f) {
                 best_f = f;
                 best_i = i;
@@ -85,31 +90,33 @@ pub const Classifier = struct {
     /// probability expressions (elevation-gated for water/deepwater/shallow;
     /// temperature+high-freq-water-noise for the wetland water-mud). Returns the
     /// winning tile's map colour. Replaces the old hard `e<0 -> water` gate.
-    pub const Tile = struct { color: [3]u8, name: []const u8, fit: f64 };
+    pub const Tile = struct { color: [3]u8, name: []const u8, fit: f32 };
 
     pub fn classifyTile(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) Tile {
         const land = self.classifyBest(x, y, t, m, a, e);
         var best = Tile{ .color = biomes[land.idx].color, .name = biomes[land.idx].name, .fit = land.fit };
+        const tf: f32 = @floatCast(t);
+        const ef: f32 = @floatCast(e);
 
         // high-frequency 'water' layers used by water-shallow / water-mud.
-        const wn_a = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.25, 0.666);
-        const wn_b = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.314, 0.666);
+        const wn_a: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.25, 0.666));
+        const wn_b: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.314, 0.666));
         const consider = struct {
-            fn go(f: f64, c: [3]u8, n: []const u8, b: *Tile) void {
+            fn go(f: f32, c: [3]u8, n: []const u8, b: *Tile) void {
                 if (f > b.fit) b.* = .{ .color = c, .name = n, .fit = f };
             }
         }.go;
 
         // water-mud: plateau_peak(temp,50,50) + 0.5*min(wn_a,wn_b) + min(0,-1+e/5) - 1.15
-        const mud = plateauPeak(t, .{ 0.0, 100.0 }) + 0.5 * @min(wn_a, wn_b) + @min(0.0, -1.0 + e / 5.0) - 1.15;
+        const mud: f32 = plateauPeak(tf, .{ 0.0, 100.0 }) + 0.5 * @min(wn_a, wn_b) + @min(@as(f32, 0.0), -1.0 + ef / 5.0) - 1.15;
         consider(mud, water_mud, "water-mud", &best);
 
         if (e < 0.0) {
             // water: 100*min(-e,1);  deepwater: 200*min(-5-e,1) for e<-5;
             // water-shallow: 200*min(-e,1) + wn_a*50 + e*100 + min(t,0)*10000
-            consider(100.0 * @min(-e, 1.0), water, "water", &best);
-            if (e < -5.0) consider(200.0 * @min(-5.0 - e, 1.0), deepwater, "deepwater", &best);
-            consider(200.0 * @min(-e, 1.0) + wn_a * 50.0 + e * 100.0 + @min(t, 0.0) * 10000.0, water_shallow, "water-shallow", &best);
+            consider(100.0 * @min(-ef, 1.0), water, "water", &best);
+            if (e < -5.0) consider(200.0 * @min(-5.0 - ef, 1.0), deepwater, "deepwater", &best);
+            consider(200.0 * @min(-ef, 1.0) + wn_a * 50.0 + ef * 100.0 + @min(tf, 0.0) * 10000.0, water_shallow, "water-shallow", &best);
         }
         return best;
     }
@@ -119,26 +126,30 @@ pub const Classifier = struct {
     pub fn probe(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) void {
         const water_noise = noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 8.0, 0.666);
         const crater_noise = noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666);
-        const beach = @min(0.0, e / 5.0 - 1.0);
+        const tf: f32 = @floatCast(t);
+        const mf: f32 = @floatCast(m);
+        const af: f32 = @floatCast(a);
+        const ef: f32 = @floatCast(e);
+        const beach: f32 = @min(@as(f32, 0.0), ef / 5.0 - 1.0);
         std.debug.print("  water_noise={d:.4} crater_noise={d:.4} beach={d:.4}\n", .{ water_noise, crater_noise, beach });
 
-        var fits: [biomes.len]f64 = undefined;
+        var fits: [biomes.len]f32 = undefined;
         for (biomes, 0..) |b, i| {
-            var f: f64 = std.math.inf(f64);
-            if (b.t) |r| f = @min(f, plateauPeak(t, r));
-            if (b.m) |r| f = @min(f, plateauPeak(m, r));
-            if (b.a) |r| f = @min(f, plateauPeak(a, r));
-            if (b.e) |r| f = @min(f, plateauPeak(e, r));
+            var f: f32 = std.math.inf(f32);
+            if (b.t) |r| f = @min(f, plateauPeak(tf, r));
+            if (b.m) |r| f = @min(f, plateauPeak(mf, r));
+            if (b.a) |r| f = @min(f, plateauPeak(af, r));
+            if (b.e) |r| f = @min(f, plateauPeak(ef, r));
             if (b.beach_weight < 0.0) f += beach;
-            if (b.water_coef != 0.0) f += b.water_coef * water_noise;
-            if (b.crater) f += -0.6 - 0.7 * crater_noise;
-            f += 0.5 * noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+            if (b.water_coef != 0.0) f += @as(f32, @floatCast(b.water_coef)) * @as(f32, @floatCast(water_noise));
+            if (b.crater) f += -0.6 - 0.7 * @as(f32, @floatCast(crater_noise));
+            f += 0.5 * @as(f32, @floatCast(noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0)));
             fits[i] = f;
         }
         var order: [biomes.len]usize = undefined;
         for (0..biomes.len) |i| order[i] = i;
         std.mem.sort(usize, &order, &fits, struct {
-            fn lt(fs: *const [biomes.len]f64, ia: usize, ib: usize) bool {
+            fn lt(fs: *const [biomes.len]f32, ia: usize, ib: usize) bool {
                 return fs[ia] > fs[ib]; // descending
             }
         }.lt);
@@ -147,9 +158,9 @@ pub const Classifier = struct {
             const i = order[rank];
             const b = biomes[i];
             const tv = 0.5 * noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
-            const tpk = if (b.t) |r| plateauPeak(t, r) else std.math.inf(f64);
-            const mpk = if (b.m) |r| plateauPeak(m, r) else std.math.inf(f64);
-            const apk = if (b.a) |r| plateauPeak(a, r) else std.math.inf(f64);
+            const tpk = if (b.t) |r| plateauPeak(tf, r) else std.math.inf(f32);
+            const mpk = if (b.m) |r| plateauPeak(mf, r) else std.math.inf(f32);
+            const apk = if (b.a) |r| plateauPeak(af, r) else std.math.inf(f32);
             const bch: f64 = if (b.beach_weight < 0.0) beach else 0.0;
             const wtr: f64 = if (b.water_coef != 0.0) b.water_coef * water_noise else 0.0;
             std.debug.print("  #{d:>2} f={d:.4}  {s:<26} rgb={d},{d},{d}  tpk={d:.3} mpk={d:.3} apk={d:.3} beach={d:.3} water={d:.3} tv={d:.4}\n", .{ rank, fits[i], b.name, b.color[0], b.color[1], b.color[2], tpk, mpk, apk, bch, wtr, tv });

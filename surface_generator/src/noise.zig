@@ -228,23 +228,27 @@ pub fn multioctaveNoiseOffset(
     // variant (446/446) only with the tile-space offset; noise-space gives 12%.
     // (calculate_tile_properties evaluates offset_x in noise space, so it does
     // NOT predict map-gen placement — do not calibrate the tv against it.)
-    const ampmul = 1.0 / persistence;
-    var value: f64 = 0.0;
-    var amplitude: f64 = 1.0;
-    var coordmul: f64 = 1.0;
-    var sumsq: f64 = 0.0;
-    var k: f64 = 0.0;
+    // Accumulate in f32 to match the engine's fastVectorMultioctaveNoise (f32).
+    const is32: f32 = @floatCast(input_scale);
+    const xo: f32 = @floatCast(x + offset_x);
+    const yo: f32 = @floatCast(y + offset_y);
+    const ampmul: f32 = @floatCast(1.0 / persistence);
+    var value: f32 = 0.0;
+    var amplitude: f32 = 1.0;
+    var coordmul: f32 = 1.0;
+    var sumsq: f32 = 0.0;
+    var k: f32 = 0.0;
     var i: u32 = 0;
     while (i < octaves) : (i += 1) {
-        const x_arg = (k * 17.17) / input_scale + (x + offset_x) * coordmul;
-        const y_arg = (y + offset_y) * coordmul;
-        value += gen.eval(x_arg, y_arg, input_scale, 1.0) * amplitude;
+        const x_arg: f32 = (k * 17.17) / is32 + xo * coordmul;
+        const y_arg: f32 = yo * coordmul;
+        value += @as(f32, @floatCast(gen.eval(x_arg, y_arg, input_scale, 1.0))) * amplitude;
         sumsq += amplitude * amplitude;
         coordmul *= 0.5;
         amplitude *= ampmul;
         k += 1.0;
     }
-    return (value / @sqrt(sumsq)) * output_scale;
+    return @as(f64, (value / @sqrt(sumsq)) * @as(f32, @floatCast(output_scale)));
 }
 
 /// variable_persistence_multioctave_noise (VariablePersistenceMultioctaveNoise op

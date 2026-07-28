@@ -19,7 +19,7 @@
 const std = @import("std");
 const noise = @import("noise.zig");
 
-fn clamp(v: f64, lo: f64, hi: f64) f64 {
+fn clamp(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) @TypeOf(v) {
     return std.math.clamp(v, lo, hi);
 }
 
@@ -41,16 +41,17 @@ pub fn quickMultioctave(
     offset_x: f64,
     offset_y: f64,
 ) f64 {
-    var result: f64 = 0.0;
+    // Accumulate in f32 to match the engine's f32 noise evaluation.
+    var result: f32 = 0.0;
     var inscale = input_scale;
     var outscale = output_scale;
     var i: u32 = 0;
     while (i < octaves) : (i += 1) {
-        result += gens[i].evalOffset(x, y, inscale, outscale, offset_x, offset_y);
+        result += @as(f32, @floatCast(gens[i].evalOffset(x, y, inscale, outscale, offset_x, offset_y)));
         inscale *= oism;
         outscale *= oosm;
     }
-    return result;
+    return @as(f64, result);
 }
 
 /// Build `octaves` generators for a quick_multioctave call: (seed0+k, seed1).
@@ -133,48 +134,52 @@ pub const ZoneTerrain = struct {
     /// bands + volcanic hotspots. cold=control:cold:size, hot=control:hot:size.
     /// All sub-noises are quick_multioctave with seed1=5.
     pub fn temperature(self: *const ZoneTerrain, x: f64, y: f64) f64 {
-        const cold = self.cold_size;
-        const hot = self.hot_size;
+        // Field math in f32 to match the engine (the volcanic threshold at
+        // combined≈100 is sensitive; f64 would diverge from placed tiles).
+        const cold: f32 = @floatCast(self.cold_size);
+        const hot: f32 = @floatCast(self.hot_size);
         const cf = self.cold_frequency;
         const hf = self.hot_frequency;
-        const average = 50.0 - 125.0 * cold / 6.0 + 125.0 * hot / 6.0;
-        const range = 50.0 * (clamp(cold, 0, 1) / 2.0 + cold / 10.0) + 50.0 * (clamp(hot, 0, 1) / 2.0 + hot / 10.0);
+        const average: f32 = 50.0 - 125.0 * cold / 6.0 + 125.0 * hot / 6.0;
+        const range: f32 = 50.0 * (clamp(cold, 0, 1) / 2.0 + cold / 10.0) + 50.0 * (clamp(hot, 0, 1) / 2.0 + hot / 10.0);
 
         const bfreq = (cf + hf) / 2.0;
-        const main_noise = quickMultioctave(self.temp_gens[0..11], x * bfreq, y * bfreq, 11, 1.0 / 32.0, 1.0 / 20.0, 0.5, 1.4, 0.0, 40000.0);
-        const base = average + range * clamp(0.25 * main_noise, -1, 1);
+        const main_noise: f32 = @floatCast(quickMultioctave(self.temp_gens[0..11], x * bfreq, y * bfreq, 11, 1.0 / 32.0, 1.0 / 20.0, 0.5, 1.4, 0.0, 40000.0));
+        const base: f32 = average + range * clamp(0.25 * main_noise, -1.0, 1.0);
 
-        const hotspots_noise = quickMultioctave(self.temp_gens[0..10], x * hf, y * hf, 10, 1.0 / 8.0, 1.0 / 20.0, 0.5, 1.5, 40000.0, 0.0);
-        const hotspots = (clamp(hot, 0, 1) / 2.0 + hot / 10.0) * 40.0 * clamp(-0.45 + hot / 6.0 + hotspots_noise, 0, 4);
+        const hotspots_noise: f32 = @floatCast(quickMultioctave(self.temp_gens[0..10], x * hf, y * hf, 10, 1.0 / 8.0, 1.0 / 20.0, 0.5, 1.5, 40000.0, 0.0));
+        const hotspots: f32 = (clamp(hot, 0, 1) / 2.0 + hot / 10.0) * 40.0 * clamp(-0.45 + hot / 6.0 + hotspots_noise, 0.0, 4.0);
 
-        const coldspots_noise = quickMultioctave(self.temp_gens[0..10], x * cf, y * cf, 10, 1.0 / 30.0, 1.0 / 20.0, 0.5, 1.5, -40000.0, 0.0);
-        const coldspots = (clamp(cold, 0, 1) / 2.0 + cold / 10.0) * 40.0 * clamp(-0.45 + cold / 6.0 + coldspots_noise, 0, 4);
+        const coldspots_noise: f32 = @floatCast(quickMultioctave(self.temp_gens[0..10], x * cf, y * cf, 10, 1.0 / 30.0, 1.0 / 20.0, 0.5, 1.5, -40000.0, 0.0));
+        const coldspots: f32 = (clamp(cold, 0, 1) / 2.0 + cold / 10.0) * 40.0 * clamp(-0.45 + cold / 6.0 + coldspots_noise, 0.0, 4.0);
 
-        const combined = clamp(base - coldspots + hotspots, -50, 110); // slice off lava peaks
-        const volcanic_area = clamp(combined - 100.0, 0, 10);
-        const vhn = quickMultioctave(self.temp_gens[0..6], x, y, 6, 1.0, 1.0 / 20.0, 0.5, 1.5, 0.0, 0.0);
-        const volcanic_hotspots = clamp(0.5 + vhn, 0, 10) * volcanic_area * 4.0;
-        return clamp(combined + volcanic_hotspots, -20, 150);
+        const combined: f32 = clamp(base - coldspots + hotspots, -50.0, 110.0); // slice off lava peaks
+        const volcanic_area: f32 = clamp(combined - 100.0, 0.0, 10.0);
+        const vhn: f32 = @floatCast(quickMultioctave(self.temp_gens[0..6], x, y, 6, 1.0, 1.0 / 20.0, 0.5, 1.5, 0.0, 0.0));
+        const volcanic_hotspots: f32 = clamp(0.5 + vhn, 0.0, 10.0) * volcanic_area * 4.0;
+        return @as(f64, clamp(combined + volcanic_hotspots, -20.0, 150.0));
     }
 
     /// alien-biomes `aux` = clamp(0.45 + 2.2*bias + 2.2*qmn{seed1=7, oct8,
     /// is=1/5000, os=1/4, oism=3, oosm=0.5, offset_x=20000}, 0, 1).
     pub fn aux(self: *const ZoneTerrain, x: f64, y: f64) f64 {
         const f = self.aux_frequency;
-        const q = quickMultioctave(self.aux_gens[0..8], x * f, y * f, 8, 1.0 / 5000.0, 1.0 / 4.0, 3.0, 0.5, 20000.0, 0.0);
-        return clamp(0.45 + 2.2 * self.aux_bias + 2.2 * q, 0.0, 1.0);
+        const q: f32 = @floatCast(quickMultioctave(self.aux_gens[0..8], x * f, y * f, 8, 1.0 / 5000.0, 1.0 / 4.0, 3.0, 0.5, 20000.0, 0.0));
+        const bias: f32 = @floatCast(self.aux_bias);
+        return @as(f64, clamp(0.45 + 2.2 * bias + 2.2 * q, @as(f32, 0.0), @as(f32, 1.0)));
     }
 
     /// alien-biomes `moisture` = clamp(0.5 + 2.2*bias + 2.5*qmn{seed1=6, oct8,
     /// is=1/2000, os=1/8, oism=3, oosm=0.5, offset_x=30000}, 0, 1).
     pub fn moisture(self: *const ZoneTerrain, x: f64, y: f64) f64 {
         const f = self.moisture_frequency;
-        const q = quickMultioctave(self.moist_gens[0..8], x * f, y * f, 8, 1.0 / 2000.0, 1.0 / 8.0, 3.0, 0.5, 30000.0, 0.0);
-        return clamp(0.5 + 2.2 * self.moisture_bias + 2.5 * q, 0.0, 1.0);
+        const q: f32 = @floatCast(quickMultioctave(self.moist_gens[0..8], x * f, y * f, 8, 1.0 / 2000.0, 1.0 / 8.0, 3.0, 0.5, 30000.0, 0.0));
+        const bias: f32 = @floatCast(self.moisture_bias);
+        return @as(f64, clamp(0.5 + 2.2 * bias + 2.5 * q, @as(f32, 0.0), @as(f32, 1.0)));
     }
 };
 
-fn lerp(a: f64, b: f64, t: f64) f64 {
+fn lerp(a: anytype, b: @TypeOf(a), t: @TypeOf(a)) @TypeOf(a) {
     return a + (b - a) * t;
 }
 
