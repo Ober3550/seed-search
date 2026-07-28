@@ -436,6 +436,22 @@ pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, pri
         if (zone_type != .@"asteroid-field" and (ri == @intFromEnum(data.Resource.se_naquium_ore) or ri == @intFromEnum(data.Resource.se_methane_ice) or ri == @intFromEnum(data.Resource.se_water_ice))) {
             allowed = false;
         }
+        // Exclude resources that can't spawn on asteroid fields (SE resource_word_rules
+        // allowed_for_zone): not_space words coal/crude-oil/vulcanite/cryonite/
+        // vitamelange/iridium/holmium, not_asteroid_field beryllium, and kr-mineral-water
+        // (water). water-ice is re-allowed by SE override so it stays.
+        if (zone_type == .@"asteroid-field" and (ri == @intFromEnum(data.Resource.coal) or
+            ri == @intFromEnum(data.Resource.crude_oil) or
+            ri == @intFromEnum(data.Resource.se_vulcanite) or
+            ri == @intFromEnum(data.Resource.se_cryonite) or
+            ri == @intFromEnum(data.Resource.se_vitamelange) or
+            ri == @intFromEnum(data.Resource.se_beryllium_ore) or
+            ri == @intFromEnum(data.Resource.se_iridium_ore) or
+            ri == @intFromEnum(data.Resource.se_holmium_ore) or
+            ri == @intFromEnum(data.Resource.kr_mineral_water)))
+        {
+            allowed = false;
+        }
         if (allowed and (primary_resource == null or !std.mem.eql(u8, resource_order[ri], primary_resource.?))) {
             if (ri == @intFromEnum(data.Resource.se_cryonite)) {
                 allowed = tags.temperature != null and
@@ -687,17 +703,27 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
 /// not_space; beryllium by not_asteroid_field; water-ice re-allowed). This
 /// replaces the old null-primary bias ranking that over-labelled fields as
 /// naquium-primary. Returns field name -> primary resource.
-pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !std.StringHashMap([]const u8) {
+pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k2: bool) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
-    const eligible = [_]u32{
+    // Field-eligible primaries in RESOURCE_ORDER order (SE not_space/not_asteroid_field
+    // rules): iron,copper,uranium,stone,naquium,methane-ice,water-ice (+ kr-imersite,
+    // kr-rare-metal-ore under K2). The remainder-quota distribution walks this order.
+    var elig = ArrayList(u32).init(alloc);
+    defer elig.deinit();
+    const base_elig = [_]u32{
         @intFromEnum(data.Resource.iron_ore), @intFromEnum(data.Resource.copper_ore),
         @intFromEnum(data.Resource.uranium_ore), @intFromEnum(data.Resource.stone),
         @intFromEnum(data.Resource.se_naquium_ore), @intFromEnum(data.Resource.se_methane_ice),
         @intFromEnum(data.Resource.se_water_ice),
     };
-    const K = eligible.len;
+    for (base_elig) |ri| try elig.append(ri);
+    if (k2) {
+        try elig.append(@intFromEnum(data.Resource.kr_imersite));
+        try elig.append(@intFromEnum(data.Resource.kr_rare_metal_ore));
+    }
+    const K = elig.items.len;
 
-    const FieldInfo = struct { zi: usize, biases: [18]f64 };
+    const FieldInfo = struct { zi: usize, ob: [18]f64, top: u32 };
     var fields = ArrayList(FieldInfo).init(alloc);
     defer fields.deinit();
     for (zones.items, 0..) |z, zi| {
@@ -705,64 +731,49 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !
         var rng = Rng.initFactorio(z.seed);
         var b: [18]f64 = undefined;
         for (0..18) |ri| b[ri] = rng.float();
-        try fields.append(.{ .zi = zi, .biases = b });
+        // ordered_bias per resource = 1 + (base_bias - rank1) / 18; global winner = argmax base_bias
+        var ob: [18]f64 = undefined;
+        var top: u32 = 0;
+        for (0..18) |ri| {
+            var pos1: u32 = 0;
+            for (0..18) |r2| {
+                if (b[r2] > b[ri]) pos1 += 1;
+            }
+            ob[ri] = 1.0 + (b[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            if (b[ri] > b[top]) top = @intCast(ri);
+        }
+        try fields.append(.{ .zi = zi, .ob = ob, .top = top });
     }
     const N = fields.items.len;
     if (N == 0) return map;
 
-    // ordered_bias(field, ri) = 1 + (bias[ri] - position_1indexed) / 18  (SE formula)
-    const ob = struct {
-        fn f(biases: [18]f64, ri: u32) f64 {
-            var pos1: u32 = 0;
-            for (0..18) |r2| {
-                if (biases[r2] > biases[ri]) pos1 += 1;
-            }
-            return 1.0 + (biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
-        }
-    }.f;
-
-    // quota per resource
-    var quota: [K]u32 = undefined;
+    // quota per eligible resource (remainder → first `rem` eligibles in resource_order)
+    var quota = try alloc.alloc(u32, K);
+    defer alloc.free(quota);
+    var used = try alloc.alloc(u32, K);
+    defer alloc.free(used);
+    @memset(used, 0);
     const per_min: u32 = @intCast(N / K);
     const rem: u32 = @intCast(N % K);
     for (0..K) |k| quota[k] = per_min + (if (k < rem) @as(u32, 1) else 0);
 
-    // Assign each field to its argmax-ordered_bias eligible resource; within each
-    // resource take the highest-ordered_bias fields up to quota; overflow fields
-    // fall back to any resource with remaining quota by next-best ordered_bias.
     var assigned = try alloc.alloc(bool, N);
     defer alloc.free(assigned);
     @memset(assigned, false);
-    var used: [K]u32 = @splat(0);
 
-    // group by best resource
-    var group = try alloc.alloc(usize, N); // resource index k per field
-    defer alloc.free(group);
-    for (fields.items, 0..) |fi, i| {
-        var best_ob: f64 = -1e30;
-        var best_k: usize = 0;
-        for (eligible, 0..) |ri, k| {
-            const v = ob(fi.biases, ri);
-            if (v > best_ob) {
-                best_ob = v;
-                best_k = k;
-            }
-        }
-        group[i] = best_k;
-    }
-    // for each resource, sort its members by ordered_bias desc, assign up to quota
-    for (eligible, 0..) |ri, k| {
-        // collect members
+    // Phase 4 — bias winners: a field goes to resource R only if its GLOBAL #1
+    // (over all resources) is R. Iterate eligible resources in resource_order,
+    // sort winners by ordered_bias, assign up to quota.
+    for (elig.items, 0..) |ri, k| {
         var members = ArrayList(usize).init(alloc);
         defer members.deinit();
         for (0..N) |i| {
-            if (group[i] == k) try members.append(i);
+            if (!assigned[i] and fields.items[i].top == ri) try members.append(i);
         }
-        // insertion sort by ordered_bias desc
         for (members.items, 0..) |_, a2| {
             var b2: usize = a2 + 1;
             while (b2 < members.items.len) : (b2 += 1) {
-                if (ob(fields.items[members.items[b2]].biases, ri) > ob(fields.items[members.items[a2]].biases, ri)) {
+                if (fields.items[members.items[b2]].ob[ri] > fields.items[members.items[a2]].ob[ri]) {
                     const t = members.items[a2];
                     members.items[a2] = members.items[b2];
                     members.items[b2] = t;
@@ -776,24 +787,44 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone)) !
             try map.put(zones.items[fields.items[i].zi].name, resource_order[ri]);
         }
     }
-    // fallback: overflow fields → best eligible resource with remaining quota
+
+    // Phase 5 — assign remaining fields in turns by fewest-assigned resource, each
+    // taking the unassigned field with the highest ordered_bias for it.
+    var max_zones: u32 = per_min + 1;
+    for (0..K) |k| {
+        if (used[k] < quota[k] and used[k] < max_zones) max_zones = used[k];
+    }
+    var pointer: usize = 0;
+    var remaining: usize = 0;
     for (0..N) |i| {
-        if (assigned[i]) continue;
-        var best_ob2: f64 = -1e30;
-        var best_k2: usize = 0;
-        var found = false;
-        for (eligible, 0..) |ri, k| {
-            if (used[k] >= quota[k]) continue;
-            const v = ob(fields.items[i].biases, ri);
-            if (!found or v > best_ob2) {
-                best_ob2 = v;
-                best_k2 = k;
-                found = true;
+        if (!assigned[i]) remaining += 1;
+    }
+    var guard: usize = 0;
+    while (remaining > 0 and max_zones <= per_min + 1 and guard < N * K + K + 4) : (guard += 1) {
+        const k = pointer;
+        const ri = elig.items[k];
+        if (used[k] <= max_zones and used[k] < quota[k]) {
+            var best_i: ?usize = null;
+            var best_v: f64 = -1e30;
+            for (0..N) |i| {
+                if (assigned[i]) continue;
+                if (best_i == null or fields.items[i].ob[ri] > best_v) {
+                    best_v = fields.items[i].ob[ri];
+                    best_i = i;
+                }
+            }
+            if (best_i) |i| {
+                assigned[i] = true;
+                used[k] += 1;
+                remaining -= 1;
+                try map.put(zones.items[fields.items[i].zi].name, resource_order[ri]);
             }
         }
-        if (!found) best_k2 = group[i]; // quotas exhausted (rounding) — keep best
-        used[best_k2] += 1;
-        try map.put(zones.items[fields.items[i].zi].name, resource_order[eligible[best_k2]]);
+        pointer += 1;
+        if (pointer >= K) {
+            pointer = 0;
+            max_zones += 1;
+        }
     }
     return map;
 }

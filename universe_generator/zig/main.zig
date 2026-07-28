@@ -84,7 +84,7 @@ pub fn main(init: std.process.Init) !void {
 
         const bodyMap = try gen.buildBodyMap(a);
         const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap) catch unreachable;
-        const field_primaries = gen.resolveFieldPrimaries(a, universe.zones) catch unreachable;
+        const field_primaries = gen.resolveFieldPrimaries(a, universe.zones, k2_enabled) catch unreachable;
         gen.computeGravityWells(&universe.zones, universe.zoneByName);
 
         const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
