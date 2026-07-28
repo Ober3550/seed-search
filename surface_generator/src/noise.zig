@@ -216,13 +216,18 @@ pub fn multioctaveNoiseOffset(
 ) f64 {
     // EXACT (fit to game raw-multioctave probes, mse=0.0): single shared seed;
     // per octave k the basis samples at
-    //   (x*input_scale*0.5^k + k*C,  y*input_scale*0.5^k)   with C=17.17
-    // octaves COARSER (coordmul*=0.5); per-octave x-offset k*C added in noise
-    // space; amplitude GROWS by 1/persistence each octave (coarse-dominated);
-    // RMS-normalized (÷sqrt(Σ amp²)). The game uses the vectorized path
-    // fastVectorMultioctaveNoise @0x1015dc590 (C=17.17). fVar7=1/persistence is
-    // the amplitude multiplier — grow, not decay. Verified via a noise-probe mod
-    // on a vanilla Nauvis surface (see se-terrain-generation memory).
+    //   ((x+offset_x)*input_scale*0.5^k + k*C,  (y+offset_y)*input_scale*0.5^k)
+    // with C=17.17. octaves COARSER (coordmul*=0.5); per-octave decorrelation
+    // offset k*C added in NOISE space; amplitude GROWS by 1/persistence each
+    // octave (coarse-dominated); RMS-normalized (÷sqrt(Σ amp²)). The game uses
+    // the vectorized path fastVectorMultioctaveNoise @0x1015dc590 (C=17.17).
+    //
+    // offset_x/offset_y are added in TILE space (to x/y before the per-octave
+    // scale), NOT noise space — verified against live Horaerratum tile placement:
+    // the terrain-variation tv layers (offset_x=1000) pick the exact placed snow
+    // variant (446/446) only with the tile-space offset; noise-space gives 12%.
+    // (calculate_tile_properties evaluates offset_x in noise space, so it does
+    // NOT predict map-gen placement — do not calibrate the tv against it.)
     const ampmul = 1.0 / persistence;
     var value: f64 = 0.0;
     var amplitude: f64 = 1.0;
@@ -231,8 +236,8 @@ pub fn multioctaveNoiseOffset(
     var k: f64 = 0.0;
     var i: u32 = 0;
     while (i < octaves) : (i += 1) {
-        const x_arg = (k * 17.17 + offset_x) / input_scale + x * coordmul;
-        const y_arg = offset_y / input_scale + y * coordmul;
+        const x_arg = (k * 17.17) / input_scale + (x + offset_x) * coordmul;
+        const y_arg = (y + offset_y) * coordmul;
         value += gen.eval(x_arg, y_arg, input_scale, 1.0) * amplitude;
         sumsq += amplitude * amplitude;
         coordmul *= 0.5;
