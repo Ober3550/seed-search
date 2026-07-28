@@ -121,6 +121,35 @@ pub const Classifier = struct {
         return best;
     }
 
+    /// Same argmax competition as classifyTile but returns the unified tile index
+    /// (land biome index, or IDX_WATER/DEEPWATER/SHALLOW/MUD). Used by the grid
+    /// tile-correction pass, which needs indices + layers, not colours.
+    pub fn classifyIdx(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) u16 {
+        const land = self.classifyBest(x, y, t, m, a, e);
+        var best_f = land.fit;
+        var best_idx: u16 = @intCast(land.idx);
+        const tf: f32 = @floatCast(t);
+        const ef: f32 = @floatCast(e);
+        const wn_a: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.25, 0.666));
+        const wn_b: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.water_gen, x, y, 5, 0.75, 1.0 / 6.0 / 0.314, 0.666));
+        const consider = struct {
+            fn go(f: f32, idx: u16, bf: *f32, bi: *u16) void {
+                if (f > bf.*) {
+                    bf.* = f;
+                    bi.* = idx;
+                }
+            }
+        }.go;
+        const mud: f32 = plateauPeak(tf, .{ 0.0, 100.0 }) + 0.5 * @min(wn_a, wn_b) + @min(@as(f32, 0.0), -1.0 + ef / 5.0) - 1.15;
+        consider(mud, IDX_MUD, &best_f, &best_idx);
+        if (e < 0.0) {
+            consider(100.0 * @min(-ef, 1.0), IDX_WATER, &best_f, &best_idx);
+            if (e < -5.0) consider(200.0 * @min(-5.0 - ef, 1.0), IDX_DEEPWATER, &best_f, &best_idx);
+            consider(200.0 * @min(-ef, 1.0) + wn_a * 50.0 + ef * 100.0 + @min(tf, 0.0) * 10000.0, IDX_SHALLOW, &best_f, &best_idx);
+        }
+        return best_idx;
+    }
+
     /// Debug: print the full fitness breakdown for the top-N tiles at (x,y), so a
     /// disagreement with the ground truth can be traced to a specific term.
     pub fn probe(self: *const Classifier, x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) void {
@@ -168,11 +197,116 @@ pub const Classifier = struct {
     }
 };
 
+/// WIP / EXPERIMENTAL (opt-in via segen --biome-corrected only; NOT used by the
+/// production render). This first cut of the geometry OVER-triggers (single-pass
+/// 86.6%, cascaded 25% vs 95.2% uncorrected) — the exact decompiled condition
+/// (the x+2di,y-2 "beyond" tile test + the per-tile allowed-neighbour table at
+/// prototype offset 0x1ab8) is more restrictive than this. Needs refinement.
+/// Port of Factorio's TileCorrectionMapGenerationTask,
+/// ghidra/export/tile_gen.c). A tile whose transition `layer` is higher than a
+/// lower orthogonal neighbour, where the diagonal beyond that neighbour is higher
+/// still and the perpendicular support tile is NOT higher than the candidate, has
+/// "weak diagonal support" and is corrected down to that lower neighbour. Iterated
+/// to a fixpoint so corrections cascade. `grid` is size×size unified tile indices.
+pub fn correctTiles(alloc: std.mem.Allocator, grid: []u16, size: usize) void {
+    const w: i32 = @intCast(size);
+    const get = struct {
+        fn f(g: []const u16, sz: i32, x: i32, y: i32) u16 {
+            if (x < 0 or y < 0 or x >= sz or y >= sz) return IDX_BG;
+            return g[@intCast(y * sz + x)];
+        }
+    }.f;
+    const next = alloc.alloc(u16, grid.len) catch return;
+    defer alloc.free(next);
+    const orth = [_][2]i32{ .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 } };
+    var iter: usize = 0;
+    while (iter < 12) : (iter += 1) {
+        @memcpy(next, grid);
+        var changed = false;
+        var y: i32 = 0;
+        while (y < w) : (y += 1) {
+            var x: i32 = 0;
+            while (x < w) : (x += 1) {
+                const idx = get(grid, w, x, y);
+                if (idx == IDX_BG) continue;
+                const L = idxLayer(idx);
+                var correct_to: u16 = idx;
+                var min_ln: u16 = L;
+                for (orth) |o| {
+                    const N = get(grid, w, x + o[0], y + o[1]);
+                    if (N == IDX_BG) continue;
+                    const Ln = idxLayer(N);
+                    if (Ln >= L) continue; // only lower orthogonal neighbours
+                    var s: i32 = -1;
+                    while (s <= 1) : (s += 2) {
+                        // diagonal beyond N (D) + the perpendicular support tile (S)
+                        const dxp = if (o[0] != 0) x + o[0] else x + s;
+                        const dyp = if (o[0] != 0) y + s else y + o[1];
+                        const sxp = if (o[0] != 0) x else x + s;
+                        const syp = if (o[0] != 0) y + s else y;
+                        const D = get(grid, w, dxp, dyp);
+                        const S = get(grid, w, sxp, syp);
+                        if (D == IDX_BG or S == IDX_BG) continue;
+                        if (idxLayer(D) > Ln and idxLayer(S) <= L and Ln < min_ln) {
+                            min_ln = Ln;
+                            correct_to = N;
+                        }
+                    }
+                }
+                if (correct_to != idx) {
+                    next[@intCast(y * w + x)] = correct_to;
+                    changed = true;
+                }
+            }
+        }
+        @memcpy(grid, next);
+        if (!changed) break;
+    }
+}
+
 /// Water tile colors (Horaerratum legend values).
 pub const deepwater: [3]u8 = .{ 38, 64, 73 };
 pub const water: [3]u8 = .{ 51, 83, 95 };
 pub const water_shallow: [3]u8 = .{ 53, 97, 110 };
 pub const water_mud: [3]u8 = .{ 54, 88, 90 };
+
+// Unified tile-index space for the tile-correction pass: 0..biomes.len-1 are land
+// biomes; the following are the water/wetland tiles; BG = outside the disk.
+pub const IDX_WATER: u16 = 60000;
+pub const IDX_DEEPWATER: u16 = 60001;
+pub const IDX_SHALLOW: u16 = 60002;
+pub const IDX_MUD: u16 = 60003;
+pub const IDX_BG: u16 = 65535;
+
+pub fn idxLayer(idx: u16) u16 {
+    return switch (idx) {
+        IDX_WATER, IDX_DEEPWATER => 67,
+        IDX_SHALLOW => 70,
+        IDX_MUD => 71,
+        IDX_BG => 0,
+        else => table.tile_layer[idx],
+    };
+}
+pub fn idxColor(idx: u16) [3]u8 {
+    return switch (idx) {
+        IDX_WATER => water,
+        IDX_DEEPWATER => deepwater,
+        IDX_SHALLOW => water_shallow,
+        IDX_MUD => water_mud,
+        IDX_BG => .{ 20, 20, 20 },
+        else => biomes[idx].color,
+    };
+}
+pub fn idxName(idx: u16) []const u8 {
+    return switch (idx) {
+        IDX_WATER => "water",
+        IDX_DEEPWATER => "deepwater",
+        IDX_SHALLOW => "water-shallow",
+        IDX_MUD => "water-mud",
+        IDX_BG => "out-of-map",
+        else => biomes[idx].name,
+    };
+}
 
 /// Simplified biome-category background colors for the ore map. Deliberately
 /// dark/muted so the bright ore colors (vulcanite red, cryonite blue,

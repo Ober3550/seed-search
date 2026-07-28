@@ -616,6 +616,7 @@ pub fn main(init: std.process.Init) !void {
     var biome_probe: ?[]const u8 = null;
     var biome_names_pts: ?[]const u8 = null;
     var biome_names_out: ?[]const u8 = null;
+    var biome_corrected: ?[]const u8 = null;
     var water_exclude: bool = false;
     var biome_bg: bool = false;
     var k2_enable: bool = false;
@@ -690,6 +691,9 @@ pub fn main(init: std.process.Init) !void {
             if (i < args.len) biome_names_pts = args[i];
             i += 1;
             if (i < args.len) biome_names_out = args[i];
+        } else if (std.mem.eql(u8, args[i], "--biome-corrected")) {
+            i += 1;
+            if (i < args.len) biome_corrected = args[i];
         } else if (std.mem.eql(u8, args[i], "--biome-bg")) {
             biome_bg = true;
         } else if (std.mem.eql(u8, args[i], "--ores-only")) {
@@ -847,6 +851,52 @@ pub fn main(init: std.process.Init) !void {
                 std.debug.print("{s}\n", .{row[0..]});
             }
         }
+        return;
+    }
+
+    if (biome_corrected) |bc| {
+        // Full-disk classify → tile-correction pass → write "x,y,name". Replicates
+        // Factorio's TileCorrectionMapGenerationTask: a higher-layer tile poking
+        // into lower-layer neighbours without diagonal support is corrected down
+        // (see se-biome-groundtruth memory + ghidra/export/tile_gen.c).
+        const comma = std.mem.indexOfScalar(u8, bc, ',') orelse return;
+        const r: i32 = try std.fmt.parseInt(i32, bc[0..comma], 10);
+        const of = bc[comma + 1 ..];
+        const zone_r: f64 = @floatFromInt(r);
+        const zt = surfacegen.terrain.ZoneTerrain.init(surfacegen.terrain.HORAERRATUM);
+        const elev = surfacegen.terrain.Elevation.init(surfacegen.terrain.HORAERRATUM.map_seed, surfacegen.terrain.HORAERRATUM.water_frequency, surfacegen.terrain.HORAERRATUM.water_size);
+        const classifier = surfacegen.biome.Classifier.init(surfacegen.terrain.HORAERRATUM.map_seed);
+        const size: usize = @intCast(r * 2);
+        const grid = try a.alloc(u16, size * size);
+        @memset(grid, surfacegen.biome.IDX_BG);
+        // classify every in-disk tile → unified index
+        var iy: i32 = -r;
+        while (iy < r) : (iy += 1) {
+            var ix: i32 = -r;
+            while (ix < r) : (ix += 1) {
+                const dx: f64 = @floatFromInt(ix);
+                const dy: f64 = @floatFromInt(iy);
+                if (dx * dx + dy * dy > zone_r * zone_r) continue;
+                const gi: usize = @intCast((iy + r) * (r * 2) + (ix + r));
+                grid[gi] = classifier.classifyIdx(dx, dy, zt.temperature(dx, dy), zt.moisture(dx, dy), zt.aux(dx, dy), elev.at(dx, dy));
+            }
+        }
+        surfacegen.biome.correctTiles(a, grid, size);
+        // write names
+        var outbuf: std.ArrayList(u8) = .empty;
+        iy = -r;
+        while (iy < r) : (iy += 1) {
+            var ix: i32 = -r;
+            while (ix < r) : (ix += 1) {
+                const gi: usize = @intCast((iy + r) * (r * 2) + (ix + r));
+                if (grid[gi] == surfacegen.biome.IDX_BG) continue;
+                try outbuf.appendSlice(a, try std.fmt.allocPrint(a, "{d},{d},{s}\n", .{ ix, iy, surfacegen.biome.idxName(grid[gi]) }));
+            }
+        }
+        const file = try std.Io.Dir.createFile(.cwd(), init.io, of, .{});
+        defer file.close(init.io);
+        try file.writePositionalAll(init.io, outbuf.items, 0);
+        std.debug.print("# Wrote {s} (corrected)\n", .{of});
         return;
     }
 

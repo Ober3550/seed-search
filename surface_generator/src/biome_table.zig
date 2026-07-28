@@ -173,3 +173,8 @@ pub const biomes = [_]Biome{
     .{ .name = "volcanic-purple-heat-3", .group = "volcanic", .variant = "heat-3", .beach_weight = -1.0, .tv_seed = 1145, .water_coef = 0.0, .crater = false, .restrict = 1, .t = .{ 135, 145 }, .m = null, .a = .{ 0.9, 1 }, .e = null, .color = .{ 38, 24, 55 } },
     .{ .name = "volcanic-purple-heat-4", .group = "volcanic", .variant = "heat-4", .beach_weight = -1.0, .tv_seed = 1146, .water_coef = 0.0, .crater = false, .restrict = 1, .t = .{ 145, 150 }, .m = null, .a = .{ 0.9, 1 }, .e = null, .color = .{ 60, 16, 126 } },
 };
+
+/// Tile transition order (Factorio TilePrototype.layer, offset 0x1a0) per biome,
+/// same index as `biomes`. Drives the tile-correction pass (higher layer needs
+/// diagonal support). Extracted live from Horaerratum.
+pub const tile_layer = [_]u16{ 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 279, 280, 281, 282, 283, 284, 285, 286, 287, 297, 298, 299, 300, 301, 302, 303, 304, 305, 315, 316, 317, 318, 319, 320, 321, 322, 323, 261, 262, 263, 264, 265, 266, 267, 268, 269, 306, 307, 308, 309, 310, 311, 312, 313, 314, 288, 289, 290, 291, 292, 293, 294, 295, 296, 324, 325, 326, 327, 328, 329, 330, 331, 332, 234, 235, 236, 237, 238, 239, 240, 241, 242, 252, 253, 254, 255, 256, 257, 258, 259, 260, 270, 271, 272, 273, 274, 275, 276, 277, 278, 243, 244, 245, 246, 247, 248, 249, 250, 251, 333, 334, 335, 336, 337, 338, 339, 340, 341, 362, 363, 344, 345, 346, 347, 360, 361, 348, 349, 352, 353, 358, 359, 354, 355, 342, 343, 356, 357, 350, 351, 372, 373, 374, 375, 368, 369, 370, 371, 364, 365, 366, 367, 376, 377, 378, 379 };
