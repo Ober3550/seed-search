@@ -8,7 +8,7 @@
 const std = @import("std");
 const wgpu = @import("wgpu.zig");
 const c = wgpu.c;
-const noise = @import("noise");
+const noise = @import("surfgen").noise;
 
 const noise_wgsl = @embedFile("shaders/noise.wgsl");
 

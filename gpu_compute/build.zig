@@ -31,10 +31,11 @@ pub fn build(b: *std.Build) void {
     const inc = b.fmt("vendor/{s}/include", .{triple});
     const lib = b.fmt("vendor/{s}/lib", .{triple});
 
-    // The CPU noise oracle lives in surface_generator; import noise.zig directly
-    // (it pulls in rng.zig relatively) so the conformance test can call it.
-    const noise_mod = b.addModule("noise", .{
-        .root_source_file = b.path("../surface_generator/src/noise.zig"),
+    // The CPU oracle: import surface_generator's root module (it re-exports
+    // noise, terrain, etc. as one module — importing noise.zig and terrain.zig
+    // as separate modules conflicts, since terrain.zig imports noise.zig).
+    const surfgen = b.addModule("surfgen", .{
+        .root_source_file = b.path("../surface_generator/src/root.zig"),
         .target = target,
     });
 
@@ -76,7 +77,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .imports = &.{.{ .name = "noise", .module = noise_mod }},
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
     linkWgpu(conf, b, inc, lib);
@@ -86,4 +87,23 @@ pub fn build(b: *std.Build) void {
     const conf_cmd = b.addRunArtifact(conf);
     conf_step.dependOn(&conf_cmd.step);
     conf_cmd.step.dependOn(b.getInstallStep());
+
+    // Phase 2 — full elevation composition + water-mask conformance.
+    const elev = b.addExecutable(.{
+        .name = "elevation_conformance",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/elevation_conformance.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(elev, b, inc, lib);
+    b.installArtifact(elev);
+
+    const elev_step = b.step("elevation", "Run the Phase 2 elevation conformance test");
+    const elev_cmd = b.addRunArtifact(elev);
+    elev_step.dependOn(&elev_cmd.step);
+    elev_cmd.step.dependOn(b.getInstallStep());
 }
