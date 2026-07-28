@@ -47,3 +47,8 @@ space_explorer_gui/data.sqlite*
 space_explorer_gui/output/
 space_explorer_gui/public/htmx.min.js
 calibration/vanilla-sweep/mods-empty/mod-list.json
+
+# gpu_compute: large wgpu-native prebuilts (re-fetch via gpu_compute/fetch-wgpu.sh)
+gpu_compute/vendor/
+gpu_compute/.zig-cache/
+gpu_compute/zig-out/

@@ -1,0 +1,13 @@
+.{
+    .name = .gpu_compute,
+    .version = "0.1.0",
+    .fingerprint = 0xbfc3ab363387ce55,
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "fetch-wgpu.sh",
+        "README.md",
+    },
+}
