@@ -811,7 +811,7 @@ function runSurfaceJob(job) {
       // gpu_ore: read the CPU spot-gen dump and render oremap cells on the GPU,
       // tiled like gpu_segen. --grid must match the GUI's cell layout; the render
       // extent (radius) is baked into the dump by segen --gpu-ore-dump --radius.
-      args = ["--dump", dumpPath, "--out", bucketDir(label), "--world-seed", String(job.seed), "--zone", job.zone_name, "--grid", String(surfaceGridFor(job.radius))];
+      args = ["--dump", dumpPath, "--zones", zonesFile, "--out", bucketDir(label), "--world-seed", String(job.seed), "--zone", job.zone_name, "--grid", String(surfaceGridFor(job.radius))];
     } else if (job.kind === "oredump") {
       // Serialize per-resource params + precomputed spots for gpu_ore (CPU
       // spot-gen). --radius caps the extent exactly like the CPU render; --out

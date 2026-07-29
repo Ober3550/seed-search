@@ -1261,19 +1261,16 @@ function queueZone(zone, seed, kind) {
   if (kind === "gputerrain") return [db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1 })];
   if (kind === "terrain") return renderCells("terrain", null, false); // no ore needed
 
-  // oremap / surface: the ore layer. Asteroid fields go through the GPU path —
-  // an 'oredump' prep (segen --gpu-ore-dump = CPU spot-gen) feeds gpu_ore, which
-  // tiles + renders oremap cells on the GPU (bit-exact vs CPU for fields). Other
-  // zone types stay on the CPU: one ore-compute pass → per-cell oremap renders.
+  // oremap / surface: the ore layer, all zone types via the GPU path — an
+  // 'oredump' prep (segen --gpu-ore-dump = CPU spot generation) feeds gpu_ore,
+  // which tiles + renders oremap cells on the GPU. Fields use the asteroid mask;
+  // planets/moons run the terrain classifier for the water + biome gate. Bit-
+  // exact vs the CPU oracle within the render disk. The CPU remains the oracle
+  // (segen --ores-only) for verification.
   const ids = [];
   if (kind === "surface") ids.push(...renderCells("terrain", null, false));
-  if (zone.zone_type === "asteroid-field") {
-    const prep = db.createSurfaceJob({ ...base, kind: "oredump" });
-    ids.push(prep, db.createSurfaceJob({ ...base, kind: "gpuoremap", grid_n: n, grid_cell: -1, depends_on: prep }));
-  } else {
-    const prep = db.createSurfaceJob({ ...base, kind: "ore" });
-    ids.push(prep, ...renderCells("oremap", prep, true));
-  }
+  const prep = db.createSurfaceJob({ ...base, kind: "oredump" });
+  ids.push(prep, db.createSurfaceJob({ ...base, kind: "gpuoremap", grid_n: n, grid_cell: -1, depends_on: prep }));
   return ids;
 }
 
