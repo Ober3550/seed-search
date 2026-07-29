@@ -679,7 +679,12 @@ function buildSurfaceGrid(seed, zoneId) {
   const grp = (k) => allJobs.filter(j => j.kind === k);
   const active = (k) => grp(k).some(j => j.status === "queued" || j.status === "running");
   const anyActive = active("terrain") || active("gputerrain") || active("oremap") || active("surface") || active("ore") || active("oredump") || active("gpuoremap");
-  const poll = anyActive ? `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML" hx-sync="#main:drop"` : "";
+  // Poll a STABLE wrapper that swaps its own inner content (hx-swap=innerHTML,
+  // hx-target=this) rather than replacing the polling element — a self-replacing
+  // `every` poll can drop its timer, so the final swap (cells → stitched image)
+  // never fires. The /api/surface/grid endpoint returns HTTP 286 once nothing is
+  // active, which applies the last swap (the stitched image) and stops the poll.
+  const poll = anyActive ? `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-target="this" hx-swap="innerHTML" hx-sync="this:drop"` : "";
 
   const terrainFull = cp(1, 0, "terrain");   // stitched (n>1) or whole (n<=1)
   const legacy = cp(1, 0, "surface");        // old combined image
@@ -725,14 +730,17 @@ function buildSurfaceGrid(seed, zoneId) {
     (terrainFull ? ` <a class="btn-sm" href="${terrainFull}" target="_blank" title="terrain">⤢</a>` : "");
 
   const grid = `<div class="surf-grid-wrap" id="surfgrid-${zoneId}" ${poll}>${body}</div>`;
-  return { grid, head };
+  return { grid, body, head, active: anyActive };
 }
 
-// Poll target for the live grid: swap the grid + OOB-update the panel status.
+// Poll target for the live grid: swaps the wrapper's inner content + OOB-updates
+// the panel status. Returns HTTP 286 once nothing is active so htmx applies the
+// final swap (the stitched image, once cells are stitched+deleted) and stops.
 app.get("/api/surface/grid", (req, res) => {
   const zoneId = parseInt(req.query.zone_id);
   const g = buildSurfaceGrid(parseInt(req.query.seed), zoneId);
-  res.send(`${g.grid}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>`);
+  if (!g.active) res.status(286);
+  return res.send(`${g.body}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>`);
 });
 
 // Full surface detail page (breadcrumb + embedded live grid) — nested under the
