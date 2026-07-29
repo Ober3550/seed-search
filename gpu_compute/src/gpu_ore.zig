@@ -297,6 +297,12 @@ pub fn main(init: std.process.Init) !void {
     @memset(s_tiles, 0);
     @memset(s_amount, 0);
 
+    // Phase timers (ns).
+    var t_classify: u64 = 0;
+    var t_ore: u64 = 0;
+    var t_read: u64 = 0;
+    var t_enc: u64 = 0;
+
     // Cull cells by the render EXTENT (R), matching the GUI's planSurfaceCells —
     // so the cell set + stitch line up with the CPU tiled path. The kernel also
     // gates ore to the disk of R (see OreParams.zone_radius), matching gpu_segen's
@@ -317,6 +323,7 @@ pub fn main(init: std.process.Init) !void {
         // index (water = >=60000) from the terrain classifier.
         const buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_mask);
+        const tc0 = wgpu.nowNs();
         if (is_field) {
             const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
             const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
@@ -332,6 +339,7 @@ pub fn main(init: std.process.Init) !void {
         } else {
             classifier.?.classify(base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
         }
+        t_classify += wgpu.nowNs() - tc0;
 
         // Winner buffer (zeroed).
         const zeros = try ca.alloc(u32, npx * 4);
@@ -339,6 +347,7 @@ pub fn main(init: std.process.Init) !void {
         const buf_win = ctx.uploadBuffer(u32, zeros, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_win);
 
+        const to0 = wgpu.nowNs();
         for (res, 0..) |*rr, idx| {
             const P = OreParams{
                 .origin_x = @floatFromInt(cl.x0),
@@ -387,8 +396,10 @@ pub fn main(init: std.process.Init) !void {
             };
             dispatch(&ctx, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
         }
+        t_ore += wgpu.nowNs() - to0;
 
         // Read winners, paint RGBA (north-up: row 0 = cell y0), encode + write.
+        const tr0 = wgpu.nowNs();
         const staging = ctx.makeBuffer(win_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
         defer c.wgpuBufferRelease(staging);
         {
@@ -401,7 +412,9 @@ pub fn main(init: std.process.Init) !void {
         }
         const win = try ca.alloc(u32, npx * 4);
         try ctx.readBuffer(staging, u32, win);
+        t_read += wgpu.nowNs() - tr0;
 
+        const te0 = wgpu.nowNs();
         const rgba = try ca.alloc(u8, npx * 4);
         @memset(rgba, 0);
         for (0..npx) |i| {
@@ -415,7 +428,14 @@ pub fn main(init: std.process.Init) !void {
         }
         const bytes_png = try png.encodeRgba(ca, cl.cw, cl.ch, rgba);
         try writeCellPng(init, out_dir, world_seed, zone, grid, cl.cell, bytes_png);
+        t_enc += wgpu.nowNs() - te0;
     }
+    const ms = struct {
+        fn f(ns: u64) f64 {
+            return @as(f64, @floatFromInt(ns)) / 1e6;
+        }
+    }.f;
+    std.debug.print("gpu_ore profile: classify {d:.0}ms | ore {d:.0}ms | readback {d:.0}ms | png {d:.0}ms  ({d} cells, {d} resources)\n", .{ ms(t_classify), ms(t_ore), ms(t_read), ms(t_enc), cells.len, nres });
 
     // summary.json
     var sum: std.ArrayList(u8) = .empty;
