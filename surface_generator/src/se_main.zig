@@ -3,6 +3,10 @@ const surfacegen = @import("surface_generator");
 const se = surfacegen.se_ore;
 const universe = @import("universe_gen");
 
+// When set (via --gpu-ore-dump <path>), the ore pass serializes the per-resource
+// params + precomputed spots for gpu_ore instead of computing ore on the CPU.
+var g_gpu_ore_dump: ?[]const u8 = null;
+
 /// Factorio/SE/K2 map colors (RGB), matching the ground-truth renderer
 /// calibration/mod-dump/convert_jsonl.py so generated images are directly
 /// comparable to Horaerratum.png. Unknown -> grey; se-core-fragment-* inherits
@@ -423,6 +427,16 @@ fn runZoneDriver(
                 try ores.append(a, .{ .x = @intCast(ox), .y = @intCast(oy), .resource_name = sname, .amount = @intCast(oa) });
             }
             std.debug.print("== zone {s}: loaded {d} cached ore entities (cell {d}/{d})\n", .{ name, ores.items.len, surface_cell, surface_grid * surface_grid });
+        } else if (g_gpu_ore_dump) |dp| {
+            // GPU ore path: serialize per-resource params + spots for gpu_ore
+            // (which does the per-tile eval on the GPU) instead of computing here.
+            const bytes = try se.serializeGpuInput(a, zone_seed, radius, -r, -r, r, r, inputs, is_field);
+            defer a.free(bytes);
+            const f = try std.Io.Dir.createFile(.cwd(), init.io, dp, .{});
+            defer f.close(init.io);
+            try f.writePositionalAll(init.io, bytes, 0);
+            std.debug.print("wrote gpu-ore-dump {s} ({d} bytes)\n", .{ dp, bytes.len });
+            continue;
         } else if (need_ores) {
             std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
             ores = try se.computeSEOresInRect(
@@ -737,6 +751,9 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--radius")) {
             i += 1;
             if (i < args.len) override_radius = try std.fmt.parseInt(i32, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--gpu-ore-dump")) {
+            i += 1;
+            if (i < args.len) g_gpu_ore_dump = args[i];
         } else if (std.mem.eql(u8, args[i], "--spot-stats")) {
             spot_stats = true;
         } else if (std.mem.eql(u8, args[i], "--probe")) {

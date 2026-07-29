@@ -181,4 +181,19 @@ pub fn build(b: *std.Build) void {
     });
     linkWgpu(gseg, b, inc, lib);
     b.installArtifact(gseg);
+
+    // GPU ore placement (prototype): reads a `segen --gpu-ore-dump` file and
+    // writes ore.jsonl via the ore.wgsl per-tile kernel.
+    const gore = b.addExecutable(.{
+        .name = "gpu_ore",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/gpu_ore.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    linkWgpu(gore, b, inc, lib);
+    b.installArtifact(gore);
 }

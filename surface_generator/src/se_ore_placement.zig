@@ -940,3 +940,142 @@ pub fn computeSEOresInRect(
     }
     return results;
 }
+
+// ── GPU ore input serialization ────────────────────────────────────────────
+// Hand the CPU-computed per-resource params + precomputed spots to gpu_ore,
+// which does the per-tile eval on the GPU. gpu_ore rebuilds each resource's
+// basis tables from (map_seed, seed1). Binary (native LE):
+//   GpuOreHeader, then per resource: GpuResHeader, name bytes,
+//   spots[nspots] (noise.Spot), start_spots[nstart].
+pub const GpuOreHeader = extern struct {
+    magic: u32 = 0x45524f47, // "GORE"
+    nres: u32,
+    map_seed: u32,
+    is_field: u32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    zone_radius: f64,
+};
+pub const GpuResHeader = extern struct {
+    base_density: f64,
+    freq_mult: f64,
+    size_mult: f64,
+    base_spots_per_km2: f64,
+    rq: f64,
+    smin: f64,
+    smax: f64,
+    basement_value: f64,
+    richness_mult: f64,
+    additional_richness: f64,
+    random_probability: f64,
+    starting_blob_amplitude: f64,
+    seed1: u32,
+    roll_salt: u32,
+    has_starting: u32,
+    name_len: u32,
+    nspots: u32,
+    nstart: u32,
+    pad0: u32 = 0,
+    pad1: u32 = 0,
+};
+
+pub fn serializeGpuInput(
+    alloc: std.mem.Allocator,
+    map_seed: u32,
+    zone_radius: f64,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    resources: []const ResourceInput,
+    is_field: bool,
+) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    var states: std.ArrayList(ResourceState) = .empty;
+    defer {
+        for (states.items) |*st| {
+            st.spot.deinit();
+            if (st.starting_spot) |*ss| ss.deinit();
+        }
+        states.deinit(alloc);
+    }
+    for (resources) |res| {
+        if (res.controls.size <= 0.0) continue;
+        try states.append(alloc, makeResourceStateElev(alloc, map_seed, res.name, res.config, res.controls, null));
+    }
+
+    // Same region precompute + flat-spot gather as computeSEOresInRect.
+    const rs = SE_REGION_SIZE;
+    const rminx: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(x0)) / rs))) - 1;
+    const rmaxx: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(x1 - 1)) / rs))) + 1;
+    const rminy: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(y0)) / rs))) - 1;
+    const rmaxy: i32 = @as(i32, @intFromFloat(@round(@as(f64, @floatFromInt(y1 - 1)) / rs))) + 1;
+    const fx0: f64 = @floatFromInt(x0);
+    const fx1: f64 = @floatFromInt(x1);
+    const fy0: f64 = @floatFromInt(y0);
+    const fy1: f64 = @floatFromInt(y1);
+    for (states.items) |*st| {
+        var rx: i32 = rminx;
+        while (rx <= rmaxx) : (rx += 1) {
+            var ry: i32 = rminy;
+            while (ry <= rmaxy) : (ry += 1) _ = try st.spot.spotsForRegion(rx, ry);
+        }
+        if (st.starting_spot) |*ss| {
+            const srs = SE_STARTING_RADIUS * 2.0;
+            const sminx: i32 = @as(i32, @intFromFloat(@round(fx0 / srs))) - 1;
+            const smaxx: i32 = @as(i32, @intFromFloat(@round((fx1 - 1) / srs))) + 1;
+            const sminy: i32 = @as(i32, @intFromFloat(@round(fy0 / srs))) - 1;
+            const smaxy: i32 = @as(i32, @intFromFloat(@round((fy1 - 1) / srs))) + 1;
+            var srx: i32 = sminx;
+            while (srx <= smaxx) : (srx += 1) {
+                var sry: i32 = sminy;
+                while (sry <= smaxy) : (sry += 1) _ = try ss.spotsForRegion(srx, sry);
+            }
+        }
+        st.all_spots = try st.spot.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+        if (st.starting_spot) |*ss| st.all_start_spots = try ss.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+    }
+
+    const hdr = GpuOreHeader{
+        .nres = @intCast(states.items.len),
+        .map_seed = map_seed,
+        .is_field = if (is_field) 1 else 0,
+        .x0 = x0,
+        .y0 = y0,
+        .x1 = x1,
+        .y1 = y1,
+        .zone_radius = zone_radius,
+    };
+    try buf.appendSlice(alloc, std.mem.asBytes(&hdr));
+    for (states.items) |*st| {
+        const rh = GpuResHeader{
+            .base_density = st.spot.field.base_density,
+            .freq_mult = st.freq_mult,
+            .size_mult = st.size_mult,
+            .base_spots_per_km2 = st.spot.field.base_spots_per_km2,
+            .rq = st.rq,
+            .smin = st.spot.field.smin,
+            .smax = st.spot.field.smax,
+            .basement_value = st.basement_value,
+            .richness_mult = st.richness_mult,
+            .additional_richness = st.config.additional_richness,
+            .random_probability = st.config.random_probability,
+            .starting_blob_amplitude = st.starting_blob_amplitude,
+            .seed1 = st.config.seed1,
+            .roll_salt = st.roll_salt,
+            .has_starting = if (st.starting_spot != null) 1 else 0,
+            .name_len = @intCast(st.name.len),
+            .nspots = @intCast(st.all_spots.len),
+            .nstart = @intCast(st.all_start_spots.len),
+        };
+        try buf.appendSlice(alloc, std.mem.asBytes(&rh));
+        try buf.appendSlice(alloc, st.name);
+        try buf.appendSlice(alloc, std.mem.sliceAsBytes(st.all_spots));
+        try buf.appendSlice(alloc, std.mem.sliceAsBytes(st.all_start_spots));
+    }
+    return buf.toOwnedSlice(alloc);
+}
