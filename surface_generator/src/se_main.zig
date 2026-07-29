@@ -328,6 +328,10 @@ fn runZoneDriver(
         var ninputs: usize = 0;
         for (RESOURCE_ENTRIES) |e| {
             if (!has_k2 and std.mem.startsWith(u8, e.name, "kr-")) continue;
+            // K2 resources carry SE field controls (kr-rare-metal-ore can even be
+            // a field's boosted PRIMARY) but K2 never places them in space — the
+            // live game has 0 kr-* entities on asteroid fields. Skip them there.
+            if (is_field and std.mem.startsWith(u8, e.name, "kr-")) continue;
             if (ores_only and e.cfg.random_probability < 1.0) continue;
             var ctrl = se.Controls{ .frequency = 0, .size = 0, .richness = 0 };
             for (universe.resource_order, 0..) |rn, ri| {
