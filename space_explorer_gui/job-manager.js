@@ -92,28 +92,23 @@ function requireSegen() {
   return bin;
 }
 
-let gpuSegenPath = null;
 const GPU_COMPUTE_DIR = path.join(PROJECT_ROOT, "gpu_compute");
-function requireGpuSegen() {
-  if (gpuSegenPath && fs.existsSync(gpuSegenPath)) return gpuSegenPath;
-  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", "gpu_segen");
-  if (fs.existsSync(cand)) { gpuSegenPath = cand; return cand; }
+// Resolve a gpu_compute binary by name (gpu_terrain / gpu_biome / gpu_ore),
+// caching the resolved path. All share the same build + fetch-wgpu instructions.
+const gpuBinPaths = {};
+function requireGpuBin(name) {
+  if (gpuBinPaths[name] && fs.existsSync(gpuBinPaths[name])) return gpuBinPaths[name];
+  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", name);
+  if (fs.existsSync(cand)) { gpuBinPaths[name] = cand; return cand; }
   throw new Error(
-    "gpu_segen binary not found. Build it first:\n" +
+    `${name} binary not found. Build it first:\n` +
     "  cd gpu_compute && ./fetch-wgpu.sh && zig build -Doptimize=ReleaseFast"
   );
 }
+const requireGpuTerrain = () => requireGpuBin("gpu_terrain"); // surface render
+const requireGpuBiome = () => requireGpuBin("gpu_biome");     // shared classify mask
 
-let gpuOrePath = null;
-function requireGpuOre() {
-  if (gpuOrePath && fs.existsSync(gpuOrePath)) return gpuOrePath;
-  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", "gpu_ore");
-  if (fs.existsSync(cand)) { gpuOrePath = cand; return cand; }
-  throw new Error(
-    "gpu_ore binary not found. Build it first:\n" +
-    "  cd gpu_compute && ./fetch-wgpu.sh && zig build -Doptimize=ReleaseFast"
-  );
-}
+const requireGpuOre = () => requireGpuBin("gpu_ore");         // GPU ore placement
 
 function requireSeedgen() {
   const bin = findSeedgenBinary();
@@ -759,14 +754,31 @@ const RENDER_KINDS = {
   surface: { layer: null, prefix: "surface" },
   terrain: { layer: "terrain", prefix: "terrain" },
   oremap: { layer: "ore", prefix: "oremap" },
-  // GPU whole-zone terrain preview (gpu_segen, ~80x faster). Writes terrain.png
+  // GPU whole-zone terrain preview (gpu_terrain, ~80x faster). Writes terrain.png
   // directly, so buildSurfaceGrid shows it as the full terrain layer.
   gputerrain: { layer: "terrain", prefix: "terrain", gpu: true },
   // GPU ore map (gpu_ore) — asteroid fields only. Depends on an 'oredump' job
   // (segen --gpu-ore-dump does the CPU spot-gen); gpu_ore then tiles + writes
   // oremap_<n>_<cell>.png on the GPU. Bit-exact vs the CPU oracle for fields.
   gpuoremap: { layer: "ore", prefix: "oremap", gpu: true, gpuOre: true },
+  // Shared biome/asteroid classify (gpu_biome). Writes biome_<n>_<cell>.bin
+  // (u32/tile) — no image. Consumed by both the terrain (gpu_terrain --mask) and
+  // ore (gpu_ore --mask) passes so the classifier runs once per surface.
+  classify: { layer: null, prefix: "biome", gpu: true, classify: true },
 };
+
+// The shared classify mask filename for one cell (matches surface_gpu.zig::maskPath).
+function maskCellName(n, cell) {
+  return n <= 1 ? "biome.bin" : `biome_${n}_${cell}.bin`;
+}
+
+// True when every classify-mask cell for the current grid is on disk — i.e. a
+// prior classify (or the sibling layer) already produced the shared mask.
+function maskCellsPresent(zDir, radius) {
+  const n = surfaceGridFor(radius);
+  const cells = n <= 1 ? [-1] : planSurfaceCells(radius, n);
+  return cells.every(c => fs.existsSync(path.join(zDir, maskCellName(n, c))));
+}
 
 // ── Surface generation via the segen zone driver ───────────────────────
 
@@ -776,7 +788,10 @@ function runSurfaceJob(job) {
     const useGpu = !!(rk && rk.gpu);
     let binPath;
     try {
-      binPath = (rk && rk.gpuOre) ? requireGpuOre() : useGpu ? requireGpuSegen() : requireSegen();
+      binPath = (rk && rk.gpuOre) ? requireGpuOre()
+        : (rk && rk.classify) ? requireGpuBiome()
+        : useGpu ? requireGpuTerrain()
+        : requireSegen();
     } catch (e) {
       db.updateSurfaceJob(job.id, { status: "failed", error: e.message, finished_at: new Date().toISOString() });
       return resolve();
@@ -809,25 +824,32 @@ function runSurfaceJob(job) {
     let args;
     if (rk && rk.gpuOre) {
       // gpu_ore: read the CPU spot-gen dump and render oremap cells on the GPU,
-      // tiled like gpu_segen. --grid must match the GUI's cell layout; the render
+      // tiled like gpu_terrain. --grid must match the GUI's cell layout; the render
       // extent (radius) is baked into the dump by segen --gpu-ore-dump --radius.
       args = ["--dump", dumpPath, "--zones", zonesFile, "--out", bucketDir(label), "--world-seed", String(job.seed), "--zone", job.zone_name, "--grid", String(surfaceGridFor(job.radius))];
+      // Reuse the shared classify mask (biome/water/asteroid gate) if a classify
+      // job already wrote it — skips gpu_ore's own per-cell classifier pass.
+      if (maskCellsPresent(path.join(sDir, job.zone_name), job.radius)) args.push("--mask");
     } else if (job.kind === "oredump") {
       // Serialize per-resource params + precomputed spots for gpu_ore (CPU
       // spot-gen). --radius caps the extent exactly like the CPU render; --out
       // makes segen create the zone dir the dump is written into.
       args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--gpu-ore-dump", dumpPath];
     } else if (useGpu) {
-      // gpu_segen renders the whole zone in one dispatch → terrain.png.
-      // job.radius is already capped to the max-radius setting; pass it so
-      // gpu_segen renders the inner disk (required for asteroid fields, which
-      // carry no radius, and caps big planets/moons).
-      // Tile the disk like the CPU path: gpu_segen renders each cell in ONE
+      // gpu_terrain (or gpu_biome for the classify job) processes the zone on the
+      // GPU. job.radius is already capped to the max-radius setting; pass it so
+      // the inner disk is used (required for asteroid fields, which carry no
+      // radius, and caps big planets/moons).
+      // Tile the disk like the CPU path: gpu_terrain renders each cell in ONE
       // process (context/pipeline/generators built once) and writes
       // terrain_<n>_<cell>.png center-outward, so the GUI fills cells in as they
       // land. n<=1 (small zones) → a single whole-disk terrain.png.
       const gpuN = surfaceGridFor(job.radius);
       args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--surface-grid", String(gpuN)];
+      if (rk.classify) args.push("--classify-only");
+      // Colour the shared classify mask instead of re-running render.wgsl, when a
+      // classify job already produced it. Falls back to inline classify otherwise.
+      else if (maskCellsPresent(path.join(sDir, job.zone_name), job.radius)) args.push("--mask");
     } else {
       // CPU segen. --radius is REQUIRED: it caps the render/ore rect to the same
       // extent the GUI's cell grid (surfaceCellLayout/planSurfaceCells) is laid
@@ -879,6 +901,14 @@ function runSurfaceJob(job) {
         if (!fs.existsSync(dumpPath)) return fail("gpu-ore-dump produced no output");
         db.updateSurfaceJob(job.id, { status: "done", bucket: label, finished_at: new Date().toISOString() });
         db.addJobLog("surface", job.id, `Done: ${job.zone_name} gpu-ore-dump`);
+        return resolve();
+      }
+
+      if (rk && rk.classify) {
+        // Shared classify prep: success = the mask cells exist (no PNG/summary).
+        if (!maskCellsPresent(zDir, job.radius)) return fail(`classify wrote no mask (${stderr.slice(-200)})`);
+        db.updateSurfaceJob(job.id, { status: "done", bucket: label, finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} classify mask`);
         return resolve();
       }
 
@@ -983,6 +1013,7 @@ module.exports = {
   surfaceGridFor,
   planSurfaceCells,
   surfaceCellLayout,
+  maskCellsPresent,
   stitchSurfaceCells,
   reconcileZoneSurfaces,
   reconcileAllSurfaces,

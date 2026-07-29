@@ -1256,22 +1256,45 @@ function queueZone(zone, seed, kind) {
     : cellIdx.map(cell => db.createSurfaceJob({ ...base, kind: renderKind, grid_n: n, grid_cell: cell, depends_on: dep || null, load_ore: loadOre ? 1 : 0 })));
 
   if (kind === "ore") return [db.createSurfaceJob({ ...base, kind: "ore" })];
-  // GPU whole-zone terrain preview: always a single job (gpu_segen renders the
-  // whole disk in one dispatch — no tiling).
-  if (kind === "gputerrain") return [db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1 })];
-  if (kind === "terrain") return renderCells("terrain", null, false); // no ore needed
+  if (kind === "terrain") return renderCells("terrain", null, false); // CPU terrain, no GPU mask
+
+  // Shared classify: the biome/water/asteroid gate (biome_<n>_<cell>.bin) is
+  // computed once and reused by BOTH the terrain (gpu_segen --mask) and ore
+  // (gpu_ore --mask) passes. Whichever layer runs first produces it; the second
+  // reuses the cached mask. Skip the classify job entirely if a fresh mask is
+  // already on disk (e.g. the sibling layer was generated earlier).
+  const dep = ensureClassifyJob(base, zDir, radius);   // job id to depend on, or null
+  const ids = dep ? [dep] : [];
+
+  // GPU whole-zone terrain: one gpu_segen job (it tiles internally at grid n).
+  if (kind === "gputerrain") {
+    ids.push(db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1, depends_on: dep }));
+    return ids;
+  }
 
   // oremap / surface: the ore layer, all zone types via the GPU path — an
   // 'oredump' prep (segen --gpu-ore-dump = CPU spot generation) feeds gpu_ore,
-  // which tiles + renders oremap cells on the GPU. Fields use the asteroid mask;
-  // planets/moons run the terrain classifier for the water + biome gate. Bit-
-  // exact vs the CPU oracle within the render disk. The CPU remains the oracle
-  // (segen --ores-only) for verification.
-  const ids = [];
-  if (kind === "surface") ids.push(...renderCells("terrain", null, false));
-  const prep = db.createSurfaceJob({ ...base, kind: "oredump" });
+  // which tiles + renders oremap cells on the GPU. Chain classify → oredump →
+  // gpuoremap so the shared mask exists before gpu_ore reads it (--mask). Fields
+  // use the asteroid mask; planets/moons the biome/water gate. Bit-exact vs the
+  // CPU oracle within the render disk (segen --ores-only remains the oracle).
+  if (kind === "surface") ids.push(db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1, depends_on: dep }));
+  const prep = db.createSurfaceJob({ ...base, kind: "oredump", depends_on: dep });
   ids.push(prep, db.createSurfaceJob({ ...base, kind: "gpuoremap", grid_n: n, grid_cell: -1, depends_on: prep }));
   return ids;
+}
+
+// Ensure a shared classify mask exists (or is being produced) for this zone at
+// its current grid. Returns a job id the render passes should depend on, or null
+// when a fresh on-disk mask means no classify is needed. Dedupes against an
+// already-queued/running classify job for the same zone+grid.
+function ensureClassifyJob(base, zDir, radius) {
+  if (jobs.maskCellsPresent(zDir, radius)) return null;   // reuse cached mask
+  const n = jobs.surfaceGridFor(radius);
+  const inflight = db.getSurfaceJobsForZone(base.zone_id).find(j =>
+    j.kind === "classify" && j.grid_n === n && (j.status === "queued" || j.status === "running"));
+  if (inflight) return inflight.id;
+  return db.createSurfaceJob({ ...base, kind: "classify", grid_n: n, grid_cell: -1 });
 }
 
 app.post("/api/surface/create", (req, res) => {

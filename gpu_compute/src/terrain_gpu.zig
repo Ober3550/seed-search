@@ -1,4 +1,4 @@
-//! Shared GPU terrain classifier — extracted from gpu_segen so gpu_ore can reuse
+//! Shared GPU terrain classifier — extracted from gpu_terrain so gpu_ore can reuse
 //! it to gate ore on water + biome. Runs render.wgsl (elevation + t/m/aux +
 //! biome classify) over a cell and returns a per-tile biome index; water tiles
 //! come back as sentinels IDX_WATER(60000)..IDX_MUD(60003). Land tiles are the
@@ -128,7 +128,7 @@ pub const ZoneInfo = struct {
 };
 
 /// Parse a zones.jsonl for (world_seed, zone_name) → terrain controls. Mirrors
-/// gpu_segen's inline loader.
+/// gpu_terrain's inline loader.
 pub fn loadZone(a: std.mem.Allocator, io: std.Io, zones_path: []const u8, world_seed: u64, zone_name: []const u8) !ZoneInfo {
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), io, zones_path, a, .unlimited);
     var z: ZoneInfo = .{};

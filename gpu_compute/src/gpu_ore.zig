@@ -3,7 +3,7 @@
 //! the disk into an NxN grid and, per cell, runs the asteroid mask + ore.wgsl
 //! per-tile eval on the GPU and writes oremap_<grid>_<cell>.png as it goes
 //! (center-outward) so the GUI fills cells in progressively — symmetric with
-//! gpu_segen for terrain. grid<=1 → a single oremap.png. Also writes summary.json.
+//! gpu_terrain for terrain. grid<=1 → a single oremap.png. Also writes summary.json.
 //! The f32 GPU output is bit-exact vs the f64 CPU oracle for fields; the CPU
 //! path stays the oracle. See shaders/ore.wgsl.
 
@@ -24,6 +24,20 @@ fn getStr(args: []const []const u8, flag: []const u8) ?[]const u8 {
         if (std.mem.eql(u8, arg, flag) and i + 1 < args.len) return args[i + 1];
     }
     return null;
+}
+fn hasFlag(args: []const []const u8, flag: []const u8) bool {
+    for (args) |arg| if (std.mem.eql(u8, arg, flag)) return true;
+    return false;
+}
+
+// Shared classify mask: per-tile u32 (field: 0=space/1=asteroid/2=oom; planet:
+// biome index / water sentinel >=60000). Written by --classify-only, consumed by
+// --mask here and by gpu_terrain, so the terrain classify runs once for a surface.
+fn maskPath(buf: []u8, dir: []const u8, grid: i32, cell: u32) ![]const u8 {
+    return if (grid <= 1)
+        std.fmt.bufPrint(buf, "{s}/biome.bin", .{dir})
+    else
+        std.fmt.bufPrint(buf, "{s}/biome_{d}_{d}.bin", .{ dir, grid, cell });
 }
 fn err(msg: []const u8) error{Usage} {
     std.debug.print("gpu_ore error: {s}\n  usage: gpu_ore --dump <gore.bin> --out <dir> --world-seed N --zone <name> [--grid N]\n", .{msg});
@@ -236,6 +250,8 @@ pub fn main(init: std.process.Init) !void {
     const ws_s = getStr(args, "--world-seed") orelse return err("missing --world-seed");
     const world_seed = try std.fmt.parseInt(u64, ws_s, 10);
     const grid: i32 = if (getStr(args, "--grid")) |g| try std.fmt.parseInt(i32, g, 10) else 1;
+    const classify_only = hasFlag(args, "--classify-only");
+    const use_mask = hasFlag(args, "--mask"); // read the shared classify mask instead of classifying
 
     const bytes = try std.Io.Dir.readFileAlloc(.cwd(), init.io, dump_path, a, .unlimited);
     var off: usize = 0;
@@ -274,15 +290,21 @@ pub fn main(init: std.process.Init) !void {
     var b_restrict: c.WGPUBuffer = undefined;
     var restrict_bytes: u64 = 0;
     if (!is_field) {
-        const zp = getStr(args, "--zones") orelse return err("planet/moon needs --zones");
-        const zi = try terrain.loadZone(a, init.io, zp, world_seed, zone);
-        if (!zi.found) return err("zone not found in --zones");
-        base_params = terrain.buildParams(zi.radius, zi.has_water, zi.temp_label, zi.moist_label, zi.aux_label);
-        classifier = try terrain.Classifier.init(a, &ctx, H.map_seed);
-        const rt = try terrain.restrictTable(a);
+        const rt = try terrain.restrictTable(a); // static — always needed for the ore biome gate
         b_restrict = ctx.uploadBuffer(u32, rt, c.WGPUBufferUsage_Storage);
         restrict_bytes = rt.len * @sizeOf(u32);
-        std.debug.print("gpu_ore: planet/moon terrain gate — water {} biomes {d}\n", .{ zi.has_water, rt.len });
+        // The classifier (192-gen upload) is only needed when we classify inline;
+        // reading a precomputed mask (--mask) skips it entirely.
+        if (!use_mask) {
+            const zp = getStr(args, "--zones") orelse return err("planet/moon needs --zones");
+            const zi = try terrain.loadZone(a, init.io, zp, world_seed, zone);
+            if (!zi.found) return err("zone not found in --zones");
+            base_params = terrain.buildParams(zi.radius, zi.has_water, zi.temp_label, zi.moist_label, zi.aux_label);
+            classifier = try terrain.Classifier.init(a, &ctx, H.map_seed);
+            std.debug.print("gpu_ore: planet/moon terrain gate — water {} biomes {d}\n", .{ zi.has_water, rt.len });
+        } else {
+            std.debug.print("gpu_ore: planet/moon — shared classify mask, {d} biomes\n", .{rt.len});
+        }
     } else {
         b_restrict = ctx.uploadBuffer(u32, &[_]u32{0}, c.WGPUBufferUsage_Storage); // unused placeholder
         restrict_bytes = @sizeOf(u32);
@@ -344,15 +366,69 @@ pub fn main(init: std.process.Init) !void {
 
     // Cull cells by the render EXTENT (R), matching the GUI's planSurfaceCells —
     // so the cell set + stitch line up with the CPU tiled path. The kernel also
-    // gates ore to the disk of R (see OreParams.zone_radius), matching gpu_segen's
+    // gates ore to the disk of R (see OreParams.zone_radius), matching gpu_terrain's
     // circular field terrain.
     const cells = try cellList(a, R, @as(f64, @floatFromInt(R)), grid);
     std.debug.print("gpu_ore: {d} cells\n", .{cells.len});
     const t0 = wgpu.nowNs();
 
-    // Collect each cell's RGBA; encoded in parallel after the loop.
     const zdir = try std.fmt.allocPrint(a, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone });
     std.Io.Dir.createDirPath(.cwd(), init.io, zdir) catch {};
+
+    // --classify-only: run just the terrain/asteroid classify per cell and write
+    // the shared biome mask (biome_<grid>_<cell>.bin) — consumed by the ore pass
+    // (--mask) and by gpu_terrain (--mask), so the classify runs once per surface.
+    if (classify_only) {
+        for (cells) |cl| {
+            var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+            defer cellArena.deinit();
+            const ca = cellArena.allocator();
+            const npx: usize = @as(usize, cl.cw) * cl.ch;
+            const mask_bytes: u64 = npx * @sizeOf(u32);
+            const buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+            defer c.wgpuBufferRelease(buf_mask);
+            const staging = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+            defer c.wgpuBufferRelease(staging);
+            const enc = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
+            var kb: c.WGPUBindGroup = null;
+            var kp: c.WGPUBuffer = null;
+            if (is_field) {
+                const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
+                const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
+                var e = [_]c.WGPUBindGroupEntry{
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bp, .size = @sizeOf(AsteroidParams) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = ab1, .size = 256 * @sizeOf(u32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = ab2, .size = 256 * @sizeOf(u32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = ab3, .size = 512 * @sizeOf(f32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_mask, .size = mask_bytes }),
+                };
+                kb = addPass(&ctx, enc, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
+                kp = bp;
+            } else {
+                const r = classifier.?.classifyInto(enc, base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
+                kb = r.bg;
+                kp = r.params;
+            }
+            c.wgpuCommandEncoderCopyBufferToBuffer(enc, buf_mask, 0, staging, 0, mask_bytes);
+            const cmd = c.wgpuCommandEncoderFinish(enc, null);
+            c.wgpuCommandEncoderRelease(enc);
+            c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
+            c.wgpuCommandBufferRelease(cmd);
+            const mask = try ca.alloc(u32, npx);
+            try ctx.readBuffer(staging, u32, mask);
+            c.wgpuBindGroupRelease(kb);
+            c.wgpuBufferRelease(kp);
+            var mb: [1200]u8 = undefined;
+            const path = try maskPath(&mb, zdir, grid, cl.cell);
+            const f = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
+            f.writePositionalAll(init.io, std.mem.sliceAsBytes(mask), 0) catch {};
+            f.close(init.io);
+        }
+        std.debug.print("gpu_ore: wrote {d} classify mask cells in {d:.0}ms\n", .{ cells.len, @as(f64, @floatFromInt(wgpu.nowNs() - t0)) / 1e6 });
+        return;
+    }
+
+    // Collect each cell's RGBA; encoded in parallel after the loop.
     var jobs: std.ArrayListUnmanaged(EncJob) = .empty;
 
     for (cells) |cl| {
@@ -364,9 +440,27 @@ pub fn main(init: std.process.Init) !void {
         const win_bytes: u64 = npx * 16;
 
         // Per-tile gate buffer: field → asteroid mask (0/1/2); planet → biome
-        // index (water = >=60000) from the terrain classifier.
-        const buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+        // index (water = >=60000). With --mask it's read from the shared classify
+        // stage; otherwise classified inline (a pass appended to the cell's
+        // command buffer below).
+        const tc0 = wgpu.nowNs();
+        var buf_mask: c.WGPUBuffer = undefined;
+        var loaded = false;
+        if (use_mask) {
+            var mb: [1200]u8 = undefined;
+            const path = maskPath(&mb, zdir, grid, cl.cell) catch "";
+            if (path.len > 0) {
+                if (std.Io.Dir.readFileAlloc(.cwd(), init.io, path, ca, .unlimited)) |raw| {
+                    if (raw.len == mask_bytes) {
+                        buf_mask = ctx.uploadBuffer(u8, raw, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+                        loaded = true;
+                    }
+                } else |_| {}
+            }
+        }
+        if (!loaded) buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_mask);
+
         const zeros = try ca.alloc(u32, npx * 4);
         @memset(zeros, 0);
         const buf_win = ctx.uploadBuffer(u32, zeros, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
@@ -374,28 +468,29 @@ pub fn main(init: std.process.Init) !void {
         const staging = ctx.makeBuffer(win_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
         defer c.wgpuBufferRelease(staging);
 
-        // One command buffer for the whole cell (mask/classify + every ore pass +
-        // copy) → one submit and one GPU sync per cell instead of ~10.
+        // One command buffer for the whole cell (classify (if not loaded) + every
+        // ore pass + copy) → one submit and one GPU sync per cell.
         const enc = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
         const Keep = struct { bg: c.WGPUBindGroup, buf: c.WGPUBuffer };
         var keep: std.ArrayListUnmanaged(Keep) = .empty;
 
-        const tc0 = wgpu.nowNs();
-        if (is_field) {
-            const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
-            const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
-            var e = [_]c.WGPUBindGroupEntry{
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bp, .size = @sizeOf(AsteroidParams) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = ab1, .size = 256 * @sizeOf(u32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = ab2, .size = 256 * @sizeOf(u32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = ab3, .size = 512 * @sizeOf(f32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_mask, .size = mask_bytes }),
-            };
-            const bg = addPass(&ctx, enc, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
-            try keep.append(ca, .{ .bg = bg, .buf = bp });
-        } else {
-            const r = classifier.?.classifyInto(enc, base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
-            try keep.append(ca, .{ .bg = r.bg, .buf = r.params });
+        if (!loaded) {
+            if (is_field) {
+                const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
+                const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
+                var e = [_]c.WGPUBindGroupEntry{
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bp, .size = @sizeOf(AsteroidParams) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = ab1, .size = 256 * @sizeOf(u32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = ab2, .size = 256 * @sizeOf(u32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = ab3, .size = 512 * @sizeOf(f32) }),
+                    std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_mask, .size = mask_bytes }),
+                };
+                const bg = addPass(&ctx, enc, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
+                try keep.append(ca, .{ .bg = bg, .buf = bp });
+            } else {
+                const r = classifier.?.classifyInto(enc, base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
+                try keep.append(ca, .{ .bg = r.bg, .buf = r.params });
+            }
         }
         t_classify += wgpu.nowNs() - tc0;
 
@@ -406,7 +501,7 @@ pub fn main(init: std.process.Init) !void {
                 .origin_y = @floatFromInt(cl.y0),
                 .width = cl.cw,
                 .height = cl.ch,
-                // Disk gate = the render EXTENT (R), matching gpu_segen's field
+                // Disk gate = the render EXTENT (R), matching gpu_terrain's field
                 // terrain (which cuts a disk of `extent`). Using the zone's true
                 // radius (5000) would fill the square corners, so ore would spill
                 // past the circular terrain. The density math uses distance

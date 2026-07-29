@@ -1,4 +1,5 @@
-//! GPU surface renderer for the GUI — a fast terrain preview.
+//! Shared GPU surface engine behind the `gpu_terrain` (render) and `gpu_biome`
+//! (classify) binaries. `run(init, force_classify)` is the single entry point.
 //!
 //! Same CLI shape segen uses (--zones <jsonl> --world-seed N --zone <name>
 //! --out <dir>). Renders the zone's biome+water (planet/moon) or se-space /
@@ -91,6 +92,26 @@ const BiomeGPU = extern struct {
 };
 
 const NGEN = 192;
+
+// Shared classify-mask filename (must match gpu_ore.zig::maskPath).
+fn maskPath(buf: []u8, dir: []const u8, grid: i32, cell: u32) ![]const u8 {
+    return if (grid <= 1)
+        std.fmt.bufPrint(buf, "{s}/biome.bin", .{dir})
+    else
+        std.fmt.bufPrint(buf, "{s}/biome_{d}_{d}.bin", .{ dir, grid, cell });
+}
+
+// Write one classify-mask cell (u32/tile) to <out_dir>/seed_<seed>/<zone>/.
+fn writeMaskCell(init: std.process.Init, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32, cell: u32, indices: []const u32) !void {
+    var pb: [1024]u8 = undefined;
+    const zdir = try std.fmt.bufPrint(&pb, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
+    std.Io.Dir.createDirPath(.cwd(), init.io, zdir) catch {};
+    var mb: [1024]u8 = undefined;
+    const path = try maskPath(&mb, zdir, grid, cell);
+    const f = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
+    f.writePositionalAll(init.io, std.mem.sliceAsBytes(indices), 0) catch {};
+    f.close(init.io);
+}
 
 fn getStr(args: []const [:0]const u8, flag: []const u8) ?[]const u8 {
     var i: usize = 0;
@@ -209,7 +230,11 @@ fn writeZonePng(init: std.process.Init, out_dir: []const u8, world_seed: u64, zo
     std.debug.print("   wrote {s} ({d} bytes)\n", .{ path, png.len });
 }
 
-pub fn main(init: std.process.Init) !void {
+/// Shared surface engine behind the gpu_terrain and gpu_biome binaries.
+/// `force_classify` is set by gpu_biome so it always writes the biome/asteroid
+/// mask (biome_<grid>_<cell>.bin) regardless of flags; gpu_terrain passes false
+/// and renders (colouring a `--mask` if present, else classifying inline).
+pub fn run(init: std.process.Init, force_classify: bool) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -225,6 +250,19 @@ pub fn main(init: std.process.Init) !void {
     const radius_override: ?f64 = if (getStr(args, "--radius")) |rs| try std.fmt.parseFloat(f64, rs) else null;
     // Optional N×N tiling. Default 1 = whole disk in one dispatch → terrain.png.
     const grid: i32 = if (getStr(args, "--surface-grid")) |gs| try std.fmt.parseInt(i32, gs, 10) else 1;
+    // --mask: read the shared classify mask (biome_<grid>_<cell>.bin) instead of
+    // running render.wgsl — the biome index per tile is already computed.
+    const use_mask = blk: {
+        for (args) |arg| if (std.mem.eql(u8, arg, "--mask")) break :blk true;
+        break :blk false;
+    };
+    // --classify-only: run the classifier and write biome_<grid>_<cell>.bin
+    // (u32/tile: planet biome index / asteroid mask 0/1/2) — no PNG. This shared
+    // mask is consumed by both the terrain (--mask) and ore (gpu_ore --mask) passes.
+    const classify_only = force_classify or blk: {
+        for (args) |arg| if (std.mem.eql(u8, arg, "--classify-only")) break :blk true;
+        break :blk false;
+    };
 
     // ── Find the zone in the jsonl → zone_seed, radius, type, has_water ──────
     const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, zones_path, a, .unlimited);
@@ -291,13 +329,16 @@ pub fn main(init: std.process.Init) !void {
 
     // ── Asteroid field: se-space / se-asteroid argmax (separate kernel) ──────
     if (is_field) {
-        std.debug.print("# gpu_segen: {s} seed {d} r {d} ASTEROID-FIELD grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, grid, W, H });
-        try renderAsteroidField(a, init, zone_seed, extent, out_dir, world_seed, zone_name, grid);
+        std.debug.print("# surface_gpu: {s} seed {d} r {d} ASTEROID-FIELD grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, grid, W, H });
+        if (use_mask and !classify_only)
+            try renderTerrainFromMask(a, init, extent, out_dir, world_seed, zone_name, grid, true)
+        else
+            try renderAsteroidField(a, init, zone_seed, extent, out_dir, world_seed, zone_name, grid, classify_only);
         return;
     }
     if (radius < 1) return err("planet/moon zone has no radius (z.r)");
 
-    std.debug.print("# gpu_segen: {s} seed {d} r {d} water {} grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, grid, W, H });
+    std.debug.print("# surface_gpu: {s} seed {d} r {d} water {} grid {d} → {d}x{d}\n", .{ zone_name, zone_seed, R, has_water, grid, W, H });
 
     // ── Build params (mirrors segen's per-zone ZoneTerrain/Elevation config) ─
     // origin/width/height are placeholders here — renderTerrain overrides them
@@ -355,11 +396,11 @@ pub fn main(init: std.process.Init) !void {
 
     // Geometry (disk mask + cell layout) uses the render EXTENT; the frequency
     // params in `base` already encode the true radius via fm.
-    try renderTerrain(a, init, zone_seed, base, extent, out_dir, world_seed, zone_name, grid);
+    try renderTerrain(a, init, zone_seed, base, extent, out_dir, world_seed, zone_name, grid, use_mask, classify_only);
 }
 
 fn err(msg: []const u8) error{Usage} {
-    std.debug.print("gpu_segen error: {s}\n  usage: gpu_segen --zones <jsonl> --world-seed N --zone <name> --out <dir> [--radius R] [--surface-grid N]\n", .{msg});
+    std.debug.print("surface_gpu error: {s}\n  usage: gpu_terrain|gpu_biome --zones <jsonl> --world-seed N --zone <name> --out <dir> [--radius R] [--surface-grid N] [--mask] [--classify-only]\n", .{msg});
     return error.Usage;
 }
 
@@ -376,7 +417,9 @@ fn packGen(gi: usize, g: noise.BasisNoiseGen, p1: []u32, p2: []u32, gr: []f32, s
 /// Pack the 192 generators + biome table for map_seed once, build the GPU
 /// context + pipeline once, then render each disk cell (render.wgsl) and write
 /// its PNG. grid<=1 → a single whole-disk cell → terrain.png.
-fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, base: Params, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32) !void {
+fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, base: Params, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32, use_mask: bool, classify_only: bool) !void {
+    // Fast path: colour a precomputed classify mask, skipping render.wgsl entirely.
+    if (use_mask) return renderTerrainFromMask(a, init, radius, out_dir, world_seed, zone_name, grid, false);
     const nb = biome.biomes.len;
     const perm1 = try a.alloc(u32, NGEN * 256);
     const perm2 = try a.alloc(u32, NGEN * 256);
@@ -496,6 +539,12 @@ fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, ba
         const indices = try ca.alloc(u32, npx);
         try ctx.readBuffer(staging, u32, indices);
 
+        // --classify-only: emit the raw biome-index mask cell, no PNG.
+        if (classify_only) {
+            try writeMaskCell(init, out_dir, world_seed, zone_name, grid, cl.cell, indices);
+            continue;
+        }
+
         // Compose cell PNG: disk mask (grey 20) + idx→colour. Rows top-down
         // (row 0 = north edge, tile y0) — north-up, matching the game map.
         const rgb = try ca.alloc(u8, npx * 3);
@@ -515,9 +564,58 @@ fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, ba
     }
 }
 
+/// --mask fast path: the biome index per tile was already computed by the shared
+/// classify stage (biome_<grid>_<cell>.bin, u32/tile). Read it and colour it the
+/// same way renderTerrain does — no GPU, no 192-gen upload. Works for both planet
+/// and asteroid-field masks (idxColor handles the asteroid sentinels too).
+fn renderTerrainFromMask(a: std.mem.Allocator, init: std.process.Init, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32, is_field: bool) !void {
+    const R: i32 = @intFromFloat(radius);
+    const rr = radius * radius;
+    const bg = [3]u8{ 20, 20, 20 };
+    const space = surfgen.asteroid.SPACE_COLOR;
+    const ast = surfgen.asteroid.ASTEROID_COLOR;
+    const cells = try cellList(a, R, radius, grid);
+    const zdir = try std.fmt.allocPrint(a, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone_name });
+    std.debug.print("   {d} cell(s) from classify mask (grid {d})\n", .{ cells.len, grid });
+
+    for (cells) |cl| {
+        var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+        defer cellArena.deinit();
+        const ca = cellArena.allocator();
+
+        const npx: usize = @as(usize, cl.cw) * cl.ch;
+        var mb: [512]u8 = undefined;
+        const path = try maskPath(&mb, zdir, grid, cl.cell);
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, path, ca, .unlimited);
+        const indices = std.mem.bytesAsSlice(u32, raw[0 .. npx * @sizeOf(u32)]);
+
+        const rgb = try ca.alloc(u8, npx * 3);
+        for (0..cl.ch) |out_y| {
+            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(out_y));
+            for (0..cl.cw) |x| {
+                const fx: f64 = @as(f64, @floatFromInt(cl.x0)) + @as(f64, @floatFromInt(x));
+                const v = indices[out_y * cl.cw + x];
+                const col = if (fx * fx + fy * fy > rr)
+                    bg
+                else if (is_field) switch (v) {
+                    1 => ast,
+                    2 => bg,
+                    else => space,
+                } else biome.idxColor(@intCast(v));
+                const o = (out_y * cl.cw + x) * 3;
+                rgb[o] = col[0];
+                rgb[o + 1] = col[1];
+                rgb[o + 2] = col[2];
+            }
+        }
+        const png = try surfgen.png.encode(ca, cl.cw, cl.ch, rgb);
+        try writeZonePng(init, out_dir, world_seed, zone_name, grid, cl.cell, png);
+    }
+}
+
 /// Render an asteroid field (se-space / se-asteroid) via asteroid.wgsl. Same
 /// setup-once + per-cell loop as renderTerrain. grid<=1 → terrain.png.
-fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32) !void {
+fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, radius: f64, out_dir: []const u8, world_seed: u64, zone_name: []const u8, grid: i32, classify_only: bool) !void {
     const size: f64 = surfgen.asteroid.FIELD_SIZE;
     const freq: f64 = surfgen.asteroid.FIELD_FREQ;
     const planet_radius = 10000.0 / 6.0 * (6.0 + std.math.log2(1.0 / freq / 6.0));
@@ -608,6 +706,12 @@ fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u
 
         const indices = try ca.alloc(u32, npx);
         try ctx.readBuffer(staging, u32, indices);
+
+        // --classify-only: emit the raw asteroid mask (0/1/2) cell, no PNG.
+        if (classify_only) {
+            try writeMaskCell(init, out_dir, world_seed, zone_name, grid, cl.cell, indices);
+            continue;
+        }
 
         // 0=space, 1=asteroid, 2=out-of-map; disk mask. Rows north-up (row 0 = y0).
         const rgb = try ca.alloc(u8, npx * 3);

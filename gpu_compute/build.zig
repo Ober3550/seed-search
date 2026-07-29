@@ -168,19 +168,26 @@ pub fn build(b: *std.Build) void {
     rnd_step.dependOn(&rnd_cmd.step);
     rnd_cmd.step.dependOn(b.getInstallStep());
 
-    // GPU surface renderer for the GUI (segen-compatible CLI → terrain.png).
-    const gseg = b.addExecutable(.{
-        .name = "gpu_segen",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/gpu_segen.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
-            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
-        }),
-    });
-    linkWgpu(gseg, b, inc, lib);
-    b.installArtifact(gseg);
+    // GPU surface renderer for the GUI (segen-compatible CLI → terrain.png) and
+    // the shared biome/space/water classifier — two thin entry points over the
+    // same engine (src/surface_gpu.zig).
+    inline for (.{
+        .{ "gpu_terrain", "src/gpu_terrain.zig" },
+        .{ "gpu_biome", "src/gpu_biome.zig" },
+    }) |spec| {
+        const e = b.addExecutable(.{
+            .name = spec[0],
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(spec[1]),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+                .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+            }),
+        });
+        linkWgpu(e, b, inc, lib);
+        b.installArtifact(e);
+    }
 
     // GPU ore placement (prototype): reads a `segen --gpu-ore-dump` file and
     // writes ore.jsonl via the ore.wgsl per-tile kernel.
