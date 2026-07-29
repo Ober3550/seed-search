@@ -35,6 +35,10 @@ struct Params {
     starting_blob_amplitude : f32,
     nspots : u32,
     nstart : u32,
+    is_field : u32,      // 1 → binding 6 is the asteroid mask (0/1/2); 0 → biome index
+    restrict_bit : u32,  // se-vulcanite=1, se-cryonite=2, se-vitamelange=4, else 0
+    pad0 : u32,
+    pad1 : u32,
 };
 
 @group(0) @binding(0) var<uniform>             P      : Params;
@@ -43,8 +47,9 @@ struct Params {
 @group(0) @binding(3) var<storage, read>       grad   : array<f32>;   // 512
 @group(0) @binding(4) var<storage, read>       spots  : array<vec4<f32>>; // x,y,peak,slope
 @group(0) @binding(5) var<storage, read>       sspots : array<vec4<f32>>; // starting spots
-@group(0) @binding(6) var<storage, read>       mask   : array<u32>;   // asteroid mask
+@group(0) @binding(6) var<storage, read>       terr   : array<u32>;   // field: asteroid mask (0/1/2); planet: biome index (water = >=60000)
 @group(0) @binding(7) var<storage, read_write> win    : array<vec4<u32>>; // [prob,rich,res,amount] bitcast
+@group(0) @binding(8) var<storage, read>       restrict_tbl : array<u32>; // per-biome restrict bitmask (planets)
 
 const PI : f32 = 3.14159265358979;
 const MAX_BASEMENT_RADIUS : f32 = 128.0;
@@ -172,7 +177,14 @@ fn placementRoll(ix : i32, iy : i32) -> f32 {
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     if (gid.x >= P.width || gid.y >= P.height) { return; }
     let i = gid.y * P.width + gid.x;
-    if (mask[i] != 1u) { return; }               // asteroid tiles only
+    let t = terr[i];
+    if (P.is_field == 1u) {
+        if (t != 1u) { return; }                  // asteroid tiles only
+    } else {
+        if (t >= 60000u) { return; }              // water tile → no ore
+        // biome tile_restriction (vulcanite/cryonite/vitamelange only)
+        if (P.restrict_bit != 0u && (restrict_tbl[t] & P.restrict_bit) == 0u) { return; }
+    }
     let x = P.origin_x + f32(gid.x);
     let y = P.origin_y + f32(gid.y);
     if (sqrt(x * x + y * y) > P.zone_radius) { return; }

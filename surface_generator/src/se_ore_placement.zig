@@ -1005,6 +1005,10 @@ pub fn serializeGpuInput(
     }
     for (resources) |res| {
         if (res.controls.size <= 0.0) continue;
+        // Fluids (random_probability<1: crude-oil, uranium) are placed via a
+        // per-chunk penalty the GPU kernel doesn't do — and the GUI's CPU ore
+        // path drops them too (--ores-only). Exclude them from the dump.
+        if (res.config.random_probability < 1.0) continue;
         try states.append(alloc, makeResourceStateElev(alloc, map_seed, res.name, res.config, res.controls, null));
     }
 

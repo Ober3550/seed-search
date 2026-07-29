@@ -14,6 +14,7 @@ const surfgen = @import("surfgen");
 const se = surfgen.se_ore;
 const noise = surfgen.noise;
 const png = surfgen.png;
+const terrain = @import("terrain_gpu.zig");
 
 const ore_wgsl = @embedFile("shaders/ore.wgsl");
 const asteroid_wgsl = @embedFile("shaders/asteroid.wgsl");
@@ -56,6 +57,14 @@ fn mapColor(name: []const u8) [3]u8 {
     return .{ 128, 128, 128 };
 }
 
+// Biome tile_restriction bit per resource (matches biome.oreAllowedOnBiome).
+fn restrictBit(name: []const u8) u32 {
+    if (std.mem.eql(u8, name, "se-vulcanite")) return 1;
+    if (std.mem.eql(u8, name, "se-cryonite")) return 2;
+    if (std.mem.eql(u8, name, "se-vitamelange")) return 4;
+    return 0;
+}
+
 const AsteroidParams = extern struct {
     origin_x: f32,
     origin_y: f32,
@@ -92,7 +101,11 @@ const OreParams = extern struct {
     starting_blob_amplitude: f32,
     nspots: u32,
     nstart: u32,
+    is_field: u32 = 0,
+    restrict_bit: u32 = 0,
     pad0: u32 = 0,
+    pad1: u32 = 0,
+    pad2: u32 = 0,
 };
 
 const Cell = struct { cell: u32, x0: i32, y0: i32, cw: u32, ch: u32, d2: f64 };
@@ -214,6 +227,29 @@ pub fn main(init: std.process.Init) !void {
     const ast_freq: f64 = surfgen.asteroid.FIELD_FREQ;
     const ast_pr = 10000.0 / 6.0 * (6.0 + std.math.log2(1.0 / ast_freq / 6.0));
 
+    // Planet/moon: build the terrain classifier (for the water + biome gate) and
+    // the per-biome restrict table. Fields skip this (asteroid mask instead).
+    const is_field = H.is_field != 0;
+    var classifier: ?terrain.Classifier = null;
+    var base_params: terrain.Params = undefined;
+    var b_restrict: c.WGPUBuffer = undefined;
+    var restrict_bytes: u64 = 0;
+    if (!is_field) {
+        const zp = getStr(args, "--zones") orelse return err("planet/moon needs --zones");
+        const zi = try terrain.loadZone(a, init.io, zp, world_seed, zone);
+        if (!zi.found) return err("zone not found in --zones");
+        base_params = terrain.buildParams(zi.radius, zi.has_water, zi.temp_label, zi.moist_label, zi.aux_label);
+        classifier = try terrain.Classifier.init(a, &ctx, H.map_seed);
+        const rt = try terrain.restrictTable(a);
+        b_restrict = ctx.uploadBuffer(u32, rt, c.WGPUBufferUsage_Storage);
+        restrict_bytes = rt.len * @sizeOf(u32);
+        std.debug.print("gpu_ore: planet/moon terrain gate — water {} biomes {d}\n", .{ zi.has_water, rt.len });
+    } else {
+        b_restrict = ctx.uploadBuffer(u32, &[_]u32{0}, c.WGPUBufferUsage_Storage); // unused placeholder
+        restrict_bytes = @sizeOf(u32);
+    }
+    defer c.wgpuBufferRelease(b_restrict);
+
     // Parse resources + upload their static buffers once.
     var res = try a.alloc(Res, H.nres);
     var nres: usize = 0;
@@ -277,10 +313,11 @@ pub fn main(init: std.process.Init) !void {
         const mask_bytes: u64 = npx * @sizeOf(u32);
         const win_bytes: u64 = npx * 16;
 
-        // Asteroid mask for this cell.
+        // Per-tile gate buffer: field → asteroid mask (0/1/2); planet → biome
+        // index (water = >=60000) from the terrain classifier.
         const buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_mask);
-        {
+        if (is_field) {
             const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
             const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
             defer c.wgpuBufferRelease(bp);
@@ -292,6 +329,8 @@ pub fn main(init: std.process.Init) !void {
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_mask, .size = mask_bytes }),
             };
             dispatch(&ctx, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
+        } else {
+            classifier.?.classify(base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
         }
 
         // Winner buffer (zeroed).
@@ -330,6 +369,8 @@ pub fn main(init: std.process.Init) !void {
                 .starting_blob_amplitude = @floatCast(rr.rh.starting_blob_amplitude),
                 .nspots = rr.rh.nspots,
                 .nstart = rr.rh.nstart,
+                .is_field = if (is_field) 1 else 0,
+                .restrict_bit = restrictBit(rr.name),
             };
             const bP = ctx.uploadBuffer(OreParams, &.{P}, c.WGPUBufferUsage_Uniform);
             defer c.wgpuBufferRelease(bP);
@@ -342,6 +383,7 @@ pub fn main(init: std.process.Init) !void {
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = rr.b_start, .size = rr.start_bytes }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_mask, .size = mask_bytes }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 7, .buffer = buf_win, .size = win_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 8, .buffer = b_restrict, .size = restrict_bytes }),
             };
             dispatch(&ctx, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
         }
