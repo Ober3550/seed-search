@@ -160,6 +160,9 @@ function initSchema() {
     "ALTER TABLE seed_filters ADD COLUMN rules TEXT", // JSON ruleset (replaces min_specials/min_pairs)
     "ALTER TABLE universe_jobs ADD COLUMN retries INTEGER DEFAULT 0", // auto-retry counter
     "ALTER TABLE surface_jobs ADD COLUMN retries INTEGER DEFAULT 0",
+    // 0 = only the Calidus system stored (bulk gen); 1 = full universe expanded
+    // (all star systems + fields) via the seed-detail background job.
+    "ALTER TABLE seeds ADD COLUMN expanded INTEGER DEFAULT 0",
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
@@ -451,6 +454,13 @@ function getSeed(seed) {
   return d.prepare("SELECT * FROM seeds WHERE seed = ?").get(seed);
 }
 
+// Mark a seed as fully expanded (all zones ingested) + refresh its stored line
+// and zone_count. Called by the seed-detail expand job after upserting zones.
+function markSeedExpanded(seed, line, zoneCount, criteria) {
+  getDb().prepare("UPDATE seeds SET expanded = 1, line = ?, zone_count = ?, criteria = COALESCE(?, criteria) WHERE seed = ?")
+    .run(line, zoneCount, criteria || null, seed);
+}
+
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.
 function getGeneratedZoneCounts() {
   const rows = getDb().prepare(
@@ -572,6 +582,7 @@ module.exports = {
   insertSeeds,
   getSeeds,
   getSeed,
+  markSeedExpanded,
   getSurfaceCells,
   getFilterDefs,
   getFilterDef,

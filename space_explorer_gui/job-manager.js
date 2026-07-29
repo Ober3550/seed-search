@@ -552,6 +552,91 @@ async function importBucket(filePath, jobId, label) {
   return { seeds: seedRows.length, zones };
 }
 
+// ── Per-seed universe expansion ────────────────────────────────────────
+// Bulk generation stores only the Calidus home system (size). Opening a seed's
+// detail page kicks this off to fill in the rest of the universe — every star
+// system's planets/moons + deep-space asteroid fields — via seedgen ALL_ZONES=1
+// for that single seed, upserting the zones (UNIQUE(seed,name) → dedup).
+
+// Upsert every zone of one parsed universe world line. Returns the zone count.
+// ON CONFLICT DO UPDATE (not INSERT OR REPLACE) so an existing zone keeps its id
+// — otherwise the reinsert would orphan surface_jobs.zone_id (FK) for zones whose
+// surfaces have already been generated.
+function upsertWorldZones(data, jobId) {
+  const d = db.getDb();
+  const stmt = d.prepare(`
+    INSERT INTO zones
+      (job_id, seed, name, zone_type, radius, primary_resource,
+       temperature, water, moisture, trees, aux, cliff, enemy,
+       delta_v, star_gravity_well, planet_gravity_well,
+       resource_scores, resource_yields, stellar_x, stellar_y)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(seed, name) DO UPDATE SET
+      zone_type=excluded.zone_type, radius=excluded.radius,
+      primary_resource=excluded.primary_resource,
+      temperature=excluded.temperature, water=excluded.water,
+      moisture=excluded.moisture, trees=excluded.trees, aux=excluded.aux,
+      cliff=excluded.cliff, enemy=excluded.enemy, delta_v=excluded.delta_v,
+      resource_scores=excluded.resource_scores,
+      resource_yields=excluded.resource_yields`);
+  const tx = d.transaction(() => {
+    for (const z of data.z) {
+      stmt.run(
+        jobId, data.s, z.n, z.t, z.r || null, z.p || null,
+        z.temperature || null, z.water || null, z.moisture || null, z.trees || null,
+        z.aux || null, z.cliff || null, z.enemy || null, z.dv || null, null, null,
+        z.rs ? JSON.stringify(z.rs) : null, z.y ? JSON.stringify(z.y) : null, null, null,
+      );
+    }
+  });
+  tx();
+  return data.z.length;
+}
+
+const expandInFlight = new Set();
+function isExpanding(seed) { return expandInFlight.has(Number(seed)); }
+
+// Fire-and-forget: generate + ingest the full universe for one already-known
+// seed. No-op if unknown, already expanded, or currently expanding. Seedgen for
+// a single seed is ~milliseconds; the filters are disabled (the seed already
+// passed bulk generation — we just want all its zones).
+function expandSeed(seed) {
+  seed = Number(seed);
+  if (expandInFlight.has(seed)) return;
+  const row = db.getSeed(seed);
+  if (!row || row.expanded) return;
+  let bin;
+  try { bin = requireSeedgen(); }
+  catch (e) { console.log(`[expand ${seed}] ${e.message}`); return; }
+  expandInFlight.add(seed);
+  const env = {
+    ...process.env,
+    START_SEED: String(seed), END_SEED: String(seed),
+    SE_K2: row.k2 ? "1" : "0",
+    ALL_ZONES: "1",
+    MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0",
+  };
+  const child = spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "", err = "";
+  child.stdout.on("data", d => out += d);
+  child.stderr.on("data", d => err += d);
+  child.on("close", code => {
+    expandInFlight.delete(seed);
+    if (code !== 0) return void console.log(`[expand ${seed}] seedgen exit ${code}: ${err.slice(-200)}`);
+    const line = out.split("\n").find(l => l.trim().startsWith("{"));
+    if (!line) return void console.log(`[expand ${seed}] no output`);
+    let data;
+    try { data = JSON.parse(line); } catch (_) { return void console.log(`[expand ${seed}] bad JSON`); }
+    if (!data.z) return;
+    const n = upsertWorldZones(data, row.job_id);
+    let criteria = null;
+    try { criteria = JSON.stringify(analyze.evaluateWorld(data)); } catch (_) {}
+    db.markSeedExpanded(seed, line, n, criteria);
+    console.log(`[expand ${seed}] ingested ${n} zones (full universe)`);
+  });
+  child.on("error", e => { expandInFlight.delete(seed); console.log(`[expand ${seed}] spawn: ${e.message}`); });
+}
+
 // ── Second-layer seed filter (persisted subset of a bucket) ────────────
 
 // Apply analyze criteria to a bucket's seeds, persist a named filter (DB rows +
@@ -1009,6 +1094,8 @@ module.exports = {
   clearCancelledJobs,
   wipeSystem,
   createFilteredSet,
+  expandSeed,
+  isExpanding,
   writeSeedZonesFile,
   surfaceGridFor,
   planSurfaceCells,

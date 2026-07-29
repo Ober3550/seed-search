@@ -44,6 +44,11 @@ pub fn main(init: std.process.Init) !void {
     const end_seed = getEnvU32("END_SEED", 100000);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
     const start_seed = getEnvU32("START_SEED", 0);
+    // ALL_ZONES=1 → serialize EVERY zone in the universe (all star systems +
+    // deep-space asteroid fields), not just the Calidus home system. Used by the
+    // GUI's per-seed "expand" job; bulk generation leaves it off to keep storage
+    // to the Calidus system only.
+    const all_zones = getEnvBool("ALL_ZONES");
 
     std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
@@ -158,13 +163,18 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
 
-        // --- Serialize JSONL (Calidus system only, plus all asteroid fields) ---
-        var buf: [524288]u8 = undefined;
+        // --- Serialize JSONL ---
+        // Default: the Calidus home system only. ALL_ZONES=1: every zone in the
+        // universe (bigger output → allocate on the arena, not the stack).
+        const buf = try a.alloc(u8, if (all_zones) 8 << 20 else 524288);
         var pos: usize = 0;
         const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
         pos += open.len;
 
-        // Only serialize Calidus system + asteroid fields
+        // Calidus system = [calidus_zi, zone_end) (up to the next star). The
+        // default serializes only that slice; ALL_ZONES serializes the whole
+        // universe. Either way each planet/moon/asteroid-field gets full tags +
+        // resources from the same emit code below.
         const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
         var zone_end: usize = universe.zones.items.len;
         for (universe.zones.items[calidus_zi + 1 ..], calidus_zi + 1..) |z, si| {
@@ -174,7 +184,8 @@ pub fn main(init: std.process.Init) !void {
             }
         }
         var zi: u32 = 0;
-        for (universe.zones.items[calidus_zi..zone_end]) |z| {
+        for (universe.zones.items, 0..) |z, si| {
+            if (!all_zones and (si < calidus_zi or si >= zone_end)) continue; // Calidus system only
             // Nauvis uses map-gen UI settings, not universe generation
             if (std.mem.eql(u8, z.name, "Nauvis")) continue;
             // Orbits carry no resource data
@@ -331,65 +342,6 @@ pub fn main(init: std.process.Init) !void {
             buf[pos] = '}';
             pos += 1;
         }
-        // Append asteroid fields and tail homesystem bodies
-        for (universe.zones.items[zone_end..]) |z| {
-            if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
-                buf[pos] = ',';
-                pos += 1;
-                zi += 1;
-                const ob = std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed }) catch unreachable;
-                pos += ob.len;
-                const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
-                // Emit the quota-assigned primary (fields via field_primaries,
-                // planets/moons via primaries) so it drives both the "p" field
-                // and the primary-weighted resource scores — matching the main
-                // zone loop above. Without this, tail-appended asteroid fields
-                // ship no primary and their naquium-primary status is lost.
-                const tprim: ?[]const u8 = if (z.ztype == .@"asteroid-field")
-                    field_primaries.get(z.name)
-                else
-                    primaries.get(z.name);
-                if (tprim) |tp| {
-                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{tp}) catch unreachable;
-                    pos += pp.len;
-                }
-                const scores = gen.computeZoneResources(z.seed, z.ztype, tprim, empty_tags);
-                var fr: bool = true;
-                for (gen.resource_order, 0..) |rname, ri| {
-                    const is_field = z.ztype == .@"asteroid-field";
-                    const y = gen.computeYield(scores[ri], is_field, z.radius, null, rname);
-                    if (y >= 0.5) {
-                        if (fr) {
-                            const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
-                            pos += p.len;
-                            fr = false;
-                        } else {
-                            buf[pos] = ',';
-                            pos += 1;
-                        }
-                        var ybuf: [16]u8 = undefined;
-                        const ys = gen.formatYield(y, &ybuf);
-                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
-                        pos += rp.len;
-                    }
-                }
-                if (!fr) {
-                    buf[pos] = '}';
-                    pos += 1;
-                }
-                const cx = universe.zones.items[calidus_zi].stellar_x;
-                const cy = universe.zones.items[calidus_zi].stellar_y;
-                const dx = z.stellar_x - cx;
-                const dy = z.stellar_y - cy;
-                const dist = @sqrt(dx * dx + dy * dy);
-                const dv_raw: f64 = 400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw;
-                const dv: u32 = @intFromFloat(@ceil(dv_raw));
-                const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
-                pos += dp.len;
-                buf[pos] = '}';
-                pos += 1;
-            }
-        }
         buf[pos] = ']';
         pos += 1;
         buf[pos] = '}';
@@ -397,8 +349,11 @@ pub fn main(init: std.process.Init) !void {
         buf[pos] = '\n';
         pos += 1;
 
-        // Write JSONL to stdout (shell redirects to file)
-        _ = try stdout_w.writeSplat(&.{buf[0..pos]}, 1);
+        // writeAll loops until the whole slice is written. (writeSplat returns a
+        // possibly-partial count; for writes larger than the writer buffer — e.g.
+        // ~300 KB ALL_ZONES lines piped to the GUI — the unwritten tail was being
+        // dropped.)
+        try stdout_w.writeAll(buf[0..pos]);
         passed += 1;
 
         // loop advances seed

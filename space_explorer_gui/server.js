@@ -479,6 +479,10 @@ const ORE_COLORS = (() => {
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
   if (!s) return res.status(404).send(htmxPage("Not Found", "<h2>Seed not found</h2>"));
+  // Bulk generation only stored the Calidus home system. Opening the detail page
+  // kicks off a background job to fill in the rest of the universe (all star
+  // systems + asteroid fields). The banner (renderSeedDetail) polls until done.
+  if (!s.expanded) jobs.expandSeed(s.seed);
   const c = seedCriteria(s) || { selectedZones: [], specials: {}, pairs: {} };
   const filterId = req.query.filter || null;
 
@@ -502,6 +506,22 @@ app.get("/seed/:seed", (req, res) => {
   page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId));
 });
 
+// Poll target for the "generating full universe" banner. While expanding it
+// returns the spinner (keep polling); once the seed is expanded it returns a
+// done chip with HTTP 286 (stops the poll) that reloads the detail once so the
+// newly-ingested zones appear — a single swap, not incremental.
+app.get("/api/seed/:seed/expand", (req, res) => {
+  const seed = parseInt(req.params.seed);
+  const s = db.getSeed(seed);
+  if (!s) return res.status(404).send("");
+  if (s.expanded) {
+    return res.status(286).send(
+      `<span class="expand-done" hx-get="/seed/${seed}" hx-trigger="load" hx-target="#main" hx-swap="innerHTML">✅ Full universe loaded (${s.zone_count} zones)</span>`);
+  }
+  if (!jobs.isExpanding(seed)) jobs.expandSeed(seed); // resume if it was dropped
+  res.send(`<span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span>`);
+});
+
 // Lowercase "name type resource…" haystack for the client-side zone search.
 function zoneSearchText(bucket, seed, zone) {
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
@@ -523,6 +543,7 @@ function renderSeedDetail(s, c, zones, filterId) {
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code></h2>
+    ${s.expanded ? "" : `<div id="expand-wrap" class="expand-banner" hx-get="/api/seed/${s.seed}/expand" hx-trigger="load delay:800ms, every 2s" hx-target="#expand-wrap" hx-swap="innerHTML"><span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span></div>`}
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
       ${maxRadiusInput()}
