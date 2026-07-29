@@ -101,9 +101,13 @@ const Shared = extern struct {
     is_field: u32,
     nres: u32,
     has_any_start: u32,
+    gox: i32,
+    goy: i32,
+    gw: u32,
+    gh: u32,
+    nbins_p1: u32,
     pad0: u32 = 0,
     pad1: u32 = 0,
-    pad2: u32 = 0,
 };
 
 // MUST match shaders/ore.wgsl `Res` (std430 array element, 80 bytes).
@@ -376,9 +380,74 @@ pub fn main(init: std.process.Init) !void {
     const nres = rparams.items.len;
     if (nres == 0) return err("dump has no ore resources");
 
+    // ── Spatial bins for the regular spot cones (radius 128). Bin every
+    // resource's spots into a uniform grid (bin size == 128), reorder them so
+    // each bin's spots are contiguous, and build a per-(resource,bin) offset
+    // table. The kernel then scans only the 3x3 bin neighbourhood of a tile
+    // (which provably contains every spot within 128) instead of all nspots.
+    const BIN: f32 = 128.0;
+    var minx: f32 = std.math.floatMax(f32);
+    var miny: f32 = std.math.floatMax(f32);
+    var maxx: f32 = -std.math.floatMax(f32);
+    var maxy: f32 = -std.math.floatMax(f32);
+    {
+        var k: usize = 0;
+        while (k < all_spots.items.len) : (k += 4) {
+            minx = @min(minx, all_spots.items[k]);
+            maxx = @max(maxx, all_spots.items[k]);
+            miny = @min(miny, all_spots.items[k + 1]);
+            maxy = @max(maxy, all_spots.items[k + 1]);
+        }
+    }
+    const gox: i32 = @as(i32, @intFromFloat(@floor(minx / BIN))) - 1;
+    const goy: i32 = @as(i32, @intFromFloat(@floor(miny / BIN))) - 1;
+    const gw: u32 = @intCast(@as(i32, @intFromFloat(@floor(maxx / BIN))) - gox + 2);
+    const gh: u32 = @intCast(@as(i32, @intFromFloat(@floor(maxy / BIN))) - goy + 2);
+    const nbins: usize = @as(usize, gw) * gh;
+    const nbins_p1: usize = nbins + 1;
+    const binOf = struct {
+        fn f(sx: f32, sy: f32, gox_: i32, goy_: i32, gw_: u32) usize {
+            const bx: i32 = @as(i32, @intFromFloat(@floor(sx / 128.0))) - gox_;
+            const by: i32 = @as(i32, @intFromFloat(@floor(sy / 128.0))) - goy_;
+            return @intCast(by * @as(i32, @intCast(gw_)) + bx);
+        }
+    }.f;
+
+    const sorted = try a.alloc(f32, all_spots.items.len);
+    const bin_offsets = try a.alloc(u32, nres * nbins_p1);
+    {
+        const counts = try a.alloc(u32, nbins);
+        const cursor = try a.alloc(u32, nbins);
+        for (rparams.items, 0..) |*rp, r| {
+            const base: usize = rp.spot_off; // spot index (vec4 units)
+            const n: usize = rp.nspots;
+            @memset(counts, 0);
+            for (0..n) |k| {
+                const sx = all_spots.items[(base + k) * 4];
+                const sy = all_spots.items[(base + k) * 4 + 1];
+                counts[binOf(sx, sy, gox, goy, gw)] += 1;
+            }
+            const rbase = r * nbins_p1;
+            var acc: u32 = 0;
+            for (0..nbins) |b| {
+                bin_offsets[rbase + b] = @intCast(base + acc); // absolute bin start
+                cursor[b] = @intCast(base + acc);
+                acc += counts[b];
+            }
+            bin_offsets[rbase + nbins] = @intCast(base + acc); // resource end
+            for (0..n) |k| {
+                const idx4 = (base + k) * 4;
+                const b = binOf(all_spots.items[idx4], all_spots.items[idx4 + 1], gox, goy, gw);
+                const pos: usize = cursor[b];
+                cursor[b] += 1;
+                sorted[pos * 4 ..][0..4].* = all_spots.items[idx4 ..][0..4].*;
+            }
+        }
+    }
+
     // Shared generator (seed1 == 100) — perm/grad uploaded once. perm1+perm2 are
-    // concatenated into one buffer ([0,256)=perm1, [256,512)=perm2) to stay under
-    // the 8-storage-buffer-per-stage limit on Apple GPUs.
+    // concatenated into one buffer ([0,256)=perm1, [256,512)=perm2) to keep the
+    // storage-buffer count down (Apple GPUs cap it per stage).
     const shgen = try buildGen(a, H.map_seed, shared_seed1);
     const perm12 = try a.alloc(u32, 512);
     @memcpy(perm12[0..256], shgen.perm1);
@@ -386,12 +455,14 @@ pub fn main(init: std.process.Init) !void {
     const b_perm = ctx.uploadBuffer(u32, perm12, c.WGPUBufferUsage_Storage);
     const b_grad = ctx.uploadBuffer(f32, shgen.grad, c.WGPUBufferUsage_Storage);
     if (all_start.items.len == 0) try all_start.appendSlice(a, &.{ 0, 0, 0, 0 }); // WGSL needs a non-empty binding
-    const b_spots = ctx.uploadBuffer(f32, all_spots.items, c.WGPUBufferUsage_Storage);
+    const b_spots = ctx.uploadBuffer(f32, sorted, c.WGPUBufferUsage_Storage);
     const b_start = ctx.uploadBuffer(f32, all_start.items, c.WGPUBufferUsage_Storage);
     const b_rparams = ctx.uploadBuffer(ResGPU, rparams.items, c.WGPUBufferUsage_Storage);
-    const spots_bytes: u64 = all_spots.items.len * @sizeOf(f32);
+    const b_bins = ctx.uploadBuffer(u32, bin_offsets, c.WGPUBufferUsage_Storage);
+    const spots_bytes: u64 = sorted.len * @sizeOf(f32);
     const start_bytes: u64 = all_start.items.len * @sizeOf(f32);
     const rparams_bytes: u64 = rparams.items.len * @sizeOf(ResGPU);
+    const bins_bytes: u64 = bin_offsets.len * @sizeOf(u32);
 
     // Summary accumulators.
     const s_tiles = try a.alloc(u64, nres);
@@ -551,6 +622,11 @@ pub fn main(init: std.process.Init) !void {
                 .is_field = if (is_field) 1 else 0,
                 .nres = @intCast(nres),
                 .has_any_start = if (has_any_start) 1 else 0,
+                .gox = gox,
+                .goy = goy,
+                .gw = gw,
+                .gh = gh,
+                .nbins_p1 = @intCast(nbins_p1),
             };
             const bP = ctx.uploadBuffer(Shared, &.{P}, c.WGPUBufferUsage_Uniform);
             var e = [_]c.WGPUBindGroupEntry{
@@ -563,6 +639,7 @@ pub fn main(init: std.process.Init) !void {
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_out, .size = out_bytes }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 7, .buffer = b_restrict, .size = restrict_bytes }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 8, .buffer = b_rparams, .size = rparams_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 9, .buffer = b_bins, .size = bins_bytes }),
             };
             const bg = addPass(&ctx, enc, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
             try keep.append(ca, .{ .bg = bg, .buf = bP });

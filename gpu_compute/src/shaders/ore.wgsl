@@ -23,12 +23,17 @@ struct Shared {
     height : u32,
     zone_radius : f32,
     seed_byte : u32,   // shared generator (seed1 == 100 for every resource)
-    is_field : u32,    // 1 → binding 6 is the asteroid mask (0/1/2); 0 → biome index
+    is_field : u32,    // 1 → binding 5 is the asteroid mask (0/1/2); 0 → biome index
     nres : u32,
     has_any_start : u32, // any resource has a starting patch → compute start_vein
+    // Spatial-bin grid for the regular spot cones (bin size == basement radius 128).
+    gox : i32,         // bin-x origin: bin_x = floor(x/128) - gox
+    goy : i32,
+    gw : u32,          // grid width/height in bins
+    gh : u32,
+    nbins_p1 : u32,    // gw*gh + 1 (per-resource stride into bin_offsets)
     pad0 : u32,
     pad1 : u32,
-    pad2 : u32,
 };
 
 // Per-resource params (std430; 20 words = 80 B stride).
@@ -66,6 +71,7 @@ struct Res {
 @group(0) @binding(6) var<storage, read_write> out    : array<vec2<u32>>; // (res+1, richness f32 bits); (0,0)=empty
 @group(0) @binding(7) var<storage, read>       restrict_tbl : array<u32>; // per-biome restrict bitmask (planets)
 @group(0) @binding(8) var<storage, read>       resp   : array<Res>;   // per-resource params
+@group(0) @binding(9) var<storage, read>       bin_offsets : array<u32>; // per-(resource,bin) start index into `spots` (bin-sorted)
 
 const PI : f32 = 3.14159265358979;
 const MAX_BASEMENT_RADIUS : f32 = 128.0;
@@ -121,17 +127,49 @@ fn multioctave(x : f32, y : f32, octaves : u32, ampmul : f32, is : f32) -> f32 {
     return value / sqrt(sumsq);
 }
 
-// max cone over spots[off .. off+n] within basement_radius: max(basement, peak - dist*slope)
-fn spotCone(off : u32, n : u32, is_start : bool, basement : f32, basement_radius : f32, x : f32, y : f32) -> f32 {
+// Linear cone over the starting spots sspots[off .. off+n] (nstart is tiny — no
+// binning). max(basement, peak - dist*slope) within basement_radius.
+fn startCone(off : u32, n : u32, basement : f32, basement_radius : f32, x : f32, y : f32) -> f32 {
     var value = basement;
     for (var i : u32 = 0u; i < n; i = i + 1u) {
-        let sp = select(spots[off + i], sspots[off + i], is_start);
+        let sp = sspots[off + i];
         let ddx = x - sp.x;
         let ddy = y - sp.y;
         let dist = sqrt(ddx * ddx + ddy * ddy);
         if (dist <= basement_radius) {
             let v = sp.z - dist * sp.w;
             if (v > value) { value = v; }
+        }
+    }
+    return value;
+}
+
+// Binned regular spot cone (radius 128). Only the 3x3 bin neighbourhood can hold
+// a spot within 128 (bin size == 128), so we scan those bins' spot ranges instead
+// of all nspots. Exact: same spots pass the dist test, and max is order-free.
+fn spotConeBinned(bin_base : u32, basement : f32, x : f32, y : f32) -> f32 {
+    var value = basement;
+    let bx0 = i32(floor(x / 128.0)) - P.gox;
+    let by0 = i32(floor(y / 128.0)) - P.goy;
+    for (var dy : i32 = -1; dy <= 1; dy = dy + 1) {
+        let by = by0 + dy;
+        if (by < 0 || by >= i32(P.gh)) { continue; }
+        for (var dx : i32 = -1; dx <= 1; dx = dx + 1) {
+            let bx = bx0 + dx;
+            if (bx < 0 || bx >= i32(P.gw)) { continue; }
+            let b = u32(by * i32(P.gw) + bx);
+            let s = bin_offsets[bin_base + b];
+            let e = bin_offsets[bin_base + b + 1u];
+            for (var k : u32 = s; k < e; k = k + 1u) {
+                let sp = spots[k];
+                let ddx = x - sp.x;
+                let ddy = y - sp.y;
+                let dist = sqrt(ddx * ddx + ddy * ddy);
+                if (dist <= MAX_BASEMENT_RADIUS) {
+                    let v = sp.z - dist * sp.w;
+                    if (v > value) { value = v; }
+                }
+            }
         }
     }
     return value;
@@ -211,11 +249,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         if (P.is_field == 0u && rp.restrict_bit != 0u && (restrict_tbl[t] & rp.restrict_bit) == 0u) { continue; }
 
         let blob_amp = blobAmplitudeAt(rp, x, y);
-        let spot_v = spotCone(rp.spot_off, rp.nspots, false, rp.basement_value, MAX_BASEMENT_RADIUS, x, y);
+        let spot_v = spotConeBinned(r * P.nbins_p1, rp.basement_value, x, y);
         let regular = spot_v + (blob + 0.8 * vein) * blob_amp;
         var value = regular;
         if (rp.has_starting == 1u) {
-            let ssv = spotCone(rp.start_off, rp.nstart, true, rp.basement_value, START_MAX_BASEMENT_RADIUS, x, y);
+            let ssv = startCone(rp.start_off, rp.nstart, rp.basement_value, START_MAX_BASEMENT_RADIUS, x, y);
             let starting = ssv + (0.4 * (blobs0 - 0.25) + 0.2 * start_vein) * rp.starting_blob_amplitude;
             value = max(regular, starting);
         }

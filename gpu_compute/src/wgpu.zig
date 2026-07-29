@@ -103,8 +103,15 @@ pub const Context = struct {
         if (!ar.ok) return error.NoAdapter;
         const adapter = ar.adapter.?;
 
+        // Request the adapter's full limits so we get its real maximums (the
+        // default device limits cap storage buffers at 8 per stage; the fused ore
+        // kernel + spot-bin buffers need more, and Apple GPUs support far more).
+        var limits = std.mem.zeroes(c.WGPULimits);
+        _ = c.wgpuAdapterGetLimits(adapter, &limits);
+        const dev_desc = std.mem.zeroInit(c.WGPUDeviceDescriptor, .{ .requiredLimits = &limits });
+
         var dr = DeviceResp{};
-        _ = c.wgpuAdapterRequestDevice(adapter, null, .{
+        _ = c.wgpuAdapterRequestDevice(adapter, &dev_desc, .{
             .mode = c.WGPUCallbackMode_AllowProcessEvents,
             .callback = onDevice,
             .userdata1 = &dr,
