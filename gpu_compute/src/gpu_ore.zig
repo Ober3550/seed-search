@@ -185,6 +185,45 @@ fn writeCellPng(init: std.process.Init, out_dir: []const u8, world_seed: u64, zo
     std.debug.print("   wrote {s} ({d} bytes)\n", .{ path, data.len });
 }
 
+// Parallel PNG encode: PNG (zlib) encoding is CPU-bound and the biggest cost,
+// and cells are independent. The main thread does the GPU work per cell and
+// collects each cell's RGBA; then all cells are encoded+written across worker
+// threads (strided — no shared mutable state, so no locking needed).
+const EncJob = struct { rgba: []u8, cw: u32, ch: u32, cell: u32 };
+const EncCtx = struct {
+    jobs: []const EncJob,
+    start: usize,
+    stride: usize,
+    io: std.Io,
+    dir: []const u8,
+    grid: i32,
+    err: ?anyerror = null,
+    fn run(self: *EncCtx) void {
+        var i = self.start;
+        while (i < self.jobs.len) : (i += self.stride) {
+            const job = self.jobs[i];
+            const bytes = png.encodeRgba(std.heap.c_allocator, job.cw, job.ch, job.rgba) catch |e| {
+                self.err = e;
+                continue;
+            };
+            defer std.heap.c_allocator.free(bytes);
+            var pb: [1200]u8 = undefined;
+            const path = if (self.grid <= 1)
+                std.fmt.bufPrint(&pb, "{s}/oremap.png", .{self.dir}) catch continue
+            else
+                std.fmt.bufPrint(&pb, "{s}/oremap_{d}_{d}.png", .{ self.dir, self.grid, job.cell }) catch continue;
+            const f = std.Io.Dir.createFile(.cwd(), self.io, path, .{}) catch |e| {
+                self.err = e;
+                continue;
+            };
+            f.writePositionalAll(self.io, bytes, 0) catch |e| {
+                self.err = e;
+            };
+            f.close(self.io);
+        }
+    }
+};
+
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer arena.deinit();
@@ -311,6 +350,11 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("gpu_ore: {d} cells\n", .{cells.len});
     const t0 = wgpu.nowNs();
 
+    // Collect each cell's RGBA; encoded in parallel after the loop.
+    const zdir = try std.fmt.allocPrint(a, "{s}/seed_{d}/{s}", .{ out_dir, world_seed, zone });
+    std.Io.Dir.createDirPath(.cwd(), init.io, zdir) catch {};
+    var jobs: std.ArrayListUnmanaged(EncJob) = .empty;
+
     for (cells) |cl| {
         var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
         defer cellArena.deinit();
@@ -415,7 +459,7 @@ pub fn main(init: std.process.Init) !void {
         t_read += wgpu.nowNs() - tr0;
 
         const te0 = wgpu.nowNs();
-        const rgba = try ca.alloc(u8, npx * 4);
+        const rgba = try a.alloc(u8, npx * 4); // arena — persists to the parallel encode
         @memset(rgba, 0);
         for (0..npx) |i| {
             const amount = win[i * 4 + 3];
@@ -426,10 +470,19 @@ pub fn main(init: std.process.Init) !void {
             s_tiles[rr] += 1;
             s_amount[rr] += amount;
         }
-        const bytes_png = try png.encodeRgba(ca, cl.cw, cl.ch, rgba);
-        try writeCellPng(init, out_dir, world_seed, zone, grid, cl.cell, bytes_png);
+        try jobs.append(a, .{ .rgba = rgba, .cw = cl.cw, .ch = cl.ch, .cell = cl.cell });
         t_enc += wgpu.nowNs() - te0;
     }
+    // Encode + write all cells across worker threads (strided).
+    const tp0 = wgpu.nowNs();
+    const nenc: usize = @max(1, @min(std.Thread.getCpuCount() catch 4, jobs.items.len));
+    const ctxs = try a.alloc(EncCtx, nenc);
+    for (ctxs, 0..) |*cx, k| cx.* = .{ .jobs = jobs.items, .start = k, .stride = nenc, .io = init.io, .dir = zdir, .grid = grid };
+    const ethreads = try a.alloc(std.Thread, nenc);
+    for (ethreads, ctxs) |*t, *cx| t.* = try std.Thread.spawn(.{}, EncCtx.run, .{cx});
+    for (ethreads) |t| t.join();
+    for (ctxs) |cx| if (cx.err) |e| return e;
+    t_enc += wgpu.nowNs() - tp0;
     const ms = struct {
         fn f(ns: u64) f64 {
             return @as(f64, @floatFromInt(ns)) / 1e6;
