@@ -203,4 +203,18 @@ pub fn build(b: *std.Build) void {
     });
     linkWgpu(gore, b, inc, lib);
     b.installArtifact(gore);
+
+    // Stitch per-cell PNGs into one full-disk PNG (atomic). No GPU — just
+    // surfgen (png encode/decode) + libc (rename).
+    const gstitch = b.addExecutable(.{
+        .name = "gpu_stitch",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/gpu_stitch.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .imports = &.{.{ .name = "surfgen", .module = surfgen }},
+        }),
+    });
+    b.installArtifact(gstitch);
 }

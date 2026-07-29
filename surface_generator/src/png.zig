@@ -34,6 +34,19 @@ test "encode rgb + rgba produce valid PNG (rgba keeps alpha)" {
     try std.testing.expectEqual(@as(u8, 6), p_rgba[25]); // IHDR colortype 6 = truecolour+alpha
 }
 
+pub const Decoded = struct { width: u32, height: u32, rgba: []u8 };
+
+/// Decode PNG bytes to a top-left-origin RGBA8 (4 bytes/px) buffer.
+/// Caller owns and frees the returned `.rgba`.
+pub fn decodeRgba(alloc: std.mem.Allocator, bytes: []const u8) !Decoded {
+    var img = try zigimg.Image.fromMemory(alloc, bytes);
+    defer img.deinit(alloc);
+    try img.convert(alloc, .rgba32);
+    const raw = img.rawBytes();
+    const out = try alloc.dupe(u8, raw);
+    return .{ .width = @intCast(img.width), .height = @intCast(img.height), .rgba = out };
+}
+
 fn encodeFmt(alloc: std.mem.Allocator, width: u32, height: u32, px: []const u8, fmt: zigimg.PixelFormat, channels: usize) ![]u8 {
     std.debug.assert(px.len == @as(usize, width) * height * channels);
     var img = try zigimg.Image.fromRawPixels(alloc, width, height, px, fmt);

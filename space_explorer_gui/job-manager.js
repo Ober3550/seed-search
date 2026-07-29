@@ -2,7 +2,6 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const readline = require("readline");
-const sharp = require("sharp");
 const db = require("./db");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
@@ -690,22 +689,23 @@ async function stitchSurfaceCells(zDir, prefix, radius, n) {
   const key = `${zDir}::${prefix}`;
   if (stitchInFlight.has(key)) return false;
   const idx = planSurfaceCells(radius, n);
-  const full = radius * 2;
-  const cellW = Math.ceil(full / n);
-  const composites = [];
   for (const cell of idx) {
-    const f = path.join(zDir, `${prefix}_${n}_${cell}.png`);
-    if (!fs.existsSync(f)) return false; // not all cells rendered yet
-    const gx = cell % n, gy = Math.floor(cell / n);
-    composites.push({ input: f, left: gx * cellW, top: gy * cellW });
+    if (!fs.existsSync(path.join(zDir, `${prefix}_${n}_${cell}.png`))) return false; // not all cells rendered yet
   }
   stitchInFlight.add(key);
   try {
-    const bg = prefix === "oremap"
-      ? { r: 0, g: 0, b: 0, alpha: 0 }
-      : { r: 20, g: 20, b: 20, alpha: 1 };
-    await sharp({ create: { width: full, height: full, channels: 4, background: bg } })
-      .composite(composites).png().toFile(path.join(zDir, `${prefix}.png`));
+    // gpu_stitch composes the cells into <prefix>.png with an ATOMIC write (temp
+    // file + rename), so the GUI never sees a half-written image — it keeps
+    // showing the live cell grid until the finished file appears, then swaps in
+    // one step. Cells are removed only after the stitched image exists.
+    const bin = requireGpuBin("gpu_stitch");
+    await new Promise((resolve, reject) => {
+      const ch = spawn(bin, ["--dir", zDir, "--prefix", prefix, "--grid", String(n), "--radius", String(radius)], { stdio: ["ignore", "ignore", "pipe"] });
+      let e = "";
+      ch.stderr.on("data", d => e += d);
+      ch.on("close", code => code === 0 ? resolve() : reject(new Error(`gpu_stitch exit ${code}: ${e.slice(-200)}`)));
+      ch.on("error", reject);
+    });
     for (const cell of idx) { try { fs.unlinkSync(path.join(zDir, `${prefix}_${n}_${cell}.png`)); } catch (_) {} }
     return true;
   } finally {
