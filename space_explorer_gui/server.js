@@ -198,11 +198,10 @@ function renderZoneCtl(bucket, seed, zone, which) {
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zone.id, seed, zone_name: zone.name, radius: effRadius(zone) })}'`;
   const tgt = `hx-target="#zcell-${zone.id}" hx-swap="outerHTML"`;
   const id = which === "ore" ? `orectl-${zone.id}` : `surfctl-${zone.id}`;
-  // Asteroid fields aren't biome surfaces — segen (CPU) skips them, only
-  // gpu_segen renders them (se-space/se-asteroid). So fields get GPU only and no
-  // ore layer.
+  // Asteroid-field terrain (se-space/se-asteroid) renders on the GPU; its ore
+  // layer — ices + naquium + base ores, masked to se-asteroid tiles — is the
+  // same CPU oremap path as planets/moons (segen no longer skips fields).
   const isField = zone.zone_type === "asteroid-field";
-  if (isField && which === "ore") return `<span class="zctl" id="${id}"></span>`;
 
   // Once a layer is generated we drop its button entirely (the row itself opens
   // the surface detail); the generate button only shows while nothing exists yet.
@@ -297,7 +296,7 @@ function renderUniversePage(jobsList) {
       <form hx-post="/api/universe/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
-        <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="1800000" min="0" step="${bs}" placeholder="auto"></label>
+        <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="0" min="0" step="${bs}" placeholder="auto"></label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Min 4 Prod Modules</label>
         <label class="disabled-check"><input type="checkbox" checked disabled> Nearby Naq Field</label>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
@@ -568,7 +567,7 @@ function renderSeedDetail(s, c, zones, filterId) {
     </form>
     <script>
       (function () {
-        var sortState = { key: null, dir: "asc" };
+        var sortState = { key: "dv", dir: "asc" }; // default: sort by Δv ascending
         var NUMERIC = { radius: 1, dv: 1 };
         function isSel(r) {
           var cb = r.querySelector('input[type=checkbox][name=zone]');
@@ -606,7 +605,11 @@ function renderSeedDetail(s, c, zones, filterId) {
         document.addEventListener("change", function (e) {
           if (e.target && e.target.matches && e.target.matches('#zone-table input[type=checkbox][name=zone]')) reflow();
         });
-        reflow();  // pin pre-checked (criteria-relevant + naq field) on initial render
+        reflow();  // default Δv-ascending sort (selected zones still pinned on top)
+        (function () {
+          var ind = document.querySelector('#zone-table th[data-key="dv"] .sort-ind');
+          if (ind) ind.textContent = "▲";
+        })();
         window.filterZones = function () {
           var q = (document.getElementById("zone-search").value || "").trim().toLowerCase();
           document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
