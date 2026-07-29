@@ -23,12 +23,16 @@ generator/zig/seedgen.native
 node_modules/
 # Calibration artifacts
 calibration/seed-search.db
-calibration/results/seed-*.json
+calibration/results/*.json
+calibration/results/*.log
 calibration/saves/calib-*.zip
 calibration/saves/map-gen-settings-*.json
 calibration/saves/mods/
 calibration/saves/config/
 calibration/saves/docker-bundle/
+# One-off / backup files
+*.bak
+*.bak-*
 # Generated build artifacts
 .zig-cache/
 zig-out/
