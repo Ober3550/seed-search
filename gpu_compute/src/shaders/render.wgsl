@@ -137,22 +137,42 @@ fn auxAt(x : f32, y : f32) -> f32 {
     return clampf(0.45 + 2.2 * P.aux_bias + 2.2 * q, 0.0, 1.0);
 }
 
+// Everything in a biome's fitness EXCEPT its per-biome tv noise. The tv term is
+// bounded (|0.5*tv| well under TV_SKIP_MARGIN), so a biome whose base fitness is
+// more than TV_SKIP_MARGIN below the best base fitness can never win the argmax —
+// letting us skip its (expensive, 6-octave) tv noise. plateauPeak's ×20 slope
+// puts non-matching biomes far below the best, so only a handful ever contend.
+fn baseFitness(bd : BiomeGPU, tf : f32, mf : f32, af : f32, ef : f32, beach : f32, water_noise : f32, crater_noise : f32) -> f32 {
+    var f : f32 = 3.4e38;
+    if ((bd.flags & 1u) != 0u) { f = min(f, plateauPeak(tf, bd.t_lo, bd.t_hi)); }
+    if ((bd.flags & 2u) != 0u) { f = min(f, plateauPeak(mf, bd.m_lo, bd.m_hi)); }
+    if ((bd.flags & 4u) != 0u) { f = min(f, plateauPeak(af, bd.a_lo, bd.a_hi)); }
+    if ((bd.flags & 8u) != 0u) { f = min(f, plateauPeak(ef, bd.e_lo, bd.e_hi)); }
+    if ((bd.flags & 16u) != 0u) { f = f + beach; }
+    f = f + bd.water_coef * water_noise;
+    if ((bd.flags & 32u) != 0u) { f = f + (-0.6 - 0.7 * crater_noise); }
+    return f;
+}
+
+const TV_SKIP_MARGIN : f32 = 2.0; // > max |0.5 * tv| (~0.66); keeps the argmax exact
+
 fn classify(x : f32, y : f32, tf : f32, mf : f32, af : f32, ef : f32) -> u32 {
     let water_noise = multioctaveG(WATER_GI, x, y, 5u, AMP075, 1.0 / 6.0 / 8.0, 0.666, 0.0, 0.0);
     let crater_noise = multioctaveG(CRATER_GI, x, y, 5u, AMP075, 1.0 / 6.0, 0.666, 0.0, 0.0);
     let beach = min(0.0, ef / 5.0 - 1.0);
+    // Pass 1: best base fitness (no tv noise) — cheap, sets the skip threshold.
+    var max_base : f32 = -3.4e38;
+    for (var b : u32 = 0u; b < P.n_biomes; b = b + 1u) {
+        let fb = baseFitness(biomes[b], tf, mf, af, ef, beach, water_noise, crater_noise);
+        if (fb > max_base) { max_base = fb; }
+    }
+    // Pass 2: add tv only for biomes still in contention.
+    let thresh = max_base - TV_SKIP_MARGIN;
     var best_f : f32 = -3.4e38; var best_idx : u32 = 0u;
     for (var b : u32 = 0u; b < P.n_biomes; b = b + 1u) {
-        let bd = biomes[b];
-        var f : f32 = 3.4e38;
-        if ((bd.flags & 1u) != 0u) { f = min(f, plateauPeak(tf, bd.t_lo, bd.t_hi)); }
-        if ((bd.flags & 2u) != 0u) { f = min(f, plateauPeak(mf, bd.m_lo, bd.m_hi)); }
-        if ((bd.flags & 4u) != 0u) { f = min(f, plateauPeak(af, bd.a_lo, bd.a_hi)); }
-        if ((bd.flags & 8u) != 0u) { f = min(f, plateauPeak(ef, bd.e_lo, bd.e_hi)); }
-        if ((bd.flags & 16u) != 0u) { f = f + beach; }
-        f = f + bd.water_coef * water_noise;
-        if ((bd.flags & 32u) != 0u) { f = f + (-0.6 - 0.7 * crater_noise); }
-        f = f + 0.5 * multioctaveG(TV_BASE + b, x, y, 6u, AMP075, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+        let fb = baseFitness(biomes[b], tf, mf, af, ef, beach, water_noise, crater_noise);
+        if (fb < thresh) { continue; }
+        let f = fb + 0.5 * multioctaveG(TV_BASE + b, x, y, 6u, AMP075, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
         if (f > best_f) { best_f = f; best_idx = b; }
     }
     let wn_a = multioctaveG(WATER_GI, x, y, 5u, AMP075, 1.0 / 6.0 / 0.25, 0.666, 0.0, 0.0);
