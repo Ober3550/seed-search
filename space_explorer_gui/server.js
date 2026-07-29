@@ -826,10 +826,15 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
           if (!grid) return;
           var oreLayer = grid.querySelector(".layer.ore:not(.ore-filter)");
           if (!oreLayer) return;
-          var imgs = [], cells = oreLayer.querySelectorAll(".surf-cell img");
-          if (cells.length) {
-            cells.forEach(function (img) { var cel = img.parentElement; imgs.push({ img: img, l: parseFloat(cel.style.left) / 100, t: parseFloat(cel.style.top) / 100, w: parseFloat(cel.style.width) / 100, h: parseFloat(cel.style.height) / 100 }); });
-          } else { var full = oreLayer.tagName === "IMG" ? oreLayer : oreLayer.querySelector("img"); if (full) imgs.push({ img: full, l: 0, t: 0, w: 1, h: 1 }); }
+          // Only build the show/hide filter over the FINAL stitched image (a
+          // single <img>). While the surface is still tiling, the ore layer is a
+          // per-cell grid — leave it alone so cells fill in progressively (no
+          // per-poll canvas rebuild / flashing), and defer the filter until the
+          // cells are stitched into one image at the end.
+          if (oreLayer.querySelector(".surf-cell")) return;
+          var imgs = [];
+          var full = oreLayer.tagName === "IMG" ? oreLayer : oreLayer.querySelector("img");
+          if (full) imgs.push({ img: full, l: 0, t: 0, w: 1, h: 1 });
           if (!imgs.length) return;
           var pending = imgs.filter(function (o) { return !(o.img.complete && o.img.naturalWidth); });
           if (pending.length) { pending.forEach(function (o) { o.img.addEventListener("load", build, { once: true }); }); return; }
@@ -1205,6 +1210,18 @@ function queueZone(zone, seed, kind) {
   const base = { zone_id: zone.id, seed, zone_name: zone.name, radius };
   const n = jobs.surfaceGridFor(radius);
   const cellIdx = jobs.planSurfaceCells(radius, n);
+
+  // Clear any stale stitched image(s) for the layers we're about to regenerate,
+  // up front — so the surface view drops straight to the live cell grid instead
+  // of flashing the previous whole image while the new render (including the
+  // slow ore pass) runs. Cells stitch into a fresh single image only at the end.
+  const bucket = (db.getSeed(seed) || {}).bucket || zone.bucket;
+  const zDir = path.join(jobs.seedDir(bucket, seed), zone.name);
+  const drop = (f) => { try { fs.unlinkSync(path.join(zDir, f)); } catch (_) {} };
+  if (kind === "oremap" || kind === "surface") drop("oremap.png");
+  if (kind === "terrain" || kind === "gputerrain" || kind === "surface") drop("terrain.png");
+  if (kind === "surface") drop("surface.png");
+
   // One render job per cell (or a single whole job when n<=1).
   const renderCells = (renderKind, dep, loadOre) => (n <= 1
     ? [db.createSurfaceJob({ ...base, kind: renderKind, grid_n: 1, grid_cell: -1, depends_on: dep || null, load_ore: loadOre ? 1 : 0 })]

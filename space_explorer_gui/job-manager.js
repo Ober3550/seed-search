@@ -780,6 +780,13 @@ function runSurfaceJob(job) {
     const prefix = rk ? rk.prefix : null;
     const isCell = isRender && !useGpu && job.grid_cell >= 0 && job.grid_n > 1;
 
+    // Keep per-cell progress visible during (re)generation: drop any stitched
+    // whole-disk <prefix>.png from a prior run up front, so buildSurfaceGrid
+    // shows the live cell grid while cells render and only swaps to the single
+    // image once THIS render's cells are stitched at the very end (no flashing
+    // between an old whole image and the new cells).
+    if (isRender) { try { fs.unlinkSync(path.join(sDir, job.zone_name, `${prefix}.png`)); } catch (_) {} }
+
     let args;
     if (useGpu) {
       // gpu_segen renders the whole zone in one dispatch → terrain.png.
@@ -792,15 +799,14 @@ function runSurfaceJob(job) {
       // land. n<=1 (small zones) → a single whole-disk terrain.png.
       const gpuN = surfaceGridFor(job.radius);
       args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--surface-grid", String(gpuN)];
-      if (gpuN > 1) {
-        // Drop any stale whole-disk image so buildSurfaceGrid shows the
-        // progressive cell grid instead of a full picture from a prior run.
-        try { fs.unlinkSync(path.join(sDir, job.zone_name, "terrain.png")); } catch (_) {}
-      }
     } else {
-      // 'ore' = amounts only (no image, fast even for huge planets). Render kinds
-      // draw a layer (terrain biome+water, oremap ore-on-black, or combined).
-      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--ores-only"];
+      // CPU segen. --radius is REQUIRED: it caps the render/ore rect to the same
+      // extent the GUI's cell grid (surfaceCellLayout/planSurfaceCells) is laid
+      // out for. Without it, segen falls back to the zone's true radius (5000 for
+      // asteroid fields, which carry none), so tiled cells come out at the wrong
+      // scale (e.g. 770px cells stuffed into 308px slots → scrambled) and the ore
+      // compute needlessly covers ~6x the area. fm still uses the true radius.
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--ores-only"];
       if (isRender) {
         if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
         else args.push("--render-surface");
