@@ -399,6 +399,23 @@ function updateSurfaceJob(id, fields) {
   d.prepare(`UPDATE surface_jobs SET ${sets} WHERE id = ?`).run(...values, id);
 }
 
+function deleteSurfaceJobs(ids) {
+  if (!ids || !ids.length) return 0;
+  const d = getDb();
+  const stmt = d.prepare("DELETE FROM surface_jobs WHERE id = ?");
+  d.transaction(list => { for (const id of list) stmt.run(id); })(ids);
+  return ids.length;
+}
+
+// One representative row per (zone, folder) that has a completed generation —
+// used to reconcile the DB against the output/ folder on startup.
+function getDistinctSurfaceZones() {
+  return getDb().prepare(
+    "SELECT zone_id, seed, zone_name, MAX(bucket) AS bucket FROM surface_jobs " +
+    "WHERE status='done' AND zone_id IS NOT NULL GROUP BY zone_id, seed, zone_name"
+  ).all();
+}
+
 // ── Seeds ──────────────────────────────────────────────────────────────
 
 function insertSeeds(rows) {
@@ -549,6 +566,8 @@ module.exports = {
   getSurfaceJob,
   getSurfaceJobsForZone,
   updateSurfaceJob,
+  deleteSurfaceJobs,
+  getDistinctSurfaceZones,
   addJobLog,
   insertSeeds,
   getSeeds,

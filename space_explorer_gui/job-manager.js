@@ -707,6 +707,40 @@ async function stitchSurfaceCells(zDir, prefix, radius, n) {
   }
 }
 
+// Reconcile the DB against the output/ folder for one zone: drop 'done' surface
+// jobs whose artifact no longer exists on disk (e.g. the user deleted the zone
+// folder to force a regenerate). The filesystem is the source of truth for "is
+// this surface populated"; the DB rows are just an index over it. Skipped while
+// any job for the zone is still queued/running (mid-generation), so a not-yet-
+// stitched layer is never mistaken for a deleted one. Returns rows removed.
+function reconcileZoneSurfaces(zoneId, zDir) {
+  const rows = db.getSurfaceJobsForZone(zoneId);
+  if (!rows.length) return 0;
+  if (rows.some(r => r.status === "queued" || r.status === "running")) return 0;
+  const has = (f) => fs.existsSync(path.join(zDir, f));
+  // Artifact each 'done' kind leaves behind: ore → summary.json; oremap →
+  // oremap.png; terrain/gputerrain/surface → terrain.png (or the legacy surface.png).
+  const present = (kind) =>
+    kind === "ore" ? has("summary.json")
+      : kind === "oremap" ? has("oremap.png")
+        : (has("terrain.png") || has("surface.png"));
+  const stale = rows.filter(r => r.status === "done" && !present(r.kind)).map(r => r.id);
+  return db.deleteSurfaceJobs(stale);
+}
+
+// Sweep every zone with a completed generation (used once on startup so folder
+// deletions made while the server was down are recognised without visiting each
+// seed). Per-seed reconcile on the seed page keeps in-session deletions live.
+function reconcileAllSurfaces() {
+  let pruned = 0;
+  for (const z of db.getDistinctSurfaceZones()) {
+    if (!z.bucket) continue;
+    pruned += reconcileZoneSurfaces(z.zone_id, path.join(seedDir(z.bucket, z.seed), z.zone_name));
+  }
+  if (pruned) console.log(`[reconcile] pruned ${pruned} stale surface job row(s) (output folder gone)`);
+  return pruned;
+}
+
 // Render kinds → segen layer flag + output filename prefix. 'ore' = compute-only
 // (no render). 'surface' is the legacy combined layer.
 const RENDER_KINDS = {
@@ -906,6 +940,8 @@ module.exports = {
   planSurfaceCells,
   surfaceCellLayout,
   stitchSurfaceCells,
+  reconcileZoneSurfaces,
+  reconcileAllSurfaces,
   bucketLabel,
   bucketDir,
   seedDir,

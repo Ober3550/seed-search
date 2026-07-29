@@ -221,15 +221,15 @@ function renderZoneCtl(bucket, seed, zone, which) {
     const surfActive = active(SURF_KINDS);
     activeNow = surfActive.length > 0;
     const surfDone = zjobs.filter(j => SURF_KINDS.includes(j.kind) && j.status === "done").length;
-    // Only terrain (or the legacy combined render) counts as "surface generated".
+    // "generated" is decided by the file on disk, not the DB: tiled renders now
+    // stitch into a whole terrain.png (or the legacy surface.png), so its
+    // presence is authoritative. Deleting the zone folder immediately reverts
+    // the zone to "not generated" (the generate button reappears).
     const surfPng = zoneSurfacePng(bucket, seed, zone.name, "terrain")
       || zoneSurfacePng(bucket, seed, zone.name, "surface");
-    // "generated" = a whole terrain.png exists OR every surface job finished
-    // (tiled renders — CPU cells or GPU cells — write no whole image, so fall
-    // back to the done-job count now that nothing is active).
     inner = activeNow
       ? `<span class="gen-status running">⏳ surface ${surfDone}/${surfActive.length + surfDone}</span>`
-      : (surfPng || surfDone > 0)
+      : surfPng
         ? ""
         // One surface button for every zone type. gpu_segen is the surface
         // compute path now (same terrain.png output as the CPU oracle, ~80x
@@ -489,6 +489,12 @@ app.get("/seed/:seed", (req, res) => {
     return ra - rb || (a.name || "").localeCompare(b.name || "");
   });
 
+  // Reconcile the DB to the filesystem: if the user deleted a zone's output
+  // folder to force a regenerate, drop its stale 'done' surface-job rows so the
+  // zone reads as unpopulated (folder is the source of truth).
+  for (const z of zones)
+    jobs.reconcileZoneSurfaces(z.id, path.join(jobs.seedDir(s.bucket, s.seed), z.name));
+
   // zones.jsonl always carries the criteria-relevant zones for the generator.
   try { jobs.writeSeedZonesFile(s, null); }
   catch (e) { console.error("writeSeedZonesFile:", e.message); }
@@ -739,6 +745,9 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
   const s = db.getSeed(seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === zoneId);
   if (!s || !zone) return page(req, res, "Watch", `<div class="page"><p class="hint">Seed or zone not found.</p></div>`);
+
+  // Folder-is-truth: drop stale 'done' rows if this zone's output was deleted.
+  jobs.reconcileZoneSurfaces(zoneId, path.join(jobs.seedDir(s.bucket, seed), zone.name));
 
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
   const summary = zoneSurfaceSummary(s.bucket, seed, zone.name);
@@ -1297,6 +1306,8 @@ if (!fs.existsSync(htmxPath)) fs.writeFileSync(htmxPath, "// htmx placeholder �
 app.listen(PORT, () => {
   console.log(`\n🌌 SE Explorer GUI at http://localhost:${PORT}`);
   console.log("  buckets → seeds → filtered → seed → zone\n");
+  // Drop surface-job rows whose output folder was deleted while we were down.
+  try { jobs.reconcileAllSurfaces(); } catch (e) { console.error("reconcile:", e.message); }
   if (process.env.SE_GUI_NO_WORKER) console.log("  ⚠️  worker disabled (SE_GUI_NO_WORKER)\n");
   else jobs.startPolling();
 });
