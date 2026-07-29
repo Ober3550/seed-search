@@ -718,7 +718,9 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
     };
     for (base_elig) |ri| try elig.append(ri);
     if (k2) {
-        try elig.append(@intFromEnum(data.Resource.kr_imersite));
+        // kr-rare-metal-ore is a field-primary option; kr-imersite is NOT (verified
+        // against the live game: 0 of 45 fields are imersite-primary, so K=8 not 9).
+        // K2 excludes imersite from field primaries (no SE override — K2-side).
         try elig.append(@intFromEnum(data.Resource.kr_rare_metal_ore));
     }
     const K = elig.items.len;
@@ -788,42 +790,55 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
         }
     }
 
-    // Phase 5 — assign remaining fields in turns by fewest-assigned resource, each
-    // taking the unassigned field with the highest ordered_bias for it.
+    // Phase 5 (SE universe.lua pass 5) — "assign resources in turns by highest
+    // remaining bias". resources_lacking_zones = the eligible resources STILL
+    // under quota after pass 4 (in resource_order), captured ONCE. Cycle the
+    // pointer through THAT subset (not all K); each full cycle bumps max_zones.
+    // Per turn: if the resource is still under quota and at/below max_zones, take
+    // the unassigned field with the highest ordered_bias for it. Cycling all K
+    // (the old bug) mis-times the max_zones bumps and changes every assignment.
+    var lacking: ArrayList(u32) = ArrayList(u32).init(alloc); // indices into elig/used
+    defer lacking.deinit();
     var max_zones: u32 = per_min + 1;
     for (0..K) |k| {
-        if (used[k] < quota[k] and used[k] < max_zones) max_zones = used[k];
+        if (used[k] < quota[k]) {
+            try lacking.append(@intCast(k));
+            if (used[k] < max_zones) max_zones = used[k];
+        }
     }
-    var pointer: usize = 0;
-    var remaining: usize = 0;
-    for (0..N) |i| {
-        if (!assigned[i]) remaining += 1;
-    }
-    var guard: usize = 0;
-    while (remaining > 0 and max_zones <= per_min + 1 and guard < N * K + K + 4) : (guard += 1) {
-        const k = pointer;
-        const ri = elig.items[k];
-        if (used[k] <= max_zones and used[k] < quota[k]) {
-            var best_i: ?usize = null;
-            var best_v: f64 = -1e30;
-            for (0..N) |i| {
-                if (assigned[i]) continue;
-                if (best_i == null or fields.items[i].ob[ri] > best_v) {
-                    best_v = fields.items[i].ob[ri];
-                    best_i = i;
+    const L = lacking.items.len;
+    if (L > 0) {
+        var pointer: usize = 0;
+        var remaining: usize = 0;
+        for (0..N) |i| {
+            if (!assigned[i]) remaining += 1;
+        }
+        var guard: usize = 0;
+        while (remaining > 0 and max_zones <= per_min + 1 and guard < N * K + K + 4) : (guard += 1) {
+            const k = lacking.items[pointer];
+            const ri = elig.items[k];
+            if (used[k] <= max_zones and used[k] < quota[k]) {
+                var best_i: ?usize = null;
+                var best_v: f64 = -1e30;
+                for (0..N) |i| {
+                    if (assigned[i]) continue;
+                    if (best_i == null or fields.items[i].ob[ri] > best_v) {
+                        best_v = fields.items[i].ob[ri];
+                        best_i = i;
+                    }
+                }
+                if (best_i) |i| {
+                    assigned[i] = true;
+                    used[k] += 1;
+                    remaining -= 1;
+                    try map.put(zones.items[fields.items[i].zi].name, resource_order[ri]);
                 }
             }
-            if (best_i) |i| {
-                assigned[i] = true;
-                used[k] += 1;
-                remaining -= 1;
-                try map.put(zones.items[fields.items[i].zi].name, resource_order[ri]);
+            pointer += 1;
+            if (pointer >= L) {
+                pointer = 0;
+                max_zones += 1;
             }
-        }
-        pointer += 1;
-        if (pointer >= K) {
-            pointer = 0;
-            max_zones += 1;
         }
     }
     return map;
