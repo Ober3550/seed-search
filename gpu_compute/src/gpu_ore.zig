@@ -90,13 +90,24 @@ const AsteroidParams = extern struct {
     seed_byte: u32,
 };
 
-// MUST match shaders/ore.wgsl `Params` (padded to a multiple of 16).
-const OreParams = extern struct {
+// MUST match shaders/ore.wgsl `Shared` (uniform).
+const Shared = extern struct {
     origin_x: f32,
     origin_y: f32,
     width: u32,
     height: u32,
     zone_radius: f32,
+    seed_byte: u32,
+    is_field: u32,
+    nres: u32,
+    has_any_start: u32,
+    pad0: u32 = 0,
+    pad1: u32 = 0,
+    pad2: u32 = 0,
+};
+
+// MUST match shaders/ore.wgsl `Res` (std430 array element, 80 bytes).
+const ResGPU = extern struct {
     base_density: f32,
     freq_mult: f32,
     size_mult: f32,
@@ -107,19 +118,16 @@ const OreParams = extern struct {
     basement_value: f32,
     richness_mult: f32,
     additional_richness: f32,
-    random_probability: f32,
+    starting_blob_amplitude: f32,
     roll_salt: u32,
-    seed_byte: u32,
     res_index: u32,
     has_starting: u32,
-    starting_blob_amplitude: f32,
+    restrict_bit: u32,
+    spot_off: u32,
     nspots: u32,
+    start_off: u32,
     nstart: u32,
-    is_field: u32 = 0,
-    restrict_bit: u32 = 0,
     pad0: u32 = 0,
-    pad1: u32 = 0,
-    pad2: u32 = 0,
 };
 
 const Cell = struct { cell: u32, x0: i32, y0: i32, cw: u32, ch: u32, d2: f64 };
@@ -170,19 +178,6 @@ fn buildGen(a: std.mem.Allocator, map_seed: u32, seed1: u32) !struct { perm1: []
     return .{ .perm1 = perm1, .perm2 = perm2, .grad = grad, .sb = g.seed_byte };
 }
 
-// Parsed per-resource, with its static GPU buffers uploaded once.
-const Res = struct {
-    name: []const u8,
-    rh: se.GpuResHeader,
-    seed_byte: u32,
-    b_perm1: c.WGPUBuffer,
-    b_perm2: c.WGPUBuffer,
-    b_grad: c.WGPUBuffer,
-    b_spots: c.WGPUBuffer,
-    b_start: c.WGPUBuffer,
-    spots_bytes: u64,
-    start_bytes: u64,
-};
 
 fn writeCellPng(init: std.process.Init, out_dir: []const u8, world_seed: u64, zone: []const u8, grid: i32, cell: u32, data: []const u8) !void {
     var pb: [1024]u8 = undefined;
@@ -311,9 +306,18 @@ pub fn main(init: std.process.Init) !void {
     }
     defer c.wgpuBufferRelease(b_restrict);
 
-    // Parse resources + upload their static buffers once.
-    var res = try a.alloc(Res, H.nres);
-    var nres: usize = 0;
+    // Parse resources. Every SE ore resource shares ONE spot-noise generator
+    // (seed1 == 100 — verified in the dump), so we concatenate all resources'
+    // spots into single buffers, build one ResGPU param per resource, and upload
+    // the shared generator once. The fused kernel evaluates all resources per
+    // tile (see shaders/ore.wgsl).
+    var all_spots: std.ArrayList(f32) = .empty; // 4 f32 per spot (x,y,peak,slope)
+    var all_start: std.ArrayList(f32) = .empty;
+    var rparams: std.ArrayList(ResGPU) = .empty;
+    var rnames: std.ArrayList([]const u8) = .empty;
+    var shared_seed1: u32 = 0;
+    var has_seed1 = false;
+    var has_any_start = false;
     var ri: u32 = 0;
     while (ri < H.nres) : (ri += 1) {
         const rh = std.mem.bytesToValue(se.GpuResHeader, bytes[off..][0..@sizeOf(se.GpuResHeader)]);
@@ -335,22 +339,59 @@ pub fn main(init: std.process.Init) !void {
         }
         off += nst * @sizeOf(noise.Spot);
         if (nsp == 0) continue;
-        const gen = try buildGen(a, H.map_seed, rh.seed1);
-        res[nres] = .{
-            .name = name,
-            .rh = rh,
-            .seed_byte = gen.sb,
-            .b_perm1 = ctx.uploadBuffer(u32, gen.perm1, c.WGPUBufferUsage_Storage),
-            .b_perm2 = ctx.uploadBuffer(u32, gen.perm2, c.WGPUBufferUsage_Storage),
-            .b_grad = ctx.uploadBuffer(f32, gen.grad, c.WGPUBufferUsage_Storage),
-            .b_spots = ctx.uploadBuffer(f32, sp_f, c.WGPUBufferUsage_Storage),
-            .b_start = ctx.uploadBuffer(f32, st_f, c.WGPUBufferUsage_Storage),
-            .spots_bytes = sp_f.len * @sizeOf(f32),
-            .start_bytes = st_f.len * @sizeOf(f32),
-        };
-        nres += 1;
+        // The fused kernel assumes ONE generator; refuse if a resource diverges.
+        if (!has_seed1) {
+            shared_seed1 = rh.seed1;
+            has_seed1 = true;
+        } else if (rh.seed1 != shared_seed1) return err("resources use different seed1 — fused kernel needs a shared generator");
+        if (rh.has_starting == 1) has_any_start = true; // start_vein is used whenever has_starting
+
+        const spot_off: u32 = @intCast(all_spots.items.len / 4);
+        try all_spots.appendSlice(a, sp_f[0 .. nsp * 4]);
+        const start_off: u32 = @intCast(all_start.items.len / 4);
+        try all_start.appendSlice(a, st_f[0 .. nst * 4]);
+        try rparams.append(a, .{
+            .base_density = @floatCast(rh.base_density),
+            .freq_mult = @floatCast(rh.freq_mult),
+            .size_mult = @floatCast(rh.size_mult),
+            .base_spots_per_km2 = @floatCast(rh.base_spots_per_km2),
+            .rq = @floatCast(rh.rq),
+            .smin = @floatCast(rh.smin),
+            .smax = @floatCast(rh.smax),
+            .basement_value = @floatCast(rh.basement_value),
+            .richness_mult = @floatCast(rh.richness_mult),
+            .additional_richness = @floatCast(rh.additional_richness),
+            .starting_blob_amplitude = @floatCast(rh.starting_blob_amplitude),
+            .roll_salt = rh.roll_salt,
+            .res_index = @intCast(rparams.items.len),
+            .has_starting = rh.has_starting,
+            .restrict_bit = restrictBit(name),
+            .spot_off = spot_off,
+            .nspots = rh.nspots,
+            .start_off = start_off,
+            .nstart = rh.nstart,
+        });
+        try rnames.append(a, name);
     }
-    res = res[0..nres];
+    const nres = rparams.items.len;
+    if (nres == 0) return err("dump has no ore resources");
+
+    // Shared generator (seed1 == 100) — perm/grad uploaded once. perm1+perm2 are
+    // concatenated into one buffer ([0,256)=perm1, [256,512)=perm2) to stay under
+    // the 8-storage-buffer-per-stage limit on Apple GPUs.
+    const shgen = try buildGen(a, H.map_seed, shared_seed1);
+    const perm12 = try a.alloc(u32, 512);
+    @memcpy(perm12[0..256], shgen.perm1);
+    @memcpy(perm12[256..512], shgen.perm2);
+    const b_perm = ctx.uploadBuffer(u32, perm12, c.WGPUBufferUsage_Storage);
+    const b_grad = ctx.uploadBuffer(f32, shgen.grad, c.WGPUBufferUsage_Storage);
+    if (all_start.items.len == 0) try all_start.appendSlice(a, &.{ 0, 0, 0, 0 }); // WGSL needs a non-empty binding
+    const b_spots = ctx.uploadBuffer(f32, all_spots.items, c.WGPUBufferUsage_Storage);
+    const b_start = ctx.uploadBuffer(f32, all_start.items, c.WGPUBufferUsage_Storage);
+    const b_rparams = ctx.uploadBuffer(ResGPU, rparams.items, c.WGPUBufferUsage_Storage);
+    const spots_bytes: u64 = all_spots.items.len * @sizeOf(f32);
+    const start_bytes: u64 = all_start.items.len * @sizeOf(f32);
+    const rparams_bytes: u64 = rparams.items.len * @sizeOf(ResGPU);
 
     // Summary accumulators.
     const s_tiles = try a.alloc(u64, nres);
@@ -362,6 +403,7 @@ pub fn main(init: std.process.Init) !void {
     var t_classify: u64 = 0;
     var t_ore: u64 = 0;
     var t_read: u64 = 0;
+    var t_gpuwait: u64 = 0;
     var t_enc: u64 = 0;
 
     // Cull cells by the render EXTENT (R), matching the GUI's planSurfaceCells —
@@ -437,7 +479,7 @@ pub fn main(init: std.process.Init) !void {
         const ca = cellArena.allocator();
         const npx: usize = @as(usize, cl.cw) * cl.ch;
         const mask_bytes: u64 = npx * @sizeOf(u32);
-        const win_bytes: u64 = npx * 16;
+        const out_bytes: u64 = npx * 8; // packed vec2<u32>/tile (res+1, richness f32) — the readback
 
         // Per-tile gate buffer: field → asteroid mask (0/1/2); planet → biome
         // index (water = >=60000). With --mask it's read from the shared classify
@@ -461,11 +503,10 @@ pub fn main(init: std.process.Init) !void {
         if (!loaded) buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_mask);
 
-        const zeros = try ca.alloc(u32, npx * 4);
-        @memset(zeros, 0);
-        const buf_win = ctx.uploadBuffer(u32, zeros, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
-        defer c.wgpuBufferRelease(buf_win);
-        const staging = ctx.makeBuffer(win_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+        // The fused ore kernel writes the packed winner (res+1, richness) here.
+        const buf_out = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+        defer c.wgpuBufferRelease(buf_out);
+        const staging = ctx.makeBuffer(out_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
         defer c.wgpuBufferRelease(staging);
 
         // One command buffer for the whole cell (classify (if not loaded) + every
@@ -495,80 +536,70 @@ pub fn main(init: std.process.Init) !void {
         t_classify += wgpu.nowNs() - tc0;
 
         const to0 = wgpu.nowNs();
-        for (res, 0..) |*rr, idx| {
-            const P = OreParams{
+        {
+            // ONE fused dispatch evaluates all resources per tile → buf_out.
+            // Disk gate = the render EXTENT (R), matching gpu_terrain's field
+            // terrain; the density math uses distance directly so the gate doesn't
+            // affect values, only which tiles are kept.
+            const P = Shared{
                 .origin_x = @floatFromInt(cl.x0),
                 .origin_y = @floatFromInt(cl.y0),
                 .width = cl.cw,
                 .height = cl.ch,
-                // Disk gate = the render EXTENT (R), matching gpu_terrain's field
-                // terrain (which cuts a disk of `extent`). Using the zone's true
-                // radius (5000) would fill the square corners, so ore would spill
-                // past the circular terrain. The density math uses distance
-                // directly, so it's unaffected by this gate.
                 .zone_radius = @floatFromInt(R),
-                .base_density = @floatCast(rr.rh.base_density),
-                .freq_mult = @floatCast(rr.rh.freq_mult),
-                .size_mult = @floatCast(rr.rh.size_mult),
-                .base_spots_per_km2 = @floatCast(rr.rh.base_spots_per_km2),
-                .rq = @floatCast(rr.rh.rq),
-                .smin = @floatCast(rr.rh.smin),
-                .smax = @floatCast(rr.rh.smax),
-                .basement_value = @floatCast(rr.rh.basement_value),
-                .richness_mult = @floatCast(rr.rh.richness_mult),
-                .additional_richness = @floatCast(rr.rh.additional_richness),
-                .random_probability = @floatCast(rr.rh.random_probability),
-                .roll_salt = rr.rh.roll_salt,
-                .seed_byte = rr.seed_byte,
-                .res_index = @intCast(idx),
-                .has_starting = rr.rh.has_starting,
-                .starting_blob_amplitude = @floatCast(rr.rh.starting_blob_amplitude),
-                .nspots = rr.rh.nspots,
-                .nstart = rr.rh.nstart,
+                .seed_byte = shgen.sb,
                 .is_field = if (is_field) 1 else 0,
-                .restrict_bit = restrictBit(rr.name),
+                .nres = @intCast(nres),
+                .has_any_start = if (has_any_start) 1 else 0,
             };
-            const bP = ctx.uploadBuffer(OreParams, &.{P}, c.WGPUBufferUsage_Uniform);
+            const bP = ctx.uploadBuffer(Shared, &.{P}, c.WGPUBufferUsage_Uniform);
             var e = [_]c.WGPUBindGroupEntry{
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bP, .size = @sizeOf(OreParams) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = rr.b_perm1, .size = 256 * @sizeOf(u32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = rr.b_perm2, .size = 256 * @sizeOf(u32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = rr.b_grad, .size = 512 * @sizeOf(f32) }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = rr.b_spots, .size = rr.spots_bytes }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = rr.b_start, .size = rr.start_bytes }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_mask, .size = mask_bytes }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 7, .buffer = buf_win, .size = win_bytes }),
-                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 8, .buffer = b_restrict, .size = restrict_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bP, .size = @sizeOf(Shared) }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = b_perm, .size = 512 * @sizeOf(u32) }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = b_grad, .size = 512 * @sizeOf(f32) }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = b_spots, .size = spots_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = b_start, .size = start_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = buf_mask, .size = mask_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = buf_out, .size = out_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 7, .buffer = b_restrict, .size = restrict_bytes }),
+                std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 8, .buffer = b_rparams, .size = rparams_bytes }),
             };
             const bg = addPass(&ctx, enc, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
             try keep.append(ca, .{ .bg = bg, .buf = bP });
         }
         t_ore += wgpu.nowNs() - to0;
 
-        // Finish the cell's command buffer: copy winners → staging, submit once,
-        // read back (one GPU sync), then release the pass bind groups + params.
-        const tr0 = wgpu.nowNs();
-        c.wgpuCommandEncoderCopyBufferToBuffer(enc, buf_win, 0, staging, 0, win_bytes);
+        // Finish the cell's command buffer: copy packed winners → staging, submit
+        // once, read back (one GPU sync), then release the pass bind groups.
+        c.wgpuCommandEncoderCopyBufferToBuffer(enc, buf_out, 0, staging, 0, out_bytes);
         const cmd = c.wgpuCommandEncoderFinish(enc, null);
         c.wgpuCommandEncoderRelease(enc);
         c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
         c.wgpuCommandBufferRelease(cmd);
-        const win = try ca.alloc(u32, npx * 4);
-        try ctx.readBuffer(staging, u32, win);
+        const pk = try ca.alloc(u32, npx * 2);
+        const tw0 = wgpu.nowNs();
+        ctx.poll(); // block until the GPU finishes the cell's passes (compute)
+        t_gpuwait += wgpu.nowNs() - tw0;
+        const tr0 = wgpu.nowNs();
+        const mapped = try ctx.mapRead(staging, out_bytes); // GPU already idle → just maps
+        @memcpy(pk, @as([*]const u32, @ptrCast(@alignCast(mapped)))[0 .. npx * 2]);
+        ctx.unmap(staging);
+        t_read += wgpu.nowNs() - tr0;
         for (keep.items) |k| {
             c.wgpuBindGroupRelease(k.bg);
             c.wgpuBufferRelease(k.buf);
         }
-        t_read += wgpu.nowNs() - tr0;
 
         const te0 = wgpu.nowNs();
         const rgba = try a.alloc(u8, npx * 4); // arena — persists to the parallel encode
         @memset(rgba, 0);
         for (0..npx) |i| {
-            const amount = win[i * 4 + 3];
-            if (amount == 0) continue;
-            const rr = win[i * 4 + 2];
-            const col = mapColor(res[rr].name);
+            const type_i = pk[i * 2]; // res_index + 1 (0 = empty)
+            if (type_i == 0) continue;
+            const rr = type_i - 1;
+            const richness: f32 = @bitCast(pk[i * 2 + 1]);
+            const amount: u64 = @intFromFloat(@floor(richness));
+            const col = mapColor(rnames.items[rr]);
             rgba[i * 4 ..][0..4].* = .{ col[0], col[1], col[2], 255 };
             s_tiles[rr] += 1;
             s_amount[rr] += amount;
@@ -591,17 +622,17 @@ pub fn main(init: std.process.Init) !void {
             return @as(f64, @floatFromInt(ns)) / 1e6;
         }
     }.f;
-    std.debug.print("gpu_ore profile: classify {d:.0}ms | ore {d:.0}ms | readback {d:.0}ms | png {d:.0}ms  ({d} cells, {d} resources)\n", .{ ms(t_classify), ms(t_ore), ms(t_read), ms(t_enc), cells.len, nres });
+    std.debug.print("gpu_ore profile: classify {d:.0}ms | ore-record {d:.0}ms | gpu-compute {d:.0}ms | readback {d:.0}ms | png {d:.0}ms  ({d} cells, {d} resources)\n", .{ ms(t_classify), ms(t_ore), ms(t_gpuwait), ms(t_read), ms(t_enc), cells.len, nres });
 
     // summary.json
     var sum: std.ArrayList(u8) = .empty;
     try sum.appendSlice(a, try std.fmt.allocPrint(a, "{{\"zone\":\"{s}\",\"zone_seed\":{d},\"radius\":{d},\"resources\":{{", .{ zone, H.map_seed, R }));
     var first = true;
-    for (res, 0..) |*rr, idx| {
+    for (rnames.items, 0..) |name, idx| {
         if (s_tiles[idx] == 0) continue;
         if (!first) try sum.appendSlice(a, ",");
         first = false;
-        try sum.appendSlice(a, try std.fmt.allocPrint(a, "\"{s}\":{{\"amount\":{d},\"tiles\":{d}}}", .{ rr.name, s_amount[idx], s_tiles[idx] }));
+        try sum.appendSlice(a, try std.fmt.allocPrint(a, "\"{s}\":{{\"amount\":{d},\"tiles\":{d}}}", .{ name, s_amount[idx], s_tiles[idx] }));
     }
     try sum.appendSlice(a, "}}");
     {

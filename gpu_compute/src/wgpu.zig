@@ -164,9 +164,9 @@ pub const Context = struct {
         _ = c.wgpuDevicePoll(self.device, 1, null);
     }
 
-    /// Map a MapRead buffer and copy its contents into `out`.
-    pub fn readBuffer(self: *Context, staging: c.WGPUBuffer, comptime T: type, out: []T) !void {
-        const size: u64 = out.len * @sizeOf(T);
+    /// Map a MapRead buffer for reading, blocking (poll loop) until the GPU has
+    /// finished producing it. Returns the mapped range; caller must `unmap`.
+    pub fn mapRead(self: *Context, staging: c.WGPUBuffer, size: u64) ![*]const u8 {
         var mr = MapResp{};
         _ = c.wgpuBufferMapAsync(staging, c.WGPUMapMode_Read, 0, size, .{
             .mode = c.WGPUCallbackMode_AllowProcessEvents,
@@ -176,8 +176,20 @@ pub const Context = struct {
         while (!mr.done) self.poll();
         if (!mr.ok) return error.MapFailed;
         const mapped = c.wgpuBufferGetConstMappedRange(staging, 0, size) orelse return error.NoMappedRange;
+        return @ptrCast(mapped);
+    }
+
+    pub fn unmap(self: *Context, staging: c.WGPUBuffer) void {
+        _ = self;
+        c.wgpuBufferUnmap(staging);
+    }
+
+    /// Map a MapRead buffer and copy its contents into `out`.
+    pub fn readBuffer(self: *Context, staging: c.WGPUBuffer, comptime T: type, out: []T) !void {
+        const size: u64 = out.len * @sizeOf(T);
+        const mapped = try self.mapRead(staging, size);
         const src: [*]const T = @ptrCast(@alignCast(mapped));
         @memcpy(out, src[0..out.len]);
-        c.wgpuBufferUnmap(staging);
+        self.unmap(staging);
     }
 };
