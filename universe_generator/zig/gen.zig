@@ -703,6 +703,23 @@ fn isPrimaryEligible(ri: u32, tags: Tags) bool {
 /// not_space; beryllium by not_asteroid_field; water-ice re-allowed). This
 /// replaces the old null-primary bias ranking that over-labelled fields as
 /// naquium-primary. Returns field name -> primary resource.
+// SE universe-raw.lua space_zones: named asteroid fields with a HARDCODED
+// primary_resource. build_resources (universe.lua:798-836) assigns these first —
+// before the bias passes — so they fill quota and procedural fields spill to
+// what's left. Without this, ~55% of field primaries are wrong (e.g. Galactic
+// Graveyard resolves to naquium instead of the game's kr-rare-metal-ore, because
+// the 6+ named naquium fields hadn't pre-filled naquium's quota). Verified 45/45
+// against two live universes via an instrumented SE mod.
+fn fieldFixedPrimary(name: []const u8) ?data.Resource {
+    const eq = std.mem.eql;
+    if (eq(u8, name, "Astral Snow") or eq(u8, name, "Hailstorm") or eq(u8, name, "Ice Field") or eq(u8, name, "Stardew")) return .se_water_ice;
+    if (eq(u8, name, "Black Mirror") or eq(u8, name, "Dark Assemblage") or eq(u8, name, "Darkflare") or eq(u8, name, "Melancholia") or eq(u8, name, "Realm of Shadows") or eq(u8, name, "Sands of Time") or eq(u8, name, "Stardust")) return .se_naquium_ore;
+    if (eq(u8, name, "Deadspace")) return .uranium_ore;
+    if (eq(u8, name, "Ephemeral Expanse") or eq(u8, name, "Oblongglobulata") or eq(u8, name, "Solar Entrails")) return .se_methane_ice;
+    if (eq(u8, name, "Razor Field")) return .iron_ore;
+    return null;
+}
+
 pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k2: bool) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
     // Field-eligible primaries in RESOURCE_ORDER order (SE not_space/not_asteroid_field
@@ -725,7 +742,7 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
     }
     const K = elig.items.len;
 
-    const FieldInfo = struct { zi: usize, ob: [18]f64, top: u32 };
+    const FieldInfo = struct { zi: usize, ob: [18]f64, top: u32, fixed: ?u32 };
     var fields = ArrayList(FieldInfo).init(alloc);
     defer fields.deinit();
     for (zones.items, 0..) |z, zi| {
@@ -744,7 +761,18 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
             ob[ri] = 1.0 + (b[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
             if (b[ri] > b[top]) top = @intCast(ri);
         }
-        try fields.append(.{ .zi = zi, .ob = ob, .top = top });
+        // Hardcoded primary for named fields → its index into `elig` (k), else null.
+        var fixed_k: ?u32 = null;
+        if (fieldFixedPrimary(z.name)) |res| {
+            const rri = @intFromEnum(res);
+            for (elig.items, 0..) |eri, k| {
+                if (eri == rri) {
+                    fixed_k = @intCast(k);
+                    break;
+                }
+            }
+        }
+        try fields.append(.{ .zi = zi, .ob = ob, .top = top, .fixed = fixed_k });
     }
     const N = fields.items.len;
     if (N == 0) return map;
@@ -762,6 +790,37 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
     var assigned = try alloc.alloc(bool, N);
     defer alloc.free(assigned);
     @memset(assigned, false);
+
+    // Pre-pass (SE build_resources 798-836): assign the named fields' hardcoded
+    // primaries first, filling quota.
+    for (fields.items, 0..) |f, i| {
+        if (f.fixed) |k| {
+            assigned[i] = true;
+            used[k] += 1;
+            try map.put(zones.items[f.zi].name, resource_order[elig.items[k]]);
+        }
+    }
+    // Quota-drop (SE 869-896): a resource pre-filled ABOVE quota (e.g. 7 named
+    // naquium fields vs a quota of 6) sheds its lowest-ordered_bias fixed fields
+    // back to the pool, where the bias passes reassign them.
+    for (0..K) |k| {
+        const ri = elig.items[k];
+        while (used[k] > quota[k]) {
+            var worst_i: ?usize = null;
+            var worst_v: f64 = std.math.inf(f64);
+            for (fields.items, 0..) |f, i| {
+                if (assigned[i] and f.fixed != null and f.fixed.? == k and f.ob[ri] < worst_v) {
+                    worst_v = f.ob[ri];
+                    worst_i = i;
+                }
+            }
+            if (worst_i) |i| {
+                assigned[i] = false;
+                used[k] -= 1;
+                _ = map.remove(zones.items[fields.items[i].zi].name);
+            } else break;
+        }
+    }
 
     // Phase 4 — bias winners: a field goes to resource R only if its GLOBAL #1
     // (over all resources) is R. Iterate eligible resources in resource_order,
