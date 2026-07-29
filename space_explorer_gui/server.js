@@ -737,11 +737,37 @@ function buildSurfaceGrid(seed, zoneId) {
 // the panel status. Returns HTTP 286 once nothing is active so htmx applies the
 // final swap (the stitched image, once cells are stitched+deleted) and stops.
 app.get("/api/surface/grid", (req, res) => {
+  const seed = parseInt(req.query.seed);
   const zoneId = parseInt(req.query.zone_id);
-  const g = buildSurfaceGrid(parseInt(req.query.seed), zoneId);
+  const g = buildSurfaceGrid(seed, zoneId);
+  // Once done, OOB-refresh the sidebar ore legend too (estimate → measured
+  // table). Only on completion, so mid-generation polls don't reset checkboxes.
+  const legend = g.active ? "" : renderOreLegend(seed, zoneId, true);
   if (!g.active) res.status(286);
-  return res.send(`${g.body}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>`);
+  return res.send(`${g.body}<div id="gridstatus-${zoneId}" class="grid-status" hx-swap-oob="true">${g.head}</div>${legend}`);
 });
+
+// The sidebar ore legend: the per-resource show/hide table (checkbox + colour +
+// amounts) once ore is measured, else the estimate. Rendered in the surface page
+// and OOB-swapped by the grid poll on completion so it switches from estimate →
+// measured without a full refresh. Pass oob=true to emit it as an OOB update.
+function renderOreLegend(seed, zoneId, oob = false) {
+  const s = db.getSeed(seed);
+  const zone = s && db.getZonesForSeed(seed).find(z => z.id === zoneId);
+  const wrap = (inner) => `<div id="orelegend-${zoneId}"${oob ? ' hx-swap-oob="true"' : ""}>${inner}</div>`;
+  if (!zone) return wrap("");
+  const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
+  const summary = zoneSurfaceSummary(s.bucket, seed, zone.name);
+  const swatch = (r) => { const c = ORE_COLORS[r]; return c ? `<span class="ore-swatch" style="background:rgb(${c[0]},${c[1]},${c[2]})"></span>` : `<span class="ore-swatch" style="background:transparent"></span>`; };
+  const oreBlock = summary
+    ? `<table class="data-table compact ore-legend"><thead><tr><th title="show/hide on the surface">👁</th><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
+        ${Object.entries(summary.resources || {}).sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
+          .map(([r, v]) => `<tr><td><input type="checkbox" class="ore-toggle" data-res="${r}" checked></td><td>${swatch(r)}${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="ore-toggle-actions"><button type="button" class="btn-sm" onclick="oreToggleAll(true)">show all</button> <button type="button" class="btn-sm" onclick="oreToggleAll(false)">hide all</button></div>`
+    : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
+  return wrap(`<h3>Ore ${summary ? "<span class='badge done'>measured</span>" : "<span class='badge'>estimate</span>"}</h3>${oreBlock}`);
+}
 
 // Full surface detail page (breadcrumb + embedded live grid) — nested under the
 // seed. The old /surface/watch?seed&zone_id form redirects here.
@@ -758,17 +784,8 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
   jobs.reconcileZoneSurfaces(zoneId, path.join(jobs.seedDir(s.bucket, seed), zone.name));
 
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
-  const summary = zoneSurfaceSummary(s.bucket, seed, zone.name);
   const water = (zone.water || "none").replace(/^water[_-]?/, "") || "none";
   const enemy = (zone.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
-  const swatch = (r) => { const c = ORE_COLORS[r]; return c ? `<span class="ore-swatch" style="background:rgb(${c[0]},${c[1]},${c[2]})"></span>` : `<span class="ore-swatch" style="background:transparent"></span>`; };
-  const oreBlock = summary
-    ? `<table class="data-table compact ore-legend"><thead><tr><th title="show/hide on the surface">👁</th><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
-        ${Object.entries(summary.resources || {}).sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
-          .map(([r, v]) => `<tr><td><input type="checkbox" class="ore-toggle" data-res="${r}" checked></td><td>${swatch(r)}${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
-      </tbody></table>
-      <div class="ore-toggle-actions"><button type="button" class="btn-sm" onclick="oreToggleAll(true)">show all</button> <button type="button" class="btn-sm" onclick="oreToggleAll(false)">hide all</button></div>`
-    : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: effRadius(zone) })}'`;
   const reload = `hx-on::after-request="htmx.ajax('GET','/seed/${seed}/surface/${zoneId}',{target:'#main'})"`;
   const g = buildSurfaceGrid(seed, zoneId);
@@ -787,8 +804,7 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
           <dt>Enemy</dt><dd>${enemy}</dd>
           <dt>Primary</dt><dd>${zone.primary_resource ? nm(zone.primary_resource) : "—"}</dd>
         </dl>
-        <h3>Ore ${summary ? "<span class='badge done'>measured</span>" : "<span class='badge'>estimate</span>"}</h3>
-        ${oreBlock}
+        ${renderOreLegend(seed, zoneId)}
         <h3>Surface</h3>
         <div id="gridstatus-${zoneId}" class="grid-status">${g.head}</div>
         <label class="dim-slider">Terrain brightness
