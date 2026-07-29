@@ -261,7 +261,10 @@ pub fn main(init: std.process.Init) !void {
     @memset(s_tiles, 0);
     @memset(s_amount, 0);
 
-    const cells = try cellList(a, R, H.zone_radius, grid);
+    // Cull cells by the render EXTENT (R), matching the GUI's planSurfaceCells —
+    // so the cell set + stitch line up with the CPU tiled path. The kernel's disk
+    // gate still uses the zone's true radius (P.zone_radius) for the density math.
+    const cells = try cellList(a, R, @as(f64, @floatFromInt(R)), grid);
     std.debug.print("gpu_ore: {d} cells\n", .{cells.len});
     const t0 = wgpu.nowNs();
 

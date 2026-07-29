@@ -104,6 +104,17 @@ function requireGpuSegen() {
   );
 }
 
+let gpuOrePath = null;
+function requireGpuOre() {
+  if (gpuOrePath && fs.existsSync(gpuOrePath)) return gpuOrePath;
+  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", "gpu_ore");
+  if (fs.existsSync(cand)) { gpuOrePath = cand; return cand; }
+  throw new Error(
+    "gpu_ore binary not found. Build it first:\n" +
+    "  cd gpu_compute && ./fetch-wgpu.sh && zig build -Doptimize=ReleaseFast"
+  );
+}
+
 function requireSeedgen() {
   const bin = findSeedgenBinary();
   if (!bin) throw new Error(
@@ -718,11 +729,12 @@ function reconcileZoneSurfaces(zoneId, zDir) {
   if (!rows.length) return 0;
   if (rows.some(r => r.status === "queued" || r.status === "running")) return 0;
   const has = (f) => fs.existsSync(path.join(zDir, f));
-  // Artifact each 'done' kind leaves behind: ore → summary.json; oremap →
-  // oremap.png; terrain/gputerrain/surface → terrain.png (or the legacy surface.png).
+  // Artifact each 'done' kind leaves behind: ore → summary.json; oremap /
+  // gpuoremap / oredump → oremap.png; terrain/gputerrain/surface → terrain.png
+  // (or the legacy surface.png).
   const present = (kind) =>
     kind === "ore" ? has("summary.json")
-      : kind === "oremap" ? has("oremap.png")
+      : (kind === "oremap" || kind === "gpuoremap" || kind === "oredump") ? has("oremap.png")
         : (has("terrain.png") || has("surface.png"));
   const stale = rows.filter(r => r.status === "done" && !present(r.kind)).map(r => r.id);
   return db.deleteSurfaceJobs(stale);
@@ -750,6 +762,10 @@ const RENDER_KINDS = {
   // GPU whole-zone terrain preview (gpu_segen, ~80x faster). Writes terrain.png
   // directly, so buildSurfaceGrid shows it as the full terrain layer.
   gputerrain: { layer: "terrain", prefix: "terrain", gpu: true },
+  // GPU ore map (gpu_ore) — asteroid fields only. Depends on an 'oredump' job
+  // (segen --gpu-ore-dump does the CPU spot-gen); gpu_ore then tiles + writes
+  // oremap_<n>_<cell>.png on the GPU. Bit-exact vs the CPU oracle for fields.
+  gpuoremap: { layer: "ore", prefix: "oremap", gpu: true, gpuOre: true },
 };
 
 // ── Surface generation via the segen zone driver ───────────────────────
@@ -760,7 +776,7 @@ function runSurfaceJob(job) {
     const useGpu = !!(rk && rk.gpu);
     let binPath;
     try {
-      binPath = useGpu ? requireGpuSegen() : requireSegen();
+      binPath = (rk && rk.gpuOre) ? requireGpuOre() : useGpu ? requireGpuSegen() : requireSegen();
     } catch (e) {
       db.updateSurfaceJob(job.id, { status: "failed", error: e.message, finished_at: new Date().toISOString() });
       return resolve();
@@ -787,8 +803,21 @@ function runSurfaceJob(job) {
     // between an old whole image and the new cells).
     if (isRender) { try { fs.unlinkSync(path.join(sDir, job.zone_name, `${prefix}.png`)); } catch (_) {} }
 
+    // The CPU spot-gen dump handed from an 'oredump' job to gpu_ore.
+    const dumpPath = path.join(sDir, job.zone_name, "gpu_ore_input.bin");
+
     let args;
-    if (useGpu) {
+    if (rk && rk.gpuOre) {
+      // gpu_ore: read the CPU spot-gen dump and render oremap cells on the GPU,
+      // tiled like gpu_segen. --grid must match the GUI's cell layout; the render
+      // extent (radius) is baked into the dump by segen --gpu-ore-dump --radius.
+      args = ["--dump", dumpPath, "--out", bucketDir(label), "--world-seed", String(job.seed), "--zone", job.zone_name, "--grid", String(surfaceGridFor(job.radius))];
+    } else if (job.kind === "oredump") {
+      // Serialize per-resource params + precomputed spots for gpu_ore (CPU
+      // spot-gen). --radius caps the extent exactly like the CPU render; --out
+      // makes segen create the zone dir the dump is written into.
+      args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--gpu-ore-dump", dumpPath];
+    } else if (useGpu) {
       // gpu_segen renders the whole zone in one dispatch → terrain.png.
       // job.radius is already capped to the max-radius setting; pass it so
       // gpu_segen renders the inner disk (required for asteroid fields, which
@@ -817,7 +846,7 @@ function runSurfaceJob(job) {
       }
     }
 
-    console.log(`[surface ${job.id}] ${useGpu ? "gpu_segen" : "segen"} ${args.join(" ")}`);
+    console.log(`[surface ${job.id}] ${path.basename(binPath)} ${args.join(" ")}`);
     const child = spawn(binPath, args, { cwd: useGpu ? GPU_COMPUTE_DIR : SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
     surfaceChildren.set(job.id, child);
 
@@ -843,6 +872,15 @@ function runSurfaceJob(job) {
         summary = fs.readFileSync(path.join(zDir, "summary.json"), "utf8");
         for (const r of Object.values(JSON.parse(summary).resources || {})) oreCount += r.tiles || 0;
       } catch (_) {}
+
+      if (job.kind === "oredump") {
+        // GPU ore prep: success = the spot-gen dump exists (no summary here;
+        // gpu_ore writes summary.json when it renders).
+        if (!fs.existsSync(dumpPath)) return fail("gpu-ore-dump produced no output");
+        db.updateSurfaceJob(job.id, { status: "done", bucket: label, finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} gpu-ore-dump`);
+        return resolve();
+      }
 
       if (!isRender) {
         // ore-compute job: success = summary.json written

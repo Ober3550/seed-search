@@ -208,14 +208,14 @@ function renderZoneCtl(bucket, seed, zone, which) {
   let inner, activeNow;
   if (which === "ore") {
     // ore amounts + ore-map render
-    activeNow = active(["ore", "oremap"]).length > 0;
+    activeNow = active(["ore", "oremap", "oredump", "gpuoremap"]).length > 0;
     const oremapPng = zoneSurfacePng(bucket, seed, zone.name, "oremap");
     inner = activeNow
       ? `<span class="gen-status running">⏳ ore…</span>`
       : oremapPng
         ? ""
         : `<button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} ${tgt}>⛏ ore</button>`;
-    if (!activeNow && !oremapPng && failed(["ore", "oremap"]))
+    if (!activeNow && !oremapPng && failed(["ore", "oremap", "oredump", "gpuoremap"]))
       inner += ` <span class="gen-status failed" title="see Surface Jobs">⚠️</span>`;
   } else {
     const surfActive = active(SURF_KINDS);
@@ -678,7 +678,7 @@ function buildSurfaceGrid(seed, zoneId) {
   const allJobs = db.getSurfaceJobsForZone(zoneId);
   const grp = (k) => allJobs.filter(j => j.kind === k);
   const active = (k) => grp(k).some(j => j.status === "queued" || j.status === "running");
-  const anyActive = active("terrain") || active("gputerrain") || active("oremap") || active("surface") || active("ore");
+  const anyActive = active("terrain") || active("gputerrain") || active("oremap") || active("surface") || active("ore") || active("oredump") || active("gpuoremap");
   const poll = anyActive ? `hx-get="/api/surface/grid?seed=${seed}&zone_id=${zoneId}" hx-trigger="every 1500ms" hx-swap="outerHTML" hx-sync="#main:drop"` : "";
 
   const terrainFull = cp(1, 0, "terrain");   // stitched (n>1) or whole (n<=1)
@@ -719,7 +719,7 @@ function buildSurfaceGrid(seed, zoneId) {
 
   // status head: per-layer done counts
   const cnt = (...ks) => { const g = ks.flatMap(grp); return { done: g.filter(j => j.status === "done").length, tot: g.length, fail: g.filter(j => j.status === "failed").length }; };
-  const t = cnt("terrain", "gputerrain"), o = cnt("oremap"), s = cnt("surface");
+  const t = cnt("terrain", "gputerrain"), o = cnt("oremap", "gpuoremap", "oredump"), s = cnt("surface");
   const line = (label, c) => c.tot ? `${label} <span class="gen-status ${c.done + c.fail >= c.tot ? "" : "running"}">${c.fail ? "⚠️" : (c.done >= c.tot ? "✅" : "⏳")} ${c.done}/${c.tot}</span>` : "";
   const head = [line("terrain", t), line("ore", o), line("surface", s)].filter(Boolean).join(" · ") +
     (terrainFull ? ` <a class="btn-sm" href="${terrainFull}" target="_blank" title="terrain">⤢</a>` : "");
@@ -1233,11 +1233,19 @@ function queueZone(zone, seed, kind) {
   if (kind === "gputerrain") return [db.createSurfaceJob({ ...base, kind: "gputerrain", grid_n: 1, grid_cell: -1 })];
   if (kind === "terrain") return renderCells("terrain", null, false); // no ore needed
 
-  // oremap / surface: run the ore pass ONCE, then render the ore layer from it.
-  const prep = db.createSurfaceJob({ ...base, kind: "ore" });
-  const ids = [prep];
+  // oremap / surface: the ore layer. Asteroid fields go through the GPU path —
+  // an 'oredump' prep (segen --gpu-ore-dump = CPU spot-gen) feeds gpu_ore, which
+  // tiles + renders oremap cells on the GPU (bit-exact vs CPU for fields). Other
+  // zone types stay on the CPU: one ore-compute pass → per-cell oremap renders.
+  const ids = [];
   if (kind === "surface") ids.push(...renderCells("terrain", null, false));
-  ids.push(...renderCells("oremap", prep, true));
+  if (zone.zone_type === "asteroid-field") {
+    const prep = db.createSurfaceJob({ ...base, kind: "oredump" });
+    ids.push(prep, db.createSurfaceJob({ ...base, kind: "gpuoremap", grid_n: n, grid_cell: -1, depends_on: prep }));
+  } else {
+    const prep = db.createSurfaceJob({ ...base, kind: "ore" });
+    ids.push(prep, ...renderCells("oremap", prep, true));
+  }
   return ids;
 }
 
