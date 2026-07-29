@@ -442,6 +442,24 @@ fn runZoneDriver(
                 if (classifier) |*c| c else null,
             );
 
+            // Asteroid fields place resources only on se-asteroid tiles (verified
+            // vs the game: SE ices are 100% on-asteroid, base ores ~72-86%). The
+            // ore pass runs over the whole disk, so drop everything that landed on
+            // space. Cheap: filter the entity list in place.
+            if (is_field) {
+                const field = surfacegen.asteroid.AsteroidField.initField(zone_seed);
+                var kept: usize = 0;
+                for (ores.items) |oe| {
+                    if (field.tileAt(@floatFromInt(oe.x), @floatFromInt(oe.y)) == .asteroid) {
+                        ores.items[kept] = oe;
+                        kept += 1;
+                    }
+                }
+                const dropped = ores.items.len - kept;
+                ores.shrinkRetainingCapacity(kept);
+                std.debug.print("   asteroid mask: kept {d} on-asteroid ore, dropped {d} on space\n", .{ kept, dropped });
+            }
+
             // per-resource ORE totals + ore.jsonl + summary.json. Skipped under
             // --load-ore: those files already exist from the zone-wide pass.
             var summary: std.ArrayList(u8) = .empty;
