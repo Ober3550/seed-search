@@ -186,22 +186,21 @@ fn writePngFileRgba(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, 
     try file.writePositionalAll(io, bytes, 0);
 }
 
-/// Write a tiled-surface cell as PNG for the GUI's CSS grid (which composes the
-/// cells in the browser — no python stitcher). Emits the SAME orientation the
-/// old cell_png.py did (vertical flip) so the existing pixel-exact cell
-/// positioning is unchanged. The `oremap` layer becomes RGBA with its black
-/// background keyed transparent, so it overlays terrain.
+/// Write a tiled-surface cell as PNG. Rows are emitted top-down (row 0 = the
+/// cell's north edge, tile y0), i.e. north-up — matching the game's map view.
+/// The GUI/job-manager stitches the cells into a single north-up image. The
+/// `oremap` layer becomes RGBA with its black background keyed transparent, so
+/// it overlays terrain.
 fn writeCellPng(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, h: u32, rgb: []const u8, oremap: bool) !void {
     const wu: usize = w;
     const hu: usize = h;
     if (oremap) {
         const rgba = try a.alloc(u8, wu * hu * 4);
         defer a.free(rgba);
-        for (0..hu) |dy| {
-            const sy = hu - 1 - dy; // vertical flip
+        for (0..hu) |y| {
             for (0..wu) |x| {
-                const s = (sy * wu + x) * 3;
-                const d = (dy * wu + x) * 4;
+                const s = (y * wu + x) * 3;
+                const d = (y * wu + x) * 4;
                 const rr = rgb[s];
                 const gg = rgb[s + 1];
                 const bb = rgb[s + 2];
@@ -213,13 +212,8 @@ fn writeCellPng(a: std.mem.Allocator, io: std.Io, path: []const u8, w: u32, h: u
         }
         try writePngFileRgba(a, io, path, w, h, rgba);
     } else {
-        const flipped = try a.alloc(u8, wu * hu * 3);
-        defer a.free(flipped);
-        for (0..hu) |dy| {
-            const sy = hu - 1 - dy; // vertical flip
-            @memcpy(flipped[dy * wu * 3 ..][0 .. wu * 3], rgb[sy * wu * 3 ..][0 .. wu * 3]);
-        }
-        try writePngFile(a, io, path, w, h, flipped);
+        // RGB rows already in north-up order — write straight through.
+        try writePngFile(a, io, path, w, h, rgb);
     }
 }
 

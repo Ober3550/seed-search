@@ -2,6 +2,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const readline = require("readline");
+const sharp = require("sharp");
 const db = require("./db");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
@@ -648,8 +649,8 @@ function planSurfaceCells(radius, n) {
 }
 
 // Per-cell placement (as % of the 2r canvas) for the browser CSS grid, in the
-// orientation segen writes cells (vertical flip). Verified pixel-exact: place
-// surface_<n>_<cell>.png at (leftPct, topPct) sized wPct×hPct.
+// orientation segen writes cells (north-up: row 0 = north edge, cell gy=0 at the
+// top). Place surface_<n>_<cell>.png at (leftPct, topPct) sized wPct×hPct.
 function surfaceCellLayout(radius) {
   const n = surfaceGridFor(radius);
   const full = radius * 2;
@@ -662,7 +663,7 @@ function surfaceCellLayout(radius) {
     return {
       cell, gx, gy,
       leftPct: 100 * x0 / full,
-      topPct: 100 * (full - y0 - ch) / full, // final vertical flip
+      topPct: 100 * y0 / full,
       wPct: 100 * cw / full,
       hPct: 100 * ch / full,
     };
@@ -670,7 +671,41 @@ function surfaceCellLayout(radius) {
   return { n, cells };
 }
 
-// (stitch_surface.py removed — the browser composes tiled cells via CSS grid.)
+// Stitch a layer's per-cell PNGs into one full 2r×2r image, then delete the
+// cells. Cells are north-up (row 0 = north edge, tile y0), so each cell composites
+// at pixel (gx*cellW, gy*cellW) with no flip. Terrain gets an opaque grey (20)
+// background (matching the in-disk fill); the ore layer stays transparent so it
+// overlays terrain. Returns true once the full image was written (all expected
+// cells present), false if any cell is still missing. An in-flight guard makes
+// concurrent cell completions safe — only the first to see all cells stitches.
+const stitchInFlight = new Set();
+async function stitchSurfaceCells(zDir, prefix, radius, n) {
+  if (n <= 1) return false; // whole render already writes <prefix>.png
+  const key = `${zDir}::${prefix}`;
+  if (stitchInFlight.has(key)) return false;
+  const idx = planSurfaceCells(radius, n);
+  const full = radius * 2;
+  const cellW = Math.ceil(full / n);
+  const composites = [];
+  for (const cell of idx) {
+    const f = path.join(zDir, `${prefix}_${n}_${cell}.png`);
+    if (!fs.existsSync(f)) return false; // not all cells rendered yet
+    const gx = cell % n, gy = Math.floor(cell / n);
+    composites.push({ input: f, left: gx * cellW, top: gy * cellW });
+  }
+  stitchInFlight.add(key);
+  try {
+    const bg = prefix === "oremap"
+      ? { r: 0, g: 0, b: 0, alpha: 0 }
+      : { r: 20, g: 20, b: 20, alpha: 1 };
+    await sharp({ create: { width: full, height: full, channels: 4, background: bg } })
+      .composite(composites).png().toFile(path.join(zDir, `${prefix}.png`));
+    for (const cell of idx) { try { fs.unlinkSync(path.join(zDir, `${prefix}_${n}_${cell}.png`)); } catch (_) {} }
+    return true;
+  } finally {
+    stitchInFlight.delete(key);
+  }
+}
 
 // Render kinds → segen layer flag + output filename prefix. 'ore' = compute-only
 // (no render). 'surface' is the legacy combined layer.
@@ -777,31 +812,49 @@ function runSurfaceJob(job) {
         return resolve();
       }
 
-      // render job — success = the layer PNG was written. segen now emits PNG
-      // directly (zigimg); the browser composes tiled cells via CSS (no stitcher,
-      // no BMP→PNG python). For a whole render png_file points at the single
-      // image; for tiled cells png_file stays null and the CSS grid composes them.
-      // A GPU render is one process that tiles internally (grid = surfaceGridFor):
-      // for grid>1 it writes terrain_<grid>_<cell>.png per cell (no whole image),
-      // so success = every disk-intersecting cell landed. grid<=1 → terrain.png.
+      // render job — success = the layer PNG was written. segen emits per-cell
+      // PNGs (zigimg); once every cell of a layer lands we stitch them into a
+      // single north-up <prefix>.png and delete the cells (one terrain.png +
+      // one oremap.png per zone). A GPU render is one process that tiles
+      // internally (grid = surfaceGridFor): for grid>1 it writes all cells, so
+      // success = every disk-intersecting cell landed, then stitch. grid<=1 →
+      // whole render already writes <prefix>.png directly.
       if (useGpu) {
         const gpuN = surfaceGridFor(job.radius);
         if (gpuN > 1) {
           const expected = planSurfaceCells(job.radius, gpuN).length;
           const got = fs.readdirSync(zDir).filter(f => f.startsWith(`${prefix}_${gpuN}_`) && f.endsWith(".png")).length;
           if (got < expected) return fail(`gpu ${prefix}: ${got}/${expected} cells (${stderr.slice(-200)})`);
-          db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: null, finished_at: new Date().toISOString() });
-          db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (gpu ${got} cells)`);
+          const stitched = await stitchSurfaceCells(zDir, prefix, job.radius, gpuN).catch(e => { console.log(`[stitch ${prefix}] ${e.message}`); return false; });
+          const pngRel = stitched ? path.relative(OUTPUT_DIR, path.join(zDir, `${prefix}.png`)) : null;
+          db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
+          db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (gpu ${got} cells${stitched ? ", stitched" : ""})`);
           return resolve();
         }
       }
 
+      const stitchedFile = path.join(zDir, `${prefix}.png`);
       const pngFile = isCell
         ? path.join(zDir, `${prefix}_${job.grid_n}_${job.grid_cell}.png`)
-        : path.join(zDir, `${prefix}.png`);
-      if (!fs.existsSync(pngFile)) return fail(`no ${prefix} output (${stderr.slice(-200)})`);
+        : stitchedFile;
+      // A sibling cell that finished first may have already stitched + deleted
+      // this cell — that's still success (the layer image exists).
+      if (!fs.existsSync(pngFile)) {
+        if (isCell && fs.existsSync(stitchedFile)) {
+          db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: path.relative(OUTPUT_DIR, stitchedFile), finished_at: new Date().toISOString() });
+          db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} cell ${job.grid_cell} (stitched by sibling)`);
+          return resolve();
+        }
+        return fail(`no ${prefix} output (${stderr.slice(-200)})`);
+      }
 
-      const pngRel = isCell ? null : path.relative(OUTPUT_DIR, pngFile);
+      // Tiled CPU render: this cell landed. If it was the last of its layer,
+      // stitch all cells into a single <prefix>.png and drop the cells.
+      let pngRel = isCell ? null : path.relative(OUTPUT_DIR, pngFile);
+      if (isCell) {
+        const stitched = await stitchSurfaceCells(zDir, prefix, job.radius, job.grid_n).catch(e => { console.log(`[stitch ${prefix}] ${e.message}`); return false; });
+        if (stitched) pngRel = path.relative(OUTPUT_DIR, stitchedFile);
+      }
       db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
       db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix}${isCell ? ` cell ${job.grid_cell}` : ""}`);
       resolve();
@@ -852,6 +905,7 @@ module.exports = {
   surfaceGridFor,
   planSurfaceCells,
   surfaceCellLayout,
+  stitchSurfaceCells,
   bucketLabel,
   bucketDir,
   seedDir,

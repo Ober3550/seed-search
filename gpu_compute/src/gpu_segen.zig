@@ -3,7 +3,7 @@
 //! Same CLI shape segen uses (--zones <jsonl> --world-seed N --zone <name>
 //! --out <dir>). Renders the zone's biome+water (planet/moon) or se-space /
 //! se-asteroid (asteroid field) on the GPU and writes it under
-//! <out>/seed_<world>/<zone>/ (segen orientation: vertical flip, grey
+//! <out>/seed_<world>/<zone>/ (north-up: row 0 = north edge, tile y0; grey
 //! background outside the disk).
 //!
 //! Tiling: with `--surface-grid N` (N>1) the disk is split into an N×N grid of
@@ -496,15 +496,14 @@ fn renderTerrain(a: std.mem.Allocator, init: std.process.Init, map_seed: u32, ba
         const indices = try ca.alloc(u32, npx);
         try ctx.readBuffer(staging, u32, indices);
 
-        // Compose cell PNG: disk mask (grey 20) + idx→colour + vertical flip
-        // (segen writes cells vertically flipped within the cell).
+        // Compose cell PNG: disk mask (grey 20) + idx→colour. Rows top-down
+        // (row 0 = north edge, tile y0) — north-up, matching the game map.
         const rgb = try ca.alloc(u8, npx * 3);
         for (0..cl.ch) |out_y| {
-            const src_y = cl.ch - 1 - out_y;
-            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(src_y));
+            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(out_y));
             for (0..cl.cw) |x| {
                 const fx: f64 = @as(f64, @floatFromInt(cl.x0)) + @as(f64, @floatFromInt(x));
-                const col = if (fx * fx + fy * fy > rr) bg else biome.idxColor(@intCast(indices[src_y * cl.cw + x]));
+                const col = if (fx * fx + fy * fy > rr) bg else biome.idxColor(@intCast(indices[out_y * cl.cw + x]));
                 const o = (out_y * cl.cw + x) * 3;
                 rgb[o] = col[0];
                 rgb[o + 1] = col[1];
@@ -610,14 +609,13 @@ fn renderAsteroidField(a: std.mem.Allocator, init: std.process.Init, map_seed: u
         const indices = try ca.alloc(u32, npx);
         try ctx.readBuffer(staging, u32, indices);
 
-        // 0=space, 1=asteroid, 2=out-of-map; disk mask + vertical flip.
+        // 0=space, 1=asteroid, 2=out-of-map; disk mask. Rows north-up (row 0 = y0).
         const rgb = try ca.alloc(u8, npx * 3);
         for (0..cl.ch) |out_y| {
-            const src_y = cl.ch - 1 - out_y;
-            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(src_y));
+            const fy: f64 = @as(f64, @floatFromInt(cl.y0)) + @as(f64, @floatFromInt(out_y));
             for (0..cl.cw) |x| {
                 const fx: f64 = @as(f64, @floatFromInt(cl.x0)) + @as(f64, @floatFromInt(x));
-                const col = if (fx * fx + fy * fy > rr) bg else switch (indices[src_y * cl.cw + x]) {
+                const col = if (fx * fx + fy * fy > rr) bg else switch (indices[out_y * cl.cw + x]) {
                     1 => ast,
                     2 => bg,
                     else => space,
