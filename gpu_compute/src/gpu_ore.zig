@@ -203,17 +203,29 @@ fn writeCellPng(init: std.process.Init, out_dir: []const u8, world_seed: u64, zo
 // collects each cell's RGBA; then all cells are encoded+written across worker
 // threads (strided — no shared mutable state, so no locking needed).
 const EncJob = struct { rgba: []u8, cw: u32, ch: u32, cell: u32 };
-const EncCtx = struct {
-    jobs: []const EncJob,
-    start: usize,
-    stride: usize,
+
+// Pipelined PNG encoder: consumes each cell's coloured RGBA as the GPU loop
+// produces it, so PNG encode + write overlaps the GPU compute of later cells
+// (instead of running only after all GPU work). Consumers claim job indices
+// atomically and spin (yield) until the producer marks that index ready.
+const EncPipe = struct {
+    jobs: []EncJob, // pre-sized to the cell count; filled in order by the GPU loop
+    produced: *std.atomic.Value(usize), // # jobs the GPU loop has filled
+    claim: *std.atomic.Value(usize), // next job index for a consumer to take
+    abort: *std.atomic.Value(bool), // set if the GPU loop errored → consumers exit
+    total: usize, // total cells that will be produced
     io: std.Io,
     dir: []const u8,
     grid: i32,
     err: ?anyerror = null,
-    fn run(self: *EncCtx) void {
-        var i = self.start;
-        while (i < self.jobs.len) : (i += self.stride) {
+    fn run(self: *EncPipe) void {
+        while (true) {
+            const i = self.claim.fetchAdd(1, .monotonic);
+            if (i >= self.total) break;
+            while (self.produced.load(.acquire) <= i) {
+                if (self.abort.load(.monotonic)) return;
+                std.Thread.yield() catch {};
+            }
             const job = self.jobs[i];
             const bytes = png.encodeRgba(std.heap.c_allocator, job.cw, job.ch, job.rgba) catch |e| {
                 self.err = e;
@@ -541,10 +553,26 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    // Collect each cell's RGBA; encoded in parallel after the loop.
-    var jobs: std.ArrayListUnmanaged(EncJob) = .empty;
+    // Pipelined encode: consumer threads run PNG encode+write concurrently with
+    // the GPU loop. The loop fills jobs[seq] and bumps `produced`; consumers claim
+    // indices and encode as soon as they're ready.
+    const jobs = try a.alloc(EncJob, cells.len);
+    var produced = std.atomic.Value(usize).init(0);
+    var claim = std.atomic.Value(usize).init(0);
+    var abort = std.atomic.Value(bool).init(false);
+    const nenc: usize = @max(1, @min(std.Thread.getCpuCount() catch 4, cells.len));
+    const ectxs = try a.alloc(EncPipe, nenc);
+    for (ectxs) |*cx| cx.* = .{ .jobs = jobs, .produced = &produced, .claim = &claim, .abort = &abort, .total = cells.len, .io = init.io, .dir = zdir, .grid = grid };
+    const ethreads = try a.alloc(std.Thread, nenc);
+    for (ethreads, ectxs) |*t, *cx| t.* = try std.Thread.spawn(.{}, EncPipe.run, .{cx});
+    // On an error return from the GPU loop, stop the consumers before the arena
+    // (which owns jobs/rgba) is freed.
+    errdefer {
+        abort.store(true, .monotonic);
+        for (ethreads) |t| t.join();
+    }
 
-    for (cells) |cl| {
+    for (cells, 0..) |cl, seq| {
         var cellArena = std.heap.ArenaAllocator.init(std.heap.c_allocator);
         defer cellArena.deinit();
         const ca = cellArena.allocator();
@@ -681,18 +709,17 @@ pub fn main(init: std.process.Init) !void {
             s_tiles[rr] += 1;
             s_amount[rr] += amount;
         }
-        try jobs.append(a, .{ .rgba = rgba, .cw = cl.cw, .ch = cl.ch, .cell = cl.cell });
+        // Hand the coloured cell to the encode pipeline (release so the store to
+        // jobs[seq] is visible to a consumer that sees produced > seq).
+        jobs[seq] = .{ .rgba = rgba, .cw = cl.cw, .ch = cl.ch, .cell = cl.cell };
+        produced.store(seq + 1, .release);
         t_enc += wgpu.nowNs() - te0;
     }
-    // Encode + write all cells across worker threads (strided).
+    // Drain the pipeline: most encoding already overlapped the GPU loop; this is
+    // just the tail (the last few cells).
     const tp0 = wgpu.nowNs();
-    const nenc: usize = @max(1, @min(std.Thread.getCpuCount() catch 4, jobs.items.len));
-    const ctxs = try a.alloc(EncCtx, nenc);
-    for (ctxs, 0..) |*cx, k| cx.* = .{ .jobs = jobs.items, .start = k, .stride = nenc, .io = init.io, .dir = zdir, .grid = grid };
-    const ethreads = try a.alloc(std.Thread, nenc);
-    for (ethreads, ctxs) |*t, *cx| t.* = try std.Thread.spawn(.{}, EncCtx.run, .{cx});
     for (ethreads) |t| t.join();
-    for (ctxs) |cx| if (cx.err) |e| return e;
+    for (ectxs) |cx| if (cx.err) |e| return e;
     t_enc += wgpu.nowNs() - tp0;
     const ms = struct {
         fn f(ns: u64) f64 {
