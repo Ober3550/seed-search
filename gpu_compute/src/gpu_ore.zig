@@ -262,8 +262,9 @@ pub fn main(init: std.process.Init) !void {
     @memset(s_amount, 0);
 
     // Cull cells by the render EXTENT (R), matching the GUI's planSurfaceCells —
-    // so the cell set + stitch line up with the CPU tiled path. The kernel's disk
-    // gate still uses the zone's true radius (P.zone_radius) for the density math.
+    // so the cell set + stitch line up with the CPU tiled path. The kernel also
+    // gates ore to the disk of R (see OreParams.zone_radius), matching gpu_segen's
+    // circular field terrain.
     const cells = try cellList(a, R, @as(f64, @floatFromInt(R)), grid);
     std.debug.print("gpu_ore: {d} cells\n", .{cells.len});
     const t0 = wgpu.nowNs();
@@ -305,7 +306,12 @@ pub fn main(init: std.process.Init) !void {
                 .origin_y = @floatFromInt(cl.y0),
                 .width = cl.cw,
                 .height = cl.ch,
-                .zone_radius = @floatCast(H.zone_radius),
+                // Disk gate = the render EXTENT (R), matching gpu_segen's field
+                // terrain (which cuts a disk of `extent`). Using the zone's true
+                // radius (5000) would fill the square corners, so ore would spill
+                // past the circular terrain. The density math uses distance
+                // directly, so it's unaffected by this gate.
+                .zone_radius = @floatFromInt(R),
                 .base_density = @floatCast(rr.rh.base_density),
                 .freq_mult = @floatCast(rr.rh.freq_mult),
                 .size_mult = @floatCast(rr.rh.size_mult),

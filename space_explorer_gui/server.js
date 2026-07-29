@@ -807,18 +807,47 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
       };
       setTerrB(document.querySelector(".dim-slider input") ? document.querySelector(".dim-slider input").value : 45);
 
-      // Per-resource ore show/hide. The oremap paints each resource in a unique
-      // colour, so we composite the ore layer into a canvas and drop the pixels of
-      // any unchecked resource — no server round-trip / re-render.
+      // Per-resource ore show/hide. By DEFAULT the plain stitched ore image is
+      // shown (so it refreshes exactly like the terrain layer — no canvas in the
+      // way). Only when the user hides a resource do we composite the image into
+      // a canvas and drop that resource's pixels; unhiding everything removes the
+      // canvas and restores the plain image.
       (function () {
         var ORE_COLORS = ${JSON.stringify(ORE_COLORS)};
         var ORE_DIM = ${effRadius(zone) * 2};
         var colorRes = {};
         for (var r in ORE_COLORS) { var c = ORE_COLORS[r]; colorRes[(c[0] << 16) | (c[1] << 8) | c[2]] = r; }
         var masterData = null, canvas = null;
-        function active() { var s = {}; document.querySelectorAll(".ore-toggle").forEach(function (cb) { if (cb.checked) s[cb.dataset.res] = 1; }); return s; }
+        function toggles() { return document.querySelectorAll(".ore-toggle"); }
+        function active() { var s = {}; toggles().forEach(function (cb) { if (cb.checked) s[cb.dataset.res] = 1; }); return s; }
+        function allChecked() { var all = true; toggles().forEach(function (cb) { if (!cb.checked) all = false; }); return all; }
+        function oreImg() {
+          var g = document.querySelector(".surf-grid.layered"); if (!g) return null;
+          var l = g.querySelector(".layer.ore:not(.ore-filter)");
+          if (!l || l.querySelector(".surf-cell")) return null; // still tiling — leave cells alone
+          return l.tagName === "IMG" ? l : l.querySelector("img");
+        }
+        function removeFilter() {
+          if (canvas && canvas.parentElement) canvas.parentElement.removeChild(canvas);
+          canvas = null; masterData = null;
+          var img = oreImg(); if (img) img.style.display = "";
+        }
         function apply() {
-          if (!masterData || !canvas) return;
+          if (allChecked()) { removeFilter(); return; } // nothing hidden → plain image
+          var img = oreImg(); if (!img) return;
+          if (!img.complete || !img.naturalWidth) { img.addEventListener("load", apply, { once: true }); return; }
+          var grid = img.closest(".surf-grid.layered");
+          var dim = img.naturalWidth || ORE_DIM || 800;
+          if (!masterData) {
+            var master = document.createElement("canvas"); master.width = dim; master.height = dim;
+            var mc = master.getContext("2d"); mc.imageSmoothingEnabled = false;
+            mc.drawImage(img, 0, 0, dim, dim);
+            try { masterData = mc.getImageData(0, 0, dim, dim); } catch (e) { return; }
+          }
+          if (!canvas) {
+            canvas = document.createElement("canvas"); canvas.className = "layer ore ore-filter";
+            canvas.style.width = "100%"; canvas.style.height = "100%"; canvas.width = dim; canvas.height = dim;
+          }
           var act = active(), src = masterData.data, ctx = canvas.getContext("2d");
           var out = ctx.createImageData(masterData.width, masterData.height), d = out.data;
           for (var i = 0; i < src.length; i += 4) {
@@ -828,43 +857,18 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
             d[i] = src[i]; d[i + 1] = src[i + 1]; d[i + 2] = src[i + 2]; d[i + 3] = src[i + 3];
           }
           ctx.putImageData(out, 0, 0);
-        }
-        function build() {
-          var grid = document.querySelector(".surf-grid.layered");
-          if (!grid) return;
-          var oreLayer = grid.querySelector(".layer.ore:not(.ore-filter)");
-          if (!oreLayer) return;
-          // Only build the show/hide filter over the FINAL stitched image (a
-          // single <img>). While the surface is still tiling, the ore layer is a
-          // per-cell grid — leave it alone so cells fill in progressively (no
-          // per-poll canvas rebuild / flashing), and defer the filter until the
-          // cells are stitched into one image at the end.
-          if (oreLayer.querySelector(".surf-cell")) return;
-          var imgs = [];
-          var full = oreLayer.tagName === "IMG" ? oreLayer : oreLayer.querySelector("img");
-          if (full) imgs.push({ img: full, l: 0, t: 0, w: 1, h: 1 });
-          if (!imgs.length) return;
-          var pending = imgs.filter(function (o) { return !(o.img.complete && o.img.naturalWidth); });
-          if (pending.length) { pending.forEach(function (o) { o.img.addEventListener("load", build, { once: true }); }); return; }
-          // Full ore resolution from the actual image (cell natural width / its
-          // width fraction) — robust to the max-radius setting differing from
-          // when the ore was rendered; ORE_DIM is just a fallback.
-          var dim = (imgs[0].w > 0 && imgs[0].img.naturalWidth) ? Math.round(imgs[0].img.naturalWidth / imgs[0].w) : (ORE_DIM || 800);
-          var master = document.createElement("canvas"); master.width = dim; master.height = dim;
-          var mc = master.getContext("2d"); mc.imageSmoothingEnabled = false;
-          imgs.forEach(function (o) { mc.drawImage(o.img, Math.round(o.l * dim), Math.round(o.t * dim), Math.round(o.w * dim), Math.round(o.h * dim)); });
-          try { masterData = mc.getImageData(0, 0, dim, dim); } catch (e) { return; }
-          if (!canvas) { canvas = document.createElement("canvas"); canvas.className = "layer ore ore-filter"; canvas.style.width = "100%"; canvas.style.height = "100%"; }
-          canvas.width = dim; canvas.height = dim;
-          oreLayer.style.display = "none";
+          img.style.display = "none";
           if (canvas.parentElement !== grid) grid.appendChild(canvas);
-          apply();
         }
-        window.oreToggleAll = function (on) { document.querySelectorAll(".ore-toggle").forEach(function (cb) { cb.checked = on; }); apply(); };
+        window.oreToggleAll = function (on) { toggles().forEach(function (cb) { cb.checked = on; }); apply(); };
         document.addEventListener("change", function (e) { if (e.target && e.target.classList && e.target.classList.contains("ore-toggle")) apply(); });
-        function rebuild() { canvas = null; masterData = null; setTimeout(build, 30); }
-        rebuild();
-        document.body.addEventListener("htmx:afterSettle", rebuild);
+        // Every grid swap (poll / completion refresh) yields a fresh image — drop
+        // the stale canvas refs and re-apply the filter only if one is currently
+        // active, so by default the plain stitched image shows straight away.
+        document.body.addEventListener("htmx:afterSettle", function () {
+          masterData = null; canvas = null;
+          if (!allChecked()) setTimeout(apply, 30);
+        });
       })();
     </script>
   </div>`;
