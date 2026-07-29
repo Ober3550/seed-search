@@ -257,8 +257,9 @@ function createUniverseJob(seedStart, seedEnd, workers, k2Enabled = false) {
 
 function getUniverseJobs() {
   const d = getDb();
+  // Show every bucket (no LIMIT) so the universe table lists all of them.
   return d.prepare(
-    "SELECT * FROM universe_jobs ORDER BY created_at DESC LIMIT 50"
+    "SELECT * FROM universe_jobs ORDER BY created_at DESC"
   ).all();
 }
 

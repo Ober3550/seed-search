@@ -20,7 +20,7 @@ if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 // Every universe job is exactly one fixed-size bucket. Override with
 // UNIVERSE_BUCKET_SIZE (e.g. 10000 for a faster demo).
-const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "10000");
+const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "100000");
 
 // Bucket label from the job's upper bound: 100k, 200k, ..., 1M, 1.1M, ...
 // K2-enabled buckets get a "-k2" suffix so they live in separate folders/jobs

@@ -467,6 +467,15 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
 // Generatable zone types (surfaces). Others are shown for reference only.
 const GEN_TYPES = ["planet", "moon", "asteroid-field"];
 
+// Authoritative resource → oremap map_color (dumped live). Drives the surface
+// viewer's per-resource show/hide toggles: the oremap paints each resource in
+// its unique colour, so the browser can filter the composite by colour.
+const ORE_COLORS = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "calibration", "mod-dump", "ore-colors.json"), "utf8"));
+  } catch (_) { return {}; }
+})();
+
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
   if (!s) return res.status(404).send(htmxPage("Not Found", "<h2>Seed not found</h2>"));
@@ -735,11 +744,13 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
   const summary = zoneSurfaceSummary(s.bucket, seed, zone.name);
   const water = (zone.water || "none").replace(/^water[_-]?/, "") || "none";
   const enemy = (zone.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
+  const swatch = (r) => { const c = ORE_COLORS[r]; return c ? `<span class="ore-swatch" style="background:rgb(${c[0]},${c[1]},${c[2]})"></span>` : `<span class="ore-swatch" style="background:transparent"></span>`; };
   const oreBlock = summary
-    ? `<table class="data-table compact"><thead><tr><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
+    ? `<table class="data-table compact ore-legend"><thead><tr><th title="show/hide on the surface">👁</th><th>Resource</th><th>Ore</th><th>Tiles</th></tr></thead><tbody>
         ${Object.entries(summary.resources || {}).sort((a, b) => (b[1].amount || 0) - (a[1].amount || 0))
-          .map(([r, v]) => `<tr><td>${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
-      </tbody></table>`
+          .map(([r, v]) => `<tr><td><input type="checkbox" class="ore-toggle" data-res="${r}" checked></td><td>${swatch(r)}${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="ore-toggle-actions"><button type="button" class="btn-sm" onclick="oreToggleAll(true)">show all</button> <button type="button" class="btn-sm" onclick="oreToggleAll(false)">hide all</button></div>`
     : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
   const genArgs = `hx-vals='${JSON.stringify({ zone_id: zoneId, seed, zone_name: zone.name, radius: effRadius(zone) })}'`;
   const reload = `hx-on::after-request="htmx.ajax('GET','/seed/${seed}/surface/${zoneId}',{target:'#main'})"`;
@@ -778,6 +789,61 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
         document.querySelectorAll(".surf-grid").forEach(function (el) { el.style.setProperty("--terr-b", v / 100); });
       };
       setTerrB(document.querySelector(".dim-slider input") ? document.querySelector(".dim-slider input").value : 45);
+
+      // Per-resource ore show/hide. The oremap paints each resource in a unique
+      // colour, so we composite the ore layer into a canvas and drop the pixels of
+      // any unchecked resource — no server round-trip / re-render.
+      (function () {
+        var ORE_COLORS = ${JSON.stringify(ORE_COLORS)};
+        var ORE_DIM = ${effRadius(zone) * 2};
+        var colorRes = {};
+        for (var r in ORE_COLORS) { var c = ORE_COLORS[r]; colorRes[(c[0] << 16) | (c[1] << 8) | c[2]] = r; }
+        var masterData = null, canvas = null;
+        function active() { var s = {}; document.querySelectorAll(".ore-toggle").forEach(function (cb) { if (cb.checked) s[cb.dataset.res] = 1; }); return s; }
+        function apply() {
+          if (!masterData || !canvas) return;
+          var act = active(), src = masterData.data, ctx = canvas.getContext("2d");
+          var out = ctx.createImageData(masterData.width, masterData.height), d = out.data;
+          for (var i = 0; i < src.length; i += 4) {
+            if (src[i + 3] === 0) { d[i + 3] = 0; continue; }
+            var res = colorRes[(src[i] << 16) | (src[i + 1] << 8) | src[i + 2]];
+            if (res && !act[res]) { d[i + 3] = 0; continue; }
+            d[i] = src[i]; d[i + 1] = src[i + 1]; d[i + 2] = src[i + 2]; d[i + 3] = src[i + 3];
+          }
+          ctx.putImageData(out, 0, 0);
+        }
+        function build() {
+          var grid = document.querySelector(".surf-grid.layered");
+          if (!grid) return;
+          var oreLayer = grid.querySelector(".layer.ore:not(.ore-filter)");
+          if (!oreLayer) return;
+          var imgs = [], cells = oreLayer.querySelectorAll(".surf-cell img");
+          if (cells.length) {
+            cells.forEach(function (img) { var cel = img.parentElement; imgs.push({ img: img, l: parseFloat(cel.style.left) / 100, t: parseFloat(cel.style.top) / 100, w: parseFloat(cel.style.width) / 100, h: parseFloat(cel.style.height) / 100 }); });
+          } else { var full = oreLayer.tagName === "IMG" ? oreLayer : oreLayer.querySelector("img"); if (full) imgs.push({ img: full, l: 0, t: 0, w: 1, h: 1 }); }
+          if (!imgs.length) return;
+          var pending = imgs.filter(function (o) { return !(o.img.complete && o.img.naturalWidth); });
+          if (pending.length) { pending.forEach(function (o) { o.img.addEventListener("load", build, { once: true }); }); return; }
+          // Full ore resolution from the actual image (cell natural width / its
+          // width fraction) — robust to the max-radius setting differing from
+          // when the ore was rendered; ORE_DIM is just a fallback.
+          var dim = (imgs[0].w > 0 && imgs[0].img.naturalWidth) ? Math.round(imgs[0].img.naturalWidth / imgs[0].w) : (ORE_DIM || 800);
+          var master = document.createElement("canvas"); master.width = dim; master.height = dim;
+          var mc = master.getContext("2d"); mc.imageSmoothingEnabled = false;
+          imgs.forEach(function (o) { mc.drawImage(o.img, Math.round(o.l * dim), Math.round(o.t * dim), Math.round(o.w * dim), Math.round(o.h * dim)); });
+          try { masterData = mc.getImageData(0, 0, dim, dim); } catch (e) { return; }
+          if (!canvas) { canvas = document.createElement("canvas"); canvas.className = "layer ore ore-filter"; canvas.style.width = "100%"; canvas.style.height = "100%"; }
+          canvas.width = dim; canvas.height = dim;
+          oreLayer.style.display = "none";
+          if (canvas.parentElement !== grid) grid.appendChild(canvas);
+          apply();
+        }
+        window.oreToggleAll = function (on) { document.querySelectorAll(".ore-toggle").forEach(function (cb) { cb.checked = on; }); apply(); };
+        document.addEventListener("change", function (e) { if (e.target && e.target.classList && e.target.classList.contains("ore-toggle")) apply(); });
+        function rebuild() { canvas = null; masterData = null; setTimeout(build, 30); }
+        rebuild();
+        document.body.addEventListener("htmx:afterSettle", rebuild);
+      })();
     </script>
   </div>`;
   page(req, res, zone.name, content);
