@@ -330,4 +330,36 @@ pub const Classifier = struct {
         c.wgpuCommandBufferRelease(cmd);
         ctx.poll();
     }
+
+    /// Add a classify compute pass to an existing encoder (no submit) so the
+    /// caller can batch it with other passes into one command buffer. Returns
+    /// the bind group + param buffer, which must stay alive until submit and be
+    /// released afterwards.
+    pub fn classifyInto(self: *Classifier, enc: c.WGPUCommandEncoder, base: Params, x0: i32, y0: i32, cw: u32, ch: u32, out_buf: c.WGPUBuffer) struct { bg: c.WGPUBindGroup, params: c.WGPUBuffer } {
+        var p = base;
+        p.origin_x = @floatFromInt(x0);
+        p.origin_y = @floatFromInt(y0);
+        p.width = cw;
+        p.height = ch;
+        const bp = self.ctx.uploadBuffer(Params, &.{p}, c.WGPUBufferUsage_Uniform);
+        var e = [_]c.WGPUBindGroupEntry{
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bp, .size = @sizeOf(Params) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = self.b_perm1, .size = NGEN * 256 * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 2, .buffer = self.b_perm2, .size = NGEN * 256 * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = self.b_grad, .size = NGEN * 512 * @sizeOf(f32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = self.b_sb, .size = NGEN * @sizeOf(u32) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 5, .buffer = self.b_table, .size = biome.biomes.len * @sizeOf(BiomeGPU) }),
+            std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 6, .buffer = out_buf, .size = @as(u64, cw) * ch * @sizeOf(u32) }),
+        };
+        var bgd = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = self.bgl, .entryCount = e.len, .entries = &e });
+        const bg = c.wgpuDeviceCreateBindGroup(self.ctx.device, &bgd);
+        var pd = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
+        const pass = c.wgpuCommandEncoderBeginComputePass(enc, &pd);
+        c.wgpuComputePassEncoderSetPipeline(pass, self.pipeline);
+        c.wgpuComputePassEncoderSetBindGroup(pass, 0, bg, 0, null);
+        c.wgpuComputePassEncoderDispatchWorkgroups(pass, (cw + 7) / 8, (ch + 7) / 8, 1);
+        c.wgpuComputePassEncoderEnd(pass);
+        c.wgpuComputePassEncoderRelease(pass);
+        return .{ .bg = bg, .params = bp };
+    }
 };

@@ -367,11 +367,23 @@ pub fn main(init: std.process.Init) !void {
         // index (water = >=60000) from the terrain classifier.
         const buf_mask = ctx.makeBuffer(mask_bytes, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
         defer c.wgpuBufferRelease(buf_mask);
+        const zeros = try ca.alloc(u32, npx * 4);
+        @memset(zeros, 0);
+        const buf_win = ctx.uploadBuffer(u32, zeros, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
+        defer c.wgpuBufferRelease(buf_win);
+        const staging = ctx.makeBuffer(win_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
+        defer c.wgpuBufferRelease(staging);
+
+        // One command buffer for the whole cell (mask/classify + every ore pass +
+        // copy) → one submit and one GPU sync per cell instead of ~10.
+        const enc = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
+        const Keep = struct { bg: c.WGPUBindGroup, buf: c.WGPUBuffer };
+        var keep: std.ArrayListUnmanaged(Keep) = .empty;
+
         const tc0 = wgpu.nowNs();
         if (is_field) {
             const p = AsteroidParams{ .origin_x = @floatFromInt(cl.x0), .origin_y = @floatFromInt(cl.y0), .size = @floatCast(ast_size), .freq = @floatCast(ast_freq), .planet_radius = @floatCast(ast_pr), .width = cl.cw, .height = cl.ch, .seed_byte = ag.sb };
             const bp = ctx.uploadBuffer(AsteroidParams, &.{p}, c.WGPUBufferUsage_Uniform);
-            defer c.wgpuBufferRelease(bp);
             var e = [_]c.WGPUBindGroupEntry{
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bp, .size = @sizeOf(AsteroidParams) }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = ab1, .size = 256 * @sizeOf(u32) }),
@@ -379,17 +391,13 @@ pub fn main(init: std.process.Init) !void {
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 3, .buffer = ab3, .size = 512 * @sizeOf(f32) }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 4, .buffer = buf_mask, .size = mask_bytes }),
             };
-            dispatch(&ctx, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
+            const bg = addPass(&ctx, enc, ast_pipe, ast_bgl, &e, cl.cw, cl.ch);
+            try keep.append(ca, .{ .bg = bg, .buf = bp });
         } else {
-            classifier.?.classify(base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
+            const r = classifier.?.classifyInto(enc, base_params, cl.x0, cl.y0, cl.cw, cl.ch, buf_mask);
+            try keep.append(ca, .{ .bg = r.bg, .buf = r.params });
         }
         t_classify += wgpu.nowNs() - tc0;
-
-        // Winner buffer (zeroed).
-        const zeros = try ca.alloc(u32, npx * 4);
-        @memset(zeros, 0);
-        const buf_win = ctx.uploadBuffer(u32, zeros, c.WGPUBufferUsage_Storage | c.WGPUBufferUsage_CopySrc);
-        defer c.wgpuBufferRelease(buf_win);
 
         const to0 = wgpu.nowNs();
         for (res, 0..) |*rr, idx| {
@@ -426,7 +434,6 @@ pub fn main(init: std.process.Init) !void {
                 .restrict_bit = restrictBit(rr.name),
             };
             const bP = ctx.uploadBuffer(OreParams, &.{P}, c.WGPUBufferUsage_Uniform);
-            defer c.wgpuBufferRelease(bP);
             var e = [_]c.WGPUBindGroupEntry{
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 0, .buffer = bP, .size = @sizeOf(OreParams) }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 1, .buffer = rr.b_perm1, .size = 256 * @sizeOf(u32) }),
@@ -438,24 +445,25 @@ pub fn main(init: std.process.Init) !void {
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 7, .buffer = buf_win, .size = win_bytes }),
                 std.mem.zeroInit(c.WGPUBindGroupEntry, .{ .binding = 8, .buffer = b_restrict, .size = restrict_bytes }),
             };
-            dispatch(&ctx, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
+            const bg = addPass(&ctx, enc, ore_pipe, ore_bgl, &e, cl.cw, cl.ch);
+            try keep.append(ca, .{ .bg = bg, .buf = bP });
         }
         t_ore += wgpu.nowNs() - to0;
 
-        // Read winners, paint RGBA (north-up: row 0 = cell y0), encode + write.
+        // Finish the cell's command buffer: copy winners → staging, submit once,
+        // read back (one GPU sync), then release the pass bind groups + params.
         const tr0 = wgpu.nowNs();
-        const staging = ctx.makeBuffer(win_bytes, c.WGPUBufferUsage_MapRead | c.WGPUBufferUsage_CopyDst);
-        defer c.wgpuBufferRelease(staging);
-        {
-            const enc = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
-            c.wgpuCommandEncoderCopyBufferToBuffer(enc, buf_win, 0, staging, 0, win_bytes);
-            const cmd = c.wgpuCommandEncoderFinish(enc, null);
-            c.wgpuCommandEncoderRelease(enc);
-            c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
-            c.wgpuCommandBufferRelease(cmd);
-        }
+        c.wgpuCommandEncoderCopyBufferToBuffer(enc, buf_win, 0, staging, 0, win_bytes);
+        const cmd = c.wgpuCommandEncoderFinish(enc, null);
+        c.wgpuCommandEncoderRelease(enc);
+        c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
+        c.wgpuCommandBufferRelease(cmd);
         const win = try ca.alloc(u32, npx * 4);
         try ctx.readBuffer(staging, u32, win);
+        for (keep.items) |k| {
+            c.wgpuBindGroupRelease(k.bg);
+            c.wgpuBufferRelease(k.buf);
+        }
         t_read += wgpu.nowNs() - tr0;
 
         const te0 = wgpu.nowNs();
@@ -514,11 +522,13 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("gpu_ore: {d} ore tiles across {d} cells in {d:.1} ms\n", .{ tot, cells.len, dt_ms });
 }
 
-fn dispatch(ctx: *wgpu.Context, pipe: c.WGPUComputePipeline, bgl: c.WGPUBindGroupLayout, entries: []c.WGPUBindGroupEntry, w: u32, h: u32) void {
+// Record one compute pass into `enc` (no submit) so a cell's dispatches batch
+// into a single command buffer → one submit + one GPU sync per cell instead of
+// one per dispatch. Returns the bind group (release after submit). Separate
+// passes are auto-barriered by wgpu, preserving the buf_win RMW ordering.
+fn addPass(ctx: *wgpu.Context, enc: c.WGPUCommandEncoder, pipe: c.WGPUComputePipeline, bgl: c.WGPUBindGroupLayout, entries: []c.WGPUBindGroupEntry, w: u32, h: u32) c.WGPUBindGroup {
     var bgd = std.mem.zeroInit(c.WGPUBindGroupDescriptor, .{ .layout = bgl, .entryCount = entries.len, .entries = entries.ptr });
     const bg = c.wgpuDeviceCreateBindGroup(ctx.device, &bgd);
-    defer c.wgpuBindGroupRelease(bg);
-    const enc = c.wgpuDeviceCreateCommandEncoder(ctx.device, null);
     var pd = std.mem.zeroInit(c.WGPUComputePassDescriptor, .{});
     const pass = c.wgpuCommandEncoderBeginComputePass(enc, &pd);
     c.wgpuComputePassEncoderSetPipeline(pass, pipe);
@@ -526,9 +536,5 @@ fn dispatch(ctx: *wgpu.Context, pipe: c.WGPUComputePipeline, bgl: c.WGPUBindGrou
     c.wgpuComputePassEncoderDispatchWorkgroups(pass, (w + 7) / 8, (h + 7) / 8, 1);
     c.wgpuComputePassEncoderEnd(pass);
     c.wgpuComputePassEncoderRelease(pass);
-    const cmd = c.wgpuCommandEncoderFinish(enc, null);
-    c.wgpuCommandEncoderRelease(enc);
-    c.wgpuQueueSubmit(ctx.queue, 1, &cmd);
-    c.wgpuCommandBufferRelease(cmd);
-    ctx.poll();
+    return bg;
 }
