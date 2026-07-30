@@ -24,18 +24,73 @@ npm install github:Ober3550/seed-search
 npx seed-search            # → http://localhost:3456
 ```
 
+The `github:` spec makes `npm` shell out to `git clone`. If `git` isn't on your
+`PATH`, install from the tarball endpoint instead — same package, no `git`:
+
+```sh
+npm install https://github.com/Ober3550/seed-search/tarball/HEAD
+```
+
 ### Option B — clone and run the installer
 
 ```sh
 git clone https://github.com/Ober3550/seed-search.git && cd seed-search
-./install.sh          # macOS / Linux
-.\install.ps1         # Windows (PowerShell)
-node install.mjs      # any platform (the two scripts above just call this)
+node install.mjs      # any platform — this is the installer
 npm start             # → http://localhost:3456
 ```
 
+On **Windows**, from `cmd.exe` or PowerShell:
+
+```bat
+git clone https://github.com/Ober3550/seed-search.git && cd seed-search
+install.cmd
+npm start
+```
+
+`install.cmd` (Windows) and `./install.sh` (macOS / Linux) are one-line
+bootstrappers that do nothing but locate Node and call `install.mjs`.
+
 Both are safe to re-run (every step is idempotent). `node install.mjs
 --build-only` builds just the Zig binaries (skips the server's `npm install`).
+
+### Windows notes
+
+Nothing in the install path is PowerShell, deliberately. `.ps1` files are
+refused under the default `Restricted` ExecutionPolicy on Windows client
+installs, and a `.ps1` downloaded from GitHub carries Mark-of-the-Web so even
+`RemoteSigned` rejects it. `install.cmd` and `node install.mjs` are unaffected,
+and `npm` runs the `postinstall` hook through `cmd.exe`, not PowerShell.
+
+**The policy does still block `npm` itself.** Node's Windows installer ships
+`npm.ps1` alongside `npm.cmd`, and PowerShell prefers the `.ps1`, so under
+`Restricted` every npm command fails before it starts:
+
+```
+npm : File C:\Program Files\nodejs\npm.ps1 cannot be loaded because running
+scripts is disabled on this system.
+```
+
+That message means npm **is** installed and PowerShell refused to run it — a
+missing npm reads `The term 'npm' is not recognized...` instead. The same
+applies to `npx`, and to any CLI installed by npm: it writes `.ps1`, `.cmd` and
+bash shims into `node_modules\.bin`, and PowerShell picks the blocked one.
+
+Pick whichever you prefer:
+
+```powershell
+# Fix it once, per-user, no admin. npm.ps1 is a local file, so RemoteSigned
+# allows it; only downloaded scripts stay blocked.
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+# Or bypass the shim per-command, changing nothing on the machine:
+npm.cmd install github:Ober3550/seed-search
+npm.cmd start
+
+# Or run from cmd.exe instead of PowerShell, which resolves npm.cmd on its own.
+```
+
+None of this affects `install.cmd` or `node install.mjs` — `install.mjs`
+spawns `npm.cmd` explicitly on Windows.
 
 ## Quick start
 

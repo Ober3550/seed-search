@@ -1,0 +1,7 @@
+# cmd.exe is unreliable with LF-only batch files, so keep Windows scripts CRLF
+# on checkout regardless of the platform doing the checkout.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Shell scripts must stay LF even when checked out on Windows.
+*.sh text eol=lf
