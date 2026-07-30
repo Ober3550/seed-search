@@ -10,6 +10,14 @@
   --red: #f85149;
   --orange: #d2991d;
   --purple: #a371f7;
+
+  /* Edge length of the square surface disc on the detail page. Deliberately a
+     static px length, NOT a vh/vw expression: viewport units are pinned to the
+     window, so browser zoom left the disc the same physical size while every
+     label around it grew — zooming in made the map appear to shrink. In px it
+     magnifies with the rest of the page, and `main` scrolls when it no longer
+     fits. Change this one value to make the disc bigger or smaller. */
+  --disc-size: 900px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,6 +31,12 @@ body {
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────── */
+/* The document scrolls, not <main>. The sidebar is an ordinary flex item, so
+   scrolling right moves it off-screen like any other content — it used to be
+   effectively fixed (main was the scroll container with max-height: 100vh),
+   which meant its 220px grew with browser zoom and ate the window with no way
+   to scroll past it. Content wider than the window now overflows to the right
+   and the viewport gets a real horizontal scrollbar. */
 .app {
   display: flex;
   min-height: 100vh;
@@ -70,8 +84,6 @@ body {
 main {
   flex: 1;
   padding: 24px;
-  overflow-y: auto;
-  max-height: 100vh;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────── */
@@ -476,15 +488,18 @@ tr.zone-info:hover { opacity: 1; }
 /* watch layout override: thin meta panel + square surface sized to view height */
 .watch-layout { flex-wrap: nowrap; gap: 16px; }
 .watch-layout .surface-meta { flex: 0 0 240px; max-width: 240px; }
-.watch-layout .watch-grid-col { flex: 1 1 auto; min-width: 0; display: flex; justify-content: flex-start; align-items: flex-start; }
-/* size by viewport (definite) — not parent %, which would be circular and
-   collapse the square. Horizontal budget = sidebar 220 + paddings + 240 panel. */
-.watch-grid-col .surf-grid { width: min(calc(100vh - 130px), calc(100vw - 560px)); max-width: none; }
-@media (max-width: 760px) {
-  .watch-layout { flex-wrap: wrap; }
-  .watch-layout .surface-meta { flex-basis: 100%; max-width: none; }
-  .watch-grid-col .surf-grid { width: min(90vw, 90vh); }
-}
+/* Sized by its content (the fixed-width disc) rather than by the space left
+   over, so the column never squeezes the square when the window is narrow —
+   `main` scrolls instead. */
+.watch-layout .watch-grid-col { flex: 0 0 auto; min-width: 0; display: flex; justify-content: flex-start; align-items: flex-start; }
+/* Static edge length (see --disc-size). Not a % of the parent either, which
+   would be circular and collapse the square. */
+.watch-grid-col .surf-grid { width: var(--disc-size); max-width: none; }
+/* No narrow-window breakpoint here on purpose. A `flex-wrap: wrap` + full-width
+   meta panel below ~760px fires on zoom too — zooming in shrinks the viewport
+   in CSS px, which used to drop the disc onto its own line under the metadata
+   box. Meta and disc stay side by side at every zoom level; scroll right to
+   reach the disc when it does not fit. */
 
 /* grid status now lives in the meta panel (under Regenerate) */
 .grid-status { font-size: 0.85rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -492,7 +507,6 @@ tr.zone-info:hover { opacity: 1; }
 
 /* wider meta card + ore table inset within the card padding */
 .watch-layout .surface-meta { flex: 0 0 300px; max-width: 300px; }
-.watch-grid-col .surf-grid { width: min(calc(100vh - 130px), calc(100vw - 620px)); }
 .surface-meta .data-table { font-size: 0.8rem; }
 .surface-meta .data-table th, .surface-meta .data-table td { padding: 4px 6px; }
 .surface-meta .data-table th:first-child, .surface-meta .data-table td:first-child { padding-left: 0; }
