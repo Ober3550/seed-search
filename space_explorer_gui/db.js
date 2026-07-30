@@ -94,7 +94,9 @@ function initSchema() {
     -- columns getSeeds filters and orders by. (bucket,k2) covers the common bucket
     -- view; the single-column ones serve the all-seeds metric sorts.
     CREATE INDEX IF NOT EXISTS idx_seeds_bucket_k2 ON seeds(bucket, k2);
-    CREATE INDEX IF NOT EXISTS idx_seeds_np ON seeds(np);
+    -- npm (planets+moons) is indexed as idx_seeds_npm by the np-to-npm rename
+    -- guard below (can't live here: this block runs before the rename, so the np
+    -- column may be gone and npm not yet present).
     CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds(naqdv);
     CREATE INDEX IF NOT EXISTS idx_seeds_fdv ON seeds(fdv);
     CREATE INDEX IF NOT EXISTS idx_seeds_npl ON seeds(npl);
@@ -177,7 +179,7 @@ function initSchema() {
     "ALTER TABLE seeds ADD COLUMN expanded INTEGER DEFAULT 0",
     // Per-seed extremity metrics from seedgen (Calidus planets+moons; Δv to the
     // nearest naquium-primary field) — for best/worst sort + range filtering.
-    "ALTER TABLE seeds ADD COLUMN np INTEGER",
+    "ALTER TABLE seeds ADD COLUMN npm INTEGER", // Calidus planets + moons (was `np`)
     "ALTER TABLE seeds ADD COLUMN npl INTEGER", // Calidus planets only (incl Nauvis)
     "ALTER TABLE seeds ADD COLUMN naqdv INTEGER",
     "ALTER TABLE seeds ADD COLUMN fdv INTEGER", // Δv to nearest ANY asteroid field
@@ -217,6 +219,22 @@ function initSchema() {
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
+  }
+  // Rename np (planets+moons) → npm, keeping npl (planets). Guarded so it runs
+  // exactly once: only when the old `np` column is present and `npm` is not, so
+  // re-runs (and fresh DBs, which already get npm) skip it and it can't clobber.
+  {
+    const cols = db.prepare("PRAGMA table_info(seeds)").all().map(c => c.name);
+    if (cols.includes("np") && !cols.includes("npm")) {
+      // Legacy DB: rename the data-carrying np column.
+      db.exec("ALTER TABLE seeds RENAME COLUMN np TO npm");
+      try { db.exec("DROP INDEX IF EXISTS idx_seeds_np"); } catch (_) {}
+    } else if (cols.includes("np") && cols.includes("npm")) {
+      // A stray empty np (re-added by the old ADD COLUMN np migration after a
+      // prior rename) — the data is in npm; drop the leftover.
+      try { db.exec("ALTER TABLE seeds DROP COLUMN np"); } catch (_) {}
+    }
+    try { db.exec("CREATE INDEX IF NOT EXISTS idx_seeds_npm ON seeds(npm)"); } catch (_) {}
   }
   seedPresetFilters();
 }
@@ -477,13 +495,13 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed, wp, ef, score)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, npm, npl, naqdv, fdv, ed, wp, ef, score)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
-        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null,
+        r.npm ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null,
         seedScore(r) ?? null);
     }
   });
@@ -497,7 +515,7 @@ function getSeeds(filter = {}) {
   // them for up to 2000 rows dominated the query time on the multi-GB table.
   // `criteria` (the cached analyze result) is only needed when a rule filter is
   // active; it's large-ish, so keep it out of the plain list for speed.
-  const cols = "seed, job_id, bucket, loot, k2, zone_count, created_at, expanded, np, npl, naqdv, fdv, ed, wf, ef, wp, score" +
+  const cols = "seed, job_id, bucket, loot, k2, zone_count, created_at, expanded, npm, npl, naqdv, fdv, ed, wf, ef, wp, score" +
     (filter.withCriteria ? ", criteria" : "");
   let sql = `SELECT ${cols} FROM seeds WHERE 1=1`;
   const params = [];
@@ -512,7 +530,7 @@ function getSeeds(filter = {}) {
     if (min != null && min !== "") { sql += ` AND ${col} >= ?`; params.push(Number(min)); }
     if (max != null && max !== "") { sql += ` AND ${col} <= ?`; params.push(Number(max)); }
   };
-  range("np", filter.np_min, filter.np_max);
+  range("npm", filter.npm_min, filter.npm_max);
   range("naqdv", filter.naqdv_min, filter.naqdv_max);
   range("fdv", filter.fdv_min, filter.fdv_max);
   // `ed` (mean enemy INTENSITY) is still computed and stored, but no longer
@@ -537,7 +555,7 @@ function getSeeds(filter = {}) {
     score_desc: "score DESC", score_asc: "score ASC",
     seed: "seed", seed_desc: "seed DESC",
     npl_desc: "npl DESC", npl_asc: "npl ASC",
-    np_desc: "np DESC", np_asc: "np ASC",
+    npm_desc: "npm DESC", npm_asc: "npm ASC",
     naqdv_asc: "naqdv ASC", naqdv_desc: "naqdv DESC",
     fdv_asc: "fdv ASC", fdv_desc: "fdv DESC",
     wp_desc: "wp DESC", wp_asc: "wp ASC",
@@ -572,7 +590,7 @@ function countSeeds(filter = {}) {
     if (min != null && min !== "") { sql += ` AND ${c} >= ?`; params.push(Number(min)); }
     if (max != null && max !== "") { sql += ` AND ${c} <= ?`; params.push(Number(max)); }
   };
-  range("np", filter.np_min, filter.np_max);
+  range("npm", filter.npm_min, filter.npm_max);
   range("naqdv", filter.naqdv_min, filter.naqdv_max);
   range("fdv", filter.fdv_min, filter.fdv_max);
   range("wp", filter.wp_min, filter.wp_max);
@@ -591,7 +609,7 @@ function countSeeds(filter = {}) {
 // holds one giant transaction over the multi-GB table.
 function backfillScores({ batch = 20000 } = {}) {
   const d = getDb();
-  const sel = d.prepare("SELECT seed, np, ef, wp, naqdv, fdv FROM seeds WHERE seed > ? ORDER BY seed LIMIT ?");
+  const sel = d.prepare("SELECT seed, npl, ef, wp, naqdv, fdv FROM seeds WHERE seed > ? ORDER BY seed LIMIT ?");
   const upd = d.prepare("UPDATE seeds SET score = ? WHERE seed = ?");
   let last = -1, total = 0;
   for (;;) {
@@ -611,12 +629,12 @@ function getSeed(seed) {
 
 // Mark a seed as fully expanded (all zones ingested) + refresh its stored line
 // and zone_count. Called by the seed-detail expand job after upserting zones.
-function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl, fdv) {
+function markSeedExpanded(seed, line, zoneCount, criteria, npm, naqdv, ed, npl, fdv) {
   getDb().prepare(`UPDATE seeds SET expanded = 1, line = ?, zone_count = ?,
       criteria = COALESCE(?, criteria),
-      np = COALESCE(?, np), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv),
+      npm = COALESCE(?, npm), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv),
       fdv = COALESCE(?, fdv), ed = COALESCE(?, ed) WHERE seed = ?`)
-    .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, fdv ?? null, ed ?? null, seed);
+    .run(line, zoneCount, criteria || null, npm ?? null, npl ?? null, naqdv ?? null, fdv ?? null, ed ?? null, seed);
 }
 
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.

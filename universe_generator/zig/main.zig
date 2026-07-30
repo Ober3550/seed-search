@@ -384,7 +384,7 @@ pub fn main(init: std.process.Init) !void {
         // Per-seed metrics ride in the header: np (Calidus planets+moons) and
         // naqdv (nearest naquium-primary field Δv) — so both extremes are
         // sortable/filterable even though only Calidus zones are stored.
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"nw\":{d},\"ne\":{d},\"wp\":{d},\"ef\":{d},\"naqdv\":{d},\"fdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"npm\":{d},\"nw\":{d},\"ne\":{d},\"wp\":{d},\"ef\":{d},\"naqdv\":{d},\"fdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
         pos += open.len;
 
         // calidus_zi / zone_end were computed above (for the metrics). The default

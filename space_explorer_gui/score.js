@@ -26,7 +26,10 @@ const NAQ_ACCESS_W = 0.20;
 // `exp` is the odd-power emphasis for that component (see oddPow): higher =
 // flatter middle, so only near-extreme values of that metric move the score.
 const SCORE_METRICS = [
-  { key: "np", w: 0.60, lo: 16, hi: 40, higherIsBetter: true, exp: 9 }, // planets
+  // Planets = npl (Calidus PLANETS only), not np (planets+moons ≈ system size).
+  // Stored range 6..14 (min 6 is the floor — 94% of seeds sit there), so 6 → -100,
+  // 14 → +100; with exp 9 only the rare multi-planet seeds rise.
+  { key: "npl", w: 0.60, lo: 6, hi: 14, higherIsBetter: true, exp: 9 }, // planets
   { key: "ef", w: 0.15, lo: 52, hi: 84, higherIsBetter: false, exp: 7 }, // hostile%
   { key: "wp", w: 0.05, lo: 50, hi: 88, higherIsBetter: true, exp: 3 }, // water%
 ];

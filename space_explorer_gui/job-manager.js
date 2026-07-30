@@ -525,7 +525,7 @@ async function importBucket(filePath, jobId, label) {
       zone_count: data.z.length,
       line,
       criteria,
-      np: data.np ?? null,
+      npm: data.npm ?? null,
       npl: data.npl ?? null,
       naqdv: data.naqdv ?? null,
       fdv: data.fdv ?? null,
@@ -669,7 +669,7 @@ function expandSeed(seed) {
     const n = upsertWorldZones(data, row.job_id);
     let criteria = null;
     try { criteria = JSON.stringify(analyze.evaluateWorld(data)); } catch (_) {}
-    db.markSeedExpanded(seed, line, n, criteria, data.np ?? null, data.naqdv ?? null, data.ed ?? null, data.npl ?? null, data.fdv ?? null);
+    db.markSeedExpanded(seed, line, n, criteria, data.npm ?? null, data.naqdv ?? null, data.ed ?? null, data.npl ?? null, data.fdv ?? null);
     console.log(`[expand ${seed}] ingested ${n} zones (full universe)`);
   });
   child.on("error", e => { expandInFlight.delete(seed); console.log(`[expand ${seed}] spawn: ${e.message}`); });
@@ -727,11 +727,11 @@ function generateSeed(seed, k2 = false) {
       db.insertSeeds([{
         seed: data.s, job_id: null, bucket, loot: data.l || "", k2: !!data.k,
         zone_count: data.z.length, line, criteria,
-        np: data.np ?? null, npl: data.npl ?? null, naqdv: data.naqdv ?? null,
+        npm: data.npm ?? null, npl: data.npl ?? null, naqdv: data.naqdv ?? null,
         fdv: data.fdv ?? null, ed: data.ed ?? null, wp: data.wp ?? null, ef: data.ef ?? null,
       }]);
       const n = upsertWorldZones(data, null);
-      db.markSeedExpanded(seed, line, n, criteria, data.np ?? null, data.naqdv ?? null,
+      db.markSeedExpanded(seed, line, n, criteria, data.npm ?? null, data.naqdv ?? null,
         data.ed ?? null, data.npl ?? null, data.fdv ?? null);
       console.log(`[generate ${seed}] ingested ${n} zones into ${bucket}`);
       resolve({ seed, existed: false, bucket, zones: n });

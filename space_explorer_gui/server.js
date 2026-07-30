@@ -360,7 +360,7 @@ app.get("/seeds", (req, res) => {
   const countMode = (req.query.count === "1") && rules.length > 0;
 
   // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
-  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, wp_min: req.query.wp_min, wp_max: req.query.wp_max, ef_min: req.query.ef_min, ef_max: req.query.ef_max };
+  const rng = { npm_min: req.query.npm_min, npm_max: req.query.npm_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, wp_min: req.query.wp_min, wp_max: req.query.wp_max, ef_min: req.query.ef_min, ef_max: req.query.ef_max };
   const seedQ = (req.query.seed || "").toString().trim();
   const sort = req.query.sort || "score_desc";           // default: best score first
   const filterActive = rules.length > 0;
@@ -504,7 +504,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
         <th>Bucket</th><th>K2</th><th>Loot</th>
         ${f.count ? `<th title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches</th>` : ""}
         ${sortTh("Planets", "npl", "Calidus system planets only (incl. Nauvis) — click for most / fewest")}
-        ${sortTh("P+M", "np", "Calidus system planets + moons (incl. Nauvis) — click for most / fewest")}
+        ${sortTh("P+M", "npm", "Calidus system planets + moons (incl. Nauvis) — click for most / fewest")}
         ${sortTh("Naq Δv", "naqdv", "Δv to nearest naquium-PRIMARY field — click for furthest / closest")}
         ${sortTh("Field Δv", "fdv", "Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest / closest")}
         ${sortTh("Hostile%", "ef", "share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile / quietest")}
@@ -519,12 +519,12 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
           const gen = genCounts[s.seed] || 0;
           const score = s.score; // stored (score.js), computed at insert
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ef="${s.ef ?? 0}" data-wp="${s.wp ?? 0}" data-score="${score ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-npm="${s.npm ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ef="${s.ef ?? 0}" data-wp="${s.wp ?? 0}" data-score="${score ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
           <td>${s.npl ?? "—"}</td>
-          <td>${s.np ?? "—"}</td>
+          <td>${s.npm ?? "—"}</td>
           <td>${s.naqdv == null ? "—" : (s.naqdv >= NO_NAQ_DV ? "none" : s.naqdv.toLocaleString())}</td>
           <td>${s.fdv == null ? "—" : (s.fdv >= NO_NAQ_DV ? "none" : s.fdv.toLocaleString())}</td>
           <td>${s.ef == null ? "—" : s.ef + "%"}</td>
