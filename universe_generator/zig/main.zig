@@ -96,19 +96,44 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
-        // Calidus home system bounds = [calidus_zi, zone_end) (up to the next
-        // star). Used by both the metrics below and serialization.
+        // Calidus home system membership. The zone list is laid out as:
+        //   [ ...star systems (Calidus among them)... ][ asteroid-fields ][ tail ]
+        // Calidus's Phase-5 bodies (Nauvis + planets/moons/belts) sit contiguously
+        // right after the "Calidus" star zone, up to the next star (or the first
+        // asteroid-field, if Calidus is the LAST star). BUT every special-resource
+        // body (vulcanite/vitamelange/iridium/holmium/cryonite/beryllium/methane
+        // planets & moons, haven, kr-imersite) is added in Phase 6 and appended to
+        // the TAIL — after all asteroid-fields — and is ALSO a Calidus home-system
+        // member. So the home system = [calidus_zi, zone_end) ∪ [tail_start, end).
+        // (Everything after the last asteroid-field is Phase-6 Calidus-only.)
         const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
         var zone_end: usize = universe.zones.items.len;
         for (universe.zones.items[calidus_zi + 1 ..], calidus_zi + 1..) |z, si| {
-            if (z.ztype == .star) {
+            if (z.ztype == .star or z.ztype == .@"asteroid-field") {
                 zone_end = si;
                 break;
             }
         }
+        var tail_start: usize = universe.zones.items.len;
+        {
+            var ti = universe.zones.items.len;
+            while (ti > 0) {
+                ti -= 1;
+                if (universe.zones.items[ti].ztype == .@"asteroid-field") {
+                    tail_start = ti + 1;
+                    break;
+                }
+            }
+        }
+        // A zone index is a Calidus home-system member iff it's in either range.
+        const inCalidus = struct {
+            fn f(si: usize, czi: usize, zend: usize, tstart: usize) bool {
+                return (si >= czi and si < zend) or si >= tstart;
+            }
+        }.f;
 
         // --- Per-seed metrics (drive the tail filters AND ride in the JSONL) ---
-        // np: planets + moons in the Calidus home system (excl. Nauvis). Planet
+        // np: planets + moons in the Calidus home system (incl. Nauvis). Planet
         // counts across other stars are ~constant, so Calidus carries the signal.
         // ed: PROPORTIONAL enemy danger — mean enemy level (0..6) over the Calidus
         // planets+moons, scaled to 0..100%. Mean (not sum) so a few high-enemy
@@ -117,7 +142,8 @@ pub fn main(init: std.process.Init) !void {
         var np: u32 = 0; // Calidus planets + moons (incl Nauvis)
         var enemy_sum: u32 = 0;
         var enemy_cnt: u32 = 0;
-        for (universe.zones.items[calidus_zi..zone_end]) |z| {
+        for (universe.zones.items, 0..) |z, si| {
+            if (!inCalidus(si, calidus_zi, zone_end, tail_start)) continue;
             if (z.ztype != .planet and z.ztype != .moon) continue;
             np += 1; // planet+moon, INCLUDING Nauvis (matches in-game)
             if (z.ztype == .planet) npl += 1;
@@ -229,7 +255,7 @@ pub fn main(init: std.process.Init) !void {
         // resources from the same emit code below.
         var zi: u32 = 0;
         for (universe.zones.items, 0..) |z, si| {
-            if (!all_zones and (si < calidus_zi or si >= zone_end)) continue; // Calidus system only
+            if (!all_zones and !inCalidus(si, calidus_zi, zone_end, tail_start)) continue; // Calidus home system (Phase-5 slice + Phase-6 tail)
             // Nauvis uses map-gen UI settings, not universe generation
             if (std.mem.eql(u8, z.name, "Nauvis")) continue;
             // Orbits carry no resource data

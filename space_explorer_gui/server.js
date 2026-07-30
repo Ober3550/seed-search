@@ -303,7 +303,7 @@ function renderUniversePage(jobsList) {
             <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="38000" min="0" step="500" style="width:6em" placeholder="off">
           </div>
           <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most)">
-            <input type="number" name="pl_lo" value="4" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="41" min="0" style="width:4em" placeholder="off">
+            <input type="number" name="pl_lo" value="13" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
           </div>
         </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
