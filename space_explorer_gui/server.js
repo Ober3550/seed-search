@@ -1140,11 +1140,15 @@ function renderRuleRow(rule = null, disabled = false) {
   const emVal = nr && nr.enemyMax != null ? nr.enemyMax : "";
   const emOpts = `<option value="">enemy: any</option>` +
     analyze.ENEMY_LEVELS.map((lvl, i) => `<option value="${i}" ${emVal === i ? "selected" : ""}>enemy ≤ ${lvl}</option>`).join("");
+  const wmVal = nr && nr.waterMin != null ? nr.waterMin : "";
+  const wmOpts = `<option value="">water: any</option>` +
+    analyze.WATER_LEVELS.map((lvl, i) => `<option value="${i}" ${wmVal === i ? "selected" : ""}>water ≥ ${lvl}</option>`).join("");
   return `<div class="rule-row">
     <label class="prim-check" title="require this body's PRIMARY to be the first resource (core fragments)">
       <input type="checkbox" name="primary" ${primChecked} ${dis}> primary</label>
     <span class="res-selects">${resList.map(v => resSelect(v, disabled)).join("")}</span>
     <select name="enemyMax" title="only accept a surface whose enemy tag is at most this (blank = any)" ${dis}>${emOpts}</select>
+    <select name="waterMin" title="only accept a surface whose water tag is at least this (blank = any)" ${dis}>${wmOpts}</select>
     ${dis ? "" : `<button type="button" class="btn-sm" title="add another resource to this rule" onclick="addRes(this)">+</button>
     <button type="button" class="btn-sm ghost" title="remove a resource (or the rule if it's the last)" onclick="removeRes(this)">−</button>`}
   </div>`;
@@ -1214,7 +1218,9 @@ function renderPresetsPage(defs) {
           const res = [...row.querySelectorAll("select[name=res]")].map(function (s) { return s.value; }).filter(Boolean);
           const em = row.querySelector("select[name=enemyMax]");
           const enemyMax = em && em.value !== "" ? Number(em.value) : null;
-          return res.length ? { primary: !!(chk && chk.checked), res: res, enemyMax: enemyMax } : null;
+          const wm = row.querySelector("select[name=waterMin]");
+          const waterMin = wm && wm.value !== "" ? Number(wm.value) : null;
+          return res.length ? { primary: !!(chk && chk.checked), res: res, enemyMax: enemyMax, waterMin: waterMin } : null;
         }).filter(Boolean);
       }
       function addRule(btn) {
@@ -1253,6 +1259,7 @@ function parseRules(body) {
       primary: !!r.primary,
       res: Array.isArray(r.res) ? r.res.filter(Boolean) : [],
       enemyMax: (r.enemyMax === 0 || (r.enemyMax != null && r.enemyMax !== "")) ? Number(r.enemyMax) : null,
+      waterMin: (r.waterMin === 0 || (r.waterMin != null && r.waterMin !== "")) ? Number(r.waterMin) : null,
     }))
     .filter(r => r.res.length > 0);
 }

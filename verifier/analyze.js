@@ -455,6 +455,7 @@ function evaluateWorld(seedRaw) {
     dv: Math.round(b.delta_v || 0),
     primary: primaryResource(b),
     enemy: enemyOrd(b.tags && b.tags.enemy),  // 0..6 danger ordinal (0 = none)
+    water: waterOrd(b.tags && b.tags.water),  // 0..4 amount ordinal (0 = none)
     present: Object.entries(b.resource || {})
       .filter(([, v]) => v > 0)
       .map(([k]) => noColor(k)),
@@ -508,19 +509,36 @@ function enemyMaxOrd(rule) {
   return /^\d+$/.test(s) ? Number(s) : (ENEMY_LEVELS.includes(s.replace("enemy_", "")) ? enemyOrd(s) : null);
 }
 
+// Water amount ordinal: none=0 … max=4 (matches data.zig Water enum).
+const WATER_LEVELS = ["none", "low", "med", "high", "max"];
+function waterOrd(tag) {
+  if (tag == null || tag === "") return 0;
+  const i = WATER_LEVELS.indexOf(String(tag).replace("water_", ""));
+  return i < 0 ? 0 : i;
+}
+// Parse a rule's optional water-min into an ordinal (0..4) or null (no floor).
+function waterMinOrd(rule) {
+  const v = rule.waterMin;
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const s = String(v);
+  return /^\d+$/.test(s) ? Number(s) : (WATER_LEVELS.includes(s.replace("water_", "")) ? waterOrd(s) : null);
+}
+
 function normalizeRule(rule) {
   if (!rule || typeof rule !== "object") return null;
   const em = enemyMaxOrd(rule);
+  const wm = waterMinOrd(rule);
   switch (rule.kind) {
-    case "primary": return { primary: true, res: [rule.res].filter(Boolean), enemyMax: em };
-    case "present": return { primary: false, res: [rule.res].filter(Boolean), enemyMax: em };
-    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em };
-    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em };
+    case "primary": return { primary: true, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm };
+    case "present": return { primary: false, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm };
+    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm };
+    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm };
     case "specials":
     case "pairs": return null;
     default: {
       const res = Array.isArray(rule.res) ? rule.res.filter(Boolean) : (rule.res ? [rule.res] : []);
-      return { primary: !!rule.primary, res, enemyMax: em };
+      return { primary: !!rule.primary, res, enemyMax: em, waterMin: wm };
     }
   }
 }
@@ -554,7 +572,8 @@ function matchFilter(crit, rules) {
     const b = pick((x) =>
       nr.res.every((r) => (x.present || []).includes(r)) &&
       (!nr.primary || x.primary === nr.res[0]) &&
-      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax));
+      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax) &&
+      (nr.waterMin == null || (x.water || 0) >= nr.waterMin));
     if (!b) return { match: false, zones: [] };
     used.add(b.name);
     zones.add(b.name);
@@ -596,7 +615,8 @@ function countMatches(crit, rules) {
       !used.has(x.name) &&
       nr.res.every((r) => (x.present || []).includes(r)) &&
       (!nr.primary || x.primary === nr.res[0]) &&
-      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax));
+      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax) &&
+      (nr.waterMin == null || (x.water || 0) >= nr.waterMin));
     if (b) { used.add(b.name); n++; }
   }
   return n;
@@ -611,13 +631,14 @@ function ruleLabel(rule) {
   if (!nr || nr.res.length === 0) return "—";
   const names = nr.res.map(nm);
   const em = nr.enemyMax == null ? "" : ` · enemy ≤ ${ENEMY_LEVELS[nr.enemyMax] || nr.enemyMax}`;
+  const wm = nr.waterMin == null ? "" : ` · water ≥ ${WATER_LEVELS[nr.waterMin] || nr.waterMin}`;
   if (nr.primary) {
-    return (names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`) + em;
+    return (names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`) + em + wm;
   }
-  return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em;
+  return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em + wm;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule, ENEMY_LEVELS };
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below
