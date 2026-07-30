@@ -140,6 +140,44 @@ pub fn main(init: std.process.Init) !void {
         const field_primaries = gen.resolveFieldPrimaries(a, universe.zones, k2_enabled) catch unreachable;
         gen.computeGravityWells(&universe);
 
+        if (getEnvBool("DUMP_TREE")) {
+            // Special (Phase-6) moons live at/after the last asteroid-field and sort
+            // to the FRONT of their planet (add_special_moon inserts at index 1) —
+            // the same order computeGravityWells uses and the game shows.
+            var ts: usize = universe.zones.items.len;
+            var ti = universe.zones.items.len;
+            while (ti > 0) {
+                ti -= 1;
+                if (universe.zones.items[ti].ztype == .@"asteroid-field") {
+                    ts = ti + 1;
+                    break;
+                }
+            }
+            for (universe.zones.items, 0..) |pz, pi| {
+                if (pz.ztype != .planet) continue;
+                const pidx: i32 = @intCast(pi);
+                var line: [512]u8 = undefined;
+                const w = std.fmt.bufPrint(&line, "# {s}:", .{pz.name}) catch continue;
+                var end = w.len;
+                var mi = universe.zones.items.len;
+                while (mi > ts) {
+                    mi -= 1;
+                    const cz = universe.zones.items[mi];
+                    if (cz.ztype == .moon and cz.parent_index == pidx) {
+                        const seg = std.fmt.bufPrint(line[end..], " {s}", .{cz.name}) catch break;
+                        end += seg.len;
+                    }
+                }
+                for (universe.zones.items[0..ts]) |cz| {
+                    if (cz.ztype == .moon and cz.parent_index == pidx) {
+                        const seg = std.fmt.bufPrint(line[end..], " {s}", .{cz.name}) catch break;
+                        end += seg.len;
+                    }
+                }
+                std.debug.print("{s}\n", .{line[0..end]});
+            }
+        }
+
         const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;

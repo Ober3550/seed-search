@@ -20,3 +20,16 @@ Adalind 6955
 Frost 7161
 Morpheus 7375
 Toucan 8212
+
+# Calidus home-system TREE (parent: ordered children), the game's ground truth.
+# Delta-v depends entirely on this tree (gravity wells are a function of each
+# body's ordered position among its siblings). Damia is the vulcanite planet —
+# closest to Calidus, no moons (like Mercury). Verified: generator matches EXACTLY
+# (run with DUMP_TREE=1).
+# Calidus: Damia Nauvis Rivos "Calidus Asteroid Belt 1" Adalind Morpheus Toucan "Calidus Asteroid Belt 2"
+# Nauvis:  Erio Abaddon Ettenor
+# Rivos:   Shire Jasbury Neuranto
+# Adalind: Hadur Exallander Gearofen Plenai
+# Morpheus: Tazer
+# Toucan:  Frost
+# Damia:   (none)
