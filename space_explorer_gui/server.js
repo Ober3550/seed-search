@@ -297,7 +297,7 @@ function renderUniversePage(jobsList) {
       <form hx-post="/api/universe/create" hx-swap="none"
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
-        <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="0" min="0" step="${bs}" placeholder="auto"></label>
+        <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="" min="0" step="${bs}" placeholder="auto (continue after last bucket)"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
           <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 100/100k. Blank = end off.</legend>
           <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~25/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k)">
