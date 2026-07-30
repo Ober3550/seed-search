@@ -68,6 +68,18 @@ pub fn main(init: std.process.Init) !void {
     while (seed <= end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
+        // A degenerate RNG draw (gen.zig, Rng.int1) is a point where SE's own
+        // arithmetic yields an out-of-range index. Tags reproduce SE exactly
+        // (the tag stays unset); the shuffle/index sites cannot, because SE
+        // corrupts or errors there. Either way the seed is worth naming so it
+        // can be excluded from conformance work. The defer runs per iteration,
+        // including on `continue`.
+        gen.degen_draws = 0;
+        defer if (gen.degen_draws > 0) std.debug.print(
+            "# DEGENERATE seed {d}: {d} out-of-range RNG draw(s), universe not conformance-verified\n",
+            .{ seed, gen.degen_draws },
+        );
+
         if (seed > start_seed and (seed - start_seed) % 2000 == 0) {
             const now = std.Io.Clock.awake.now(io).nanoseconds;
             const elapsed_s: f64 = @as(f64, @floatFromInt(now - t_start)) / 1_000_000_000.0;

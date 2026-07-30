@@ -4,6 +4,15 @@
 const std = @import("std");
 pub fn ArrayList(comptime T: type) type { return std.array_list.AlignedManaged(T, null); }
 
+/// Count of degenerate draws (see Rng.int1) since the last reset. A universe
+/// generated while this was incremented hit a draw where SE's own arithmetic
+/// produces an out-of-range index, so it is only as well-defined as SE is at
+/// that point — main.zig reports the seed so it can be excluded from
+/// conformance-sensitive work. Process is single-threaded, so a plain global is
+/// enough; computeTags builds a throwaway Rng per zone, so a per-instance
+/// counter could not be aggregated.
+pub var degen_draws: u32 = 0;
+
 pub const Rng = struct {
     s1: u32, s2: u32, s3: u32, draw: u32 = 0,
     pub fn initFactorio(seed: u32) Rng {
@@ -17,8 +26,35 @@ pub const Rng = struct {
         return self.s1 ^ self.s2 ^ self.s3;
     }
     pub fn float(self: *Rng) f64 { return @as(f64, @floatFromInt(self.next())) * 2.3283064365386963e-10; }
-    pub fn int1(self: *Rng, n: u32) u32 { return @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(n)) - 0.0000001))) + 1; }
-    pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 { return lo + @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001))); }
+
+    /// Factorio's `crng(n)` — a 1-based index in [1, n].
+    ///
+    /// The Lua reference (universe_generator/lua/rng.lua:17, and Factorio's own
+    /// generator) computes `math.floor(float * n - 0.0000001) + 1`. When the
+    /// draw is small enough that `float * n < 1e-7`, that floors to -1 and the
+    /// expression yields **0** — an out-of-range index. Lua returns 0 happily;
+    /// Zig cannot convert a negative f64 to u32 at all (it is illegal, and in
+    /// ReleaseFast produced a garbage index and an access violation).
+    ///
+    /// So return 0 exactly as Lua does. 0 means "no index" and every call site
+    /// must handle it; see gen.zig's tag assignment for the semantics SE gives
+    /// it (the tag is simply never set). The draw is consumed either way, which
+    /// is what keeps the RNG stream aligned with the reference.
+    pub fn int1(self: *Rng, n: u32) u32 {
+        const v = @floor(self.float() * @as(f64, @floatFromInt(n)) - 0.0000001);
+        if (v < 0) { degen_draws += 1; return 0; }
+        return @as(u32, @intFromFloat(v)) + 1;
+    }
+
+    /// Factorio's `crng(lo, hi)` — an index in [lo, hi]. Same degenerate case as
+    /// int1: Lua yields `lo - 1`. Both call sites pass lo >= 1 (80, and a
+    /// planet count that is always >= 1), so the saturation below is
+    /// unreachable in practice; it exists so this can never wrap.
+    pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 {
+        const v = @floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001);
+        if (v < 0) { degen_draws += 1; return lo -| 1; }
+        return lo + @as(u32, @intFromFloat(v));
+    }
 };
 
 pub const data = @import("data.zig");
@@ -74,20 +110,34 @@ fn zoneRadius(zones: ArrayList(Zone), byName: std.StringHashMapUnmanaged(u32), n
     return 0;
 }
 
-fn shuffleBodies(rng: *Rng, slice: []Body) void {
+/// Fisher–Yates, matching SE's util.shuffle_with_generator (scripts/util.lua:67):
+///     for i = #tbl, 2, -1 do
+///       local rand = random_generator(i)
+///       tbl[i], tbl[rand] = tbl[rand], tbl[i]
+///     end
+///
+/// On a degenerate draw (see Rng.int1) SE gets rand == 0 and evaluates
+/// `tbl[i], tbl[0] = tbl[0], tbl[i]`. In a 1-based Lua table `tbl[0]` is nil, so
+/// this ASSIGNS NIL TO tbl[i] — it destroys the element and parks the value at
+/// index 0, leaving a hole that breaks `#tbl` and `ipairs`. That is upstream
+/// corruption, not a behaviour worth reproducing, and a nil hole has no
+/// representation in a Zig slice. We skip the swap instead and record it in
+/// degen_draws, so affected seeds can be identified rather than silently trusted.
+fn shuffleSlice(comptime T: type, rng: *Rng, slice: []T) void {
     var i: usize = slice.len;
-    while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = slice[i]; slice[i] = slice[j]; slice[j] = t; }
+    while (i > 1) {
+        i -= 1;
+        const j = rng.int1(@intCast(i + 1));
+        if (j == 0) continue; // degenerate draw — see above
+        const t = slice[i]; slice[i] = slice[j - 1]; slice[j - 1] = t;
+    }
 }
 
-fn shufflePlanets(rng: *Rng, slice: []Planet) void {
-    var i: usize = slice.len;
-    while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = slice[i]; slice[i] = slice[j]; slice[j] = t; }
-}
+fn shuffleBodies(rng: *Rng, slice: []Body) void { shuffleSlice(Body, rng, slice); }
 
-fn shuffleNames(rng: *Rng, names: [][]const u8) void {
-    var i: usize = names.len;
-    while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = names[i]; names[i] = names[j]; names[j] = t; }
-}
+fn shufflePlanets(rng: *Rng, slice: []Planet) void { shuffleSlice(Planet, rng, slice); }
+
+fn shuffleNames(rng: *Rng, names: [][]const u8) void { shuffleSlice([]const u8, rng, names); }
 
 fn pickShuffledName(rng: *Rng, alloc: std.mem.Allocator, const_names: []const []const u8, zones: ArrayList(Zone)) ![]const u8 {
     const names = try alloc.alloc([]const u8, const_names.len);
@@ -102,10 +152,7 @@ fn pickShuffledName(rng: *Rng, alloc: std.mem.Allocator, const_names: []const []
     return result orelse @panic("No unused name in pool");
 }
 
-fn shuffleMoons(rng: *Rng, moons: [][]const u8) void {
-    var i: usize = moons.len;
-    while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = moons[i]; moons[i] = moons[j]; moons[j] = t; }
-}
+fn shuffleMoons(rng: *Rng, moons: [][]const u8) void { shuffleSlice([]const u8, rng, moons); }
 
 fn sortByPriority(slice: []Body) void {
     var keys: [600]i32 = undefined;
@@ -213,6 +260,19 @@ pub const Tags = struct {
     enemy: ?data.Enemy,
 };
 
+/// Index a tag table with a 1-based index from `Rng.int1`, Lua-style.
+///
+/// `idx == 0` is the degenerate draw described on `Rng.int1`: SE evaluates
+/// `X_tags[0]`, which is nil in a 1-based Lua table, and assigning nil leaves
+/// the tag unset. Returning null here reproduces that exactly — the JSONL
+/// writer omits null tags, and the resource predicates (`hasStrongClaim`,
+/// `isPrimaryEligible`, `computeZoneResourceControls`) all test `!= null` first,
+/// which is the direct analogue of SE's `pairs()` skipping an absent key.
+fn tagAt(comptime E: type, table: []const E, idx: u32) ?E {
+    if (idx == 0 or idx > table.len) return null;
+    return table[idx - 1];
+}
+
 pub fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
     if (tag_str) |s| {
         inline for (@typeInfo(E).@"enum".fields) |f| {
@@ -247,13 +307,23 @@ pub fn computeTags(zone_seed: u32, name: []const u8, bodyMap: ?std.StringHashMap
         }
     }
 
+    // Every assignment below mirrors SE's `zone.tags.X = X_tags[crng(#X_tags)]`
+    // (space-exploration 0.7.57, scripts/universe.lua:1605-1645). A degenerate
+    // draw makes crng return 0, SE indexes `X_tags[0]` = nil, and assigning nil
+    // to a Lua table leaves the key ABSENT — the tag is simply never set, and
+    // `Universe.apply_control_tags` (universe.lua:1507) iterates `pairs(tags)`
+    // so it never sees the missing domain and never raises "Invalid tag".
+    // `tagAt` reproduces that: index 0 leaves the tag null.
+
     // Temperature
     if (tags.temperature == null) {
-        tags.temperature = temperature_tags[crng.int1(@intCast(temperature_tags.len)) - 1];
+        tags.temperature = tagAt(data.Temperature, &temperature_tags, crng.int1(@intCast(temperature_tags.len)));
     }
 
     // Water, moisture, trees
     if (tags.water == null or tags.moisture == null or tags.trees == null) {
+        // SE uses crng(1, 5) here; int1(5) is the same expression, degenerate
+        // case included (both yield 0). @min(x, 0) == 0 matches Lua's math.min.
         var rng_water: u32 = 1;
         var rng_moisture: u32 = 1;
         var rng_trees: u32 = 1;
@@ -270,24 +340,24 @@ pub fn computeTags(zone_seed: u32, name: []const u8, bodyMap: ?std.StringHashMap
         }
         rng_trees = @min(rng_trees, crng.int1(5));
 
-        if (tags.water == null) tags.water = water_tags[rng_water - 1];
-        if (tags.moisture == null) tags.moisture = moisture_tags[rng_moisture - 1];
-        if (tags.trees == null) tags.trees = trees_tags[rng_trees - 1];
+        if (tags.water == null) tags.water = tagAt(data.Water, &water_tags, rng_water);
+        if (tags.moisture == null) tags.moisture = tagAt(data.Moisture, &moisture_tags, rng_moisture);
+        if (tags.trees == null) tags.trees = tagAt(data.Trees, &trees_tags, rng_trees);
     }
 
     // Enemy
     if (tags.enemy == null) {
-        tags.enemy = enemy_tags[crng.int1(@intCast(enemy_tags.len)) - 1];
+        tags.enemy = tagAt(data.Enemy, &enemy_tags, crng.int1(@intCast(enemy_tags.len)));
     }
 
     // Aux
     if (tags.aux == null) {
-        tags.aux = aux_tags[crng.int1(@intCast(aux_tags.len)) - 1];
+        tags.aux = tagAt(data.Aux, &aux_tags, crng.int1(@intCast(aux_tags.len)));
     }
 
     // Cliff
     if (tags.cliff == null) {
-        tags.cliff = cliff_tags[crng.int1(@intCast(cliff_tags.len)) - 1];
+        tags.cliff = tagAt(data.Cliff, &cliff_tags, crng.int1(@intCast(cliff_tags.len)));
     }
 
     return tags;
@@ -1398,7 +1468,7 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
 
     shuffleBodies(&rng, moons);
     var star_order: [31]u32 = undefined; for (0..31) |i| star_order[i] = @intCast(i);
-    { var i: usize = 31; while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = star_order[i]; star_order[i] = star_order[j]; star_order[j] = t; } }
+    shuffleSlice(u32, &rng, &star_order);
     shuffleBodies(&rng, planets);
     shuffleBodies(&rng, pm_pool);
 
@@ -1411,8 +1481,15 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     try star_planets[0].append(.{ .name = "Nauvis", .moons = ArrayList([]const u8).init(a) });
     try all_planet_names.append("Nauvis"); try all_planet_stars.append(0);
 
+    // The `if (x == 0) continue` guards below are the degenerate draw from
+    // Rng.int1. SE indexes `stars[0]` / `planets[0]` here, gets nil, and then
+    // raises a Lua error when it dereferences it — unlike the tag case there is
+    // no defined SE outcome to reproduce, so we skip the assignment and let
+    // degen_draws flag the universe. See `degen_draws` above Rng.
     for (planets) |p| {
-        const si = star_order[rng.int1(31) - 1];
+        const so = rng.int1(31);
+        if (so == 0) continue;
+        const si = star_order[so - 1];
         try star_planets[si].append(.{ .name = p.name, .moons = ArrayList([]const u8).init(a) });
         try all_planet_names.append(p.name); try all_planet_stars.append(si);
     }
@@ -1427,7 +1504,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     }
     var pc: u32 = @intCast(all_planet_names.items.len);
     while (pc < req_planets and pm_end > 0) {
-        const si = star_order[rng.int1(31) - 1];
+        const so = rng.int1(31);
+        if (so == 0) continue;
+        const si = star_order[so - 1];
         if (@as(f64, @floatFromInt(star_planets[si].items.len)) < high_pps or rng.float() < 0.25) {
             pm_end -= 1; const name = pm_pool[pm_end].name;
             try star_planets[si].append(.{ .name = name, .moons = ArrayList([]const u8).init(a) });
@@ -1439,7 +1518,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
 
     // ===== Phase 4: Moon assignment =====
     for (moons) |m| {
-        const pi = rng.int1(total_planets) - 1;
+        const p1 = rng.int1(total_planets);
+        if (p1 == 0) continue;
+        const pi = p1 - 1;
         const si = all_planet_stars.items[pi];
         const pname = all_planet_names.items[pi];
         for (star_planets[si].items) |*p| {
@@ -1462,7 +1543,9 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     var moon_total: u32 = 0;
     for (star_planets) |sp| { for (sp.items) |p| { moon_total += @intCast(p.moons.items.len); } }
     while (moon_total < requested_moons and pm2_end > 0) {
-        const pi = rng.int1(total_planets) - 1;
+        const p1 = rng.int1(total_planets);
+        if (p1 == 0) continue;
+        const pi = p1 - 1;
         const si = all_planet_stars.items[pi];
         const pname = all_planet_names.items[pi];
         for (star_planets[si].items) |*p| {
@@ -1603,7 +1686,7 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
     {
         const names = try a.alloc([]const u8, data.haven_moons_names.len);
         for (data.haven_moons_names, 0..) |n, idx| names[idx] = n;
-        { var i: usize = names.len; while (i > 1) { i -= 1; const j = rng.int1(@intCast(i + 1)) - 1; const t = names[i]; names[i] = names[j]; names[j] = t; } }
+        shuffleSlice([]const u8, &rng, names);
         const name = blk: {
             var result: ?[]const u8 = null;
             for (names) |n| {
@@ -1835,26 +1918,14 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
             var bag_len: u32 = 5; // last P removed for first vault
 
             // Shuffle initial bag
-            {
-                var i: u32 = bag_len;
-                while (i > 1) {
-                    i -= 1;
-                    const j = vault_rng.int1(@intCast(i + 1)) - 1;
-                    const tmp = bag[i]; bag[i] = bag[j]; bag[j] = tmp;
-                }
-            }
+            shuffleSlice(u8, &vault_rng, bag[0..bag_len]);
 
             var remaining: u32 = calidus_planet_count - 1;
             while (remaining > 0) : (remaining -= 1) {
                 if (bag_len == 0) {
                     bag = .{ 'E', 'S', 'P', 'E', 'S', 'P' };
                     bag_len = 6;
-                    var i: u32 = bag_len;
-                    while (i > 1) {
-                        i -= 1;
-                        const j = vault_rng.int1(@intCast(i + 1)) - 1;
-                        const tmp = bag[i]; bag[i] = bag[j]; bag[j] = tmp;
-                    }
+                    shuffleSlice(u8, &vault_rng, bag[0..bag_len]);
                 }
                 bag_len -= 1;
                 loot_buf[loot_pos] = bag[bag_len];

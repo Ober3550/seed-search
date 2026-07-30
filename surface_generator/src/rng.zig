@@ -34,14 +34,26 @@ pub const Rng = struct {
         return @as(f64, @floatFromInt(self.next())) * 2.3283064365386963e-10;
     }
 
-    /// Return a random integer in [1, n] (inclusive).
+    /// Return a random integer in [1, n] — or 0 on a degenerate draw.
+    ///
+    /// When the draw is small enough that `float * n < 1e-7`, the reference
+    /// expression `floor(float * n - 0.0000001) + 1` evaluates to 0. Lua returns
+    /// that happily, but converting the intermediate -1.0 to u32 is illegal in
+    /// Zig and silently produced a garbage index under ReleaseFast. See the long
+    /// explanation on `Rng.int1` in universe_generator/zig/gen.zig; callers must
+    /// treat 0 as "no index".
     pub fn int1(self: *Rng, n: u32) u32 {
-        return @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(n)) - 0.0000001))) + 1;
+        const v = @floor(self.float() * @as(f64, @floatFromInt(n)) - 0.0000001);
+        if (v < 0) return 0;
+        return @as(u32, @intFromFloat(v)) + 1;
     }
 
-    /// Return a random integer in [lo, hi] (inclusive).
+    /// Return a random integer in [lo, hi] (inclusive). Same degenerate case as
+    /// int1, where the reference yields `lo - 1`.
     pub fn intRange(self: *Rng, lo: u32, hi: u32) u32 {
-        return lo + @as(u32, @intFromFloat(@floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001)));
+        const v = @floor(self.float() * @as(f64, @floatFromInt(hi - lo + 1)) - 0.0000001);
+        if (v < 0) return lo -| 1;
+        return lo + @as(u32, @intFromFloat(v));
     }
 };
 
