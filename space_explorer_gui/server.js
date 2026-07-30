@@ -168,9 +168,9 @@ function resOobTd(bucket, seed, zone) {
 // from re-rendering (flashing) the surface button every 2s, and vice-versa. The
 // button still re-renders the whole cell (#zcell-N) on click, so a surface job —
 // which also queues the ore map — flips both controls at once.
-// Max generation radius (default 2000 → ≤ ~12.6M tiles per disk). Big planets
+// Max generation radius (default 5000 → ≤ ~78.5M tiles per disk). Big planets
 // and asteroid fields are capped to this so we don't render the full surface.
-const DEFAULT_MAX_RADIUS = 2000;
+const DEFAULT_MAX_RADIUS = 5000;
 function getMaxRadius() {
   const v = parseInt(db.getSetting("max_radius"));
   return Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_RADIUS;
@@ -182,7 +182,7 @@ function effRadius(zone) {
 // Global max-radius control (persisted setting). Caps NEW surface jobs to the
 // inner N-radius disk; existing renders are untouched.
 function maxRadiusInput() {
-  return `<label class="hint max-radius-ctl" title="Cap surface generation to the inner N-tile-radius disk (default 2000 ≈ 12.6M tiles). Applies to new renders only.">
+  return `<label class="hint max-radius-ctl" title="Cap surface generation to the inner N-tile-radius disk (default ${DEFAULT_MAX_RADIUS} ≈ 78.5M tiles). Applies to new renders only.">
     ⌀ Max radius: <input type="number" name="max_radius" value="${getMaxRadius()}" min="100" step="100" style="width:6em"
       hx-post="/api/settings/max-radius" hx-trigger="change" hx-swap="none"></label>`;
 }
