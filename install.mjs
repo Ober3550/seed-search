@@ -283,6 +283,28 @@ function buildGpu() {
   const dir = path.join(ROOT, "gpu_compute");
   run("zig", ["build", "-Doptimize=ReleaseFast"], dir);
   ok("gpu_terrain / gpu_biome / gpu_ore / gpu_stitch → gpu_compute/zig-out/bin/");
+  stageWgpuRuntime();
+}
+
+// Windows has no rpath. build.zig calls addRPath() on the vendor lib dir, which
+// bakes a search path into Mach-O (macOS) and ELF (Linux) binaries so they find
+// libwgpu_native there at load time — but it is silently a no-op for PE/COFF.
+// The Windows loader only searches the exe's own directory, the system dirs and
+// PATH, none of which contain vendor/<triple>/lib, so every wgpu-linked
+// gpu_*.exe died with STATUS_DLL_NOT_FOUND before main ever ran: an immediate
+// non-zero exit with empty stderr, which surfaced in the GUI as a bare
+// "gpu terrain: 0/N cells ()". Copy the DLL next to the binaries that import it.
+function stageWgpuRuntime() {
+  if (!IS_WIN) return; // rpath already resolves the dylib/.so in place
+  const src = path.join(ROOT, "gpu_compute", "vendor", wgpuTriple(), "lib", "wgpu_native.dll");
+  const dest = path.join(ROOT, "gpu_compute", "zig-out", "bin", "wgpu_native.dll");
+  if (!fs.existsSync(src)) fail(`wgpu_native.dll missing from ${path.relative(ROOT, src)}`);
+  // Re-copy when absent or stale, so a WGPU_VERSION bump replaces the old DLL.
+  if (!fs.existsSync(dest) || fs.statSync(dest).size !== fs.statSync(src).size) {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+  ok("wgpu_native.dll → gpu_compute/zig-out/bin/ (Windows has no rpath)");
 }
 
 function installServer(npm) {
