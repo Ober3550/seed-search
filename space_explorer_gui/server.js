@@ -298,11 +298,11 @@ function renderUniversePage(jobsList) {
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="0" min="0" step="${bs}" placeholder="auto"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
-          <legend class="hint">Keep tails only (blank = side off)</legend>
-          <label title="closest-naq tail: keep seeds whose nearest naquium field Δv ≤ this">naq Δv ≤ <input type="number" name="naq_lo" value="20000" min="0" step="1000" style="width:6em" placeholder="off"></label>
-          <label title="furthest-naq tail: keep seeds whose nearest naquium field Δv ≥ this (worst)">naq Δv ≥ <input type="number" name="naq_hi" min="0" step="1000" style="width:6em" placeholder="off"></label>
-          <label title="most-planets tail: keep seeds with ≥ this many Calidus planets+moons">planets ≥ <input type="number" name="pl_hi" min="0" style="width:4em" placeholder="off"></label>
-          <label title="fewest-planets tail: keep seeds with ≤ this many Calidus planets+moons (worst)">planets ≤ <input type="number" name="pl_lo" min="0" style="width:4em" placeholder="off"></label>
+          <legend class="hint">Extremity tails — keep a seed in ANY tail (union). Defaults ≈ 100 seeds/100k. Blank = side off.</legend>
+          <label title="closest-naq tail (~25/100k): keep seeds whose nearest naquium field Δv ≤ this">naq Δv ≤ <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"></label>
+          <label title="furthest-naq tail (~25/100k): keep seeds whose nearest naquium field Δv ≥ this (worst)">naq Δv ≥ <input type="number" name="naq_hi" value="135000" min="0" step="500" style="width:6em" placeholder="off"></label>
+          <label title="most-planets tail (~22/100k): keep seeds with ≥ this many Calidus planets+moons">planets ≥ <input type="number" name="pl_hi" value="40" min="0" style="width:4em" placeholder="off"></label>
+          <label title="fewest-planets tail: keep seeds with ≤ this many Calidus planets+moons (worst; np=3 floor ≈ 60/100k)">planets ≤ <input type="number" name="pl_lo" value="3" min="0" style="width:4em" placeholder="off"></label>
         </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
         <button type="submit" class="btn">Queue Buckets</button>

@@ -134,18 +134,24 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        // --- Tail filters: keep BOTH extremes, drop the bulk between ---
-        // Each metric has a LOW and a HIGH cutoff; a seed PASSES a metric if it's
-        // <= LOW (one tail) OR >= HIGH (other tail). Cutoff 0 disables that side;
-        // both 0 disables the metric. Metrics AND together. MIN_NAQ_DV is kept as
-        // a back-compat alias for NAQ_DV_LOW (the nearest-naq "closest" ceiling).
+        // --- Tail filters: UNION of up to four extremity tails ---
+        // Keep a seed if it falls in ANY enabled tail: nearest-naq <= NAQ_DV_LOW
+        // (closest) or >= NAQ_DV_HIGH (furthest); Calidus planets+moons >=
+        // PLANETS_HIGH (most) or <= PLANETS_LOW (fewest). Each cutoff of 0
+        // disables that tail; no cutoffs set → keep everything. Union (not AND)
+        // so each tail contributes ~independently to the yield. MIN_NAQ_DV is a
+        // back-compat alias for NAQ_DV_LOW.
         const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
         const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
         const pl_lo = getEnvU32("PLANETS_LOW", 0);
         const pl_hi = getEnvU32("PLANETS_HIGH", 0);
-        const naq_pass = (naq_lo == 0 and naq_hi == 0) or (naq_lo > 0 and naqdv <= naq_lo) or (naq_hi > 0 and naqdv >= naq_hi);
-        const pl_pass = (pl_lo == 0 and pl_hi == 0) or (pl_lo > 0 and np <= pl_lo) or (pl_hi > 0 and np >= pl_hi);
-        if (!(naq_pass and pl_pass)) continue;
+        const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0;
+        const keep = !any_cut or
+            (naq_lo > 0 and naqdv <= naq_lo) or
+            (naq_hi > 0 and naqdv >= naq_hi) or
+            (pl_hi > 0 and np >= pl_hi) or
+            (pl_lo > 0 and np <= pl_lo);
+        if (!keep) continue;
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
