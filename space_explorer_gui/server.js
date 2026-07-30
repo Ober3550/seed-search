@@ -491,6 +491,16 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
 // Generatable zone types (surfaces). Others are shown for reference only.
 const GEN_TYPES = ["planet", "moon", "asteroid-field"];
 
+// Zone types omitted from the seed's zone TABLE only — a display filter. The
+// zones themselves still load and reconcile normally; these rows just carry
+// nothing actionable, since neither type is in GEN_TYPES: no checkbox, no
+// surface link, no resources.
+//   asteroid-belt — outnumbers the asteroid fields that do matter ~19:1.
+//   anomaly       — Foenestra, the only anomaly the generator emits.
+// Nothing selectable is lost: criteria never pick either (checked across every
+// seed's selectedZones + naqField).
+const HIDDEN_ZONE_TYPES = new Set(["asteroid-belt", "anomaly"]);
+
 // Authoritative resource → oremap map_color (dumped live). Drives the surface
 // viewer's per-resource show/hide toggles: the oremap paints each resource in
 // its unique colour, so the browser can filter the composite by colour.
@@ -562,6 +572,8 @@ function renderSeedDetail(s, c, zones, filterId) {
   const reload = `/seed/${s.seed}`;
   const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
   const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
+  // Display filter only — `zones` stays whole for the caller (reconcile, etc.).
+  const rows = zones.filter(z => !HIDDEN_ZONE_TYPES.has(z.zone_type));
 
   return `
   <div class="page">
@@ -571,7 +583,7 @@ function renderSeedDetail(s, c, zones, filterId) {
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
       ${maxRadiusInput()}
-      <span class="hint">All zones shown; selected zones are pinned to the top (⭐ = criteria-relevant, pre-selected). Click a header to sort.</span>
+      <span class="hint">Asteroid belts and anomalies hidden (nothing generatable); selected zones are pinned to the top (⭐ = criteria-relevant, pre-selected). Click a header to sort.</span>
     </div>
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
@@ -595,7 +607,7 @@ function renderSeedDetail(s, c, zones, filterId) {
           <th>Resources <small>(measured if generated, else est.)</small></th><th></th>
         </tr></thead>
         <tbody>
-          ${zones.map(z => {
+          ${rows.map(z => {
             const relevant = sel.has(z.name);
             const gen = GEN_TYPES.includes(z.zone_type);
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
@@ -621,7 +633,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             <td class="yields-cell"><div id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</div></td>
             ${gen ? renderZoneCell(s.bucket, s.seed, z) : `<td class="row-actions muted">—</td>`}
           </tr>`;}).join("")}
-          ${zones.length === 0 ? `<tr><td colspan="10">No zones.</td></tr>` : ""}
+          ${rows.length === 0 ? `<tr><td colspan="10">No zones.</td></tr>` : ""}
         </tbody>
       </table>
     </form>
