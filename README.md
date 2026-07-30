@@ -24,18 +24,51 @@ npm install github:Ober3550/seed-search
 npx seed-search            # → http://localhost:3456
 ```
 
+The `github:` spec makes `npm` shell out to `git clone`. If `git` isn't on your
+`PATH`, install from the tarball endpoint instead — same package, no `git`:
+
+```sh
+npm install https://github.com/Ober3550/seed-search/tarball/HEAD
+```
+
 ### Option B — clone and run the installer
 
 ```sh
 git clone https://github.com/Ober3550/seed-search.git && cd seed-search
-./install.sh          # macOS / Linux
-.\install.ps1         # Windows (PowerShell)
-node install.mjs      # any platform (the two scripts above just call this)
+node install.mjs      # any platform — this is the installer
 npm start             # → http://localhost:3456
 ```
 
+On **Windows**, from `cmd.exe` or PowerShell:
+
+```bat
+git clone https://github.com/Ober3550/seed-search.git && cd seed-search
+install.cmd
+npm start
+```
+
+`install.cmd` (Windows) and `./install.sh` (macOS / Linux) are one-line
+bootstrappers that do nothing but locate Node and call `install.mjs`.
+
 Both are safe to re-run (every step is idempotent). `node install.mjs
 --build-only` builds just the Zig binaries (skips the server's `npm install`).
+
+### Windows notes
+
+Nothing in the install path is PowerShell, deliberately. `.ps1` files are
+refused under the default `Restricted` ExecutionPolicy on Windows client
+installs, and a `.ps1` downloaded from GitHub carries Mark-of-the-Web so even
+`RemoteSigned` rejects it. `install.cmd` and `node install.mjs` are unaffected,
+and `npm` runs the `postinstall` hook through `cmd.exe`, not PowerShell.
+
+One place the policy still bites: `npm` writes `.ps1`, `.cmd` and bash shims
+into `node_modules\.bin`, and **from a PowerShell prompt** `npx seed-search`
+resolves the `.ps1` one and is blocked. Either run it from `cmd.exe`, use
+`npm start`, or lift the policy for your user:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
 
 ## Quick start
 

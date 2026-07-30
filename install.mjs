@@ -16,7 +16,7 @@
 // wgpu prebuilts are skipped if already present, npm install is a no-op when
 // up to date).
 //
-// See install.sh / install.ps1 for thin one-line bootstrappers.
+// See install.sh / install.cmd for thin one-line bootstrappers.
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
