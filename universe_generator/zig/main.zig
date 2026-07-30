@@ -241,8 +241,16 @@ pub fn main(init: std.process.Init) !void {
         var body_cnt: u32 = 0; // tagged bodies = Calidus planets+moons, less Nauvis
         var nw: u32 = 0; // ...of those, with water (water tag present and > none)
         var ne: u32 = 0; // ...of those, hostile (enemy tag present and > none)
-        var enemy_sum: u32 = 0;
-        var enemy_cnt: u32 = 0;
+        // ed: SIGNED enemy value in [-100, 100] with an ODD-POWER response so
+        // EXTREME systems dominate. Each body's enemy level L (0=none..6=max;
+        // untagged = none) is centred to x = 2·(L/6) − 1 ∈ [-1, 1] (peaceful = -1,
+        // max = +1), passed through sign(x)·|x|^ENEMY_EXP (>1 flattens the calm
+        // middle and steepens both ends, so a `max` or a `none` counts for more
+        // than a `med`), then averaged over the bodies and scaled to ±100.
+        // Negative = net peaceful, positive = net hostile. Mean (not sum) so it
+        // measures how hostile the system is, not how big.
+        const ENEMY_EXP: f64 = 3.0;
+        var ev_sum: f64 = 0;
         for (universe.zones.items, 0..) |z, si| {
             if (!inCalidus(si, calidus_zi, zone_end, tail_start)) continue;
             if (z.ztype != .planet and z.ztype != .moon) continue;
@@ -256,16 +264,16 @@ pub fn main(init: std.process.Init) !void {
             // tag counts as dry and an absent enemy tag as peaceful, rather than
             // as unknown.
             if (tags.water) |w| { if (w != .none) nw += 1; }
-            if (tags.enemy) |e| {
-                enemy_sum += @intFromEnum(e);
-                enemy_cnt += 1;
-                if (e != .none) ne += 1;
-            }
+            const lvl: u32 = if (tags.enemy) |e| @intFromEnum(e) else 0;
+            if (lvl > 0) ne += 1;
+            const x: f64 = 2.0 * (@as(f64, @floatFromInt(lvl)) / 6.0) - 1.0;
+            const gmag = std.math.pow(f64, @abs(x), ENEMY_EXP);
+            ev_sum += if (x < 0) -gmag else gmag;
         }
         // Percentage of Calidus bodies that have water / are hostile (0..100).
         const wp: u32 = if (body_cnt > 0) (nw * 100) / body_cnt else 0;
         const ef: u32 = if (body_cnt > 0) (ne * 100) / body_cnt else 0;
-        const ed: u32 = if (enemy_cnt > 0) (enemy_sum * 100) / (enemy_cnt * 6) else 0;
+        const ed: i32 = if (body_cnt > 0) @intFromFloat(@round(ev_sum / @as(f64, @floatFromInt(body_cnt)) * 100.0)) else 0;
         // Two field distances (NO_NAQ = 10,000,000 sentinel when none exist):
         //   naqdv = delta-v to the nearest naquium-PRIMARY field (a rich naq
         //           source — drives the CLOSEST/best tail).
