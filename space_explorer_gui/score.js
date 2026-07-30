@@ -21,19 +21,21 @@
 // scale changes, then db.backfillScores().
 const DV_BEST = 16600; // Δv at or below this scores +100
 const DV_WORST = 63300; // Δv at or above this scores -100
-const NAQ_ACCESS_W = 0.20;
+const NAQ_ACCESS_W = 0.30; // field distance
 
-// `exp` is the odd-power emphasis for that component (see oddPow): higher =
-// flatter middle, so only near-extreme values of that metric move the score.
+// Gradation ACROSS seeds comes from the WEIGHTS (10/20/30/40 → 0.10..0.40); the
+// exponent (all 3) only shapes the mild within-metric curve. A high exponent
+// flattens the middle so only near-extreme values differ — the opposite of what
+// we want. `exp` is the odd-power emphasis (see oddPow).
 const SCORE_METRICS = [
   // Planets = npl (Calidus PLANETS only), not np (planets+moons ≈ system size).
-  // Stored range 6..14 (min 6 is the floor — 94% of seeds sit there), so 6 → -100,
-  // 14 → +100; with exp 9 only the rare multi-planet seeds rise.
-  { key: "npl", w: 0.60, lo: 6, hi: 14, higherIsBetter: true, exp: 9 }, // planets
-  { key: "ef", w: 0.15, lo: 52, hi: 84, higherIsBetter: false, exp: 5 }, // hostile%
-  { key: "wp", w: 0.05, lo: 50, hi: 88, higherIsBetter: true, exp: 3 }, // water%
+  // Stored range 6..14 (min 6 is the floor — 94% of seeds sit there): 6 → -100,
+  // 14 → +100.
+  { key: "npl", w: 0.40, lo: 6, hi: 14, higherIsBetter: true, exp: 3 }, // planets
+  { key: "ef", w: 0.20, lo: 52, hi: 84, higherIsBetter: false, exp: 3 }, // hostile%
+  { key: "wp", w: 0.10, lo: 50, hi: 88, higherIsBetter: true, exp: 3 }, // water%
 ];
-const NAQ_EXP = 7; // naquium access odd-power emphasis
+const NAQ_EXP = 3; // naquium access odd-power emphasis
 
 // Odd-power response on a signed value in [-100, 100] → still [-100, 100]:
 // sign(x)·|x/100|^p·100. p=1 is linear; p>1 flattens the middle and steepens the
