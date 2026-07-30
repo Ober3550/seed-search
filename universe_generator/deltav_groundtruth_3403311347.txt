@@ -1,0 +1,22 @@
+# Ground-truth Δv for seed 3403311347 (non-K2), read from the in-game navigation
+# Δv column (far-right). These are the Calidus home-system bodies, the value the
+# game DISPLAYS = travel delta-v from Nauvis (NO launch term), rounded to nearest.
+# Format: <name> <deltav>.  Nauvis is the origin (shown as "-").
+Nauvis 0
+Erio 743
+Abaddon 1114
+Ettenor 1485
+Neuranto 3204
+Jasbury 3595
+Shire 3987
+Damia 4012
+Rivos 4770
+Plenai 5096
+Gearofen 5468
+Exallander 5839
+Hadur 6211
+Tazer 6245
+Adalind 6955
+Frost 7161
+Morpheus 7375
+Toucan 8212
