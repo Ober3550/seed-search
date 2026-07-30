@@ -297,8 +297,13 @@ function renderUniversePage(jobsList) {
             hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="0" min="0" step="${bs}" placeholder="auto"></label>
-        <label class="disabled-check"><input type="checkbox" checked disabled> Min 4 Prod Modules</label>
-        <label class="disabled-check"><input type="checkbox" checked disabled> Nearby Naq Field</label>
+        <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
+          <legend class="hint">Keep tails only (blank = side off)</legend>
+          <label title="closest-naq tail: keep seeds whose nearest naquium field Δv ≤ this">naq Δv ≤ <input type="number" name="naq_lo" value="20000" min="0" step="1000" style="width:6em" placeholder="off"></label>
+          <label title="furthest-naq tail: keep seeds whose nearest naquium field Δv ≥ this (worst)">naq Δv ≥ <input type="number" name="naq_hi" min="0" step="1000" style="width:6em" placeholder="off"></label>
+          <label title="most-planets tail: keep seeds with ≥ this many Calidus planets+moons">planets ≥ <input type="number" name="pl_hi" min="0" style="width:4em" placeholder="off"></label>
+          <label title="fewest-planets tail: keep seeds with ≤ this many Calidus planets+moons (worst)">planets ≤ <input type="number" name="pl_lo" min="0" style="width:4em" placeholder="off"></label>
+        </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
         <button type="submit" class="btn">Queue Buckets</button>
       </form>
@@ -344,7 +349,9 @@ app.get("/seeds", (req, res) => {
   // partial matches. Only meaningful when a filter is selected.
   const countMode = (req.query.count === "1") && rules.length > 0;
 
-  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter });
+  // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
+  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max };
+  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, ...rng });
   if (countMode) {
     for (const s of seeds) {
       const c = seedCriteria(s);
@@ -359,7 +366,7 @@ app.get("/seeds", (req, res) => {
   const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
   const defs = db.getFilterDefs();
   const genCounts = db.getGeneratedZoneCounts();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length }, genCounts));
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, ...rng }, genCounts));
 });
 
 function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
@@ -403,6 +410,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           count &amp; rank</label>
         <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
+        <span class="hint" title="Calidus planets+moons range">planets <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="nearest naquium-field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
@@ -413,6 +422,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <th>Bucket</th><th>K2</th><th>Loot</th>
         <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
+        <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus planets+moons — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-primary field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
         <th>Naq</th>
       </tr></thead>
       <tbody>
@@ -420,14 +431,16 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-naqdv="${s.naqdv ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
+          <td>${s.np ?? "—"}</td>
+          <td>${s.naqdv == null ? "—" : (s.naqdv >= 10000000 ? "none" : s.naqdv.toLocaleString())}</td>
           <td>${c.naqField || "—"}</td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 7 : 6}">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 9 : 8}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
@@ -1020,7 +1033,14 @@ app.post("/api/universe/create", (req, res) => {
   const k2 = req.body.k2_enabled === "on" || req.body.k2_enabled === "1";
   const raw = (req.body.start_seed ?? "").toString().trim();
   const startSeed = raw === "" ? null : parseInt(raw);
-  const ids = jobs.createUniverseBuckets(units, k2, startSeed);
+  // Tail-filter cutoffs (blank/0 = that side off). A seed is kept if it's in a
+  // tail of every enabled metric.
+  const num = (v) => { const n = parseInt(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+  const filter = {
+    naq_lo: num(req.body.naq_lo), naq_hi: num(req.body.naq_hi),
+    pl_lo: num(req.body.pl_lo), pl_hi: num(req.body.pl_hi),
+  };
+  const ids = jobs.createUniverseBuckets(units, k2, startSeed, filter);
   res.json({ ok: true, job_ids: ids, message: `Queued ${units} buckets` });
 });
 

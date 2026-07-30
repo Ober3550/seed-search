@@ -122,7 +122,7 @@ function requireSeedgen() {
 
 // Queue `units` bucket jobs of exactly BUCKET_SIZE seeds each, continuing
 // after the highest already-queued/finished bucket. Returns the job ids.
-function createUniverseBuckets(units, k2Enabled, startSeed) {
+function createUniverseBuckets(units, k2Enabled, startSeed, filter = {}) {
   const d = db.getDb();
   const k2 = k2Enabled ? 1 : 0;
   let base;
@@ -146,7 +146,7 @@ function createUniverseBuckets(units, k2Enabled, startSeed) {
     const start = base + i * BUCKET_SIZE;
     const end = start + BUCKET_SIZE;
     const label = bucketLabel(end, k2Enabled);
-    const id = db.createUniverseJob(start, end, 1, k2Enabled);
+    const id = db.createUniverseJob(start, end, 1, k2Enabled, filter);
     db.updateUniverseJob(id, { bucket: label });
     ids.push(id);
   }
@@ -412,8 +412,12 @@ function runUniverseBucket(job) {
       START_SEED: String(job.seed_start),
       END_SEED: String(job.seed_end),
       SE_K2: job.k2_enabled ? "1" : "0",
-      MIN_NAQ_DV: "20000",
-      MIN_PROD_MODULES: "4",
+      // Tail-filter cutoffs the bucket was queued with (0 = side off).
+      NAQ_DV_LOW: String(job.naq_lo || 0),
+      NAQ_DV_HIGH: String(job.naq_hi || 0),
+      PLANETS_LOW: String(job.pl_lo || 0),
+      PLANETS_HIGH: String(job.pl_hi || 0),
+      MIN_PROD_MODULES: "0",
       WORKER_ID: "0",
     };
 
@@ -498,6 +502,8 @@ async function importBucket(filePath, jobId, label) {
       zone_count: data.z.length,
       line,
       criteria,
+      np: data.np ?? null,
+      naqdv: data.naqdv ?? null,
     });
     for (const z of data.z) {
       zoneRows.push({
@@ -631,7 +637,7 @@ function expandSeed(seed) {
     const n = upsertWorldZones(data, row.job_id);
     let criteria = null;
     try { criteria = JSON.stringify(analyze.evaluateWorld(data)); } catch (_) {}
-    db.markSeedExpanded(seed, line, n, criteria);
+    db.markSeedExpanded(seed, line, n, criteria, data.np ?? null, data.naqdv ?? null);
     console.log(`[expand ${seed}] ingested ${n} zones (full universe)`);
   });
   child.on("error", e => { expandInFlight.delete(seed); console.log(`[expand ${seed}] spawn: ${e.message}`); });

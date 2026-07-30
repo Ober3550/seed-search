@@ -163,6 +163,15 @@ function initSchema() {
     // 0 = only the Calidus system stored (bulk gen); 1 = full universe expanded
     // (all star systems + fields) via the seed-detail background job.
     "ALTER TABLE seeds ADD COLUMN expanded INTEGER DEFAULT 0",
+    // Per-seed extremity metrics from seedgen (Calidus planets+moons; Δv to the
+    // nearest naquium-primary field) — for best/worst sort + range filtering.
+    "ALTER TABLE seeds ADD COLUMN np INTEGER",
+    "ALTER TABLE seeds ADD COLUMN naqdv INTEGER",
+    // Tail-filter config the bucket was generated with (0 = side disabled).
+    "ALTER TABLE universe_jobs ADD COLUMN naq_lo INTEGER DEFAULT 0",
+    "ALTER TABLE universe_jobs ADD COLUMN naq_hi INTEGER DEFAULT 0",
+    "ALTER TABLE universe_jobs ADD COLUMN pl_lo INTEGER DEFAULT 0",
+    "ALTER TABLE universe_jobs ADD COLUMN pl_hi INTEGER DEFAULT 0",
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
@@ -249,12 +258,13 @@ function seedPresetFilters() {
 
 // ── Universe Jobs ──────────────────────────────────────────────────────
 
-function createUniverseJob(seedStart, seedEnd, workers, k2Enabled = false) {
+function createUniverseJob(seedStart, seedEnd, workers, k2Enabled = false, filter = {}) {
   const d = getDb();
   const stmt = d.prepare(
-    "INSERT INTO universe_jobs (seed_start, seed_end, workers, k2_enabled) VALUES (?, ?, ?, ?)"
+    "INSERT INTO universe_jobs (seed_start, seed_end, workers, k2_enabled, naq_lo, naq_hi, pl_lo, pl_hi) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
-  const info = stmt.run(seedStart, seedEnd, workers || 1, k2Enabled ? 1 : 0);
+  const info = stmt.run(seedStart, seedEnd, workers || 1, k2Enabled ? 1 : 0,
+    filter.naq_lo || 0, filter.naq_hi || 0, filter.pl_lo || 0, filter.pl_hi || 0);
   return info.lastInsertRowid;
 }
 
@@ -424,12 +434,13 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, naqdv)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
-      stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null);
+      stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
+        r.np ?? null, r.naqdv ?? null);
     }
   });
   tx();
@@ -445,7 +456,20 @@ function getSeeds(filter = {}) {
   if (filter.k2 !== undefined && filter.k2 !== null && filter.k2 !== "") {
     sql += " AND k2 = ?"; params.push(filter.k2 ? 1 : 0);
   }
-  sql += " ORDER BY seed LIMIT 2000";
+  // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
+  const range = (col, min, max) => {
+    if (min != null && min !== "") { sql += ` AND ${col} >= ?`; params.push(Number(min)); }
+    if (max != null && max !== "") { sql += ` AND ${col} <= ?`; params.push(Number(max)); }
+  };
+  range("np", filter.np_min, filter.np_max);
+  range("naqdv", filter.naqdv_min, filter.naqdv_max);
+  // Sort: best/worst by either metric, else by seed. NULLs sort last.
+  const orders = {
+    seed: "seed", np_desc: "np DESC", np_asc: "np ASC",
+    naqdv_asc: "naqdv ASC", naqdv_desc: "naqdv DESC",
+  };
+  const ord = orders[filter.sort] || "seed";
+  sql += ` ORDER BY (${ord.split(" ")[0]} IS NULL), ${ord} LIMIT 2000`;
   return d.prepare(sql).all(...params);
 }
 
@@ -456,9 +480,11 @@ function getSeed(seed) {
 
 // Mark a seed as fully expanded (all zones ingested) + refresh its stored line
 // and zone_count. Called by the seed-detail expand job after upserting zones.
-function markSeedExpanded(seed, line, zoneCount, criteria) {
-  getDb().prepare("UPDATE seeds SET expanded = 1, line = ?, zone_count = ?, criteria = COALESCE(?, criteria) WHERE seed = ?")
-    .run(line, zoneCount, criteria || null, seed);
+function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv) {
+  getDb().prepare(`UPDATE seeds SET expanded = 1, line = ?, zone_count = ?,
+      criteria = COALESCE(?, criteria),
+      np = COALESCE(?, np), naqdv = COALESCE(?, naqdv) WHERE seed = ?`)
+    .run(line, zoneCount, criteria || null, np ?? null, naqdv ?? null, seed);
 }
 
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.

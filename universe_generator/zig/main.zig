@@ -96,17 +96,32 @@ pub fn main(init: std.process.Init) !void {
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
 
-        // --- Filters ---
-        // First-round filter: keep only seeds with a naquium-PRIMARY asteroid
-        // field within min_naq_dv delta-v. Uses field_primaries (quota-assigned
-        // primary), NOT mere naquium presence — nearly every field has naquium
-        // present, so a presence check barely filters. Mirrors NAQ_SCAN below.
-        const min_naq_dv = getEnvU32("MIN_NAQ_DV", 0);
-        if (min_naq_dv > 0) {
-            const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+        // Calidus home system bounds = [calidus_zi, zone_end) (up to the next
+        // star). Used by both the metrics below and serialization.
+        const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
+        var zone_end: usize = universe.zones.items.len;
+        for (universe.zones.items[calidus_zi + 1 ..], calidus_zi + 1..) |z, si| {
+            if (z.ztype == .star) {
+                zone_end = si;
+                break;
+            }
+        }
+
+        // --- Per-seed metrics (drive the tail filters AND ride in the JSONL) ---
+        // np: planets + moons in the Calidus home system (excl. Nauvis). Planet
+        // counts across other stars are ~constant, so Calidus carries the signal.
+        var np: u32 = 0;
+        for (universe.zones.items[calidus_zi..zone_end]) |z| {
+            if (std.mem.eql(u8, z.name, "Nauvis")) continue;
+            if (z.ztype == .planet or z.ztype == .moon) np += 1;
+        }
+        // naqdv: delta-v to the NEAREST naquium-primary asteroid field. NO_NAQ
+        // (10,000,000) when the seed has none → counts as the far extreme.
+        const NO_NAQ: u32 = 10_000_000;
+        var naqdv: u32 = NO_NAQ;
+        {
             const cx = universe.zones.items[calidus_zi].stellar_x;
             const cy = universe.zones.items[calidus_zi].stellar_y;
-            var nearest: u32 = std.math.maxInt(u32);
             for (universe.zones.items) |z| {
                 if (z.ztype != .@"asteroid-field") continue;
                 const fp = field_primaries.get(z.name) orelse continue;
@@ -115,12 +130,22 @@ pub fn main(init: std.process.Init) !void {
                 const dy = z.stellar_y - cy;
                 const dist = @sqrt(dx * dx + dy * dy);
                 const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
-                if (dv < nearest) nearest = dv;
-            }
-            if (nearest > min_naq_dv) {
-                continue;
+                if (dv < naqdv) naqdv = dv;
             }
         }
+
+        // --- Tail filters: keep BOTH extremes, drop the bulk between ---
+        // Each metric has a LOW and a HIGH cutoff; a seed PASSES a metric if it's
+        // <= LOW (one tail) OR >= HIGH (other tail). Cutoff 0 disables that side;
+        // both 0 disables the metric. Metrics AND together. MIN_NAQ_DV is kept as
+        // a back-compat alias for NAQ_DV_LOW (the nearest-naq "closest" ceiling).
+        const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
+        const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
+        const pl_lo = getEnvU32("PLANETS_LOW", 0);
+        const pl_hi = getEnvU32("PLANETS_HIGH", 0);
+        const naq_pass = (naq_lo == 0 and naq_hi == 0) or (naq_lo > 0 and naqdv <= naq_lo) or (naq_hi > 0 and naqdv >= naq_hi);
+        const pl_pass = (pl_lo == 0 and pl_hi == 0) or (pl_lo > 0 and np <= pl_lo) or (pl_hi > 0 and np >= pl_hi);
+        if (!(naq_pass and pl_pass)) continue;
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
@@ -128,9 +153,7 @@ pub fn main(init: std.process.Init) !void {
             for (universe.vault_loot) |c| {
                 if (c == 'P') p_count += 1;
             }
-            if (p_count < min_prod) {
-                continue;
-            }
+            if (p_count < min_prod) continue;
         }
 
         // --- Fast scan: nearest asteroid field where naquium is the #1 yield ---
@@ -168,21 +191,16 @@ pub fn main(init: std.process.Init) !void {
         // universe (bigger output → allocate on the arena, not the stack).
         const buf = try a.alloc(u8, if (all_zones) 8 << 20 else 524288);
         var pos: usize = 0;
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot }) catch unreachable;
+        // Per-seed metrics ride in the header: np (Calidus planets+moons) and
+        // naqdv (nearest naquium-primary field Δv) — so both extremes are
+        // sortable/filterable even though only Calidus zones are stored.
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"np\":{d},\"naqdv\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, np, naqdv }) catch unreachable;
         pos += open.len;
 
-        // Calidus system = [calidus_zi, zone_end) (up to the next star). The
-        // default serializes only that slice; ALL_ZONES serializes the whole
+        // calidus_zi / zone_end were computed above (for the metrics). The default
+        // serializes only [calidus_zi, zone_end); ALL_ZONES serializes the whole
         // universe. Either way each planet/moon/asteroid-field gets full tags +
         // resources from the same emit code below.
-        const calidus_zi = universe.zoneByName.get("Calidus") orelse @panic("Calidus not found");
-        var zone_end: usize = universe.zones.items.len;
-        for (universe.zones.items[calidus_zi + 1 ..], calidus_zi + 1..) |z, si| {
-            if (z.ztype == .star) {
-                zone_end = si;
-                break;
-            }
-        }
         var zi: u32 = 0;
         for (universe.zones.items, 0..) |z, si| {
             if (!all_zones and (si < calidus_zi or si >= zone_end)) continue; // Calidus system only
