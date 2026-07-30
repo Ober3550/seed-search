@@ -743,6 +743,10 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
       <div class="batch-actions">
+        <button type="button" class="btn btn-secondary" onclick="selectCalidus()"
+          title="tick every Calidus home-system planet and moon (ignores asteroid fields and other star systems)">
+          ✅ Select Calidus planets &amp; moons
+        </button>
         <button type="button" class="btn"
           hx-post="/api/surface/batch?kind=oremap" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
@@ -767,7 +771,7 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
             const gen = GEN_TYPES.includes(z.zone_type);
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
-            const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
+            const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-calidus="${z.in_calidus === 0 ? 0 : 1}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
             // generatable rows navigate to the surface detail on click via native
             // htmx (hx-push-url snapshots history so Chrome's Back restores the seed
             // page instantly); the trigger filter ignores clicks on buttons/inputs so
@@ -876,6 +880,18 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
             if (r.style.display === "none") return;
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = master.checked;
+          });
+          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
+        };
+        // Tick every Calidus home-system planet/moon (skips asteroid fields and
+        // other star systems), regardless of the search filter.
+        window.selectCalidus = function () {
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            var t = r.dataset.type;
+            if (r.dataset.calidus === "1" && (t === "planet" || t === "moon")) {
+              var cb = r.querySelector('input[name=zone]');
+              if (cb) cb.checked = true;
+            }
           });
           if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
