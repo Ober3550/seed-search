@@ -301,7 +301,7 @@ function renderUniversePage(jobsList) {
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
           <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 170/100k bucket (a 100k bucket is 50k seeds — seedgen steps by 2). Blank = end off.</legend>
           <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~38/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k). Δv is now game-exact (launch+travel), so values are ~23k-160k.">
-            <input type="number" name="naq_lo" value="23700" min="0" step="500" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="43400" min="0" step="500" style="width:6em" placeholder="off">
+            <input type="number" name="naq_lo" value="23700" min="0" step="any" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="43400" min="0" step="any" style="width:6em" placeholder="off">
           </div>
           <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most, ~43/100k). NOTE: measured minimum P+M is 14, so a low cutoff below 14 never matches.">
             <input type="number" name="pl_lo" value="16" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
