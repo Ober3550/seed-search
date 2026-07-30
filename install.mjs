@@ -6,7 +6,10 @@
 // the only hard prerequisites are Node (>=18, which you already have since it's
 // running this) and Zig 0.16.x on PATH.
 //
-//   node install.mjs            # build everything
+//   node install.mjs            # build everything + npm install the server
+//   node install.mjs --build-only   # build the Zig components only (the web
+//                                    #   server's deps are handled by npm when
+//                                    #   installed as a package — see postinstall)
 //   node install.mjs --help
 //
 // It is safe to re-run: each step is idempotent (Zig rebuilds are incremental,
@@ -217,29 +220,36 @@ function installServer(npm) {
 // Main
 // ---------------------------------------------------------------------------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Usage: node install.mjs [--help]
+  console.log(`Usage: node install.mjs [--build-only] [--help]
 
 Builds the Zig components and installs the web server's dependencies:
   1. seedgen   (universe_generator)
   2. segen     (surface_generator)
   3. gpu_*     (gpu_compute — downloads pinned wgpu-native ${WGPU_VERSION} first)
-  4. web server dependencies (space_explorer_gui)
+  4. web server dependencies (space_explorer_gui)   [skipped with --build-only]
+
+--build-only  Build the Zig components only; skip the server npm install. Used
+              by the package postinstall hook (npm resolves the server's deps).
 
 Prerequisites: Node >=18 (running this) and Zig 0.16.x on PATH.
 Env: WGPU_VERSION overrides the pinned wgpu-native release.
 
 Start the server afterwards with:
-  cd space_explorer_gui && npm start   # http://localhost:3456`);
+  npm start   # http://localhost:3456`);
   process.exit(0);
 }
 
 async function main() {
-  console.log(bold("SE seed-search installer"));
+  // --build-only: build the Zig components but skip `npm install` for the web
+  // server. Used by the package `postinstall` hook, where npm has already
+  // resolved the server's dependencies from this package's own `dependencies`.
+  const buildOnly = process.argv.includes("--build-only");
+  console.log(bold("SE seed-search installer") + (buildOnly ? dim(" (build-only)") : ""));
 
   step("Checking prerequisites");
   checkNode();
   checkZig();
-  const npm = checkNpm();
+  const npm = buildOnly ? null : checkNpm();
 
   step("Building seedgen (universe generator)");
   buildSeedgen();
@@ -253,14 +263,16 @@ async function main() {
   step("Building GPU compute binaries");
   buildGpu();
 
-  step("Installing web server dependencies");
-  installServer(npm);
+  if (!buildOnly) {
+    step("Installing web server dependencies");
+    installServer(npm);
+  }
 
   console.log(
     "\n" +
       green(bold("Install complete.")) +
       "\n\nStart the web server:\n  " +
-      bold("cd space_explorer_gui && npm start") +
+      bold("npm start") +
       dim("   # → http://localhost:3456")
   );
 }

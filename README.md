@@ -12,18 +12,30 @@ installs the web server's dependencies. Works on macOS, Linux, and Windows.
 **Prerequisites:** [Zig 0.16.x](https://ziglang.org/download/) and
 [Node ≥18](https://nodejs.org/) on your `PATH`.
 
+### Option A — install straight from GitHub (only the relevant source)
+
+`npm` clones the repo, pulls **only** the source the app needs (per the `files`
+allowlist in `package.json` — no calibration/ghidra/output/etc.), then a
+`postinstall` hook builds the Zig binaries and downloads the pinned
+`wgpu-native` prebuilt for your platform:
+
 ```sh
+npm install github:Ober3550/seed-search
+npx seed-search            # → http://localhost:3456
+```
+
+### Option B — clone and run the installer
+
+```sh
+git clone https://github.com/Ober3550/seed-search.git && cd seed-search
 ./install.sh          # macOS / Linux
 .\install.ps1         # Windows (PowerShell)
 node install.mjs      # any platform (the two scripts above just call this)
+npm start             # → http://localhost:3456
 ```
 
-The installer downloads the pinned `wgpu-native` prebuilt for your platform
-automatically. It's safe to re-run (every step is idempotent). Then:
-
-```sh
-cd space_explorer_gui && npm start    # → http://localhost:3456
-```
+Both are safe to re-run (every step is idempotent). `node install.mjs
+--build-only` builds just the Zig binaries (skips the server's `npm install`).
 
 ## Quick start
 

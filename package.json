@@ -1,5 +1,48 @@
 {
+  "name": "seed-search",
+  "version": "1.0.0",
+  "description": "Offline Space Exploration universe/ore/terrain generator with a web explorer GUI",
+  "license": "SEE LICENSE IN LICENSE.html",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ober3550/seed-search.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "space_explorer_gui/server.js",
+  "bin": {
+    "seed-search": "space_explorer_gui/server.js"
+  },
+  "scripts": {
+    "start": "node space_explorer_gui/server.js",
+    "build": "node install.mjs",
+    "postinstall": "node install.mjs --build-only"
+  },
   "dependencies": {
-    "better-sqlite3": "^12.11.1"
-  }
+    "better-sqlite3": "^12.11.1",
+    "express": "^4.21.0"
+  },
+  "files": [
+    "install.mjs",
+    "install.sh",
+    "install.ps1",
+    "LICENSE.html",
+    "universe_generator/zig/main.zig",
+    "universe_generator/zig/gen.zig",
+    "universe_generator/zig/data.zig",
+    "surface_generator/build.zig",
+    "surface_generator/build.zig.zon",
+    "surface_generator/src/",
+    "gpu_compute/build.zig",
+    "gpu_compute/build.zig.zon",
+    "gpu_compute/fetch-wgpu.sh",
+    "gpu_compute/src/",
+    "space_explorer_gui/server.js",
+    "space_explorer_gui/db.js",
+    "space_explorer_gui/job-manager.js",
+    "space_explorer_gui/package.json",
+    "space_explorer_gui/public/",
+    "verifier/analyze.js"
+  ]
 }
