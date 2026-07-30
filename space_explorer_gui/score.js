@@ -30,10 +30,10 @@ const SCORE_METRICS = [
   // Stored range 6..14 (min 6 is the floor — 94% of seeds sit there), so 6 → -100,
   // 14 → +100; with exp 9 only the rare multi-planet seeds rise.
   { key: "npl", w: 0.60, lo: 6, hi: 14, higherIsBetter: true, exp: 9 }, // planets
-  { key: "ef", w: 0.15, lo: 52, hi: 84, higherIsBetter: false, exp: 7 }, // hostile%
+  { key: "ef", w: 0.15, lo: 52, hi: 84, higherIsBetter: false, exp: 5 }, // hostile%
   { key: "wp", w: 0.05, lo: 50, hi: 88, higherIsBetter: true, exp: 3 }, // water%
 ];
-const NAQ_EXP = 5; // naquium access odd-power emphasis
+const NAQ_EXP = 7; // naquium access odd-power emphasis
 
 // Odd-power response on a signed value in [-100, 100] → still [-100, 100]:
 // sign(x)·|x/100|^p·100. p=1 is linear; p>1 flattens the middle and steepens the
