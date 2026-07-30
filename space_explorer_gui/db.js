@@ -97,6 +97,7 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_seeds_np ON seeds(np);
     CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds(naqdv);
     CREATE INDEX IF NOT EXISTS idx_seeds_fdv ON seeds(fdv);
+    CREATE INDEX IF NOT EXISTS idx_seeds_npl ON seeds(npl);
     CREATE INDEX IF NOT EXISTS idx_seeds_ef ON seeds(ef);
     CREATE INDEX IF NOT EXISTS idx_seeds_wp ON seeds(wp);
 
