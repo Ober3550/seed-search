@@ -23,15 +23,16 @@ const DV_BEST = 16600; // Δv at or below this scores +100
 const DV_WORST = 63300; // Δv at or above this scores -100
 const NAQ_ACCESS_W = 0.30; // field distance
 
-// Gradation ACROSS seeds comes from the WEIGHTS (10/20/30/40 → 0.10..0.40); the
-// exponent (all 3) only shapes the mild within-metric curve. A high exponent
-// flattens the middle so only near-extreme values differ — the opposite of what
-// we want. `exp` is the odd-power emphasis (see oddPow).
+// HIERARCHICAL score: planets (npl) is the dominant tier — each of its discrete
+// levels owns its own band of the 0..100 range — and the other metrics only move
+// WITHIN that band. So any seed with more planets ALWAYS outscores any seed with
+// fewer; field/hostile/water only break ties among equal-planet seeds. This is
+// what a weighted sum can't guarantee.
+const PLANET = { key: "npl", lo: 6, hi: 14 }; // npl 6..14 → 9 discrete levels
+
+// Within-band tiebreakers (weighted mean, each mapped to 0..1, best = 1). Their
+// relative weights set the tie-break priority: field 30, hostile 20, water 10.
 const SCORE_METRICS = [
-  // Planets = npl (Calidus PLANETS only), not np (planets+moons ≈ system size).
-  // Stored range 6..14 (min 6 is the floor — 94% of seeds sit there): 6 → -100,
-  // 14 → +100.
-  { key: "npl", w: 0.40, lo: 6, hi: 14, higherIsBetter: true, exp: 3 }, // planets
   { key: "ef", w: 0.20, lo: 52, hi: 84, higherIsBetter: false, exp: 3 }, // hostile%
   { key: "wp", w: 0.10, lo: 50, hi: 88, higherIsBetter: true, exp: 3 }, // water%
 ];
@@ -72,19 +73,24 @@ function naqComponent(s) {
   return a == null ? null : oddPow((a * 2 - 1) * 100, NAQ_EXP); // -100..100
 }
 
-// Weighted mean of the components → signed score in [-100, 100] (integer), or
-// null when no metric is known (renormalises over the components present).
+// Hierarchical score in 0..100: the planet level picks the band, the weighted
+// tiebreakers fill within it. null when planet count is unknown.
+const PLANET_LEVELS = PLANET.hi - PLANET.lo; // 8 gaps → levels 0..8 (9 bands)
 function seedScore(s) {
+  const npl = s[PLANET.key];
+  if (npl == null) return null;
+  const lvl = Math.max(0, Math.min(PLANET_LEVELS, npl - PLANET.lo)); // 0..8
+
+  // Within-band position in [0,1): weighted mean of the tiebreakers, each mapped
+  // from its signed [-100,100] component to [0,1] (best = 1).
   let sum = 0, wsum = 0;
-  for (const m of SCORE_METRICS) {
-    const c = metricComponent(s[m.key], m.lo, m.hi, m.higherIsBetter, m.exp);
-    if (c == null) continue;
-    sum += m.w * c;
-    wsum += m.w;
-  }
-  const nc = naqComponent(s);
-  if (nc != null) { sum += NAQ_ACCESS_W * nc; wsum += NAQ_ACCESS_W; }
-  return wsum === 0 ? null : Math.round(sum / wsum);
+  const add = (c, w) => { if (c != null) { sum += w * ((c + 100) / 200); wsum += w; } };
+  for (const m of SCORE_METRICS) add(metricComponent(s[m.key], m.lo, m.hi, m.higherIsBetter, m.exp), m.w);
+  add(naqComponent(s), NAQ_ACCESS_W);
+  // Clamp strictly < 1 so a band never bleeds into the next planet level.
+  const others01 = wsum > 0 ? Math.min(0.999999, Math.max(0, sum / wsum)) : 0.5;
+
+  return Math.round(((lvl + others01) / (PLANET_LEVELS + 1)) * 100);
 }
 
 module.exports = { seedScore, metricComponent, naqComponent, naqAccess01, SCORE_METRICS, DV_BEST, DV_WORST, NAQ_ACCESS_W };
