@@ -346,6 +346,14 @@ function renderBucketsTable(jobsList) {
 // ── Level 2: Seeds (raw rough-passed seeds for a bucket) ───────────────
 // Live-filter controls here define a criteria you can SAVE as a filtered set.
 
+// Recompute the stored `score` for every seed — run after tweaking the score
+// formula/exponents in score.js. Synchronous (~30s on the full table); the
+// button disables itself and reloads the list when it returns.
+app.post("/api/seeds/rescore", (req, res) => {
+  const n = db.backfillScores();
+  res.send(`<span class="hint">✅ Recomputed ${n.toLocaleString()} scores</span>`);
+});
+
 app.get("/seeds", (req, res) => {
   const bucket = req.query.bucket || "";
   const defId = req.query.def ? parseInt(req.query.def) : null;
@@ -472,6 +480,11 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
         <button type="submit" class="btn-sm">⚙ Generate</button>
       </form>
       <span id="gen-seed-status" class="hint"></span>
+      <button type="button" class="btn-sm"
+        title="Recompute the desirability score for every stored seed (run after changing the score formula/exponents in score.js). Takes ~30s."
+        hx-post="/api/seeds/rescore" hx-target="#rescore-status" hx-swap="innerHTML" hx-disabled-elt="this"
+        hx-on::after-request="htmx.ajax('GET', location.pathname + location.search, {target:'#main'})">↻ Regenerate scores</button>
+      <span id="rescore-status" class="hint"></span>
     </div>
     <div class="filter-bar">
       <form id="seed-filters" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML">
