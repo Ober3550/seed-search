@@ -4,68 +4,67 @@ Fast parallel seed generator for Space Exploration (Factorio 0.7.x) written in Z
 Filters seeds by naquium field distance and productivity modules, outputs Calidus-system
 JSONL for analysis.
 
+## Prerequisites
+
+Install these first. `install.mjs` checks the first two before it builds
+anything and stops with an explanation if one is missing or the wrong version:
+
+- **[Zig 0.16.x](https://ziglang.org/download/)** — builds `seedgen`, `segen`
+  and the `gpu_*` binaries. 0.15 and 0.17 will not work; the installer rejects
+  anything outside 0.16.x. Verify with `zig version`.
+- **[Node.js ≥18](https://nodejs.org/)** — runs the installer, the web server
+  and the analyzer. Ships `npm`. Verify with `node --version`.
+- **[git](https://git-scm.com/)** — to clone the repo in the first place.
+
+All three must be on your `PATH` in the shell you run the installer from.
+Beyond them the installer fetches everything it needs (the `wgpu-native`
+prebuilt, htmx, the npm packages).
+
 ## Install
 
-Builds the Zig components (`seedgen`, `segen`, the `gpu_*` compute binaries),
-fetches the GUI's front-end dependency (htmx), and installs the web server's
-dependencies. Works on macOS, Linux, and Windows.
-
-Run the installer before the first `npm start`, and re-run it after pulling. The
-GUI is entirely htmx-driven, so without `space_explorer_gui/public/htmx.min.js`
-the page still renders but no button does anything — queueing a job sends no
-request at all. The server warns on startup if that file is missing or stubbed.
-
-**Prerequisites:** [Zig 0.16.x](https://ziglang.org/download/) and
-[Node ≥18](https://nodejs.org/) on your `PATH`.
-
-### Option A — install straight from GitHub (only the relevant source)
-
-`npm` clones the repo, pulls **only** the source the app needs (per the `files`
-allowlist in `package.json` — no calibration/ghidra/output/etc.), then a
-`postinstall` hook builds the Zig binaries and downloads the pinned
-`wgpu-native` prebuilt for your platform:
+Clone the repo and run the installer. The same three commands work on macOS,
+Linux, and Windows (from `cmd.exe` or PowerShell):
 
 ```sh
-npm install github:Ober3550/seed-search
-npx seed-search            # → http://localhost:3456
-```
-
-The `github:` spec makes `npm` shell out to `git clone`. If `git` isn't on your
-`PATH`, install from the tarball endpoint instead — same package, no `git`:
-
-```sh
-npm install https://github.com/Ober3550/seed-search/tarball/HEAD
-```
-
-### Option B — clone and run the installer
-
-```sh
-git clone https://github.com/Ober3550/seed-search.git && cd seed-search
-node install.mjs      # any platform — this is the installer
+git clone https://github.com/Ober3550/seed-search.git
+cd seed-search
+node install.mjs      # this is the installer, on every platform
 npm start             # → http://localhost:3456
 ```
 
-On **Windows**, from `cmd.exe` or PowerShell:
-
-```bat
-git clone https://github.com/Ober3550/seed-search.git && cd seed-search
-node install.mjs
-npm start
-```
-
 `node install.mjs` is the single, cross-platform installer — there are no
-per-platform bootstrap scripts to pick between.
+per-platform bootstrap scripts to pick between. Run it before the first
+`npm start`, and re-run it after pulling. It is safe to re-run: every step is
+idempotent (Zig rebuilds incrementally, downloads are skipped when already
+present, `npm install` is a no-op when up to date).
 
-It is safe to re-run (every step is idempotent). `node install.mjs
---build-only` builds just the Zig binaries (skips the server's `npm install`).
+### What the installer does
+
+1. Builds `seedgen` → `universe_generator/zig/` (the universe generator).
+2. Builds `segen` → `surface_generator/zig-out/bin/` (the CPU surface generator).
+3. Downloads the pinned `wgpu-native` prebuilt for your platform into
+   `gpu_compute/vendor/<triple>/` (gitignored).
+4. Builds the `gpu_*` compute binaries → `gpu_compute/zig-out/bin/`. On Windows
+   it also copies `wgpu_native.dll` next to them: PE has no rpath, so the
+   binaries can only find the library in their own directory.
+5. Fetches htmx → `space_explorer_gui/public/htmx.min.js` (checksum-verified).
+6. Installs the web server's npm dependencies.
+
+The GUI is entirely htmx-driven, so without `htmx.min.js` the page still renders
+but no button does anything — queueing a job sends no request at all. The server
+warns on startup if that file is missing or stubbed.
+
+`node install.mjs --build-only` runs steps 1–5 and skips the server's `npm
+install`. `node install.mjs --help` lists the flags and the environment
+overrides (`WGPU_VERSION`, `HTMX_VERSION`).
 
 ### Windows notes
 
 Nothing in the install path is PowerShell, deliberately. `.ps1` files are
 refused under the default `Restricted` ExecutionPolicy on Windows client
 installs, and a `.ps1` downloaded from GitHub carries Mark-of-the-Web so even
-`RemoteSigned` rejects it. `node install.mjs` is unaffected,
-and `npm` runs the `postinstall` hook through `cmd.exe`, not PowerShell.
+`RemoteSigned` rejects it. `node install.mjs` is unaffected — it is plain Node,
+invoked directly.
 
 **The policy does still block `npm` itself.** Node's Windows installer ships
 `npm.ps1` alongside `npm.cmd`, and PowerShell prefers the `.ps1`, so under
@@ -81,7 +80,8 @@ missing npm reads `The term 'npm' is not recognized...` instead. The same
 applies to `npx`, and to any CLI installed by npm: it writes `.ps1`, `.cmd` and
 bash shims into `node_modules\.bin`, and PowerShell picks the blocked one.
 
-Pick whichever you prefer:
+This only affects `npm start`; `node install.mjs` runs either way, because it
+spawns `npm.cmd` explicitly on Windows. Pick whichever you prefer:
 
 ```powershell
 # Fix it once, per-user, no admin. npm.ps1 is a local file, so RemoteSigned
@@ -89,29 +89,10 @@ Pick whichever you prefer:
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 # Or bypass the shim per-command, changing nothing on the machine:
-npm.cmd install github:Ober3550/seed-search
 npm.cmd start
 
 # Or run from cmd.exe instead of PowerShell, which resolves npm.cmd on its own.
 ```
-
-None of this affects `node install.mjs` — `install.mjs`
-spawns `npm.cmd` explicitly on Windows.
-
-## Quick start
-
-```bash
-# 1. Build the Zig components + install server deps
-node install.mjs
-
-# 2. Start the explorer, then queue seed buckets from the GUI
-npm start             # → http://localhost:3456
-```
-
-## Prerequisites
-
-- [Zig](https://ziglang.org/) 0.16.x
-- Node.js >= 18
 
 ## Project structure
 
