@@ -454,6 +454,7 @@ function evaluateWorld(seedRaw) {
     radius: Math.round(b.radius || 0),
     dv: Math.round(b.delta_v || 0),
     primary: primaryResource(b),
+    enemy: enemyOrd(b.tags && b.tags.enemy),  // 0..6 danger ordinal (0 = none)
     present: Object.entries(b.resource || {})
       .filter(([, v]) => v > 0)
       .map(([k]) => noColor(k)),
@@ -489,18 +490,37 @@ function evaluateWorld(seedRaw) {
 // of `res` present, and (if primary) its PRIMARY is res[0]. Legacy kind-based
 // rules (primary/present/combo/both) map onto it; count rules (specials/pairs)
 // have no resource form and return null (handled separately in matchFilter).
+// Enemy danger ordinal: none=0 … max=6 (matches data.zig Enemy enum). Accepts
+// the "enemy_high" tag or a bare "high"; unknown/empty → 0 (none).
+const ENEMY_LEVELS = ["none", "very_low", "low", "med", "high", "very_high", "max"];
+function enemyOrd(tag) {
+  if (tag == null || tag === "") return 0;
+  const s = String(tag).replace("enemy_", "");
+  const i = ENEMY_LEVELS.indexOf(s);
+  return i < 0 ? 0 : i;
+}
+// Parse a rule's optional enemy-max into an ordinal (0..6) or null (no limit).
+function enemyMaxOrd(rule) {
+  const v = rule.enemyMax;
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return v;
+  const s = String(v);
+  return /^\d+$/.test(s) ? Number(s) : (ENEMY_LEVELS.includes(s.replace("enemy_", "")) ? enemyOrd(s) : null);
+}
+
 function normalizeRule(rule) {
   if (!rule || typeof rule !== "object") return null;
+  const em = enemyMaxOrd(rule);
   switch (rule.kind) {
-    case "primary": return { primary: true, res: [rule.res].filter(Boolean) };
-    case "present": return { primary: false, res: [rule.res].filter(Boolean) };
-    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean) };
-    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean) };
+    case "primary": return { primary: true, res: [rule.res].filter(Boolean), enemyMax: em };
+    case "present": return { primary: false, res: [rule.res].filter(Boolean), enemyMax: em };
+    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em };
+    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em };
     case "specials":
     case "pairs": return null;
     default: {
       const res = Array.isArray(rule.res) ? rule.res.filter(Boolean) : (rule.res ? [rule.res] : []);
-      return { primary: !!rule.primary, res };
+      return { primary: !!rule.primary, res, enemyMax: em };
     }
   }
 }
@@ -533,7 +553,8 @@ function matchFilter(crit, rules) {
     }
     const b = pick((x) =>
       nr.res.every((r) => (x.present || []).includes(r)) &&
-      (!nr.primary || x.primary === nr.res[0]));
+      (!nr.primary || x.primary === nr.res[0]) &&
+      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax));
     if (!b) return { match: false, zones: [] };
     used.add(b.name);
     zones.add(b.name);
@@ -574,7 +595,8 @@ function countMatches(crit, rules) {
     const b = bodies.find((x) =>
       !used.has(x.name) &&
       nr.res.every((r) => (x.present || []).includes(r)) &&
-      (!nr.primary || x.primary === nr.res[0]));
+      (!nr.primary || x.primary === nr.res[0]) &&
+      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax));
     if (b) { used.add(b.name); n++; }
   }
   return n;
@@ -588,13 +610,14 @@ function ruleLabel(rule) {
   const nr = normalizeRule(rule);
   if (!nr || nr.res.length === 0) return "—";
   const names = nr.res.map(nm);
+  const em = nr.enemyMax == null ? "" : ` · enemy ≤ ${ENEMY_LEVELS[nr.enemyMax] || nr.enemyMax}`;
   if (nr.primary) {
-    return names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`;
+    return (names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`) + em;
   }
-  return names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`;
+  return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule };
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule, ENEMY_LEVELS };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below

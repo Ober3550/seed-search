@@ -110,11 +110,23 @@ pub fn main(init: std.process.Init) !void {
         // --- Per-seed metrics (drive the tail filters AND ride in the JSONL) ---
         // np: planets + moons in the Calidus home system (excl. Nauvis). Planet
         // counts across other stars are ~constant, so Calidus carries the signal.
+        // ed: PROPORTIONAL enemy danger — mean enemy level (0..6) over the Calidus
+        // planets+moons, scaled to 0..100%. Mean (not sum) so a few high-enemy
+        // surfaces read as more dangerous than many surfaces that are mostly calm.
         var np: u32 = 0;
+        var enemy_sum: u32 = 0;
+        var enemy_cnt: u32 = 0;
         for (universe.zones.items[calidus_zi..zone_end]) |z| {
             if (std.mem.eql(u8, z.name, "Nauvis")) continue;
-            if (z.ztype == .planet or z.ztype == .moon) np += 1;
+            if (z.ztype != .planet and z.ztype != .moon) continue;
+            np += 1;
+            const tags = gen.computeTags(z.seed, z.name, bodyMap);
+            if (tags.enemy) |e| {
+                enemy_sum += @intFromEnum(e);
+                enemy_cnt += 1;
+            }
         }
+        const ed: u32 = if (enemy_cnt > 0) (enemy_sum * 100) / (enemy_cnt * 6) else 0;
         // naqdv: delta-v to the NEAREST naquium-primary asteroid field. NO_NAQ
         // (10,000,000) when the seed has none → counts as the far extreme.
         const NO_NAQ: u32 = 10_000_000;
@@ -200,7 +212,7 @@ pub fn main(init: std.process.Init) !void {
         // Per-seed metrics ride in the header: np (Calidus planets+moons) and
         // naqdv (nearest naquium-primary field Δv) — so both extremes are
         // sortable/filterable even though only Calidus zones are stored.
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"np\":{d},\"naqdv\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, np, naqdv }) catch unreachable;
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"np\":{d},\"naqdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, np, naqdv, ed }) catch unreachable;
         pos += open.len;
 
         // calidus_zi / zone_end were computed above (for the metrics). The default

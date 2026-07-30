@@ -352,7 +352,7 @@ app.get("/seeds", (req, res) => {
   const countMode = (req.query.count === "1") && rules.length > 0;
 
   // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
-  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max };
+  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, ed_min: req.query.ed_min, ed_max: req.query.ed_max };
   let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, ...rng });
   if (countMode) {
     for (const s of seeds) {
@@ -414,6 +414,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
         <span class="hint" title="Calidus planets+moons range">planets <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="nearest naquium-field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="proportional enemy danger % (mean enemy level across Calidus surfaces)">enemy% <input type="number" name="ed_min" value="${f.ed_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ed_max" value="${f.ed_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
@@ -426,6 +427,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
         <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus planets+moons — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
         <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-primary field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="ed" onclick="sortSeeds('ed')" title="proportional enemy danger % (mean enemy level across Calidus surfaces) — click for most (desc) / least (asc)">Enemy% <span class="sort-ind"></span></th>
         <th>Naq</th>
       </tr></thead>
       <tbody>
@@ -433,16 +435,17 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-naqdv="${s.naqdv ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-ed="${s.ed ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
           <td>${s.np ?? "—"}</td>
           <td>${s.naqdv == null ? "—" : (s.naqdv >= 10000000 ? "none" : s.naqdv.toLocaleString())}</td>
+          <td>${s.ed == null ? "—" : s.ed + "%"}</td>
           <td>${c.naqField || "—"}</td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 9 : 8}">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 10 : 9}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
@@ -1134,10 +1137,14 @@ function renderRuleRow(rule = null, disabled = false) {
   }
   const primChecked = nr && nr.primary ? "checked" : "";
   const resList = nr && nr.res.length ? nr.res : [""];
+  const emVal = nr && nr.enemyMax != null ? nr.enemyMax : "";
+  const emOpts = `<option value="">enemy: any</option>` +
+    analyze.ENEMY_LEVELS.map((lvl, i) => `<option value="${i}" ${emVal === i ? "selected" : ""}>enemy ≤ ${lvl}</option>`).join("");
   return `<div class="rule-row">
     <label class="prim-check" title="require this body's PRIMARY to be the first resource (core fragments)">
       <input type="checkbox" name="primary" ${primChecked} ${dis}> primary</label>
     <span class="res-selects">${resList.map(v => resSelect(v, disabled)).join("")}</span>
+    <select name="enemyMax" title="only accept a surface whose enemy tag is at most this (blank = any)" ${dis}>${emOpts}</select>
     ${dis ? "" : `<button type="button" class="btn-sm" title="add another resource to this rule" onclick="addRes(this)">+</button>
     <button type="button" class="btn-sm ghost" title="remove a resource (or the rule if it's the last)" onclick="removeRes(this)">−</button>`}
   </div>`;
@@ -1205,7 +1212,9 @@ function renderPresetsPage(defs) {
         return [...form.querySelectorAll(".rule-row")].map(function (row) {
           const chk = row.querySelector("input[name=primary]");
           const res = [...row.querySelectorAll("select[name=res]")].map(function (s) { return s.value; }).filter(Boolean);
-          return res.length ? { primary: !!(chk && chk.checked), res: res } : null;
+          const em = row.querySelector("select[name=enemyMax]");
+          const enemyMax = em && em.value !== "" ? Number(em.value) : null;
+          return res.length ? { primary: !!(chk && chk.checked), res: res, enemyMax: enemyMax } : null;
         }).filter(Boolean);
       }
       function addRule(btn) {
@@ -1240,7 +1249,11 @@ function parseRules(body) {
   try { raw = JSON.parse(body.rules || "[]"); } catch (_) {}
   if (!Array.isArray(raw)) return [];
   return raw
-    .map(r => ({ primary: !!r.primary, res: Array.isArray(r.res) ? r.res.filter(Boolean) : [] }))
+    .map(r => ({
+      primary: !!r.primary,
+      res: Array.isArray(r.res) ? r.res.filter(Boolean) : [],
+      enemyMax: (r.enemyMax === 0 || (r.enemyMax != null && r.enemyMax !== "")) ? Number(r.enemyMax) : null,
+    }))
     .filter(r => r.res.length > 0);
 }
 
