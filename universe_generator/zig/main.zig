@@ -8,9 +8,9 @@
 ///   MIN_PROD_MODULES    Prod module filter (0=off)
 ///   NAQ_DV_LOW/HIGH     Naquium-field Δv extremity tails (0=off)
 ///   PLANETS_LOW/HIGH    Calidus planets+moons extremity tails (0=off)
-///   WATERLESS_PCT_LOW/HIGH  Waterless share of Calidus bodies, % (0=off)
+///   WATER_PCT_LOW/HIGH  Water share of Calidus bodies, % (0=off)
 ///   ENEMY_PCT_LOW/HIGH  Hostile share of Calidus bodies, % (0=off)
-///   METRICS_SCAN        Dump "seed,np,nw,ne,wf,ef,naqdv,fdv,ed", no JSONL
+///   METRICS_SCAN        Dump "seed,np,nw,ne,wp,ef,naqdv,fdv,ed", no JSONL
 ///   OUTPUT_DIR          Output directory (default "output")
 ///   MAX_LINES_PER_FILE  Lines per JSONL file before rotating (default 10000)
 ///
@@ -191,9 +191,10 @@ pub fn main(init: std.process.Init) !void {
         // ed: PROPORTIONAL enemy danger — mean enemy level (0..6) over the Calidus
         // planets+moons, scaled to 0..100%. Mean (not sum) so a few high-enemy
         // surfaces read as more dangerous than many surfaces that are mostly calm.
-        // nw / ne: counts of Calidus planets+moons that are waterless resp.
-        // hostile; wf / ef: those counts NORMALISED to a 0..100 percentage of the
-        // bodies they were drawn from. The filters use the percentages, not the
+        // nw / ne: counts of Calidus planets+moons that HAVE water resp. carry
+        // enemies; wp / ef: those counts NORMALISED to a 0..100 percentage of the
+        // bodies they were drawn from. Both read the intuitive way round: 0% water
+        // means no body has any, 100% means every body does. The filters use the percentages, not the
         // counts. Raw counts track system size almost perfectly (measured over
         // 50k seeds: corr(np, ne) = 0.94), so a raw-count tail just re-selects
         // the biggest systems that the PLANETS_HIGH tail already catches — it
@@ -205,7 +206,7 @@ pub fn main(init: std.process.Init) !void {
         var npl: u32 = 0; // Calidus planets only (incl Nauvis)
         var np: u32 = 0; // Calidus planets + moons (incl Nauvis)
         var body_cnt: u32 = 0; // tagged bodies = Calidus planets+moons, less Nauvis
-        var nw: u32 = 0; // ...of those, waterless (water tag none or unset)
+        var nw: u32 = 0; // ...of those, with water (water tag present and > none)
         var ne: u32 = 0; // ...of those, hostile (enemy tag present and > none)
         var enemy_sum: u32 = 0;
         var enemy_cnt: u32 = 0;
@@ -219,17 +220,17 @@ pub fn main(init: std.process.Init) !void {
             const tags = gen.computeTags(z.seed, z.name, bodyMap);
             // An unset tag reads as "none" everywhere else (the JSONL omits null
             // tags and the GUI renders the absence as "none"), so an absent water
-            // tag counts as waterless and an absent enemy tag as peaceful, rather
-            // than as unknown.
-            if (tags.water == null or tags.water.? == .none) nw += 1;
+            // tag counts as dry and an absent enemy tag as peaceful, rather than
+            // as unknown.
+            if (tags.water) |w| { if (w != .none) nw += 1; }
             if (tags.enemy) |e| {
                 enemy_sum += @intFromEnum(e);
                 enemy_cnt += 1;
                 if (e != .none) ne += 1;
             }
         }
-        // Percentage of Calidus bodies that are waterless / hostile (0..100).
-        const wf: u32 = if (body_cnt > 0) (nw * 100) / body_cnt else 0;
+        // Percentage of Calidus bodies that have water / are hostile (0..100).
+        const wp: u32 = if (body_cnt > 0) (nw * 100) / body_cnt else 0;
         const ef: u32 = if (body_cnt > 0) (ne * 100) / body_cnt else 0;
         const ed: u32 = if (enemy_cnt > 0) (enemy_sum * 100) / (enemy_cnt * 6) else 0;
         // Two field distances (NO_NAQ = 10,000,000 sentinel when none exist):
@@ -260,7 +261,7 @@ pub fn main(init: std.process.Init) !void {
         // Skips JSONL entirely. Columns: seed,np,nw,ne,naqdv,fdv,ed
         if (getEnvBool("METRICS_SCAN")) {
             var mb: [160]u8 = undefined;
-            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wf, ef, naqdv, fdv, ed }) catch unreachable;
+            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
             _ = stdout_w.writeAll(ms) catch {};
             continue;
         }
@@ -271,29 +272,29 @@ pub fn main(init: std.process.Init) !void {
         // enabled tail: naquium-PRIMARY field <= NAQ_DV_LOW (closest, rich naq)
         // or ANY field >= NAQ_DV_HIGH (furthest, even basic naq is a long haul);
         // Calidus planets+moons >= PLANETS_HIGH (most) or <= PLANETS_LOW
-        // (fewest); waterless share <= WATERLESS_PCT_LOW (a wet system) or >=
-        // WATERLESS_PCT_HIGH (a parched one); hostile share <= ENEMY_PCT_LOW (a
-        // quiet system) or >= ENEMY_PCT_HIGH (a warzone). The last four are
-        // PERCENTAGES (0..100), not counts — see wf/ef above.
+        // (fewest); water share <= WATER_PCT_LOW (a parched system) or >=
+        // WATER_PCT_HIGH (a wet one); hostile share <= ENEMY_PCT_LOW (a quiet
+        // system) or >= ENEMY_PCT_HIGH (a warzone). The last four are
+        // PERCENTAGES (0..100), not counts — see wp/ef above.
         // Each cutoff of 0 disables that tail; no cutoffs set → keep everything.
         // Union (not AND). MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
         const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
         const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
         const pl_lo = getEnvU32("PLANETS_LOW", 0);
         const pl_hi = getEnvU32("PLANETS_HIGH", 0);
-        const wf_lo = getEnvU32("WATERLESS_PCT_LOW", 0);
-        const wf_hi = getEnvU32("WATERLESS_PCT_HIGH", 0);
+        const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
+        const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
         const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
         const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
         const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
-            wf_lo > 0 or wf_hi > 0 or ef_lo > 0 or ef_hi > 0;
+            wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
         const keep = !any_cut or
             (naq_lo > 0 and naqdv <= naq_lo) or
             (naq_hi > 0 and fdv >= naq_hi) or
             (pl_hi > 0 and np >= pl_hi) or
             (pl_lo > 0 and np <= pl_lo) or
-            (wf_hi > 0 and wf >= wf_hi) or
-            (wf_lo > 0 and wf <= wf_lo) or
+            (wp_hi > 0 and wp >= wp_hi) or
+            (wp_lo > 0 and wp <= wp_lo) or
             (ef_hi > 0 and ef >= ef_hi) or
             (ef_lo > 0 and ef <= ef_lo);
         if (!keep) continue;
@@ -342,7 +343,7 @@ pub fn main(init: std.process.Init) !void {
         // Per-seed metrics ride in the header: np (Calidus planets+moons) and
         // naqdv (nearest naquium-primary field Δv) — so both extremes are
         // sortable/filterable even though only Calidus zones are stored.
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"nw\":{d},\"ne\":{d},\"wf\":{d},\"ef\":{d},\"naqdv\":{d},\"fdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, nw, ne, wf, ef, naqdv, fdv, ed }) catch unreachable;
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"nw\":{d},\"ne\":{d},\"wp\":{d},\"ef\":{d},\"naqdv\":{d},\"fdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
         pos += open.len;
 
         // calidus_zi / zone_end were computed above (for the metrics). The default

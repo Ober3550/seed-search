@@ -435,9 +435,9 @@ function runUniverseBucket(job) {
       NAQ_DV_HIGH: String(job.naq_hi || 0),
       PLANETS_LOW: String(job.pl_lo || 0),
       PLANETS_HIGH: String(job.pl_hi || 0),
-      // Percentages (0..100), not counts — see wf/ef in main.zig.
-      WATERLESS_PCT_LOW: String(job.wf_lo || 0),
-      WATERLESS_PCT_HIGH: String(job.wf_hi || 0),
+      // Percentages (0..100), not counts — see wp/ef in main.zig.
+      WATER_PCT_LOW: String(job.wp_lo || 0),
+      WATER_PCT_HIGH: String(job.wp_hi || 0),
       ENEMY_PCT_LOW: String(job.ef_lo || 0),
       ENEMY_PCT_HIGH: String(job.ef_hi || 0),
       MIN_PROD_MODULES: "0",
@@ -530,7 +530,7 @@ async function importBucket(filePath, jobId, label) {
       naqdv: data.naqdv ?? null,
       fdv: data.fdv ?? null,
       ed: data.ed ?? null,
-      wf: data.wf ?? null,
+      wp: data.wp ?? null,
       ef: data.ef ?? null,
     });
     for (const z of data.z) {
@@ -707,7 +707,7 @@ function generateSeed(seed, k2 = false) {
       ALL_ZONES: "1",
       MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0", METRICS_SCAN: "0",
       NAQ_DV_LOW: "0", NAQ_DV_HIGH: "0", PLANETS_LOW: "0", PLANETS_HIGH: "0",
-      WATERLESS_PCT_LOW: "0", WATERLESS_PCT_HIGH: "0",
+      WATER_PCT_LOW: "0", WATER_PCT_HIGH: "0",
       ENEMY_PCT_LOW: "0", ENEMY_PCT_HIGH: "0",
     };
     const child = spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -728,7 +728,7 @@ function generateSeed(seed, k2 = false) {
         seed: data.s, job_id: null, bucket, loot: data.l || "", k2: !!data.k,
         zone_count: data.z.length, line, criteria,
         np: data.np ?? null, npl: data.npl ?? null, naqdv: data.naqdv ?? null,
-        fdv: data.fdv ?? null, ed: data.ed ?? null, wf: data.wf ?? null, ef: data.ef ?? null,
+        fdv: data.fdv ?? null, ed: data.ed ?? null, wp: data.wp ?? null, ef: data.ef ?? null,
       }]);
       const n = upsertWorldZones(data, null);
       db.markSeedExpanded(seed, line, n, criteria, data.np ?? null, data.naqdv ?? null,

@@ -171,11 +171,17 @@ function initSchema() {
     "ALTER TABLE seeds ADD COLUMN fdv INTEGER", // Δv to nearest ANY asteroid field
     // Proportional enemy danger: mean enemy level over Calidus planets+moons, 0..100%.
     "ALTER TABLE seeds ADD COLUMN ed INTEGER",
-    // Share of Calidus planets+moons (excl. Nauvis) that are waterless / hostile,
-    // 0..100%. Normalised on purpose: the raw counts track system size almost
-    // perfectly (corr(np, hostile count) = 0.94 over 50k seeds), so they would
-    // just restate the planet-count tails instead of measuring character.
+    // Share of Calidus planets+moons (excl. Nauvis) that have water / are
+    // hostile, 0..100%. Normalised on purpose: the raw counts track system size
+    // almost perfectly (corr(np, hostile count) = 0.94 over 50k seeds), so they
+    // would just restate the planet-count tails instead of measuring character.
+    //
+    // `wf` was the same statistic INVERTED (share with NO water) and is dead:
+    // "higher = drier" read backwards everywhere it was shown. `wp` replaces it
+    // rather than redefining it, so rows ingested under the old meaning are not
+    // silently reinterpreted. wf can be dropped once no old rows remain.
     "ALTER TABLE seeds ADD COLUMN wf INTEGER",
+    "ALTER TABLE seeds ADD COLUMN wp INTEGER",
     "ALTER TABLE seeds ADD COLUMN ef INTEGER",
     // 1 = Calidus home-system member, 0 = another star system, NULL = ingested
     // before seedgen emitted the flag. Nothing else on a zone identifies its
@@ -187,8 +193,8 @@ function initSchema() {
     "ALTER TABLE universe_jobs ADD COLUMN naq_hi INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN pl_lo INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN pl_hi INTEGER DEFAULT 0",
-    "ALTER TABLE universe_jobs ADD COLUMN wf_lo INTEGER DEFAULT 0",
-    "ALTER TABLE universe_jobs ADD COLUMN wf_hi INTEGER DEFAULT 0",
+    "ALTER TABLE universe_jobs ADD COLUMN wp_lo INTEGER DEFAULT 0",
+    "ALTER TABLE universe_jobs ADD COLUMN wp_hi INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN ef_lo INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN ef_hi INTEGER DEFAULT 0",
   ];
@@ -280,11 +286,11 @@ function seedPresetFilters() {
 function createUniverseJob(seedStart, seedEnd, workers, k2Enabled = false, filter = {}) {
   const d = getDb();
   const stmt = d.prepare(
-    "INSERT INTO universe_jobs (seed_start, seed_end, workers, k2_enabled, naq_lo, naq_hi, pl_lo, pl_hi, wf_lo, wf_hi, ef_lo, ef_hi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO universe_jobs (seed_start, seed_end, workers, k2_enabled, naq_lo, naq_hi, pl_lo, pl_hi, wp_lo, wp_hi, ef_lo, ef_hi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const info = stmt.run(seedStart, seedEnd, workers || 1, k2Enabled ? 1 : 0,
     filter.naq_lo || 0, filter.naq_hi || 0, filter.pl_lo || 0, filter.pl_hi || 0,
-    filter.wf_lo || 0, filter.wf_hi || 0, filter.ef_lo || 0, filter.ef_hi || 0);
+    filter.wp_lo || 0, filter.wp_hi || 0, filter.ef_lo || 0, filter.ef_hi || 0);
   return info.lastInsertRowid;
 }
 
@@ -454,13 +460,13 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed, wf, ef)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed, wp, ef)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
-        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wf ?? null, r.ef ?? null);
+        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null);
     }
   });
   tx();
@@ -487,7 +493,7 @@ function getSeeds(filter = {}) {
   // `ed` (mean enemy INTENSITY) is still computed and stored, but no longer
   // surfaced: `ef` — the share of bodies carrying enemies — is the metric the
   // enemy tails filter on, so showing both invited confusing them.
-  range("wf", filter.wf_min, filter.wf_max);
+  range("wp", filter.wp_min, filter.wp_max);
   range("ef", filter.ef_min, filter.ef_max);
   // Seed-number search. Matched server-side, not by filtering the rendered rows:
   // the result set is capped at 2000 below, so a client-side box would silently
@@ -505,7 +511,7 @@ function getSeeds(filter = {}) {
     seed: "seed", np_desc: "np DESC", np_asc: "np ASC",
     naqdv_asc: "naqdv ASC", naqdv_desc: "naqdv DESC",
     fdv_asc: "fdv ASC", fdv_desc: "fdv DESC",
-    wf_desc: "wf DESC", wf_asc: "wf ASC",
+    wp_desc: "wp DESC", wp_asc: "wp ASC",
     ef_desc: "ef DESC", ef_asc: "ef ASC",
   };
   const ord = orders[filter.sort] || "seed";
@@ -526,14 +532,6 @@ function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl, f
       np = COALESCE(?, np), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv),
       fdv = COALESCE(?, fdv), ed = COALESCE(?, ed) WHERE seed = ?`)
     .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, fdv ?? null, ed ?? null, seed);
-}
-
-// Every bucket label that actually has seed rows. Not the same as the set of
-// completed universe jobs: manually generated seeds live in a synthetic bucket
-// with no job behind it, and would otherwise be unreachable from the bucket
-// filter on /seeds.
-function getSeedBuckets() {
-  return getDb().prepare("SELECT DISTINCT bucket FROM seeds WHERE bucket IS NOT NULL ORDER BY bucket").all().map(r => r.bucket);
 }
 
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.
@@ -648,7 +646,6 @@ module.exports = {
   getSurfaceJobs,
   getAllSurfaceJobs,
   getGeneratedZoneCounts,
-  getSeedBuckets,
   getSurfaceJob,
   getSurfaceJobsForZone,
   updateSurfaceJob,
