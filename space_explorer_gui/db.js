@@ -166,6 +166,7 @@ function initSchema() {
     // Per-seed extremity metrics from seedgen (Calidus planets+moons; Δv to the
     // nearest naquium-primary field) — for best/worst sort + range filtering.
     "ALTER TABLE seeds ADD COLUMN np INTEGER",
+    "ALTER TABLE seeds ADD COLUMN npl INTEGER", // Calidus planets only (incl Nauvis)
     "ALTER TABLE seeds ADD COLUMN naqdv INTEGER",
     // Proportional enemy danger: mean enemy level over Calidus planets+moons, 0..100%.
     "ALTER TABLE seeds ADD COLUMN ed INTEGER",
@@ -436,13 +437,13 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, naqdv, ed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, ed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
-        r.np ?? null, r.naqdv ?? null, r.ed ?? null);
+        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.ed ?? null);
     }
   });
   tx();
@@ -484,11 +485,11 @@ function getSeed(seed) {
 
 // Mark a seed as fully expanded (all zones ingested) + refresh its stored line
 // and zone_count. Called by the seed-detail expand job after upserting zones.
-function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed) {
+function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl) {
   getDb().prepare(`UPDATE seeds SET expanded = 1, line = ?, zone_count = ?,
       criteria = COALESCE(?, criteria),
-      np = COALESCE(?, np), naqdv = COALESCE(?, naqdv), ed = COALESCE(?, ed) WHERE seed = ?`)
-    .run(line, zoneCount, criteria || null, np ?? null, naqdv ?? null, ed ?? null, seed);
+      np = COALESCE(?, np), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv), ed = COALESCE(?, ed) WHERE seed = ?`)
+    .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, ed ?? null, seed);
 }
 
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.

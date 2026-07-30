@@ -425,6 +425,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <th>Bucket</th><th>K2</th><th>Loot</th>
         <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
+        <th class="sortable" data-key="npl" onclick="sortSeeds('npl')" title="Calidus system planets only (incl. Nauvis) — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
         <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus system planets + moons (incl. Nauvis) — click for most (desc) / fewest (asc)">P+M <span class="sort-ind"></span></th>
         <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-primary field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
         <th class="sortable" data-key="ed" onclick="sortSeeds('ed')" title="proportional enemy danger % (mean enemy level across Calidus surfaces) — click for most (desc) / least (asc)">Enemy% <span class="sort-ind"></span></th>
@@ -435,17 +436,18 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-ed="${s.ed ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-ed="${s.ed ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
+          <td>${s.npl ?? "—"}</td>
           <td>${s.np ?? "—"}</td>
           <td>${s.naqdv == null ? "—" : (s.naqdv >= 10000000 ? "none" : s.naqdv.toLocaleString())}</td>
           <td>${s.ed == null ? "—" : s.ed + "%"}</td>
           <td>${c.naqField || "—"}</td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 10 : 9}">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 11 : 10}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}

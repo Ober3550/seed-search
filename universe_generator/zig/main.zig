@@ -113,12 +113,14 @@ pub fn main(init: std.process.Init) !void {
         // ed: PROPORTIONAL enemy danger — mean enemy level (0..6) over the Calidus
         // planets+moons, scaled to 0..100%. Mean (not sum) so a few high-enemy
         // surfaces read as more dangerous than many surfaces that are mostly calm.
-        var np: u32 = 0;
+        var npl: u32 = 0; // Calidus planets only (incl Nauvis)
+        var np: u32 = 0; // Calidus planets + moons (incl Nauvis)
         var enemy_sum: u32 = 0;
         var enemy_cnt: u32 = 0;
         for (universe.zones.items[calidus_zi..zone_end]) |z| {
             if (z.ztype != .planet and z.ztype != .moon) continue;
-            np += 1; // counts every Calidus planet+moon INCLUDING Nauvis (matches in-game)
+            np += 1; // planet+moon, INCLUDING Nauvis (matches in-game)
+            if (z.ztype == .planet) npl += 1;
             if (std.mem.eql(u8, z.name, "Nauvis")) continue; // Nauvis has no universe enemy tag
             const tags = gen.computeTags(z.seed, z.name, bodyMap);
             if (tags.enemy) |e| {
@@ -212,7 +214,7 @@ pub fn main(init: std.process.Init) !void {
         // Per-seed metrics ride in the header: np (Calidus planets+moons) and
         // naqdv (nearest naquium-primary field Δv) — so both extremes are
         // sortable/filterable even though only Calidus zones are stored.
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"np\":{d},\"naqdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, np, naqdv, ed }) catch unreachable;
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"naqdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, naqdv, ed }) catch unreachable;
         pos += open.len;
 
         // calidus_zi / zone_end were computed above (for the metrics). The default
