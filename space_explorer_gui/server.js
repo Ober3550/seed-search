@@ -509,7 +509,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
         ${sortTh("Field Δv", "fdv", "Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest / closest")}
         ${sortTh("Hostile%", "ef", "share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile / quietest")}
         ${sortTh("Water%", "wp", "share of Calidus planets+moons (excl. Nauvis) that HAVE water — click for wettest / driest")}
-        ${sortTh("Score", "score", "0–100 overall desirability: most Calidus planets+moons (60%), naquium access (20%), fewest enemies (15%), most water (5%). Click for best / worst")}
+        ${sortTh("Score", "score", "−100…+100 overall desirability (0 = par): most Calidus planets+moons (60%), naquium access (20%), fewest enemies (15%), most water (5%) — every component on the same signed scale, weighted-averaged. Click for best / worst")}
       </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
