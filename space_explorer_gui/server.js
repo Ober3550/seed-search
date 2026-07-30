@@ -1149,6 +1149,7 @@ function renderRuleRow(rule = null, disabled = false) {
     <span class="res-selects">${resList.map(v => resSelect(v, disabled)).join("")}</span>
     <select name="enemyMax" title="only accept a surface whose enemy tag is at most this (blank = any)" ${dis}>${emOpts}</select>
     <select name="waterMin" title="only accept a surface whose water tag is at least this (blank = any)" ${dis}>${wmOpts}</select>
+    <label class="radius-min" title="only accept a surface with radius ≥ this (blank = any; ~2000 = old 'viable' floor)">r ≥ <input type="number" name="radiusMin" value="${nr && nr.radiusMin != null ? nr.radiusMin : ""}" min="0" step="100" style="width:5em" placeholder="any" ${dis}></label>
     ${dis ? "" : `<button type="button" class="btn-sm" title="add another resource to this rule" onclick="addRes(this)">+</button>
     <button type="button" class="btn-sm ghost" title="remove a resource (or the rule if it's the last)" onclick="removeRes(this)">−</button>`}
   </div>`;
@@ -1220,7 +1221,9 @@ function renderPresetsPage(defs) {
           const enemyMax = em && em.value !== "" ? Number(em.value) : null;
           const wm = row.querySelector("select[name=waterMin]");
           const waterMin = wm && wm.value !== "" ? Number(wm.value) : null;
-          return res.length ? { primary: !!(chk && chk.checked), res: res, enemyMax: enemyMax, waterMin: waterMin } : null;
+          const rmEl = row.querySelector("input[name=radiusMin]");
+          const radiusMin = rmEl && rmEl.value !== "" ? Number(rmEl.value) : null;
+          return res.length ? { primary: !!(chk && chk.checked), res: res, enemyMax: enemyMax, waterMin: waterMin, radiusMin: radiusMin } : null;
         }).filter(Boolean);
       }
       function addRule(btn) {
@@ -1260,6 +1263,7 @@ function parseRules(body) {
       res: Array.isArray(r.res) ? r.res.filter(Boolean) : [],
       enemyMax: (r.enemyMax === 0 || (r.enemyMax != null && r.enemyMax !== "")) ? Number(r.enemyMax) : null,
       waterMin: (r.waterMin === 0 || (r.waterMin != null && r.waterMin !== "")) ? Number(r.waterMin) : null,
+      radiusMin: (r.radiusMin != null && r.radiusMin !== "" && Number(r.radiusMin) > 0) ? Number(r.radiusMin) : null,
     }))
     .filter(r => r.res.length > 0);
 }

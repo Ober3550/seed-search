@@ -421,7 +421,9 @@ function evalPairs(seedOld, selected) {
 // each criterion selected (for zone-level filtering downstream).
 function evaluateWorld(seedRaw) {
   const old = convertNewToOld(seedRaw, true);
-  const bodies = viableBodies(old);
+  // ALL planets+moons (no implicit "viable" pre-filter) — colonizability limits
+  // (radius/water/enemy) are now explicit per-rule options in the seed filter.
+  const bodies = [...old.planets, ...old.moons].sort((a, b) => (a.delta_v || 0) - (b.delta_v || 0));
   const specials = {};
   for (const b of bodies) {
     for (const r of SPECIAL) {
@@ -529,16 +531,17 @@ function normalizeRule(rule) {
   if (!rule || typeof rule !== "object") return null;
   const em = enemyMaxOrd(rule);
   const wm = waterMinOrd(rule);
+  const rm = (rule.radiusMin != null && rule.radiusMin !== "" && Number(rule.radiusMin) > 0) ? Number(rule.radiusMin) : null;
   switch (rule.kind) {
-    case "primary": return { primary: true, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm };
-    case "present": return { primary: false, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm };
-    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm };
-    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm };
+    case "primary": return { primary: true, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm, radiusMin: rm };
+    case "present": return { primary: false, res: [rule.res].filter(Boolean), enemyMax: em, waterMin: wm, radiusMin: rm };
+    case "combo": return { primary: true, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm, radiusMin: rm };
+    case "both": return { primary: false, res: [rule.res, rule.res2].filter(Boolean), enemyMax: em, waterMin: wm, radiusMin: rm };
     case "specials":
     case "pairs": return null;
     default: {
       const res = Array.isArray(rule.res) ? rule.res.filter(Boolean) : (rule.res ? [rule.res] : []);
-      return { primary: !!rule.primary, res, enemyMax: em, waterMin: wm };
+      return { primary: !!rule.primary, res, enemyMax: em, waterMin: wm, radiusMin: rm };
     }
   }
 }
@@ -573,7 +576,8 @@ function matchFilter(crit, rules) {
       nr.res.every((r) => (x.present || []).includes(r)) &&
       (!nr.primary || x.primary === nr.res[0]) &&
       (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax) &&
-      (nr.waterMin == null || (x.water || 0) >= nr.waterMin));
+      (nr.waterMin == null || (x.water || 0) >= nr.waterMin) &&
+      (nr.radiusMin == null || (x.radius || 0) >= nr.radiusMin));
     if (!b) return { match: false, zones: [] };
     used.add(b.name);
     zones.add(b.name);
@@ -616,7 +620,8 @@ function countMatches(crit, rules) {
       nr.res.every((r) => (x.present || []).includes(r)) &&
       (!nr.primary || x.primary === nr.res[0]) &&
       (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax) &&
-      (nr.waterMin == null || (x.water || 0) >= nr.waterMin));
+      (nr.waterMin == null || (x.water || 0) >= nr.waterMin) &&
+      (nr.radiusMin == null || (x.radius || 0) >= nr.radiusMin));
     if (b) { used.add(b.name); n++; }
   }
   return n;
@@ -632,10 +637,11 @@ function ruleLabel(rule) {
   const names = nr.res.map(nm);
   const em = nr.enemyMax == null ? "" : ` · enemy ≤ ${ENEMY_LEVELS[nr.enemyMax] || nr.enemyMax}`;
   const wm = nr.waterMin == null ? "" : ` · water ≥ ${WATER_LEVELS[nr.waterMin] || nr.waterMin}`;
+  const rm = nr.radiusMin == null ? "" : ` · r ≥ ${nr.radiusMin}`;
   if (nr.primary) {
-    return (names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`) + em + wm;
+    return (names.length === 1 ? `${names[0]} primary` : `${names[0]} primary + ${names.slice(1).join(" + ")}`) + em + wm + rm;
   }
-  return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em + wm;
+  return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em + wm + rm;
 }
 
 module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
