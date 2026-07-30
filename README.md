@@ -49,14 +49,14 @@ On **Windows**, from `cmd.exe` or PowerShell:
 
 ```bat
 git clone https://github.com/Ober3550/seed-search.git && cd seed-search
-install.cmd
+node install.mjs
 npm start
 ```
 
-`install.cmd` (Windows) and `./install.sh` (macOS / Linux) are one-line
-bootstrappers that do nothing but locate Node and call `install.mjs`.
+`node install.mjs` is the single, cross-platform installer — there are no
+per-platform bootstrap scripts to pick between.
 
-Both are safe to re-run (every step is idempotent). `node install.mjs
+It is safe to re-run (every step is idempotent). `node install.mjs
 --build-only` builds just the Zig binaries (skips the server's `npm install`).
 
 ### Windows notes
@@ -64,7 +64,7 @@ Both are safe to re-run (every step is idempotent). `node install.mjs
 Nothing in the install path is PowerShell, deliberately. `.ps1` files are
 refused under the default `Restricted` ExecutionPolicy on Windows client
 installs, and a `.ps1` downloaded from GitHub carries Mark-of-the-Web so even
-`RemoteSigned` rejects it. `install.cmd` and `node install.mjs` are unaffected,
+`RemoteSigned` rejects it. `node install.mjs` is unaffected,
 and `npm` runs the `postinstall` hook through `cmd.exe`, not PowerShell.
 
 **The policy does still block `npm` itself.** Node's Windows installer ships
@@ -95,37 +95,36 @@ npm.cmd start
 # Or run from cmd.exe instead of PowerShell, which resolves npm.cmd on its own.
 ```
 
-None of this affects `install.cmd` or `node install.mjs` — `install.mjs`
+None of this affects `node install.mjs` — `install.mjs`
 spawns `npm.cmd` explicitly on Windows.
 
 ## Quick start
 
 ```bash
-# 1. Build
-cd generator/zig && zig build-exe main.zig -O ReleaseFast -femit-bin=seedgen -target aarch64-linux-gnu -lc
-cd ../..
-docker build --platform linux/arm64 -t seed-search-seedgen -f runner/zig/Dockerfile.zig .
+# 1. Build the Zig components + install server deps
+node install.mjs
 
-# 2. Run 1M seeds with 8 parallel workers
-./run_all.sh 1000000 8
+# 2. Start the explorer, then queue seed buckets from the GUI
+npm start             # → http://localhost:3456
 ```
 
 ## Prerequisites
 
 - [Zig](https://ziglang.org/) 0.16.x
-- Docker with Linux ARM64 support (for macOS: Docker Desktop)
+- Node.js >= 18
 
 ## Project structure
 
 ```
-├── generator/zig/   Zig seed generator (main.zig, gen.zig, data.zig)
-├── verifier/        JS analyzer + Lua comparison harness
-├── output/          Generated JSONL files (gitignored)
-├── run_all.sh       Orchestrator: parallel 100K-bucket containers
-├── entrypoint.sh    Docker entrypoint (redirects stdout to bucket files)
-├── Dockerfile.zig   Docker image for seedgen
+├── universe_generator/zig/  Zig seed generator (main.zig, gen.zig, data.zig)
+├── surface_generator/       Zig surface/ore generator
+├── gpu_compute/             Zig GPU terrain/ore/biome kernels
+├── space_explorer_gui/      Web explorer + job manager (npm start)
+├── verifier/                JS analyzer + Lua comparison harness
+├── output/                  Generated JSONL files (gitignored)
+├── install.mjs              Cross-platform installer (builds all Zig components)
 ├── docker-compose.yml
-└── .env.example     Template for local configuration
+└── .env.example             Template for local configuration
 ```
 
 ## Configuration
@@ -143,22 +142,21 @@ Key settings:
 
 ## Running
 
+Start the server and queue 100K-seed buckets from the GUI — the built-in job
+manager runs them in parallel and imports the results:
+
 ```bash
-# Production: 1M seeds, 8 parallel workers, filters on
-./run_all.sh 1000000 8
-
-# Without filters (testing)
-MIN_NAQ_DV=0 MIN_PROD_MODULES=0 ./run_all.sh 1000000 8
-
-# Single range
-docker run --rm --platform linux/arm64 --ulimit stack=1073741824 \
-  -v "$(pwd)/output:/workspace/output" \
-  -e START_SEED=0 -e END_SEED=100000 -e SE_K2=1 \
-  seed-search-seedgen
+npm start             # → http://localhost:3456
 ```
 
-Output files go to `output/seeds_100000.jsonl`, `output/seeds_200000.jsonl`, etc.
-Progress logs go to `output/progress.log`.
+To run a single bucket directly against the generator binary:
+
+```bash
+START_SEED=0 END_SEED=100000 SE_K2=1 \
+  universe_generator/zig/seedgen > output/seeds_100000.jsonl
+```
+
+Bucket output goes to `output/<bucket>/seeds.jsonl`.
 
 ## Analysis
 

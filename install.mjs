@@ -16,7 +16,8 @@
 // wgpu prebuilts are skipped if already present, npm install is a no-op when
 // up to date).
 //
-// See install.sh / install.cmd for thin one-line bootstrappers.
+// This is the only entry point — run it directly with `node install.mjs` on
+// every platform.
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";

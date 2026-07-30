@@ -63,8 +63,8 @@ let seedgenPath = null;
 // to any command lacking an extension, so spawn() of such a path returns ENOENT
 // while fs.existsSync() on it returns true. Accepting it would trade a clear
 // "binary not found" for a baffling "spawn ENOENT" on a file you can see.
-// Names that already carry an extension (seedgen.native) are left alone: libuv
-// tries those literally.
+// A name that already carries an extension is left alone: libuv tries it
+// literally.
 const IS_WIN = process.platform === "win32";
 const winExe = (name) => (IS_WIN && !path.extname(name) ? name + ".exe" : name);
 const binCandidate = (dir, name) => path.join(dir, winExe(name));
@@ -84,9 +84,11 @@ function findSegenBinary() {
 function findSeedgenBinary() {
   if (seedgenPath && fs.existsSync(seedgenPath)) return seedgenPath;
   const candidates = [
+    // install.mjs emits exactly one name here: seedgen.exe on Windows, seedgen
+    // elsewhere. The old seedgen.native / seedgen-macos candidates are gone --
+    // they only ever matched hand-built Mach-O/ARM archives, and ranking them
+    // above a fresh build meant a stale binary could silently win.
     binCandidate(UNIVERSE_GEN_DIR, "seedgen"),
-    binCandidate(UNIVERSE_GEN_DIR, "seedgen.native"),
-    binCandidate(UNIVERSE_GEN_DIR, "seedgen-macos"),
     binCandidate(path.join(UNIVERSE_GEN_DIR, "zig-out", "bin"), "seedgen"),
     binCandidate(path.join(UNIVERSE_GEN_DIR, "zig-out"), "seedgen"),
   ];
@@ -173,7 +175,7 @@ function createUniverseBuckets(units, k2Enabled, startSeed, filter = {}) {
 // job is next (universe seedgen OR surface segen). Optional per-type caps limit
 // how many of the pool a type may use at once (default = maxWorkers = no limit,
 // i.e. fully shared). Set e.g. universe=5/surface=5 to reserve the split.
-let maxWorkers = parseInt(process.env.WORKERS || "10");
+let maxWorkers = parseInt(process.env.WORKERS || "8");
 let maxUniverse = parseInt(process.env.UNIVERSE_CONCURRENCY || String(maxWorkers));
 let maxSurface = parseInt(process.env.SURFACE_CONCURRENCY || String(maxWorkers));
 const runningUniverse = new Set();
