@@ -31,6 +31,39 @@ fn getEnvBool(comptime name: [:0]const u8) bool {
     return std.mem.eql(u8, s, "1") or std.mem.eql(u8, s, "true");
 }
 
+/// Stellar (solar-system) position of a zone: a field carries its own; a
+/// planet/moon inherits its star's, found by walking parent_index up to the star.
+fn starStellar(zones: []const gen.Zone, z: gen.Zone) struct { x: f64, y: f64 } {
+    if (z.ztype == .@"asteroid-field") return .{ .x = z.stellar_x, .y = z.stellar_y };
+    var p = z.parent_index;
+    while (p >= 0 and zones[@intCast(p)].ztype != .star) p = zones[@intCast(p)].parent_index;
+    if (p >= 0) return .{ .x = zones[@intCast(p)].stellar_x, .y = zones[@intCast(p)].stellar_y };
+    return .{ .x = z.stellar_x, .y = z.stellar_y };
+}
+
+/// SE delta-v to reach zone `z` from Nauvis: get_launch_delta_v(Nauvis) +
+/// get_travel_delta_v(Nauvis, z) (Zone.lua). launch = 500 + Nauvis.radius.
+/// travel: same solar system → planet-gravity diff (same planetary system) or
+/// star-gravity diff + both planet gravities; else interstellar → stellar
+/// distance + both star & planet gravities. (cx,cy) = the Calidus stellar pos =
+/// Nauvis's own; fields/other stars sit elsewhere. No space distortion in play.
+fn deltaVFromNauvis(zones: []const gen.Zone, z: gen.Zone, nauvis_sgw: f64, nauvis_pgw: f64, launch: f64, cx: f64, cy: f64) f64 {
+    const sp = starStellar(zones, z);
+    var travel: f64 = 0;
+    if (sp.x == cx and sp.y == cy) {
+        travel = if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
+            100.0 * @abs(z.planet_gravity_well - nauvis_pgw)
+        else
+            500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
+    } else {
+        const dx = sp.x - cx;
+        const dy = sp.y - cy;
+        const dist = @sqrt(dx * dx + dy * dy);
+        travel = 400.0 * dist + 500.0 * (nauvis_sgw + z.star_gravity_well) + 100.0 * (nauvis_pgw + z.planet_gravity_well);
+    }
+    return launch + travel;
+}
+
 /// Parse "s":NNN from the start of a JSON line. Returns 0 on failure.
 fn parseSeedFromJson(line: []const u8) u32 {
     const needle = "\"s\":";
@@ -107,11 +140,14 @@ pub fn main(init: std.process.Init) !void {
         const bodyMap = try gen.buildBodyMap(a);
         const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap, k2_enabled) catch unreachable;
         const field_primaries = gen.resolveFieldPrimaries(a, universe.zones, k2_enabled) catch unreachable;
-        gen.computeGravityWells(&universe.zones, universe.zoneByName);
+        gen.computeGravityWells(&universe);
 
         const nauvis_zi = universe.zoneByName.get("Nauvis") orelse @panic("Nauvis not found");
         const nauvis_sgw = universe.zones.items[nauvis_zi].star_gravity_well;
         const nauvis_pgw = universe.zones.items[nauvis_zi].planet_gravity_well;
+        // launch_delta_v(Nauvis) = 500 + Nauvis.radius; added to every delta-v
+        // (the trip always starts from the Nauvis surface).
+        const launch_dv = 500.0 + universe.zones.items[nauvis_zi].radius;
 
         // Calidus home system membership. The zone list is laid out as:
         //   [ ...star systems (Calidus among them)... ][ asteroid-fields ][ tail ]
@@ -210,10 +246,7 @@ pub fn main(init: std.process.Init) !void {
             const cy = universe.zones.items[calidus_zi].stellar_y;
             for (universe.zones.items) |z| {
                 if (z.ztype != .@"asteroid-field") continue;
-                const dx = z.stellar_x - cx;
-                const dy = z.stellar_y - cy;
-                const dist = @sqrt(dx * dx + dy * dy);
-                const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
+                const dv: u32 = @intFromFloat(@ceil(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, launch_dv, cx, cy)));
                 if (dv < fdv) fdv = dv; // any field
                 const fp = field_primaries.get(z.name) orelse continue;
                 if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
@@ -290,10 +323,7 @@ pub fn main(init: std.process.Init) !void {
                 // naquium is this field's quota-assigned PRIMARY
                 const fp = field_primaries.get(z.name) orelse continue;
                 if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
-                const dx = z.stellar_x - cx;
-                const dy = z.stellar_y - cy;
-                const dist = @sqrt(dx * dx + dy * dy);
-                const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
+                const dv: u32 = @intFromFloat(@ceil(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, launch_dv, cx, cy)));
                 if (dv < best_dv) best_dv = dv;
             }
             if (best_dv != std.math.maxInt(u32)) {
@@ -431,12 +461,10 @@ pub fn main(init: std.process.Init) !void {
                     const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim}) catch unreachable;
                     pos += pp.len;
                 }
-                if (nauvis_sgw > 0 and z.star_gravity_well > 0 and z.planet_gravity_well > 0) {
-                    const dv_raw: f64 = if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
-                        100.0 * @abs(z.planet_gravity_well - nauvis_pgw)
-                    else
-                        500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
-                    const dv: u32 = @intFromFloat(@ceil(dv_raw));
+                if (nauvis_sgw > 0) {
+                    const cx = universe.zones.items[calidus_zi].stellar_x;
+                    const cy = universe.zones.items[calidus_zi].stellar_y;
+                    const dv: u32 = @intFromFloat(@ceil(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, launch_dv, cx, cy)));
                     const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
                     pos += dp.len;
                 }
@@ -474,11 +502,7 @@ pub fn main(init: std.process.Init) !void {
 
                 const cx = universe.zones.items[calidus_zi].stellar_x;
                 const cy = universe.zones.items[calidus_zi].stellar_y;
-                const dx = z.stellar_x - cx;
-                const dy = z.stellar_y - cy;
-                const dist = @sqrt(dx * dx + dy * dy);
-                const dv_raw: f64 = 400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw;
-                const dv: u32 = @intFromFloat(@ceil(dv_raw));
+                const dv: u32 = @intFromFloat(@ceil(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, launch_dv, cx, cy)));
                 const dp = std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv}) catch unreachable;
                 pos += dp.len;
             }
