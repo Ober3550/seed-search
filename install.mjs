@@ -45,10 +45,18 @@ const fail = (msg) => {
   process.exit(1);
 };
 
+// Windows ships npm as a .cmd shim, and since the fix for CVE-2024-27980 Node
+// refuses to spawn .bat/.cmd files unless a shell is requested — spawnSync fails
+// with EINVAL before the command ever runs, which looks identical to "npm isn't
+// installed". Route those through cmd.exe. Every argument the installer passes is
+// a hardcoded literal, so nothing user-controlled reaches the shell.
+const IS_WIN = process.platform === "win32";
+const needsShell = (cmd) => IS_WIN && /\.(cmd|bat)$/i.test(cmd);
+
 // Run a command, streaming its output; abort the install on failure.
 function run(cmd, args, cwd) {
   console.log(dim(`  $ ${cmd} ${args.join(" ")}  (in ${path.relative(ROOT, cwd) || "."})`));
-  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", shell: false });
+  const r = spawnSync(cmd, args, { cwd, stdio: "inherit", shell: needsShell(cmd) });
   if (r.error) fail(`could not run '${cmd}': ${r.error.message}`);
   if (r.status !== 0) fail(`'${cmd} ${args.join(" ")}' exited with code ${r.status}`);
 }
@@ -82,9 +90,14 @@ function checkZig() {
 
 function checkNpm() {
   // npm ships with Node, but confirm it's callable (Windows resolves npm.cmd).
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(npm, ["--version"], { encoding: "utf8" });
-  if (r.error || r.status !== 0) fail("npm not found on PATH (it normally ships with Node).");
+  const npm = IS_WIN ? "npm.cmd" : "npm";
+  const r = spawnSync(npm, ["--version"], { encoding: "utf8", shell: needsShell(npm) });
+  // Distinguish "couldn't launch it" from "it ran and failed" — reporting both as
+  // "not on PATH" sent people hunting for a Node install that was already fine.
+  if (r.error) fail(`could not run '${npm} --version': ${r.error.message}`);
+  if (r.status !== 0) {
+    fail(`'${npm} --version' exited with code ${r.status}.\n${(r.stderr || "").trim()}`);
+  }
   ok(`npm ${r.stdout.trim()}`);
   return npm;
 }
