@@ -1382,6 +1382,90 @@ fn distributePlanet(zones: *ArrayList(Zone), planet_zi: usize, tail_start: usize
 /// distribute / planet_gravity_well_distribute). Each body's well depends on its
 /// star's / planet's ordered child list — so we walk star → children → moons
 /// using zone.parent_index and the Calidus home-system child ordering, rather
+/// SE `Universe.separate_stellar_position` → `util.separate_points` (util.lua):
+/// a min-separation relaxation run once after random placement. Stars and
+/// asteroid-fields whose stellar positions are closer than `stellar_min_separation`
+/// (25) are pushed apart over up to 20 Jacobi iterations. This is what makes the
+/// interstellar / field distances (and thus delta-v) match the game — without it
+/// the raw random positions sit too close. No RNG is consumed. Operates on the
+/// star+field zones in zone-list order (SE iterates storage.zone_index order).
+pub fn separateStellarPositions(zones: *ArrayList(Zone)) void {
+    const separation: f64 = 25.0;
+    const half: f64 = separation / 2.0;
+    const overshoot: f64 = 1.05;
+    const max_iter: usize = 20;
+
+    var idx: [512]usize = undefined;
+    var px: [512]f64 = undefined;
+    var py: [512]f64 = undefined;
+    var n: usize = 0;
+    for (zones.items, 0..) |z, zi| {
+        if (z.ztype != .star and z.ztype != .@"asteroid-field") continue;
+        if (n >= idx.len) break;
+        idx[n] = zi;
+        px[n] = z.stellar_x;
+        py[n] = z.stellar_y;
+        n += 1;
+    }
+
+    var fx: [512]f64 = undefined;
+    var fy: [512]f64 = undefined;
+    var has: [512]bool = undefined;
+    var it: usize = 0;
+    var cont = true;
+    while (it < max_iter and cont) : (it += 1) {
+        cont = false;
+        for (0..n) |a| {
+            fx[a] = 0;
+            fy[a] = 0;
+            has[a] = false;
+        }
+        // Accumulate separation forces from the current snapshot (Jacobi).
+        for (0..n) |a| {
+            for (0..n) |b| {
+                if (a == b) continue;
+                const dx = px[b] - px[a]; // vectors_delta(pos_a, pos_b) = b - a
+                const dy = py[b] - py[a];
+                const length = @sqrt(dx * dx + dy * dy);
+                if (length < separation) {
+                    const target = (separation - length) / 2.0;
+                    // vector_set_length: zero vector → {0, -target}
+                    const ffx = if (length == 0) 0 else dx / length * target;
+                    const ffy = if (length == 0) -target else dy / length * target;
+                    fx[a] += ffx;
+                    fy[a] += ffy;
+                    has[a] = true;
+                }
+            }
+        }
+        // Apply (move each point AWAY: pos -= force*overshoot), force capped at half.
+        for (0..n) |a| {
+            if (!has[a]) continue;
+            var ffx = fx[a];
+            var ffy = fy[a];
+            const flen = @sqrt(ffx * ffx + ffy * ffy);
+            if (flen > half) {
+                if (flen == 0) {
+                    ffx = 0;
+                    ffy = -half;
+                } else {
+                    const s = half / flen;
+                    ffx *= s;
+                    ffy *= s;
+                }
+            }
+            px[a] -= ffx * overshoot;
+            py[a] -= ffy * overshoot;
+            cont = true;
+        }
+    }
+
+    for (0..n) |a| {
+        zones.items[idx[a]].stellar_x = px[a];
+        zones.items[idx[a]].stellar_y = py[a];
+    }
+}
+
 /// than any hard-coded per-seed layout. Delta-v is a pure function of these.
 pub fn computeGravityWells(universe: *Universe) void {
     const zones = &universe.zones;
@@ -1907,6 +1991,10 @@ pub fn generateUniverse(alloc: std.mem.Allocator, seed: u32, k2_enabled: bool) !
         const moon_orbit_name = try std.fmt.allocPrint(a, "{s} Orbit", .{moon_name});
         try zones.append(.{ .name = moon_orbit_name, .ztype = .orbit, .seed = rng.int1(4294967295) });
     }
+
+    // Push apart stars/fields that landed too close (SE separate_stellar_position).
+    // Consumes no RNG; must run after every star + field has a position.
+    separateStellarPositions(&zones);
 
     // ===== Phase 7: Vault loot =====
     var vault_rng = Rng.initFactorio(seed);
