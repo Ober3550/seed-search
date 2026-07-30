@@ -1,7 +1,29 @@
-# cmd.exe is unreliable with LF-only batch files, so keep Windows scripts CRLF
-# on checkout regardless of the platform doing the checkout.
-*.cmd text eol=crlf
-*.bat text eol=crlf
+# Line endings.
+#
+# The working tree is CRLF by default: this is a Windows-first project, and
+# Windows editors kept rewriting files wholesale, which surfaced as ~180 files
+# permanently showing as "modified" with no real content change.
+#
+# `text=auto` means git still stores LF in the repository, so history, diffs and
+# blame stay clean and a Linux/WSL checkout is unaffected. Only the checked-out
+# working tree is CRLF.
+* text=auto eol=crlf
 
-# Shell scripts must stay LF even when checked out on Windows.
-*.sh text eol=lf
+# ── Exceptions that must stay LF ──────────────────────────────────────────
+#
+# Anything carrying a shebang. With CRLF the kernel looks for an interpreter
+# named literally "/usr/bin/env bash\r" and fails with a baffling
+# "no such file or directory". These all run under WSL, Docker or a Linux host.
+*.sh             text eol=lf
+*.py             text eol=lf
+*.mjs            text eol=lf
+calibration/*.js text eol=lf
+runner/bin/lua   text eol=lf
+
+# Docker reads RUN lines verbatim, so a trailing CR becomes part of the command.
+**/Dockerfile*   text eol=lf
+
+# Read verbatim as a secret by the Factorio server, so a trailing CR would
+# become part of the RCON password. NOTE: this file is CRLF in the working tree
+# right now, so it may already carry a stray CR — worth checking.
+calibration/saves/config/rconpw text eol=lf
