@@ -373,15 +373,9 @@ app.get("/seeds", (req, res) => {
       return analyze.matchFilter(c, rules).match;
     });
   }
-  // Union with the buckets that actually hold seed rows, so manually generated
-  // seeds (synthetic "manual" bucket, no job behind it) are reachable here.
-  const buckets = [...new Set([
-    ...db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket),
-    ...db.getSeedBuckets(),
-  ])];
   const defs = db.getFilterDefs();
   const genCounts = db.getGeneratedZoneCounts();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, ...rng }, genCounts));
+  page(req, res, "Seeds", renderSeedsPage(seeds, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, ...rng }, genCounts));
 });
 
 // ── Seed score ─────────────────────────────────────────────────────────
@@ -480,7 +474,7 @@ function seedScore(s) {
   return wsum === 0 ? null : Math.round((100 * sum) / wsum);
 }
 
-function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
+function renderSeedsPage(seeds, defs, f, genCounts = {}) {
   const rules = f.def ? JSON.parse(f.def.rules) : [];
   const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
   // Default order = score descending. This has to happen HERE, before the
@@ -520,10 +514,6 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
                title="Find a seed by number. Exact if you type the whole number, otherwise a partial match. Searched in the database, so it finds seeds beyond the 2000 shown."
                hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters"
                hx-trigger="search, keyup changed delay:400ms">
-        <select name="bucket" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
-          <option value="">All buckets</option>
-          ${buckets.map(b => `<option value="${b}" ${f.bucket === b ? "selected" : ""}>${b}</option>`).join("")}
-        </select>
         <select name="k2" title="Krastorio 2" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
           <option value="" ${f.k2 === "" ? "selected" : ""}>K2: any</option>
           <option value="1" ${f.k2 === "1" ? "selected" : ""}>K2 only</option>
@@ -538,13 +528,6 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           <input type="checkbox" name="count" value="1" ${f.count ? "checked" : ""} ${f.defId ? "" : "disabled"}
             hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
           count &amp; rank</label>
-        <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
-          hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
-        <span class="hint" title="Calidus system planets + moons (incl. Nauvis) range">P+M <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="nearest naquium-PRIMARY field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="nearest ANY asteroid field Δv range (any field yields some naquium)">fieldΔv <input type="number" name="fdv_min" value="${f.fdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="fdv_max" value="${f.fdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="share of Calidus planets+moons (excl. Nauvis) that have water, % (0 = none anywhere)">water% <input type="number" name="wp_min" value="${f.wp_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="wp_max" value="${f.wp_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="share of Calidus planets+moons (excl. Nauvis) carrying enemies, %">hostile% <input type="number" name="ef_min" value="${f.ef_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ef_max" value="${f.ef_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>

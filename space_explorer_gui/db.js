@@ -534,14 +534,6 @@ function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl, f
     .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, fdv ?? null, ed ?? null, seed);
 }
 
-// Every bucket label that actually has seed rows. Not the same as the set of
-// completed universe jobs: manually generated seeds live in a synthetic bucket
-// with no job behind it, and would otherwise be unreachable from the bucket
-// filter on /seeds.
-function getSeedBuckets() {
-  return getDb().prepare("SELECT DISTINCT bucket FROM seeds WHERE bucket IS NOT NULL ORDER BY bucket").all().map(r => r.bucket);
-}
-
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.
 function getGeneratedZoneCounts() {
   const rows = getDb().prepare(
@@ -654,7 +646,6 @@ module.exports = {
   getSurfaceJobs,
   getAllSurfaceJobs,
   getGeneratedZoneCounts,
-  getSeedBuckets,
   getSurfaceJob,
   getSurfaceJobsForZone,
   updateSurfaceJob,
