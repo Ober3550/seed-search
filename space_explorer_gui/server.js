@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const db = require("./db");
+const { seedScore } = require("./score");
 const jobs = require("./job-manager");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
@@ -361,21 +362,31 @@ app.get("/seeds", (req, res) => {
   // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
   const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, wp_min: req.query.wp_min, wp_max: req.query.wp_max, ef_min: req.query.ef_min, ef_max: req.query.ef_max };
   const seedQ = (req.query.seed || "").toString().trim();
-  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, seed: seedQ || undefined, ...rng });
+  const sort = req.query.sort || "score_desc";           // default: best score first
+  const filterActive = rules.length > 0;
+  const PAGE_SIZE = 200;
+  // Rule filtering runs in JS after the fetch, so it can't be DB-paginated —
+  // scan a large window there. The plain list pages in the DB (indexed sort).
+  const page0 = Math.max(0, parseInt(req.query.page) || 0);
+  const base = { bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, seed: seedQ || undefined, ...rng, sort };
+  let seeds = filterActive
+    ? db.getSeeds({ ...base, withCriteria: true, page: 0, pageSize: 5000 })
+    : db.getSeeds({ ...base, page: page0, pageSize: PAGE_SIZE });
+  const total = filterActive ? null : db.countSeeds(base);
   if (countMode) {
     for (const s of seeds) {
       const c = seedCriteria(s);
       s._matches = c ? analyze.countMatches(c, rules) : 0;
     }
-  } else {
+  } else if (filterActive) {
     seeds = seeds.filter(s => {
-      const c = seedCriteria(s); if (!c) return rules.length === 0;
+      const c = seedCriteria(s); if (!c) return false;
       return analyze.matchFilter(c, rules).match;
     });
   }
   const defs = db.getFilterDefs();
   const genCounts = db.getGeneratedZoneCounts();
-  page(req, res, "Seeds", renderSeedsPage(seeds, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, ...rng }, genCounts));
+  page(req, res, "Seeds", renderSeedsPage(seeds, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, sort, page: page0, pageSize: PAGE_SIZE, total, filterActive, ...rng }, genCounts));
 });
 
 // ── Seed score ─────────────────────────────────────────────────────────
@@ -419,82 +430,36 @@ app.get("/seeds", (req, res) => {
 // linear between, clamped outside. Per-metric p1..p99 bands made them
 // incomparable: the same 11,000 Δv read as a good naq-primary but a mediocre
 // any-field purely because the two distributions differ.
-const DV_BEST = 10000;  // Δv at or below this scores 100%
-const DV_WORST = 50000; // Δv at or above this scores 0%
-const NAQ_ACCESS_W = 0.20;
-
-const SCORE_METRICS = [
-  { key: "np", w: 0.60, lo: 16, hi: 40, higherIsBetter: true },
-  { key: "ef", w: 0.15, lo: 52, hi: 84, higherIsBetter: false }, // hostile%
-  { key: "wp", w: 0.05, lo: 50, hi: 88, higherIsBetter: true },  // water% — more is wetter
-];
+// Score formula + constants now live in score.js (shared with db.js, which
+// stores the score so the list can ORDER BY it). seedScore is imported at the
+// top; the list reads the stored s.score and only recomputes for count mode.
 const NO_NAQ_DV = 10000000; // seedgen's "no naquium-primary field" sentinel
-
-// 0..1, or null when neither distance is known. `reach` is how close ANY field
-// is (fdv); `rich` is how close a naquium-PRIMARY field is (naqdv). fdv <= naqdv
-// always holds — a naq-primary field IS a field — so reach >= rich, always.
-//
-// The scale is split into two bands, one metric each, so neither metric can
-// influence the other's end:
-//
-//   rich > 0  (a naq-primary field within DV_WORST)
-//        -> upper band 0.5..1.0, position set by `rich` ALONE. fdv contributes
-//           nothing, so the good end is ranked purely by naq-primary distance.
-//   rich = 0  (naq-primary beyond DV_WORST, or none at all)
-//        -> lower band 0.0..0.5, position set by `reach` ALONE. naqdv is already
-//           pinned at its worst and contributes nothing, so the bad end is
-//           ranked purely by any-field distance.
-//
-// Continuous across the join: both bands meet at 0.5, where a seed has no
-// reachable rich field but a field right on its doorstep.
-function naqAccess(s) {
-  const g = (v) => (v == null ? null
-    : 1 - Math.max(0, Math.min(1, (v - DV_BEST) / (DV_WORST - DV_BEST))));
-  // The clamp absorbs the NO_NAQ_DV sentinel: "no naquium-primary field exists"
-  // arrives as 10,000,000, lands past DV_WORST, and pins to 0.
-  const rich = g(s.naqdv), reach = g(s.fdv);
-  if (rich == null && reach == null) return null;
-  if (rich == null) return 0.5 * reach; // no naqdv: can only judge reachability
-  if (reach == null) return rich > 0 ? 0.5 + 0.5 * rich : 0;
-  return rich > 0 ? 0.5 + 0.5 * rich : 0.5 * reach;
-}
-
-function seedScore(s) {
-  let sum = 0, wsum = 0;
-  for (const m of SCORE_METRICS) {
-    const v = s[m.key];
-    if (v == null) continue; // metric missing (seed predates it) — renormalise
-                             // over the metrics this seed actually has
-    const t = Math.max(0, Math.min(1, (v - m.lo) / (m.hi - m.lo)));
-    sum += m.w * (m.higherIsBetter ? t : 1 - t);
-    wsum += m.w;
-  }
-  const naq = naqAccess(s);
-  if (naq != null) { sum += NAQ_ACCESS_W * naq; wsum += NAQ_ACCESS_W; }
-  return wsum === 0 ? null : Math.round((100 * sum) / wsum);
-}
 
 function renderSeedsPage(seeds, defs, f, genCounts = {}) {
   const rules = f.def ? JSON.parse(f.def.rules) : [];
   const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
-  // Default order = score descending. This has to happen HERE, before the
-  // 500-row slice below: client-side sorting only reorders the rows already
-  // rendered, so ranking by score in the browser alone would miss the best seed
-  // in a bucket whenever it fell outside the first 500.
-  // Scores are integers 0..100, so ties are common — generated-first and then
-  // most-zones break them, which is the ordering this list used to default to.
-  const gen = (s) => genCounts[s.seed] || 0;
-  seeds = [...seeds].sort((a, b) => {
-    // In count mode, rank by rule-match count first so the best partial
-    // matches float to the top; otherwise rank by score.
-    if (f.count && (b._matches || 0) !== (a._matches || 0)) return (b._matches || 0) - (a._matches || 0);
-    const as = seedScore(a), bs = seedScore(b);
-    if ((as ?? -1) !== (bs ?? -1)) return (bs ?? -1) - (as ?? -1);
-    const ag = gen(a) > 0, bg = gen(b) > 0;
-    if (ag !== bg) return ag ? -1 : 1;
-    if (ag) return gen(b) - gen(a);
-    return (b.zone_count || 0) - (a.zone_count || 0);
-  });
+  // Non-count rows arrive already ordered + paginated by the DB (indexed sort).
+  // Only count mode re-sorts, because its rank key (rule-match count) is computed
+  // in JS and isn't a DB column.
+  if (f.count) {
+    seeds = [...seeds].sort((a, b) => {
+      if ((b._matches || 0) !== (a._matches || 0)) return (b._matches || 0) - (a._matches || 0);
+      const as = seedScore(a), bs = seedScore(b);
+      if ((as ?? -1) !== (bs ?? -1)) return (bs ?? -1) - (as ?? -1);
+      return (b.zone_count || 0) - (a.zone_count || 0);
+    });
+  }
+  // Server-side sortable header: a click re-fetches the FIRST page in that order
+  // (first click = descending; click the active column again to flip). Carries
+  // the current filters via #seed-filters and resets to page 0.
+  const sortTh = (label, col, title = "") => {
+    const active = f.sort === `${col}_asc` ? "asc" : f.sort === `${col}_desc` ? "desc" : "";
+    const next = active === "desc" ? `${col}_asc` : `${col}_desc`;
+    const ind = active === "desc" ? "▼" : active === "asc" ? "▲" : "";
+    return `<th class="sortable" title="${title}" style="cursor:pointer"
+      hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters"
+      hx-vals='{"sort":"${next}","page":0}'>${label} <span class="sort-ind">${ind}</span></th>`;
+  };
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seeds ${f.bucket || "(all)"}` }])}
@@ -510,6 +475,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
     </div>
     <div class="filter-bar">
       <form id="seed-filters" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML">
+        <input type="hidden" name="sort" value="${f.sort}">
         <input type="search" name="seed" value="${f.seed || ""}" placeholder="🔍 Seed #" style="width:9em"
                title="Find a seed by number. Exact if you type the whole number, otherwise a partial match. Searched in the database, so it finds seeds beyond the 2000 shown."
                hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters"
@@ -534,16 +500,16 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
     </div>
     <table class="data-table" id="seeds-table">
       <thead><tr>
-        <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
+        ${sortTh("Seed", "seed")}
         <th>Bucket</th><th>K2</th><th>Loot</th>
-        ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
-        <th class="sortable" data-key="npl" onclick="sortSeeds('npl')" title="Calidus system planets only (incl. Nauvis) — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus system planets + moons (incl. Nauvis) — click for most (desc) / fewest (asc)">P+M <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-PRIMARY field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="fdv" onclick="sortSeeds('fdv')" title="Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest (desc) / closest (asc)">Field Δv <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="ef" onclick="sortSeeds('ef')" title="share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile (desc) / quietest (asc)">Hostile% <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="wp" onclick="sortSeeds('wp')" title="share of Calidus planets+moons (excl. Nauvis) that HAVE water — 0% = nowhere has water, 100% = everywhere does. Click for wettest (desc) / driest (asc)">Water% <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="score" onclick="sortSeeds('score')" title="0–100 overall desirability: most Calidus planets+moons (60%), naquium access (20% — half nearest naq-PRIMARY field, half nearest ANY field, since every field yields some naquium), fewest enemies (15%), most water (5%). Normalised against the measured 50k-seed population, so it means the same thing on every page. Click for best (desc) / worst (asc)">Score <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
+        ${f.count ? `<th title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches</th>` : ""}
+        ${sortTh("Planets", "npl", "Calidus system planets only (incl. Nauvis) — click for most / fewest")}
+        ${sortTh("P+M", "np", "Calidus system planets + moons (incl. Nauvis) — click for most / fewest")}
+        ${sortTh("Naq Δv", "naqdv", "Δv to nearest naquium-PRIMARY field — click for furthest / closest")}
+        ${sortTh("Field Δv", "fdv", "Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest / closest")}
+        ${sortTh("Hostile%", "ef", "share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile / quietest")}
+        ${sortTh("Water%", "wp", "share of Calidus planets+moons (excl. Nauvis) that HAVE water — click for wettest / driest")}
+        ${sortTh("Score", "score", "0–100 overall desirability: most Calidus planets+moons (60%), naquium access (20%), fewest enemies (15%), most water (5%). Click for best / worst")}
       </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
@@ -551,7 +517,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
           // seed detail page, and it was this list's only use of the parsed
           // criteria — so 500 rows no longer each pay a JSON.parse.
           const gen = genCounts[s.seed] || 0;
-          const score = seedScore(s);
+          const score = s.score; // stored (score.js), computed at insert
           return `
         <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ef="${s.ef ?? 0}" data-wp="${s.wp ?? 0}" data-score="${score ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
@@ -568,37 +534,22 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
         ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 12 : 11}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
-    ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
-    <script>
-      (function () {
-        // Matches the server pre-sort, so the arrow starts on the column the
-        // rows are actually ordered by.
-        var st = { key: "${f.count ? "matches" : "score"}", dir: "desc" };
-        // DESCENDING comparators (first click). Zones desc: generated seeds
-        // first (by most generated), then the rest (by most total zones).
-        function baseCmp(key, a, b) {
-          if (key === "zones") {
-            var ag = +a.dataset.gen, bg = +b.dataset.gen;
-            if ((ag > 0) !== (bg > 0)) return ag > 0 ? -1 : 1;
-            if (ag > 0) return bg - ag;
-            return (+b.dataset.zones) - (+a.dataset.zones);
-          }
-          return (+b.dataset[key] || 0) - (+a.dataset[key] || 0);
-        }
-        window.sortSeeds = function (key) {
-          st.dir = (st.key === key && st.dir === "desc") ? "asc" : "desc"; // first click = desc
-          st.key = key;
-          var tb = document.querySelector("#seeds-table tbody");
-          [].slice.call(tb.querySelectorAll("tr[data-seed]")).sort(function (a, b) {
-            var cmp = baseCmp(key, a, b);
-            return st.dir === "desc" ? cmp : -cmp;
-          }).forEach(function (r) { tb.appendChild(r); });
-          document.querySelectorAll("#seeds-table th.sortable .sort-ind").forEach(function (s) { s.textContent = ""; });
-          var h = document.querySelector('#seeds-table th[data-key="' + key + '"] .sort-ind');
-          if (h) h.textContent = st.dir === "desc" ? "▼" : "▲";
-        };
-      })();
-    </script>
+    ${(() => {
+      // Filter/count mode isn't DB-paginated (it filters in JS), so just note the
+      // display cap. Plain mode pages in the DB — render Prev / Next.
+      if (f.filterActive || f.count) {
+        return seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length} matches.</p>` : "";
+      }
+      const totalPages = Math.max(1, Math.ceil((f.total || 0) / f.pageSize));
+      const cur = f.page;
+      const btn = (p, label, disabled) => `<button type="button" class="btn-sm" ${disabled ? "disabled" : ""}
+        hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-vals='{"page":${p}}'>${label}</button>`;
+      return `<div class="pager" style="display:flex;gap:.75em;align-items:center;margin-top:.5em">
+        ${btn(cur - 1, "‹ Prev", cur <= 0)}
+        <span class="hint">Page ${cur + 1} of ${totalPages.toLocaleString()} · ${(f.total || 0).toLocaleString()} seeds</span>
+        ${btn(cur + 1, "Next ›", cur >= totalPages - 1)}
+      </div>`;
+    })()}
   </div>`;
 }
 

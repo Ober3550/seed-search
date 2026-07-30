@@ -1,5 +1,6 @@
 const Database = require("better-sqlite3");
 const path = require("path");
+const { seedScore } = require("./score");
 
 const DB_PATH = process.env.SE_GUI_DB || path.join(__dirname, "data.sqlite");
 
@@ -88,6 +89,16 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(name);
     CREATE INDEX IF NOT EXISTS idx_surface_jobs_zone ON surface_jobs(zone_id);
     CREATE INDEX IF NOT EXISTS idx_surface_jobs_status ON surface_jobs(status);
+    -- Seeds list: the only index used to be the seed PK, so every bucket view /
+    -- range filter / metric sort full-scanned the (multi-GB) table. Index the
+    -- columns getSeeds filters and orders by. (bucket,k2) covers the common bucket
+    -- view; the single-column ones serve the all-seeds metric sorts.
+    CREATE INDEX IF NOT EXISTS idx_seeds_bucket_k2 ON seeds(bucket, k2);
+    CREATE INDEX IF NOT EXISTS idx_seeds_np ON seeds(np);
+    CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds(naqdv);
+    CREATE INDEX IF NOT EXISTS idx_seeds_fdv ON seeds(fdv);
+    CREATE INDEX IF NOT EXISTS idx_seeds_ef ON seeds(ef);
+    CREATE INDEX IF NOT EXISTS idx_seeds_wp ON seeds(wp);
 
     -- Jobs queue table for FIFO processing
     CREATE TABLE IF NOT EXISTS job_log (
@@ -197,6 +208,11 @@ function initSchema() {
     "ALTER TABLE universe_jobs ADD COLUMN wp_hi INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN ef_lo INTEGER DEFAULT 0",
     "ALTER TABLE universe_jobs ADD COLUMN ef_hi INTEGER DEFAULT 0",
+    // Stored 0-100 desirability score (see score.js). Backfilled below. The
+    // index must come AFTER the column exists, so both live here (the schema
+    // block above runs before migrations, and would throw on the missing column).
+    "ALTER TABLE seeds ADD COLUMN score INTEGER",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_score ON seeds(score)",
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
@@ -460,13 +476,14 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed, wp, ef)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed, wp, ef, score)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
-        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null);
+        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null,
+        seedScore(r) ?? null);
     }
   });
   tx();
@@ -474,7 +491,14 @@ function insertSeeds(rows) {
 
 function getSeeds(filter = {}) {
   const d = getDb();
-  let sql = "SELECT * FROM seeds WHERE 1=1";
+  // Explicit column list — NEVER SELECT *: the `line` (~7KB world JSON) and
+  // `criteria` columns are huge and the seeds list never renders them, so pulling
+  // them for up to 2000 rows dominated the query time on the multi-GB table.
+  // `criteria` (the cached analyze result) is only needed when a rule filter is
+  // active; it's large-ish, so keep it out of the plain list for speed.
+  const cols = "seed, job_id, bucket, loot, k2, zone_count, created_at, expanded, np, npl, naqdv, fdv, ed, wf, ef, wp, score" +
+    (filter.withCriteria ? ", criteria" : "");
+  let sql = `SELECT ${cols} FROM seeds WHERE 1=1`;
   const params = [];
   if (filter.bucket) { sql += " AND bucket = ?"; params.push(filter.bucket); }
   if (filter.job_id) { sql += " AND job_id = ?"; params.push(filter.job_id); }
@@ -506,17 +530,77 @@ function getSeeds(filter = {}) {
     const digits = String(filter.seed).replace(/[^\d]/g, "");
     if (digits !== "") { sql += " AND CAST(seed AS TEXT) LIKE ?"; params.push(`%${digits}%`); }
   }
-  // Sort: best/worst by either metric, else by seed. NULLs sort last.
+  // Sort by the stored, INDEXED score/metric columns so paging is a fast indexed
+  // scan, never a full-table sort. Default = best score first.
   const orders = {
-    seed: "seed", np_desc: "np DESC", np_asc: "np ASC",
+    score_desc: "score DESC", score_asc: "score ASC",
+    seed: "seed", seed_desc: "seed DESC",
+    npl_desc: "npl DESC", npl_asc: "npl ASC",
+    np_desc: "np DESC", np_asc: "np ASC",
     naqdv_asc: "naqdv ASC", naqdv_desc: "naqdv DESC",
     fdv_asc: "fdv ASC", fdv_desc: "fdv DESC",
     wp_desc: "wp DESC", wp_asc: "wp ASC",
     ef_desc: "ef DESC", ef_asc: "ef ASC",
   };
-  const ord = orders[filter.sort] || "seed";
-  sql += ` ORDER BY (${ord.split(" ")[0]} IS NULL), ${ord} LIMIT 2000`;
+  const ord = orders[filter.sort] || "score DESC";
+  const col = ord.split(" ")[0];
+  const pageSize = Math.min(Math.max(1, Number(filter.pageSize) || 200), 1000);
+  const page = Math.max(0, Number(filter.page) || 0);
+  // Order straight by the indexed column (+ seed as a STABLE tiebreak so paging
+  // can't skip/repeat on ties). NOTE: no `(col IS NULL)` guard here — that
+  // expression is not indexable and forced a full-table sort of every row on the
+  // unfiltered list (2.8s). The metrics are backfilled for all rows, and the Δv
+  // "none" sentinel is a large number that already sorts last, so NULLs are a
+  // non-issue; keeping the ORDER BY on the bare column lets it use the index.
+  sql += ` ORDER BY ${ord}, seed LIMIT ? OFFSET ?`;
+  params.push(pageSize, page * pageSize);
   return d.prepare(sql).all(...params);
+}
+
+// Count of seeds matching a filter (for pagination), reusing getSeeds' WHERE.
+// Cheap: hits the same indexes and never touches line/criteria.
+function countSeeds(filter = {}) {
+  const d = getDb();
+  let sql = "SELECT COUNT(*) n FROM seeds WHERE 1=1";
+  const params = [];
+  if (filter.bucket) { sql += " AND bucket = ?"; params.push(filter.bucket); }
+  if (filter.job_id) { sql += " AND job_id = ?"; params.push(filter.job_id); }
+  if (filter.loot) { sql += " AND loot LIKE ?"; params.push(`${filter.loot}%`); }
+  if (filter.k2 !== undefined && filter.k2 !== null && filter.k2 !== "") { sql += " AND k2 = ?"; params.push(filter.k2 ? 1 : 0); }
+  const range = (c, min, max) => {
+    if (min != null && min !== "") { sql += ` AND ${c} >= ?`; params.push(Number(min)); }
+    if (max != null && max !== "") { sql += ` AND ${c} <= ?`; params.push(Number(max)); }
+  };
+  range("np", filter.np_min, filter.np_max);
+  range("naqdv", filter.naqdv_min, filter.naqdv_max);
+  range("fdv", filter.fdv_min, filter.fdv_max);
+  range("wp", filter.wp_min, filter.wp_max);
+  range("ef", filter.ef_min, filter.ef_max);
+  if (filter.seed != null && String(filter.seed).trim() !== "") {
+    const digits = String(filter.seed).replace(/[^\d]/g, "");
+    if (digits !== "") { sql += " AND CAST(seed AS TEXT) LIKE ?"; params.push(`%${digits}%`); }
+  }
+  return d.prepare(sql).get(...params).n;
+}
+
+// One-time (idempotent) backfill of the `score` column for rows inserted before
+// it existed, or after the score.js constants change. Pages by `seed` so every
+// row is visited exactly once (a WHERE score IS NULL loop would spin on rows
+// whose score legitimately computes to NULL), and batches the writes so it never
+// holds one giant transaction over the multi-GB table.
+function backfillScores({ batch = 20000 } = {}) {
+  const d = getDb();
+  const sel = d.prepare("SELECT seed, np, ef, wp, naqdv, fdv FROM seeds WHERE seed > ? ORDER BY seed LIMIT ?");
+  const upd = d.prepare("UPDATE seeds SET score = ? WHERE seed = ?");
+  let last = -1, total = 0;
+  for (;;) {
+    const rows = sel.all(last, batch);
+    if (rows.length === 0) break;
+    d.transaction(() => { for (const r of rows) upd.run(seedScore(r) ?? null, r.seed); })();
+    last = rows[rows.length - 1].seed;
+    total += rows.length;
+  }
+  return total;
 }
 
 function getSeed(seed) {
@@ -654,6 +738,8 @@ module.exports = {
   addJobLog,
   insertSeeds,
   getSeeds,
+  countSeeds,
+  backfillScores,
   getSeed,
   markSeedExpanded,
   getSurfaceCells,
