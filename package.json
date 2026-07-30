@@ -16,6 +16,7 @@
   },
   "scripts": {
     "start": "node space_explorer_gui/server.js",
+    "dev": "node --watch space_explorer_gui/server.js",
     "build": "node install.mjs",
     "postinstall": "node install.mjs --build-only"
   },
