@@ -55,11 +55,25 @@ function seedDir(label, seed) {
 let segenPath = null;
 let seedgenPath = null;
 
+// On Windows `zig build` emits segen.exe / gpu_*.exe, so the bare names below
+// never matched on disk and every job failed with "binary not found".
+//
+// Deliberately NO bare-name fallback on Windows: an extension-less PE file can
+// exist on disk yet cannot be launched at all — libuv's spawn appends .com/.exe
+// to any command lacking an extension, so spawn() of such a path returns ENOENT
+// while fs.existsSync() on it returns true. Accepting it would trade a clear
+// "binary not found" for a baffling "spawn ENOENT" on a file you can see.
+// Names that already carry an extension (seedgen.native) are left alone: libuv
+// tries those literally.
+const IS_WIN = process.platform === "win32";
+const winExe = (name) => (IS_WIN && !path.extname(name) ? name + ".exe" : name);
+const binCandidate = (dir, name) => path.join(dir, winExe(name));
+
 function findSegenBinary() {
   if (segenPath && fs.existsSync(segenPath)) return segenPath;
   const candidates = [
-    path.join(SURFACE_GEN_DIR, "zig-out", "bin", "segen"),
-    path.join(SURFACE_GEN_DIR, "zig-out", "segen"),
+    binCandidate(path.join(SURFACE_GEN_DIR, "zig-out", "bin"), "segen"),
+    binCandidate(path.join(SURFACE_GEN_DIR, "zig-out"), "segen"),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) { segenPath = c; return c; }
@@ -70,11 +84,11 @@ function findSegenBinary() {
 function findSeedgenBinary() {
   if (seedgenPath && fs.existsSync(seedgenPath)) return seedgenPath;
   const candidates = [
-    path.join(UNIVERSE_GEN_DIR, "seedgen"),
-    path.join(UNIVERSE_GEN_DIR, "seedgen.native"),
-    path.join(UNIVERSE_GEN_DIR, "seedgen-macos"),
-    path.join(UNIVERSE_GEN_DIR, "zig-out", "bin", "seedgen"),
-    path.join(UNIVERSE_GEN_DIR, "zig-out", "seedgen"),
+    binCandidate(UNIVERSE_GEN_DIR, "seedgen"),
+    binCandidate(UNIVERSE_GEN_DIR, "seedgen.native"),
+    binCandidate(UNIVERSE_GEN_DIR, "seedgen-macos"),
+    binCandidate(path.join(UNIVERSE_GEN_DIR, "zig-out", "bin"), "seedgen"),
+    binCandidate(path.join(UNIVERSE_GEN_DIR, "zig-out"), "seedgen"),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) { seedgenPath = c; return c; }
@@ -85,8 +99,8 @@ function findSeedgenBinary() {
 function requireSegen() {
   const bin = findSegenBinary();
   if (!bin) throw new Error(
-    "segen binary not found. Build it first:\n" +
-    "  cd surface_generator && zig build -Doptimize=ReleaseFast"
+    `segen binary not found (looked for ${binCandidate(path.join(SURFACE_GEN_DIR, "zig-out", "bin"), "segen")}). ` +
+    "Build it first:\n  node install.mjs"
   );
   return bin;
 }
@@ -97,11 +111,11 @@ const GPU_COMPUTE_DIR = path.join(PROJECT_ROOT, "gpu_compute");
 const gpuBinPaths = {};
 function requireGpuBin(name) {
   if (gpuBinPaths[name] && fs.existsSync(gpuBinPaths[name])) return gpuBinPaths[name];
-  const cand = path.join(GPU_COMPUTE_DIR, "zig-out", "bin", name);
+  const cand = binCandidate(path.join(GPU_COMPUTE_DIR, "zig-out", "bin"), name);
   if (fs.existsSync(cand)) { gpuBinPaths[name] = cand; return cand; }
   throw new Error(
-    `${name} binary not found. Build it first:\n` +
-    "  cd gpu_compute && ./fetch-wgpu.sh && zig build -Doptimize=ReleaseFast"
+    `${name} binary not found (looked for ${cand}). Build it first:\n` +
+    "  node install.mjs"
   );
 }
 const requireGpuTerrain = () => requireGpuBin("gpu_terrain"); // surface render
@@ -112,8 +126,8 @@ const requireGpuOre = () => requireGpuBin("gpu_ore");         // GPU ore placeme
 function requireSeedgen() {
   const bin = findSeedgenBinary();
   if (!bin) throw new Error(
-    "seedgen binary not found. Build it first:\n" +
-    "  cd universe_generator/zig && zig build-exe main.zig gen.zig data.zig -O ReleaseFast -femit-bin=seedgen -target native"
+    `seedgen binary not found (looked for ${binCandidate(UNIVERSE_GEN_DIR, "seedgen")}). ` +
+    "Build it first:\n  node install.mjs"
   );
   return bin;
 }
@@ -195,8 +209,10 @@ function wipeSystem() {
   const d = db.getDb();
   // FK-safe order: children before parents (seeds/zones reference universe_jobs,
   // surface_jobs reference zones), so universe_jobs is deleted LAST.
+  // Table is job_log (singular) — as "job_logs" this silently hit the per-table
+  // catch below on every wipe, so run logs were never actually cleared.
   const tables = ["surface_jobs", "zones", "seeds",
-                  "seed_filter_members", "seed_filters", "job_logs", "universe_jobs"];
+                  "seed_filter_members", "seed_filters", "job_log", "universe_jobs"];
   const tx = d.transaction(() => {
     for (const t of tables) { try { d.prepare(`DELETE FROM ${t}`).run(); } catch (_) {} }
   });

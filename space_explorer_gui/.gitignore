@@ -2,3 +2,7 @@ node_modules/
 data.sqlite*
 output/
 *.log
+
+# Fetched by install.mjs (pinned version + checksum), never committed — a stubbed
+# or stale copy here silently disables every button in the GUI.
+public/htmx.min.js

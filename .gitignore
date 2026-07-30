@@ -19,6 +19,7 @@ __pycache__/
 *.pyc
 tmp/
 seedgen
+seedgen.exe
 generator/zig/seedgen.native
 node_modules/
 # Calibration artifacts

@@ -20,6 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 import zlib from "node:zlib";
 import path from "node:path";
 import fs from "node:fs";
@@ -173,6 +174,23 @@ function extractZip(buf, destDir) {
   }
 }
 
+// Fetch a URL into a Buffer, aborting the install with a readable message on
+// any network failure. `what` names the asset in error messages.
+async function download(url, what, timeoutMs = 180_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { signal: ctrl.signal, redirect: "follow" });
+  } catch (e) {
+    fail(`downloading ${what} failed: ${e.message}\n  (URL: ${url})`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) fail(`downloading ${what} failed: HTTP ${res.status} for ${url}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function fetchWgpu() {
   const triple = wgpuTriple();
   const vendor = path.join(ROOT, "gpu_compute", "vendor");
@@ -183,18 +201,7 @@ async function fetchWgpu() {
   }
   const url = `https://github.com/gfx-rs/wgpu-native/releases/download/${WGPU_VERSION}/${triple}-release.zip`;
   console.log(dim(`  ↓ ${triple} ${WGPU_VERSION}`));
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 180_000);
-  let res;
-  try {
-    res = await fetch(url, { signal: ctrl.signal, redirect: "follow" });
-  } catch (e) {
-    fail(`downloading wgpu-native failed: ${e.message}\n  (URL: ${url})`);
-  } finally {
-    clearTimeout(timer);
-  }
-  if (!res.ok) fail(`downloading wgpu-native failed: HTTP ${res.status} for ${url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const buf = await download(url, "wgpu-native");
   fs.mkdirSync(dest, { recursive: true });
   extractZip(buf, dest);
   if (!wgpuLibPresent(dest)) fail(`wgpu extraction did not produce a library under ${path.relative(ROOT, dest)}/lib`);
@@ -202,13 +209,67 @@ async function fetchWgpu() {
 }
 
 // ---------------------------------------------------------------------------
+// htmx (the web GUI's only front-end dependency)
+//
+// The entire GUI is server-rendered HTML driven by hx-get/hx-post attributes,
+// so with htmx missing the page still loads and *looks* fine while every button
+// silently does nothing — including "queue job". It is not vendored in git, and
+// the server used to paper over the gap by writing an 87-byte placeholder
+// comment, which made the file look present to any exists() check. Fetch the
+// real thing here, and treat a stub as missing.
+// ---------------------------------------------------------------------------
+const HTMX_VERSION = process.env.HTMX_VERSION || "2.0.4";
+// sha256 of the pinned release, verified only when the version is not overridden.
+const HTMX_SHA256 = "e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447";
+const HTMX_MIN_BYTES = 10_000; // real builds are ~50 KB; anything smaller is a stub
+
+function htmxPresent(dest) {
+  try {
+    return fs.statSync(dest).size >= HTMX_MIN_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchHtmx() {
+  const dest = path.join(ROOT, "space_explorer_gui", "public", "htmx.min.js");
+  if (htmxPresent(dest)) {
+    ok(`htmx already present (${(fs.statSync(dest).size / 1024).toFixed(0)} KB)`);
+    return;
+  }
+  const url = `https://unpkg.com/htmx.org@${HTMX_VERSION}/dist/htmx.min.js`;
+  console.log(dim(`  ↓ htmx ${HTMX_VERSION}`));
+  const buf = await download(url, "htmx", 60_000);
+  if (buf.length < HTMX_MIN_BYTES) {
+    fail(`htmx download looks wrong: got ${buf.length} bytes from ${url}`);
+  }
+  if (!process.env.HTMX_VERSION) {
+    const got = crypto.createHash("sha256").update(buf).digest("hex");
+    if (got !== HTMX_SHA256) {
+      fail(`htmx checksum mismatch for ${url}\n  expected ${HTMX_SHA256}\n  got      ${got}`);
+    }
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, buf);
+  ok(`htmx ${HTMX_VERSION} → space_explorer_gui/public/htmx.min.js`);
+}
+
+// ---------------------------------------------------------------------------
 // Build steps
 // ---------------------------------------------------------------------------
 function buildSeedgen() {
   // universe_generator has no build.zig — it's a single-file build-exe.
+  //
+  // The .exe suffix is REQUIRED on Windows. -femit-bin writes exactly the name
+  // given, and while an extension-less PE file exists on disk happily, Windows
+  // cannot launch one: libuv's spawn appends .com/.exe to any command without an
+  // extension, so `spawn(".../seedgen")` fails with ENOENT even though
+  // fs.existsSync() on that same path returns true. Every universe job then dies
+  // with "spawn: ... ENOENT". `zig build` (segen, gpu_*) adds .exe on its own.
   const dir = path.join(ROOT, "universe_generator", "zig");
-  run("zig", ["build-exe", "main.zig", "-O", "ReleaseFast", "-femit-bin=seedgen", "-lc"], dir);
-  ok("seedgen → universe_generator/zig/seedgen");
+  const out = "seedgen" + (IS_WIN ? ".exe" : "");
+  run("zig", ["build-exe", "main.zig", "-O", "ReleaseFast", `-femit-bin=${out}`, "-lc"], dir);
+  ok(`seedgen → universe_generator/zig/${out}`);
 }
 
 function buildSegen() {
@@ -239,13 +300,16 @@ Builds the Zig components and installs the web server's dependencies:
   1. seedgen   (universe_generator)
   2. segen     (surface_generator)
   3. gpu_*     (gpu_compute — downloads pinned wgpu-native ${WGPU_VERSION} first)
-  4. web server dependencies (space_explorer_gui)   [skipped with --build-only]
+  4. htmx      (the web GUI's front-end dependency — always fetched)
+  5. web server dependencies (space_explorer_gui)   [skipped with --build-only]
 
 --build-only  Build the Zig components only; skip the server npm install. Used
               by the package postinstall hook (npm resolves the server's deps).
+              htmx is still fetched — it is not an npm dependency.
 
 Prerequisites: Node >=18 (running this) and Zig 0.16.x on PATH.
 Env: WGPU_VERSION overrides the pinned wgpu-native release.
+     HTMX_VERSION overrides the pinned htmx release (skips the checksum check).
 
 Start the server afterwards with:
   npm start   # http://localhost:3456`);
@@ -275,6 +339,11 @@ async function main() {
 
   step("Building GPU compute binaries");
   buildGpu();
+
+  // Not gated on --build-only: the GUI is unusable without htmx, and npm can't
+  // supply it on the package-install path either (it isn't an npm dependency).
+  step(`Fetching htmx (${HTMX_VERSION})`);
+  await fetchHtmx();
 
   if (!buildOnly) {
     step("Installing web server dependencies");

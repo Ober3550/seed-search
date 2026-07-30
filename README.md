@@ -6,8 +6,14 @@ JSONL for analysis.
 
 ## Install
 
-Builds the Zig components (`seedgen`, `segen`, the `gpu_*` compute binaries) and
-installs the web server's dependencies. Works on macOS, Linux, and Windows.
+Builds the Zig components (`seedgen`, `segen`, the `gpu_*` compute binaries),
+fetches the GUI's front-end dependency (htmx), and installs the web server's
+dependencies. Works on macOS, Linux, and Windows.
+
+Run the installer before the first `npm start`, and re-run it after pulling. The
+GUI is entirely htmx-driven, so without `space_explorer_gui/public/htmx.min.js`
+the page still renders but no button does anything — queueing a job sends no
+request at all. The server warns on startup if that file is missing or stubbed.
 
 **Prerequisites:** [Zig 0.16.x](https://ziglang.org/download/) and
 [Node ≥18](https://nodejs.org/) on your `PATH`.

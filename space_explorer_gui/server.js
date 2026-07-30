@@ -1446,8 +1446,22 @@ app.post("/api/surface/batch", (req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────
 
+// The whole UI is htmx-driven (hx-get/hx-post), so a missing htmx yields a page
+// that renders correctly but where nothing responds to a click — no request is
+// ever sent. Writing a placeholder file here (as this used to) only hid the
+// problem: it satisfied every exists() check while leaving the GUI inert. Warn
+// loudly instead, and treat an undersized file as missing.
 const htmxPath = path.join(__dirname, "public", "htmx.min.js");
-if (!fs.existsSync(htmxPath)) fs.writeFileSync(htmxPath, "// htmx placeholder — download from https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js");
+const htmxBytes = fs.existsSync(htmxPath) ? fs.statSync(htmxPath).size : 0;
+if (htmxBytes < 10_000) {
+  console.error(
+    `\n⚠️  htmx is missing from ${htmxPath}` +
+      (htmxBytes ? ` (found only ${htmxBytes} bytes — a stub)` : "") +
+      "\n    The GUI will load but every button will do nothing: queueing a job" +
+      "\n    sends no request at all. Fix it with:\n" +
+      "\n      node install.mjs\n"
+  );
+}
 
 app.listen(PORT, () => {
   console.log(`\n🌌 SE Explorer GUI at http://localhost:${PORT}`);
