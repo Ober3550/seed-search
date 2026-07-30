@@ -1276,8 +1276,12 @@ app.post("/api/seed/generate", async (req, res) => {
 // ── Workers ────────────────────────────────────────────────────────────
 
 app.get("/workers", (req, res) => page(req, res, "Workers", renderWorkersPage(jobs.workerStatus())));
+app.get("/workers/status", (req, res) => res.send(renderWorkersLive(jobs.workerStatus())));
 
-function renderWorkersPage(st) {
+// Live (auto-refreshing) portion of the Workers page: the busy badge, the
+// per-type counts, and the worker-slot list. Kept SEPARATE from the edit form so
+// the 2s poll never clobbers what the user is typing.
+function renderWorkersLive(st) {
   const watchLink = (j) => j.zone_id
     ? ` <a class="btn-sm" href="/seed/${j.seed}/surface/${j.zone_id}" hx-get="/seed/${j.seed}/surface/${j.zone_id}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace" title="watch grid">👁</a>`
     : "";
@@ -1298,26 +1302,34 @@ function renderWorkersPage(st) {
   }).join("");
 
   return `
-  <div class="page" hx-get="/workers" hx-trigger="every 2s" hx-swap="outerHTML" hx-sync="#main:drop">
+    <div class="pool-head">
+      <span class="badge ${st.running ? "running" : "done"}">${st.running}/${st.total} busy</span>
+      <span class="hint">universe ${st.universe.running}/${st.universe.cap} (${st.universe.queued} queued) ·
+      surface ${st.surface.running}/${st.surface.cap} (${st.surface.queued} queued)</span>
+    </div>
+    <ul class="worker-list">${slots}</ul>`;
+}
+
+function renderWorkersPage(st) {
+  // Only #worker-live polls; the form is static so edits aren't wiped mid-type.
+  return `
+  <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: "Workers" }])}
     <h2>⚙ Workers</h2>
     <p class="hint">One shared pool — each worker (thread) picks up whichever job is next: universe
     (<code>seedgen</code>) or surface (<code>segen</code>). Optionally cap how many of the pool each
     type may use at once; set both caps to the total for a free-for-all.</p>
     <div class="worker-pool">
-      <div class="pool-head">
-        <span class="badge ${st.running ? "running" : "done"}">${st.running}/${st.total} busy</span>
-        <span class="hint">universe ${st.universe.running}/${st.universe.cap} (${st.universe.queued} queued) ·
-        surface ${st.surface.running}/${st.surface.cap} (${st.surface.queued} queued)</span>
-        <form class="pool-form" hx-post="/api/workers/concurrency" hx-swap="none"
-              hx-on::after-request="htmx.ajax('GET','/workers',{target:'#main'})">
-          <label>Total <input type="number" name="total" value="${st.total}" min="1" max="32"></label>
-          <label title="max pool slots universe may use">Universe cap <input type="number" name="universe" value="${st.universe.cap}" min="0" max="32"></label>
-          <label title="max pool slots surface may use">Surface cap <input type="number" name="surface" value="${st.surface.cap}" min="0" max="32"></label>
-          <button type="submit" class="btn-sm">Apply</button>
-        </form>
+      <form class="pool-form" hx-post="/api/workers/concurrency" hx-swap="none"
+            hx-on::after-request="htmx.ajax('GET','/workers',{target:'#main'})">
+        <label>Total <input type="number" name="total" value="${st.total}" min="1" max="32"></label>
+        <label title="max pool slots universe may use">Universe cap <input type="number" name="universe" value="${st.universe.cap}" min="0" max="32"></label>
+        <label title="max pool slots surface may use">Surface cap <input type="number" name="surface" value="${st.surface.cap}" min="0" max="32"></label>
+        <button type="submit" class="btn-sm">Apply</button>
+      </form>
+      <div id="worker-live" hx-get="/workers/status" hx-trigger="every 2s" hx-swap="innerHTML" hx-sync="#main:drop">
+        ${renderWorkersLive(st)}
       </div>
-      <ul class="worker-list">${slots}</ul>
     </div>
   </div>`;
 }
