@@ -299,12 +299,18 @@ function renderUniversePage(jobsList) {
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="" min="0" step="${bs}" placeholder="auto (continue after last bucket)"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
-          <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 100/100k. Blank = end off.</legend>
-          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~25/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k)">
+          <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 170/100k bucket (a 100k bucket is 50k seeds — seedgen steps by 2). Blank = end off.</legend>
+          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~20/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~24/100k)">
             <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="38000" min="0" step="500" style="width:6em" placeholder="off">
           </div>
-          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most)">
-            <input type="number" name="pl_lo" value="13" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
+          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most, ~43/100k). NOTE: measured minimum P+M is 14, so a low cutoff below 14 never matches.">
+            <input type="number" name="pl_lo" value="16" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
+          </div>
+          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) with no water, as a %. Normalised, not a count — raw counts just track system size. Population: mean 30%, p1 11%, p99 50%. Defaults ≈ 16/100k (wet) and 24/100k (parched).">
+            <input type="number" name="wf_lo" value="4" min="0" max="100" style="width:4em" placeholder="off"> ≥ waterless % ≥ <input type="number" name="wf_hi" value="60" min="0" max="100" style="width:4em" placeholder="off">
+          </div>
+          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) with an enemy tag above none, as a %. Population: mean 70%, p1 52%, p99 84%. Defaults ≈ 30/100k (quiet) and 11/100k (warzone); use 87 for the high side if you want ~48.">
+            <input type="number" name="ef_lo" value="42" min="0" max="100" style="width:4em" placeholder="off"> ≥ hostile % ≥ <input type="number" name="ef_hi" value="88" min="0" max="100" style="width:4em" placeholder="off">
           </div>
         </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
@@ -353,8 +359,9 @@ app.get("/seeds", (req, res) => {
   const countMode = (req.query.count === "1") && rules.length > 0;
 
   // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
-  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, ed_min: req.query.ed_min, ed_max: req.query.ed_max };
-  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, ...rng });
+  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, wf_min: req.query.wf_min, wf_max: req.query.wf_max, ef_min: req.query.ef_min, ef_max: req.query.ef_max };
+  const seedQ = (req.query.seed || "").toString().trim();
+  let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, seed: seedQ || undefined, ...rng });
   if (countMode) {
     for (const s of seeds) {
       const c = seedCriteria(s);
@@ -366,22 +373,82 @@ app.get("/seeds", (req, res) => {
       return analyze.matchFilter(c, rules).match;
     });
   }
-  const buckets = [...new Set(db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket))];
+  // Union with the buckets that actually hold seed rows, so manually generated
+  // seeds (synthetic "manual" bucket, no job behind it) are reachable here.
+  const buckets = [...new Set([
+    ...db.getUniverseJobs().filter(j => j.status === "done").map(j => j.bucket),
+    ...db.getSeedBuckets(),
+  ])];
   const defs = db.getFilterDefs();
   const genCounts = db.getGeneratedZoneCounts();
-  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, ...rng }, genCounts));
+  page(req, res, "Seeds", renderSeedsPage(seeds, buckets, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, ...rng }, genCounts));
 });
+
+// ── Seed score ─────────────────────────────────────────────────────────
+// One 0-100 number combining the four headline metrics so the list can be ranked
+// directly. 100 = many planets, a close naquium-primary field, plenty of water,
+// few enemies. 0 = few planets, a distant (or missing) field, parched, hostile.
+//
+// Each metric is normalised against the MEASURED population — a 50k-seed scan,
+// the same one the tail cutoffs were tuned from — rather than against whatever
+// is on screen. Normalising against the visible rows would make one seed's score
+// change depending on how the list happened to be filtered.
+//
+// Ranges are p1..p99 so a handful of outliers can't flatten everything else;
+// anything beyond clamps to 0 or 1.
+//
+// naqdv is LOG-scaled. It is heavily right-skewed (p1 10.2k, median 29k, p99
+// 102k, max 157k), so a linear map puts the median at 0.21 and squeezes half the
+// population into the bottom fifth of the scale. On a log scale the median lands
+// at 0.46, so the weight is spread across the range people actually care about.
+//
+// Weights: planet count dominates at 60%, then naq-primary field distance 20%,
+// hostility 15%, water 5%.
+const SCORE_METRICS = [
+  { key: "np",    w: 0.60, lo: 16,    hi: 40,     higherIsBetter: true },
+  { key: "naqdv", w: 0.20, lo: 10245, hi: 101894, higherIsBetter: false, log: true },
+  { key: "ef",    w: 0.15, lo: 52,    hi: 84,     higherIsBetter: false }, // hostile%
+  { key: "wf",    w: 0.05, lo: 11,    hi: 50,     higherIsBetter: false }, // waterless% — less is wetter
+];
+const NO_NAQ_DV = 10000000; // seedgen's "no naquium-primary field" sentinel
+
+function seedScore(s) {
+  let sum = 0, wsum = 0;
+  for (const m of SCORE_METRICS) {
+    const v = s[m.key];
+    if (v == null) continue; // metric missing (seed predates it) — renormalise
+    let t;                   // over the metrics this seed actually has
+    if (m.log) {
+      // The sentinel is not a distance; treat "no field at all" as the worst case
+      // rather than letting 10,000,000 run off the end of the log scale.
+      t = v >= NO_NAQ_DV ? 1
+        : (Math.log(Math.max(v, 1)) - Math.log(m.lo)) / (Math.log(m.hi) - Math.log(m.lo));
+    } else {
+      t = (v - m.lo) / (m.hi - m.lo);
+    }
+    t = Math.max(0, Math.min(1, t));
+    sum += m.w * (m.higherIsBetter ? t : 1 - t);
+    wsum += m.w;
+  }
+  return wsum === 0 ? null : Math.round((100 * sum) / wsum);
+}
 
 function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
   const rules = f.def ? JSON.parse(f.def.rules) : [];
   const ruleStr = rules.map(analyze.ruleLabel).join(" AND ") || "no filter";
-  // default order = zones descending: generated seeds first (by most
-  // generated), then the rest by most total zones.
+  // Default order = score descending. This has to happen HERE, before the
+  // 500-row slice below: client-side sorting only reorders the rows already
+  // rendered, so ranking by score in the browser alone would miss the best seed
+  // in a bucket whenever it fell outside the first 500.
+  // Scores are integers 0..100, so ties are common — generated-first and then
+  // most-zones break them, which is the ordering this list used to default to.
   const gen = (s) => genCounts[s.seed] || 0;
   seeds = [...seeds].sort((a, b) => {
     // In count mode, rank by rule-match count first so the best partial
-    // matches float to the top; otherwise keep the generated/zones ordering.
+    // matches float to the top; otherwise rank by score.
     if (f.count && (b._matches || 0) !== (a._matches || 0)) return (b._matches || 0) - (a._matches || 0);
+    const as = seedScore(a), bs = seedScore(b);
+    if ((as ?? -1) !== (bs ?? -1)) return (bs ?? -1) - (as ?? -1);
     const ag = gen(a) > 0, bg = gen(b) > 0;
     if (ag !== bg) return ag ? -1 : 1;
     if (ag) return gen(b) - gen(a);
@@ -392,7 +459,20 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
     ${crumbs([{ label: "Buckets", href: "/universe" }, { label: `Seeds ${f.bucket || "(all)"}` }])}
     <h2>🌱 Rough-passed Seeds ${f.bucket ? `<span class="badge zone-type">${f.bucket}</span>` : ""}</h2>
     <div class="filter-bar">
+      <form hx-post="/api/seed/generate" hx-target="#gen-seed-status" hx-swap="innerHTML" hx-disabled-elt="find button"
+            title="Generate the full universe for any seed, whether or not it passed the rough filters. It lands in the 'manual' bucket and is then searchable here.">
+        <label>Any seed: <input type="number" name="seed" min="0" step="1" placeholder="e.g. 123456" style="width:9em" required></label>
+        <label title="Krastorio 2">K2 <input type="checkbox" name="k2"></label>
+        <button type="submit" class="btn-sm">⚙ Generate</button>
+      </form>
+      <span id="gen-seed-status" class="hint"></span>
+    </div>
+    <div class="filter-bar">
       <form id="seed-filters" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML">
+        <input type="search" name="seed" value="${f.seed || ""}" placeholder="🔍 Seed #" style="width:9em"
+               title="Find a seed by number. Exact if you type the whole number, otherwise a partial match. Searched in the database, so it finds seeds beyond the 2000 shown."
+               hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters"
+               hx-trigger="search, keyup changed delay:400ms">
         <select name="bucket" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">
           <option value="">All buckets</option>
           ${buckets.map(b => `<option value="${b}" ${f.bucket === b ? "selected" : ""}>${b}</option>`).join("")}
@@ -416,7 +496,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <span class="hint" title="Calidus system planets + moons (incl. Nauvis) range">P+M <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="nearest naquium-PRIMARY field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="nearest ANY asteroid field Δv range (any field yields some naquium)">fieldΔv <input type="number" name="fdv_min" value="${f.fdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="fdv_max" value="${f.fdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="proportional enemy danger % (mean enemy level across Calidus surfaces)">enemy% <input type="number" name="ed_min" value="${f.ed_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ed_max" value="${f.ed_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="share of Calidus planets+moons (excl. Nauvis) with no water, %">waterless% <input type="number" name="wf_min" value="${f.wf_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="wf_max" value="${f.wf_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="share of Calidus planets+moons (excl. Nauvis) carrying enemies, %">hostile% <input type="number" name="ef_min" value="${f.ef_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ef_max" value="${f.ef_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
       <p class="hint">Filter: <strong>${ruleStr}</strong> — ${seeds.length} seed(s) match</p>
@@ -425,31 +506,34 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
       <thead><tr>
         <th class="sortable" data-key="seed" onclick="sortSeeds('seed')">Seed <span class="sort-ind"></span></th>
         <th>Bucket</th><th>K2</th><th>Loot</th>
-        <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
         <th class="sortable" data-key="npl" onclick="sortSeeds('npl')" title="Calidus system planets only (incl. Nauvis) — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
         <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus system planets + moons (incl. Nauvis) — click for most (desc) / fewest (asc)">P+M <span class="sort-ind"></span></th>
         <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-PRIMARY field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
         <th class="sortable" data-key="fdv" onclick="sortSeeds('fdv')" title="Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest (desc) / closest (asc)">Field Δv <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="ed" onclick="sortSeeds('ed')" title="proportional enemy danger % (mean enemy level across Calidus surfaces) — click for most (desc) / least (asc)">Enemy% <span class="sort-ind"></span></th>
-        <th>Naq</th>
+        <th class="sortable" data-key="wf" onclick="sortSeeds('wf')" title="share of Calidus planets+moons (excl. Nauvis) with NO water — high = a parched system, low = a wet one. Click for driest (desc) / wettest (asc)">Waterless% <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="ef" onclick="sortSeeds('ef')" title="share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile (desc) / quietest (asc)">Hostile% <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="score" onclick="sortSeeds('score')" title="0–100 overall desirability: most Calidus planets+moons (60%), closest naquium-primary field (20%), fewest enemies (15%), most water (5%). Normalised against the measured 50k-seed population, so it means the same thing on every page. Click for best (desc) / worst (asc)">Score <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
       </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
-          const c = seedCriteria(s) || {};
+          // No seedCriteria() here any more: the naq-primary field moved to the
+          // seed detail page, and it was this list's only use of the parsed
+          // criteria — so 500 rows no longer each pay a JSON.parse.
           const gen = genCounts[s.seed] || 0;
+          const score = seedScore(s);
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ed="${s.ed ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-wf="${s.wf ?? 0}" data-ef="${s.ef ?? 0}" data-score="${score ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
-          <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
           <td>${s.npl ?? "—"}</td>
           <td>${s.np ?? "—"}</td>
           <td>${s.naqdv == null ? "—" : (s.naqdv >= 10000000 ? "none" : s.naqdv.toLocaleString())}</td>
           <td>${s.fdv == null ? "—" : (s.fdv >= 10000000 ? "none" : s.fdv.toLocaleString())}</td>
-          <td>${s.ed == null ? "—" : s.ed + "%"}</td>
-          <td>${c.naqField || "—"}</td>
+          <td>${s.wf == null ? "—" : s.wf + "%"}</td>
+          <td>${s.ef == null ? "—" : s.ef + "%"}</td>
+          <td><strong>${score == null ? "—" : score}</strong></td>
         </tr>`;}).join("")}
         ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 12 : 11}">No seeds match.</td></tr>` : ""}
       </tbody>
@@ -457,7 +541,9 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
     <script>
       (function () {
-        var st = { key: "${f.count ? "matches" : "zones"}", dir: "desc" }; // initial order (server pre-sorted)
+        // Matches the server pre-sort, so the arrow starts on the column the
+        // rows are actually ordered by.
+        var st = { key: "${f.count ? "matches" : "score"}", dir: "desc" };
         // DESCENDING comparators (first click). Zones desc: generated seeds
         // first (by most generated), then the rest (by most total zones).
         function baseCmp(key, a, b) {
@@ -537,7 +623,7 @@ app.get("/seed/:seed", (req, res) => {
   try { jobs.writeSeedZonesFile(s, null); }
   catch (e) { console.error("writeSeedZonesFile:", e.message); }
 
-  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId));
+  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId, req.query.all === "1"));
 });
 
 // Poll target for the "generating full universe" banner. While expanding it
@@ -567,23 +653,51 @@ function zoneSearchText(bucket, seed, zone) {
   return parts.join(" ").toLowerCase().replace(/"/g, "");
 }
 
-function renderSeedDetail(s, c, zones, filterId) {
+function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
   const back = { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
   const reload = `/seed/${s.seed}`;
-  const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
+  // The naquium-primary field is already IN `sel`, so it is pinned to the top and
+  // pre-checked like any criteria zone. It is called out separately below because
+  // being merely starred gave no way to tell it apart from the others.
+  const naq = c.naqField || null;
+  const sel = new Set([...(c.selectedZones || []), ...(naq ? [naq] : [])]);
   const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
   // Display filter only — `zones` stays whole for the caller (reconcile, etc.).
-  const rows = zones.filter(z => !HIDDEN_ZONE_TYPES.has(z.zone_type));
+  //
+  // Once a seed is expanded, ~95% of its zones belong to OTHER star systems
+  // (measured: 616 of 652 for one seed), which buries the home system you
+  // actually play in. So by default only Calidus planets and moons are listed.
+  //
+  // Asteroid fields are ALWAYS kept regardless of system — every field orbits
+  // another star, including the naquium-primary one, so filtering them by
+  // Calidus membership would remove all of them, the naq field included.
+  //
+  // in_calidus is NULL for rows ingested before seedgen emitted the flag; NULL
+  // is treated as "show" so old data never silently vanishes.
+  const KEEP_ANY_SYSTEM = new Set(["asteroid-field"]);
+  const rows = zones.filter(z => {
+    if (HIDDEN_ZONE_TYPES.has(z.zone_type)) return false;
+    if (showAllSystems || KEEP_ANY_SYSTEM.has(z.zone_type)) return true;
+    return z.in_calidus !== 0;
+  });
+  const hiddenBySystem = zones.filter(z =>
+    !HIDDEN_ZONE_TYPES.has(z.zone_type) && !KEEP_ANY_SYSTEM.has(z.zone_type) && z.in_calidus === 0).length;
 
   return `
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
-    <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code></h2>
+    <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code>
+      ${naq ? `<span class="badge zone-type" title="nearest asteroid field whose PRIMARY yield is naquium — pinned to the top of the table and pre-selected${s.naqdv != null && s.naqdv < 10000000 ? `, Δv ${s.naqdv.toLocaleString()}` : ""}">☄ naq: ${naq}</span>` : `<span class="hint" title="no asteroid field in this universe has naquium as its primary yield">☄ no naq-primary field</span>`}</h2>
     ${s.expanded ? "" : `<div id="expand-wrap" class="expand-banner" hx-get="/api/seed/${s.seed}/expand" hx-trigger="load delay:800ms, every 2s" hx-target="#expand-wrap" hx-swap="innerHTML"><span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span></div>`}
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
       ${maxRadiusInput()}
-      <span class="hint">Asteroid belts and anomalies hidden (nothing generatable); selected zones are pinned to the top (⭐ = criteria-relevant, pre-selected). Click a header to sort.</span>
+      <label class="hint" title="Off: only Calidus planets and moons, plus every asteroid field (fields all orbit other stars, including the naq-primary one). On: also list planets and moons from every other star system.">
+        <input type="checkbox" ${showAllSystems ? "checked" : ""}
+               hx-get="/seed/${s.seed}${showAllSystems ? "" : "?all=1"}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true">
+        Other star systems${hiddenBySystem && !showAllSystems ? ` <strong>(${hiddenBySystem} hidden)</strong>` : ""}
+      </label>
+      <span class="hint">Asteroid belts and anomalies hidden (nothing generatable); selected zones are pinned to the top (⭐ = criteria-relevant, ☄ = naquium-primary field — both pre-selected). Click a header to sort.</span>
     </div>
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
@@ -629,7 +743,7 @@ function renderSeedDetail(s, c, zones, filterId) {
             <td class="num">${z.delta_v ? Math.round(z.delta_v) : "—"}</td>
             <td>${water}</td>
             <td>${enemy}</td>
-            <td>${relevant ? "⭐" : ""}</td>
+            <td>${z.name === naq ? `<span title="naquium-primary asteroid field">☄</span>` : relevant ? "⭐" : ""}</td>
             <td class="yields-cell"><div id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</div></td>
             ${gen ? renderZoneCell(s.bucket, s.seed, z) : `<td class="row-actions muted">—</td>`}
           </tr>`;}).join("")}
@@ -1062,9 +1176,32 @@ app.post("/api/universe/create", (req, res) => {
   const filter = {
     naq_lo: num(req.body.naq_lo), naq_hi: num(req.body.naq_hi),
     pl_lo: num(req.body.pl_lo), pl_hi: num(req.body.pl_hi),
+    // Percentages (0..100) of Calidus bodies, not counts.
+    wf_lo: num(req.body.wf_lo), wf_hi: num(req.body.wf_hi),
+    ef_lo: num(req.body.ef_lo), ef_hi: num(req.body.ef_hi),
   };
   const ids = jobs.createUniverseBuckets(units, k2, startSeed, filter);
   res.json({ ok: true, job_ids: ids, message: `Queued ${units} buckets` });
+});
+
+// Generate the full universe for one arbitrary seed and ingest it, so it can be
+// opened and searched from the seed list. Returns an HTML fragment (the status
+// span next to the form), not JSON — this is an htmx target.
+app.post("/api/seed/generate", async (req, res) => {
+  const seed = parseInt(req.body.seed);
+  const k2 = req.body.k2 === "on" || req.body.k2 === "1";
+  if (!Number.isFinite(seed) || seed < 0) {
+    return res.send(`<span class="hint" style="color:var(--red)">Enter a non-negative whole seed number.</span>`);
+  }
+  try {
+    const r = await jobs.generateSeed(seed, k2);
+    const where = `<a href="/seeds?bucket=${encodeURIComponent(r.bucket)}">${r.bucket}</a>`;
+    res.send(r.existed
+      ? `<span class="hint">Seed <strong>${r.seed}</strong> was already known (${where}) — <a href="/seed/${r.seed}">open it</a>.</span>`
+      : `<span class="hint" style="color:var(--green)">✅ Seed <strong>${r.seed}</strong> generated, ${r.zones} zones → ${where} — <a href="/seed/${r.seed}">open it</a>.</span>`);
+  } catch (e) {
+    res.send(`<span class="hint" style="color:var(--red)">${String(e.message).replace(/</g, "&lt;")}</span>`);
+  }
 });
 
 // ── Workers ────────────────────────────────────────────────────────────

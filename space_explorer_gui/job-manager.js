@@ -435,6 +435,11 @@ function runUniverseBucket(job) {
       NAQ_DV_HIGH: String(job.naq_hi || 0),
       PLANETS_LOW: String(job.pl_lo || 0),
       PLANETS_HIGH: String(job.pl_hi || 0),
+      // Percentages (0..100), not counts — see wf/ef in main.zig.
+      WATERLESS_PCT_LOW: String(job.wf_lo || 0),
+      WATERLESS_PCT_HIGH: String(job.wf_hi || 0),
+      ENEMY_PCT_LOW: String(job.ef_lo || 0),
+      ENEMY_PCT_HIGH: String(job.ef_hi || 0),
       MIN_PROD_MODULES: "0",
       WORKER_ID: "0",
     };
@@ -525,6 +530,8 @@ async function importBucket(filePath, jobId, label) {
       naqdv: data.naqdv ?? null,
       fdv: data.fdv ?? null,
       ed: data.ed ?? null,
+      wf: data.wf ?? null,
+      ef: data.ef ?? null,
     });
     for (const z of data.z) {
       zoneRows.push({
@@ -596,8 +603,8 @@ function upsertWorldZones(data, jobId) {
       (job_id, seed, name, zone_type, radius, primary_resource,
        temperature, water, moisture, trees, aux, cliff, enemy,
        delta_v, star_gravity_well, planet_gravity_well,
-       resource_scores, resource_yields, stellar_x, stellar_y)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       resource_scores, resource_yields, stellar_x, stellar_y, in_calidus)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(seed, name) DO UPDATE SET
       zone_type=excluded.zone_type, radius=excluded.radius,
       primary_resource=excluded.primary_resource,
@@ -605,7 +612,10 @@ function upsertWorldZones(data, jobId) {
       moisture=excluded.moisture, trees=excluded.trees, aux=excluded.aux,
       cliff=excluded.cliff, enemy=excluded.enemy, delta_v=excluded.delta_v,
       resource_scores=excluded.resource_scores,
-      resource_yields=excluded.resource_yields`);
+      resource_yields=excluded.resource_yields,
+      -- COALESCE so a re-ingest from an older seedgen (no "c") cannot wipe a
+      -- flag an ALL_ZONES expansion already established.
+      in_calidus=COALESCE(excluded.in_calidus, zones.in_calidus)`);
   const tx = d.transaction(() => {
     for (const z of data.z) {
       stmt.run(
@@ -613,6 +623,7 @@ function upsertWorldZones(data, jobId) {
         z.temperature || null, z.water || null, z.moisture || null, z.trees || null,
         z.aux || null, z.cliff || null, z.enemy || null, z.dv || null, null, null,
         z.rs ? JSON.stringify(z.rs) : null, z.y ? JSON.stringify(z.y) : null, null, null,
+        z.c == null ? null : (z.c ? 1 : 0),
       );
     }
   });
@@ -662,6 +673,70 @@ function expandSeed(seed) {
     console.log(`[expand ${seed}] ingested ${n} zones (full universe)`);
   });
   child.on("error", e => { expandInFlight.delete(seed); console.log(`[expand ${seed}] spawn: ${e.message}`); });
+}
+
+// Generate + ingest ONE arbitrary seed on demand. expandSeed only fills in the
+// zones of a seed the bulk pass already kept; this creates the seeds row itself,
+// so ANY seed number can be pulled up and then searched in the seed list.
+//
+// Every tail cutoff is explicitly zeroed: the point is to inspect this exact
+// seed, not to ask whether it would have survived the rough pass. Such seeds land
+// in a synthetic "manual" bucket so they are never mistaken for the output of a
+// completed bucket job.
+function manualBucket(k2) { return k2 ? "manual-k2" : "manual"; }
+
+function generateSeed(seed, k2 = false) {
+  return new Promise((resolve, reject) => {
+    seed = Number(seed);
+    if (!Number.isInteger(seed) || seed < 0) {
+      return reject(new Error("seed must be a non-negative whole number"));
+    }
+    // Already known: don't duplicate it, just make sure the full universe is in.
+    const existing = db.getSeed(seed);
+    if (existing) {
+      if (!existing.expanded) expandSeed(seed);
+      return resolve({ seed, existed: true, bucket: existing.bucket, zones: existing.zone_count });
+    }
+    let bin;
+    try { bin = requireSeedgen(); } catch (e) { return reject(e); }
+    const bucket = manualBucket(k2);
+    const env = {
+      ...process.env,
+      START_SEED: String(seed), END_SEED: String(seed),
+      SE_K2: k2 ? "1" : "0",
+      ALL_ZONES: "1",
+      MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0", METRICS_SCAN: "0",
+      NAQ_DV_LOW: "0", NAQ_DV_HIGH: "0", PLANETS_LOW: "0", PLANETS_HIGH: "0",
+      WATERLESS_PCT_LOW: "0", WATERLESS_PCT_HIGH: "0",
+      ENEMY_PCT_LOW: "0", ENEMY_PCT_HIGH: "0",
+    };
+    const child = spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", err = "";
+    child.stdout.on("data", d => out += d);
+    child.stderr.on("data", d => err += d);
+    child.on("error", e => reject(new Error(`could not run seedgen: ${e.message}`)));
+    child.on("close", code => {
+      if (code !== 0) return reject(new Error(`seedgen exited ${code}: ${err.slice(-200)}`));
+      const line = out.split("\n").find(l => l.trim().startsWith("{"));
+      if (!line) return reject(new Error(`seedgen produced no universe for seed ${seed}`));
+      let data;
+      try { data = JSON.parse(line); } catch (_) { return reject(new Error("seedgen produced unreadable JSON")); }
+      if (!data.z) return reject(new Error("seedgen produced a universe with no zones"));
+      let criteria = null;
+      try { criteria = JSON.stringify(analyze.evaluateWorld(data)); } catch (_) {}
+      db.insertSeeds([{
+        seed: data.s, job_id: null, bucket, loot: data.l || "", k2: !!data.k,
+        zone_count: data.z.length, line, criteria,
+        np: data.np ?? null, npl: data.npl ?? null, naqdv: data.naqdv ?? null,
+        fdv: data.fdv ?? null, ed: data.ed ?? null, wf: data.wf ?? null, ef: data.ef ?? null,
+      }]);
+      const n = upsertWorldZones(data, null);
+      db.markSeedExpanded(seed, line, n, criteria, data.np ?? null, data.naqdv ?? null,
+        data.ed ?? null, data.npl ?? null, data.fdv ?? null);
+      console.log(`[generate ${seed}] ingested ${n} zones into ${bucket}`);
+      resolve({ seed, existed: false, bucket, zones: n });
+    });
+  });
 }
 
 // ── Second-layer seed filter (persisted subset of a bucket) ────────────
@@ -1123,6 +1198,7 @@ module.exports = {
   createFilteredSet,
   expandSeed,
   isExpanding,
+  generateSeed,
   writeSeedZonesFile,
   surfaceGridFor,
   planSurfaceCells,
