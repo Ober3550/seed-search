@@ -973,8 +973,18 @@ pub fn resolveFieldPrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), k
     return map;
 }
 
-pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMap: std.StringHashMapUnmanaged(data.Body)) !std.StringHashMap([]const u8) {
+pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMap: std.StringHashMapUnmanaged(data.Body), k2: bool) !std.StringHashMap([]const u8) {
     var map = std.StringHashMap([]const u8).init(alloc);
+
+    // Number of resource controls that EXIST. SE's ordered_bias
+    // (universe.lua generate_zone_resource_bias) is `1 + (base_bias - i) / #res`,
+    // where #res is the count of resources with autoplace controls. The three kr-*
+    // resources are the LAST entries in `resource_order`, so vanilla (no K2) has
+    // exactly the first 15; every bias-ranking, position count, and best-resource
+    // selection below therefore iterates 0..N and divides by N — anything at index
+    // >= N (the kr resources) is invisible in vanilla, matching the game.
+    const N: usize = if (k2) resource_order.len else resource_order.len - 3;
+    const Nf: f64 = @floatFromInt(N);
 
     // ---- Phase 0: Gather zone info ----
     var infos = ArrayList(ZoneBiasInfo).init(alloc);
@@ -994,12 +1004,17 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         if (std.mem.eql(u8, z.name, "Nauvis")) { assigned_primary = "stone"; }
         if (assigned_primary == null) {
             if (lookupBodyFast(bodyMap, z.name)) |p| {
-                if (p.primary_resource) |pr| assigned_primary = pr;
+                // A prototype primary that only exists under K2 (kr-*) is invalid in
+                // vanilla; SE falls back to the normal assignment there (e.g. Xynariz
+                // is kr-rare-metal-ore under K2 but a rolled resource in vanilla).
+                if (p.primary_resource) |pr| {
+                    if (k2 or !std.mem.startsWith(u8, pr, "kr-")) assigned_primary = pr;
+                }
             }
         }
         if (assigned_primary == null) {
             if (std.mem.eql(u8, z.name, "Agni")) assigned_primary = "se-vulcanite";
-            if (std.mem.eql(u8, z.name, "Koskomino")) { assigned_primary = "kr-imersite"; assigned_special = true; }
+            if (k2 and std.mem.eql(u8, z.name, "Koskomino")) { assigned_primary = "kr-imersite"; assigned_special = true; }
             if (std.mem.eql(u8, z.name, "Buttercup")) { assigned_primary = "se-vitamelange"; assigned_special = true; }
             if (std.mem.eql(u8, z.name, "Seker")) { assigned_primary = "se-iridium-ore"; assigned_special = true; }
             if (std.mem.eql(u8, z.name, "Shu")) { assigned_primary = "se-holmium-ore"; assigned_special = true; }
@@ -1012,20 +1027,32 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
     }
 
     // ---- Phase 1: Quotas ----
-    const eligible_primaries = [_]u32{
+    // The eligible primary set = the resources that EXIST as autoplace controls.
+    // The three kr-* resources only exist under Krastorio 2; in vanilla SE they
+    // are absent, so they must NOT be options. Including them (opt_count 15 vs 12)
+    // both mis-assigns kr resources AND shifts every quota (per_min = N/opt_count),
+    // cascading wrong primaries across the whole universe.
+    const base_primaries = [_]u32{
         @intFromEnum(data.Resource.iron_ore), @intFromEnum(data.Resource.copper_ore),
         @intFromEnum(data.Resource.uranium_ore), @intFromEnum(data.Resource.coal),
         @intFromEnum(data.Resource.crude_oil), @intFromEnum(data.Resource.stone),
         @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.se_cryonite),
         @intFromEnum(data.Resource.se_vitamelange), @intFromEnum(data.Resource.se_beryllium_ore),
         @intFromEnum(data.Resource.se_iridium_ore), @intFromEnum(data.Resource.se_holmium_ore),
+    };
+    const kr_primaries = [_]u32{
         @intFromEnum(data.Resource.kr_imersite), @intFromEnum(data.Resource.kr_mineral_water),
         @intFromEnum(data.Resource.kr_rare_metal_ore),
     };
     var primary_options = ArrayList(PrimaryCandidate).init(alloc);
     defer primary_options.deinit();
-    for (eligible_primaries) |ri| {
+    for (base_primaries) |ri| {
         try primary_options.append(.{ .ri = ri, .name = resource_order[ri], .count = 0 });
+    }
+    if (k2) {
+        for (kr_primaries) |ri| {
+            try primary_options.append(.{ .ri = ri, .name = resource_order[ri], .count = 0 });
+        }
     }
     const normal_count = @as(u32, @intCast(infos.items.len));
     const opt_count = @as(u32, @intCast(primary_options.items.len));
@@ -1065,7 +1092,10 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         var matched_ri: ?u32 = null;
         inline for (.{ @intFromEnum(data.Resource.se_cryonite), @intFromEnum(data.Resource.se_vitamelange),
                        @intFromEnum(data.Resource.se_vulcanite), @intFromEnum(data.Resource.kr_mineral_water) }) |ri| {
-            if (isPrimaryEligible(@intCast(ri), info.tags)) { count += 1; matched_ri = ri; }
+            // kr-mineral-water is a strong-claim resource only under K2 (it doesn't
+            // exist in vanilla), matching the eligible-set gate above.
+            const kr_gate = k2 or ri != @intFromEnum(data.Resource.kr_mineral_water);
+            if (kr_gate and isPrimaryEligible(@intCast(ri), info.tags)) { count += 1; matched_ri = ri; }
         }
         if (count == 1) {
             if (matched_ri) |ri| {
@@ -1086,8 +1116,8 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         for (candidates.items, 0..) |ii, ci| {
             const info = infos.items[ii];
             var pos1: u32 = 0;
-            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
-            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            for (0..N) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
+            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / Nf;
         }
         var ci: usize = 0;
         while (ci < n) : (ci += 1) {
@@ -1131,14 +1161,14 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         // Find resource with highest ordered_bias (SE: 1 + (base_bias - pos1) / 18)
         var best_ob: f64 = -999;
         var best_ri: usize = 0;
-        for (0..18) |ri| {
+        for (0..N) |ri| {
             if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
                 ri == @intFromEnum(data.Resource.se_methane_ice) or
                 ri == @intFromEnum(data.Resource.se_water_ice)) continue;
             if (!isPrimaryEligible(@intCast(ri), info.tags)) continue;
             var pos1: u32 = 0;
-            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
-            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            for (0..N) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
+            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / Nf;
             if (ob > best_ob) { best_ob = ob; best_ri = ri; }
         }
         for (primary_options.items, 0..) |opt, oi| {
@@ -1156,8 +1186,8 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         for (candidates.items, 0..) |ii, ci| {
             const info = infos.items[ii];
             var pos1: u32 = 0;
-            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
-            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            for (0..N) |ri2| { if (info.biases[ri2] > info.biases[opt.ri]) pos1 += 1; }
+            ob[ci] = 1.0 + (info.biases[opt.ri] - @as(f64, @floatFromInt(pos1 + 1))) / Nf;
         }
         var ci: usize = 0;
         while (ci < n) : (ci += 1) {
@@ -1183,14 +1213,14 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         const info = infos.items[ii];
         var best_ob2: f64 = -999;
         var best_ri2: usize = 0;
-        for (0..18) |ri| {
+        for (0..N) |ri| {
             if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
                 ri == @intFromEnum(data.Resource.se_methane_ice) or
                 ri == @intFromEnum(data.Resource.se_water_ice)) continue;
             if (!isPrimaryEligible(@intCast(ri), info.tags)) continue;
             var pos1: u32 = 0;
-            for (0..18) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
-            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / 18.0;
+            for (0..N) |ri2| { if (info.biases[ri2] > info.biases[ri]) pos1 += 1; }
+            const ob = 1.0 + (info.biases[ri] - @as(f64, @floatFromInt(pos1 + 1))) / Nf;
             if (ob > best_ob2) { best_ob2 = ob; best_ri2 = ri; }
         }
         try map.put(zones.items[info.zi].name, resource_order[best_ri2]);
@@ -1201,17 +1231,17 @@ pub fn resolvePrimaries(alloc: std.mem.Allocator, zones: ArrayList(Zone), bodyMa
         const zname = zones.items[info.zi].name;
         if (map.contains(zname)) continue;
         var sorted: [18]u32 = undefined;
-        for (0..18) |ri| sorted[ri] = @intCast(ri);
+        for (0..N) |ri| sorted[ri] = @intCast(ri);
         var si2: usize = 0;
-        while (si2 < 18) : (si2 += 1) {
+        while (si2 < N) : (si2 += 1) {
             var sj2: usize = si2 + 1;
-            while (sj2 < 18) : (sj2 += 1) {
+            while (sj2 < N) : (sj2 += 1) {
                 if (info.biases[sorted[sj2]] > info.biases[sorted[si2]]) {
                     const t = sorted[si2]; sorted[si2] = sorted[sj2]; sorted[sj2] = t;
                 }
             }
         }
-        for (sorted) |ri| {
+        for (sorted[0..N]) |ri| {
             if (ri == @intFromEnum(data.Resource.se_naquium_ore) or
                 ri == @intFromEnum(data.Resource.se_methane_ice) or
                 ri == @intFromEnum(data.Resource.se_water_ice)) continue;

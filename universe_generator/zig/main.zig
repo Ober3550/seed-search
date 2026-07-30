@@ -105,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
         };
 
         const bodyMap = try gen.buildBodyMap(a);
-        const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap) catch unreachable;
+        const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap, k2_enabled) catch unreachable;
         const field_primaries = gen.resolveFieldPrimaries(a, universe.zones, k2_enabled) catch unreachable;
         gen.computeGravityWells(&universe.zones, universe.zoneByName);
 
