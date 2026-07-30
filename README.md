@@ -61,14 +61,36 @@ installs, and a `.ps1` downloaded from GitHub carries Mark-of-the-Web so even
 `RemoteSigned` rejects it. `install.cmd` and `node install.mjs` are unaffected,
 and `npm` runs the `postinstall` hook through `cmd.exe`, not PowerShell.
 
-One place the policy still bites: `npm` writes `.ps1`, `.cmd` and bash shims
-into `node_modules\.bin`, and **from a PowerShell prompt** `npx seed-search`
-resolves the `.ps1` one and is blocked. Either run it from `cmd.exe`, use
-`npm start`, or lift the policy for your user:
+**The policy does still block `npm` itself.** Node's Windows installer ships
+`npm.ps1` alongside `npm.cmd`, and PowerShell prefers the `.ps1`, so under
+`Restricted` every npm command fails before it starts:
+
+```
+npm : File C:\Program Files\nodejs\npm.ps1 cannot be loaded because running
+scripts is disabled on this system.
+```
+
+That message means npm **is** installed and PowerShell refused to run it — a
+missing npm reads `The term 'npm' is not recognized...` instead. The same
+applies to `npx`, and to any CLI installed by npm: it writes `.ps1`, `.cmd` and
+bash shims into `node_modules\.bin`, and PowerShell picks the blocked one.
+
+Pick whichever you prefer:
 
 ```powershell
+# Fix it once, per-user, no admin. npm.ps1 is a local file, so RemoteSigned
+# allows it; only downloaded scripts stay blocked.
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+# Or bypass the shim per-command, changing nothing on the machine:
+npm.cmd install github:Ober3550/seed-search
+npm.cmd start
+
+# Or run from cmd.exe instead of PowerShell, which resolves npm.cmd on its own.
 ```
+
+None of this affects `install.cmd` or `node install.mjs` — `install.mjs`
+spawns `npm.cmd` explicitly on Windows.
 
 ## Quick start
 
