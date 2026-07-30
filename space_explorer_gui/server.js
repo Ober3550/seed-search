@@ -302,8 +302,8 @@ function renderUniversePage(jobsList) {
           <div class="tail-row" title="keep seeds whose nearest naquium-field Δv is ≤ the low value (closest ~25/100k) OR ≥ the high value (furthest ~25/100k)">
             <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"> ≥ naquium Δv ≥ <input type="number" name="naq_hi" value="135000" min="0" step="500" style="width:6em" placeholder="off">
           </div>
-          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons (fewest; np=3 floor ≈60/100k) OR ≥ the high value (most ~22/100k)">
-            <input type="number" name="pl_lo" value="3" min="0" style="width:4em" placeholder="off"> ≥ planets ≥ <input type="number" name="pl_hi" value="40" min="0" style="width:4em" placeholder="off">
+          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most)">
+            <input type="number" name="pl_lo" value="4" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="41" min="0" style="width:4em" placeholder="off">
           </div>
         </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
@@ -412,7 +412,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           count &amp; rank</label>
         <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
-        <span class="hint" title="Calidus planets+moons range">planets <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="Calidus system planets + moons (incl. Nauvis) range">P+M <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="nearest naquium-field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="proportional enemy danger % (mean enemy level across Calidus surfaces)">enemy% <input type="number" name="ed_min" value="${f.ed_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ed_max" value="${f.ed_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
@@ -425,7 +425,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <th>Bucket</th><th>K2</th><th>Loot</th>
         <th class="sortable" data-key="zones" onclick="sortSeeds('zones')" title="generated / total zones — sort desc groups generated seeds (by most generated) above the rest (by most zones)">Zones <span class="sort-ind">${f.count ? "" : "▼"}</span></th>
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
-        <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus planets+moons — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus system planets + moons (incl. Nauvis) — click for most (desc) / fewest (asc)">P+M <span class="sort-ind"></span></th>
         <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-primary field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
         <th class="sortable" data-key="ed" onclick="sortSeeds('ed')" title="proportional enemy danger % (mean enemy level across Calidus surfaces) — click for most (desc) / least (asc)">Enemy% <span class="sort-ind"></span></th>
         <th>Naq</th>

@@ -117,9 +117,9 @@ pub fn main(init: std.process.Init) !void {
         var enemy_sum: u32 = 0;
         var enemy_cnt: u32 = 0;
         for (universe.zones.items[calidus_zi..zone_end]) |z| {
-            if (std.mem.eql(u8, z.name, "Nauvis")) continue;
             if (z.ztype != .planet and z.ztype != .moon) continue;
-            np += 1;
+            np += 1; // counts every Calidus planet+moon INCLUDING Nauvis (matches in-game)
+            if (std.mem.eql(u8, z.name, "Nauvis")) continue; // Nauvis has no universe enemy tag
             const tags = gen.computeTags(z.seed, z.name, bodyMap);
             if (tags.enemy) |e| {
                 enemy_sum += @intFromEnum(e);
