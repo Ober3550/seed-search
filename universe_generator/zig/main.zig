@@ -129,31 +129,37 @@ pub fn main(init: std.process.Init) !void {
             }
         }
         const ed: u32 = if (enemy_cnt > 0) (enemy_sum * 100) / (enemy_cnt * 6) else 0;
-        // naqdv: delta-v to the NEAREST naquium-primary asteroid field. NO_NAQ
-        // (10,000,000) when the seed has none → counts as the far extreme.
+        // Two field distances (NO_NAQ = 10,000,000 sentinel when none exist):
+        //   naqdv = delta-v to the nearest naquium-PRIMARY field (a rich naq
+        //           source — drives the CLOSEST/best tail).
+        //   fdv   = delta-v to the nearest ANY asteroid field (every field yields
+        //           some naquium — drives the FURTHEST/worst tail, so "even the
+        //           closest field is a long haul").
         const NO_NAQ: u32 = 10_000_000;
         var naqdv: u32 = NO_NAQ;
+        var fdv: u32 = NO_NAQ;
         {
             const cx = universe.zones.items[calidus_zi].stellar_x;
             const cy = universe.zones.items[calidus_zi].stellar_y;
             for (universe.zones.items) |z| {
                 if (z.ztype != .@"asteroid-field") continue;
-                const fp = field_primaries.get(z.name) orelse continue;
-                if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
                 const dx = z.stellar_x - cx;
                 const dy = z.stellar_y - cy;
                 const dist = @sqrt(dx * dx + dy * dy);
                 const dv: u32 = @intFromFloat(@ceil(400.0 * dist + 500.0 * nauvis_sgw + 100.0 * nauvis_pgw));
-                if (dv < naqdv) naqdv = dv;
+                if (dv < fdv) fdv = dv; // any field
+                const fp = field_primaries.get(z.name) orelse continue;
+                if (!std.mem.eql(u8, fp, "se-naquium-ore")) continue;
+                if (dv < naqdv) naqdv = dv; // naquium-primary field
             }
         }
 
         // --- Tail filters: UNION of up to four extremity tails ---
-        // Keep a seed if it falls in ANY enabled tail: nearest-naq <= NAQ_DV_LOW
-        // (closest) or >= NAQ_DV_HIGH (furthest); Calidus planets+moons >=
-        // PLANETS_HIGH (most) or <= PLANETS_LOW (fewest). Each cutoff of 0
-        // disables that tail; no cutoffs set → keep everything. Union (not AND)
-        // so each tail contributes ~independently to the yield. MIN_NAQ_DV is a
+        // Keep a seed if it falls in ANY enabled tail: naquium-PRIMARY field
+        // <= NAQ_DV_LOW (closest, rich naq) or ANY field >= NAQ_DV_HIGH (furthest,
+        // even basic naq is a long haul); Calidus planets+moons >= PLANETS_HIGH
+        // (most) or <= PLANETS_LOW (fewest). Each cutoff of 0 disables that tail;
+        // no cutoffs set → keep everything. Union (not AND). MIN_NAQ_DV is a
         // back-compat alias for NAQ_DV_LOW.
         const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
         const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
@@ -162,7 +168,7 @@ pub fn main(init: std.process.Init) !void {
         const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0;
         const keep = !any_cut or
             (naq_lo > 0 and naqdv <= naq_lo) or
-            (naq_hi > 0 and naqdv >= naq_hi) or
+            (naq_hi > 0 and fdv >= naq_hi) or
             (pl_hi > 0 and np >= pl_hi) or
             (pl_lo > 0 and np <= pl_lo);
         if (!keep) continue;
@@ -214,7 +220,7 @@ pub fn main(init: std.process.Init) !void {
         // Per-seed metrics ride in the header: np (Calidus planets+moons) and
         // naqdv (nearest naquium-primary field Δv) — so both extremes are
         // sortable/filterable even though only Calidus zones are stored.
-        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"naqdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, naqdv, ed }) catch unreachable;
+        const open = std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"d\":{d},\"k\":{},\"l\":\"{s}\",\"npl\":{d},\"np\":{d},\"naqdv\":{d},\"fdv\":{d},\"ed\":{d},\"z\":[", .{ seed, universe.draws, k2_enabled, universe.vault_loot, npl, np, naqdv, fdv, ed }) catch unreachable;
         pos += open.len;
 
         // calidus_zi / zone_end were computed above (for the metrics). The default

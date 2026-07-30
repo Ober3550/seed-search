@@ -168,6 +168,7 @@ function initSchema() {
     "ALTER TABLE seeds ADD COLUMN np INTEGER",
     "ALTER TABLE seeds ADD COLUMN npl INTEGER", // Calidus planets only (incl Nauvis)
     "ALTER TABLE seeds ADD COLUMN naqdv INTEGER",
+    "ALTER TABLE seeds ADD COLUMN fdv INTEGER", // Δv to nearest ANY asteroid field
     // Proportional enemy danger: mean enemy level over Calidus planets+moons, 0..100%.
     "ALTER TABLE seeds ADD COLUMN ed INTEGER",
     // Tail-filter config the bucket was generated with (0 = side disabled).
@@ -437,13 +438,13 @@ function getDistinctSurfaceZones() {
 function insertSeeds(rows) {
   const d = getDb();
   const stmt = d.prepare(`
-    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, ed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO seeds (seed, job_id, bucket, loot, k2, zone_count, line, criteria, np, npl, naqdv, fdv, ed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = d.transaction(() => {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
-        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.ed ?? null);
+        r.np ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null);
     }
   });
   tx();
@@ -466,11 +467,13 @@ function getSeeds(filter = {}) {
   };
   range("np", filter.np_min, filter.np_max);
   range("naqdv", filter.naqdv_min, filter.naqdv_max);
+  range("fdv", filter.fdv_min, filter.fdv_max);
   range("ed", filter.ed_min, filter.ed_max);
   // Sort: best/worst by either metric, else by seed. NULLs sort last.
   const orders = {
     seed: "seed", np_desc: "np DESC", np_asc: "np ASC",
     naqdv_asc: "naqdv ASC", naqdv_desc: "naqdv DESC",
+    fdv_asc: "fdv ASC", fdv_desc: "fdv DESC",
     ed_desc: "ed DESC", ed_asc: "ed ASC",
   };
   const ord = orders[filter.sort] || "seed";
@@ -485,11 +488,12 @@ function getSeed(seed) {
 
 // Mark a seed as fully expanded (all zones ingested) + refresh its stored line
 // and zone_count. Called by the seed-detail expand job after upserting zones.
-function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl) {
+function markSeedExpanded(seed, line, zoneCount, criteria, np, naqdv, ed, npl, fdv) {
   getDb().prepare(`UPDATE seeds SET expanded = 1, line = ?, zone_count = ?,
       criteria = COALESCE(?, criteria),
-      np = COALESCE(?, np), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv), ed = COALESCE(?, ed) WHERE seed = ?`)
-    .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, ed ?? null, seed);
+      np = COALESCE(?, np), npl = COALESCE(?, npl), naqdv = COALESCE(?, naqdv),
+      fdv = COALESCE(?, fdv), ed = COALESCE(?, ed) WHERE seed = ?`)
+    .run(line, zoneCount, criteria || null, np ?? null, npl ?? null, naqdv ?? null, fdv ?? null, ed ?? null, seed);
 }
 
 // { seed: number-of-distinct-zones-with-a-done-generation } across all seeds.

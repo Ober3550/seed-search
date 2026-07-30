@@ -299,8 +299,8 @@ function renderUniversePage(jobsList) {
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="0" min="0" step="${bs}" placeholder="auto"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
           <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 100/100k. Blank = end off.</legend>
-          <div class="tail-row" title="keep seeds whose nearest naquium-field Δv is ≤ the low value (closest ~25/100k) OR ≥ the high value (furthest ~25/100k)">
-            <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"> ≥ naquium Δv ≥ <input type="number" name="naq_hi" value="135000" min="0" step="500" style="width:6em" placeholder="off">
+          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~25/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k)">
+            <input type="number" name="naq_lo" value="8500" min="0" step="500" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="38000" min="0" step="500" style="width:6em" placeholder="off">
           </div>
           <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most)">
             <input type="number" name="pl_lo" value="4" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="41" min="0" style="width:4em" placeholder="off">
@@ -352,7 +352,7 @@ app.get("/seeds", (req, res) => {
   const countMode = (req.query.count === "1") && rules.length > 0;
 
   // Extremity range filters (Calidus planets+moons; nearest-naq Δv).
-  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, ed_min: req.query.ed_min, ed_max: req.query.ed_max };
+  const rng = { np_min: req.query.np_min, np_max: req.query.np_max, naqdv_min: req.query.naqdv_min, naqdv_max: req.query.naqdv_max, fdv_min: req.query.fdv_min, fdv_max: req.query.fdv_max, ed_min: req.query.ed_min, ed_max: req.query.ed_max };
   let seeds = db.getSeeds({ bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, ...rng });
   if (countMode) {
     for (const s of seeds) {
@@ -413,7 +413,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         <input type="text" name="loot" placeholder="Loot prefix" value="${f.loot}"
           hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="keyup changed delay:400ms">
         <span class="hint" title="Calidus system planets + moons (incl. Nauvis) range">P+M <input type="number" name="np_min" value="${f.np_min ?? ""}" min="0" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="np_max" value="${f.np_max ?? ""}" min="0" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
-        <span class="hint" title="nearest naquium-field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="nearest naquium-PRIMARY field Δv range">naqΔv <input type="number" name="naqdv_min" value="${f.naqdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="naqdv_max" value="${f.naqdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
+        <span class="hint" title="nearest ANY asteroid field Δv range (any field yields some naquium)">fieldΔv <input type="number" name="fdv_min" value="${f.fdv_min ?? ""}" min="0" step="1000" style="width:5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="fdv_max" value="${f.fdv_max ?? ""}" min="0" step="1000" style="width:5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <span class="hint" title="proportional enemy danger % (mean enemy level across Calidus surfaces)">enemy% <input type="number" name="ed_min" value="${f.ed_min ?? ""}" min="0" max="100" style="width:3.5em" placeholder="min" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change">–<input type="number" name="ed_max" value="${f.ed_max ?? ""}" min="0" max="100" style="width:3.5em" placeholder="max" hx-get="/seeds" hx-target="closest .page" hx-swap="outerHTML" hx-include="#seed-filters" hx-trigger="change"></span>
         <a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" class="btn-sm">⚙ manage presets</a>
       </form>
@@ -427,7 +428,8 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
         ${f.count ? `<th class="sortable" data-key="matches" onclick="sortSeeds('matches')" title="how many of the filter's ${f.ruleCount} rule(s) this seed satisfies">Matches <span class="sort-ind">▼</span></th>` : ""}
         <th class="sortable" data-key="npl" onclick="sortSeeds('npl')" title="Calidus system planets only (incl. Nauvis) — click for most (desc) / fewest (asc)">Planets <span class="sort-ind"></span></th>
         <th class="sortable" data-key="np" onclick="sortSeeds('np')" title="Calidus system planets + moons (incl. Nauvis) — click for most (desc) / fewest (asc)">P+M <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-primary field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="naqdv" onclick="sortSeeds('naqdv')" title="Δv to nearest naquium-PRIMARY field — click for furthest (desc) / closest (asc)">Naq Δv <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="fdv" onclick="sortSeeds('fdv')" title="Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest (desc) / closest (asc)">Field Δv <span class="sort-ind"></span></th>
         <th class="sortable" data-key="ed" onclick="sortSeeds('ed')" title="proportional enemy danger % (mean enemy level across Calidus surfaces) — click for most (desc) / least (asc)">Enemy% <span class="sort-ind"></span></th>
         <th>Naq</th>
       </tr></thead>
@@ -436,7 +438,7 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           const c = seedCriteria(s) || {};
           const gen = genCounts[s.seed] || 0;
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-ed="${s.ed ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-np="${s.np ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ed="${s.ed ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           <td>${gen > 0 ? `<strong>${gen}</strong>/${s.zone_count}` : s.zone_count}</td>
@@ -444,10 +446,11 @@ function renderSeedsPage(seeds, buckets, defs, f, genCounts = {}) {
           <td>${s.npl ?? "—"}</td>
           <td>${s.np ?? "—"}</td>
           <td>${s.naqdv == null ? "—" : (s.naqdv >= 10000000 ? "none" : s.naqdv.toLocaleString())}</td>
+          <td>${s.fdv == null ? "—" : (s.fdv >= 10000000 ? "none" : s.fdv.toLocaleString())}</td>
           <td>${s.ed == null ? "—" : s.ed + "%"}</td>
           <td>${c.naqField || "—"}</td>
         </tr>`;}).join("")}
-        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 11 : 10}">No seeds match.</td></tr>` : ""}
+        ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 12 : 11}">No seeds match.</td></tr>` : ""}
       </tbody>
     </table>
     ${seeds.length > 500 ? `<p class="hint">Showing first 500 of ${seeds.length}.</p>` : ""}
