@@ -4,6 +4,27 @@ Fast parallel seed generator for Space Exploration (Factorio 0.7.x) written in Z
 Filters seeds by naquium field distance and productivity modules, outputs Calidus-system
 JSONL for analysis.
 
+## Install
+
+Builds the Zig components (`seedgen`, `segen`, the `gpu_*` compute binaries) and
+installs the web server's dependencies. Works on macOS, Linux, and Windows.
+
+**Prerequisites:** [Zig 0.16.x](https://ziglang.org/download/) and
+[Node ≥18](https://nodejs.org/) on your `PATH`.
+
+```sh
+./install.sh          # macOS / Linux
+.\install.ps1         # Windows (PowerShell)
+node install.mjs      # any platform (the two scripts above just call this)
+```
+
+The installer downloads the pinned `wgpu-native` prebuilt for your platform
+automatically. It's safe to re-run (every step is idempotent). Then:
+
+```sh
+cd space_explorer_gui && npm start    # → http://localhost:3456
+```
+
 ## Quick start
 
 ```bash
