@@ -59,3 +59,6 @@ gpu_compute/.zig-cache/
 gpu_compute/zig-out/
 gpu_compute/render-out.*
 zig-pkg/
+
+# local dev postgres data (db/dev-postgres.sh)
+.pgdata/
