@@ -220,8 +220,19 @@ pub fn main(init: std.process.Init) !void {
     } else null;
     defer if (pg_db) |*db| db.finish();
 
+    var since_flush: u32 = 0;
     while (seed <= end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
+        // Push buffered rows at ~100k-seed boundaries (like the old 100k buckets)
+        // so writes are spread through the run instead of one spike at the end —
+        // avoids 8 workers all flushing at once and reflects real write cost.
+        if (pg_db) |*db| {
+            since_flush += 1;
+            if (since_flush >= 50_000) {
+                db.flush() catch |e| std.debug.print("# pg periodic flush: {}\n", .{e});
+                since_flush = 0;
+            }
+        }
 
         // A degenerate RNG draw (gen.zig, Rng.int1) is a point where SE's own
         // arithmetic yields an out-of-range index. Tags reproduce SE exactly
