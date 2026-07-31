@@ -3,7 +3,17 @@ const path = require("path");
 const fs = require("fs");
 const readline = require("readline");
 const db = require("./db");
+const gcs = require("./gcs");  // upload final renders to the public GCS bucket
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
+
+// Push a finished whole-zone render to the public GCS bucket (best-effort — a
+// failed upload must never fail the job). `pngRel` is OUTPUT_DIR-relative and
+// points at the final <prefix>.png (not a cell tile).
+function uploadFinalRender(seed, zoneName, prefix, pngRel) {
+  if (!pngRel || !pngRel.endsWith(`${prefix}.png`)) return;
+  gcs.uploadRender(path.join(OUTPUT_DIR, pngRel), seed, zoneName, `${prefix}.png`)
+    .catch((e) => console.log(`[gcs ${prefix}] upload ${seed}/${zoneName}: ${e.message}`));
+}
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SURFACE_GEN_DIR = path.join(PROJECT_ROOT, "surface_generator");
@@ -1124,6 +1134,7 @@ function runSurfaceJob(job) {
           const pngRel = stitched ? path.relative(OUTPUT_DIR, path.join(zDir, `${prefix}.png`)) : null;
           db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
           db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (gpu ${got} cells${stitched ? ", stitched" : ""})`);
+          uploadFinalRender(job.seed, job.zone_name, prefix, pngRel);
           return resolve();
         }
       }
@@ -1138,6 +1149,7 @@ function runSurfaceJob(job) {
         if (isCell && fs.existsSync(stitchedFile)) {
           db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: path.relative(OUTPUT_DIR, stitchedFile), finished_at: new Date().toISOString() });
           db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} cell ${job.grid_cell} (stitched by sibling)`);
+          uploadFinalRender(job.seed, job.zone_name, prefix, path.relative(OUTPUT_DIR, stitchedFile));
           return resolve();
         }
         return fail(`no ${prefix} output (${stderr.slice(-200)})`);
@@ -1152,6 +1164,7 @@ function runSurfaceJob(job) {
       }
       db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
       db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix}${isCell ? ` cell ${job.grid_cell}` : ""}`);
+      uploadFinalRender(job.seed, job.zone_name, prefix, pngRel); // stitched whole render only (no-op for cells)
       resolve();
     });
 

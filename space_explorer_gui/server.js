@@ -6,6 +6,7 @@ const db = require("./db");         // LOCAL sqlite: jobs, workers, filters, sur
 const pgdb = require("./pgdb");      // REMOTE Cloud SQL: the seed/zone RESULTS (read-only)
 const { seedScore } = require("./score");
 const jobs = require("./job-manager");
+const gcs = require("./gcs");        // public GCS bucket for surface/ore RENDERS
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
 const RESOURCES = [
@@ -117,8 +118,13 @@ function zoneSurfaceSummary(bucket, seed, zoneName) {
   } catch (_) { return null; }
 }
 function zoneSurfacePng(bucket, seed, zoneName, base = "ore") {
+  // Renders are served from the public GCS bucket. The local file still gates
+  // "was this generated?" during the transition (segen writes it locally, then
+  // uploads); once fully on GCS this check moves to the surface-job status.
   const rel = path.join(bucket, `seed_${seed}`, zoneName, `${base}.png`);
-  return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel)) ? `/output/${rel}` : null;
+  return fs.existsSync(path.join(jobs.OUTPUT_DIR, rel))
+    ? gcs.renderUrl(seed, zoneName, `${base}.png`)
+    : null;
 }
 
 // All resource chips inline (a couple of wrapped rows is fine, no collapsing).
