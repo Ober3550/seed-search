@@ -37,12 +37,8 @@ pub const Db = struct {
     zone: List(u8),
     zres: List(u8),
     names: std.StringHashMapUnmanaged(u32) = .{},
-    pending: List(NameRow),
-    next_name_id: u32 = 0,
     batch: u32 = 0,
     batch_size: u32 = 2000,
-
-    const NameRow = struct { id: u32, name: []const u8 };
 
     pub fn connect(alloc: Alloc, url: [*c]const u8) !Db {
         const conn = c.PQconnectdb(url);
@@ -56,7 +52,6 @@ pub const Db = struct {
             .seeds = List(u8).init(alloc),
             .zone = List(u8).init(alloc),
             .zres = List(u8).init(alloc),
-            .pending = List(NameRow).init(alloc),
         };
     }
 
@@ -91,75 +86,21 @@ pub const Db = struct {
         }
     }
 
-    /// Intern a zone name → stable id (queues a dict INSERT for new names).
+    /// Load the fixed name→id map (id = index) into memory. NO db writes: the
+    /// zone_name dictionary is seeded once, out of band (db/dictionary.sql).
+    pub fn loadNames(self: *Db, names: []const []const u8) !void {
+        for (names, 0..) |name, i| {
+            try self.names.put(self.alloc, try self.alloc.dupe(u8, name), @intCast(i));
+        }
+    }
+
+    /// Zone name → its stable id (pure in-memory lookup, no db round-trip). The
+    /// static list is exhaustive, so a miss is a bug (must add it to data.zig).
     pub fn internName(self: *Db, name: []const u8) !u32 {
-        if (self.names.get(name)) |id| return id;
-        const id = self.next_name_id;
-        self.next_name_id += 1;
-        const owned = try self.alloc.dupe(u8, name);
-        try self.names.put(self.alloc, owned, id);
-        try self.pending.append(.{ .id = id, .name = owned });
-        return id;
-    }
-
-    /// Seed all fixed dictionary entries (resources, zone kinds, tag enums).
-    pub fn upsertStaticDicts(self: *Db, resources: []const []const u8) !void {
-        var q = List(u8).init(self.alloc);
-        defer q.deinit();
-        try q.appendSlice("INSERT INTO resource(id,name) VALUES ");
-        for (resources, 0..) |name, i| {
-            if (i != 0) try q.append(',');
-            try appFmt(&q, "({d},'{s}')", .{ i, name });
-        }
-        try q.appendSlice(" ON CONFLICT DO NOTHING;");
-        try q.append(0);
-        try self.exec(@ptrCast(q.items.ptr));
-    }
-
-    /// Seed enum_value(domain, code, name) from a Zig enum's fields.
-    pub fn upsertEnum(self: *Db, domain: []const u8, comptime E: type) !void {
-        var q = List(u8).init(self.alloc);
-        defer q.deinit();
-        try q.appendSlice("INSERT INTO enum_value(domain,code,name) VALUES ");
-        inline for (@typeInfo(E).@"enum".fields, 0..) |fld, i| {
-            if (i != 0) try q.append(',');
-            try appFmt(&q, "('{s}',{d},'{s}')", .{ domain, fld.value, fld.name });
-        }
-        try q.appendSlice(" ON CONFLICT DO NOTHING;");
-        try q.append(0);
-        try self.exec(@ptrCast(q.items.ptr));
-    }
-
-    /// Seed the zone_name dictionary DETERMINISTICALLY from the static name
-    /// universe (data.zig pools + enumerated belt names). id = index in `names`.
-    /// Every worker builds the SAME list, so parallel writers agree on ids and
-    /// there is no interning race. Names not in the list still fall back to
-    /// dynamic ids via internName (shouldn't happen).
-    pub fn seedZoneNames(self: *Db, names: []const []const u8) !void {
-        self.next_name_id = @intCast(names.len);
-        var start: usize = 0;
-        while (start < names.len) {
-            const end = @min(start + 500, names.len);
-            var q = List(u8).init(self.alloc);
-            defer q.deinit();
-            try q.appendSlice("INSERT INTO zone_name(id,name) VALUES ");
-            var j = start;
-            while (j < end) : (j += 1) {
-                const name = names[j];
-                try self.names.put(self.alloc, try self.alloc.dupe(u8, name), @intCast(j));
-                if (j != start) try q.append(',');
-                try appFmt(&q, "({d},'", .{j});
-                for (name) |ch| {
-                    if (ch == '\'') try q.append('\'');
-                    try q.append(ch);
-                }
-                try q.appendSlice("')");
-            }
-            try q.appendSlice(" ON CONFLICT DO NOTHING;");
-            try q.append(0);
-            try self.exec(@ptrCast(q.items.ptr));
-            start = end;
-        }
+        return self.names.get(name) orelse {
+            std.debug.print("# FATAL: zone name not in static dictionary: {s}\n", .{name});
+            return error.UnknownZoneName;
+        };
     }
 
     // ── row append (COPY text: tab-separated, \N = null) ──────────────────
@@ -289,26 +230,9 @@ pub const Db = struct {
 
     pub fn flush(self: *Db) !void {
         if (self.batch == 0) return;
+        // Pure integer/float COPY — no name strings written (the dictionaries are
+        // pre-seeded from db/dictionary.sql; ids come from the in-memory maps).
         try self.exec("BEGIN");
-        // new dictionary names first (FK targets), one multi-row INSERT
-        if (self.pending.items.len != 0) {
-            var q = List(u8).init(self.alloc);
-            defer q.deinit();
-            try q.appendSlice("INSERT INTO zone_name(id,name) VALUES ");
-            for (self.pending.items, 0..) |nr, i| {
-                if (i != 0) try q.append(',');
-                try appFmt(&q, "({d},'", .{nr.id});
-                for (nr.name) |ch| { // escape single quotes for SQL literal
-                    if (ch == '\'') try q.append('\'');
-                    try q.append(ch);
-                }
-                try q.appendSlice("')");
-            }
-            try q.appendSlice(" ON CONFLICT DO NOTHING;");
-            try q.append(0);
-            try self.exec(@ptrCast(q.items.ptr));
-            self.pending.clearRetainingCapacity();
-        }
         try self.copyIn("seeds(seed,k2,draws,vault_loot,npl,npm,nw,ne,wp,ef,naqdv,fdv,ed)", self.seeds.items);
         try self.copyIn("zone(seed,zone_name_id,kind,star_name_id,parent_name_id,zone_seed,radius,primary_id,dv,temperature,water,moisture,trees,aux,cliff,enemy,stellar_x,stellar_y,present_mask)", self.zone.items);
         try self.copyIn("zone_resource(seed,zone_name_id,resource_id,present,frequency,size,richness)", self.zres.items);

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # Clear the generated seed DATA for a fresh test run, KEEPING the static
-# dictionaries. Truncates: seeds, zone, zone_resource, zone_name.
-# Keeps: resource, enum_value, meta (the enums / code space).
-#
-# zone_name IS cleared: the generator re-interns names from id 0 each run, so a
-# stale zone_name would mismatch the new ids. resource/enum_value are re-upserted
-# (ON CONFLICT DO NOTHING) by the generator anyway, so they're safe to keep.
+# dictionaries. Truncates: seeds, zone, zone_resource.
+# Keeps: resource, zone_name, enum_value, meta (the static code space —
+# seeded once from db/dictionary.sql; the generator only writes integer ids).
 #
 # Targets Cloud SQL via the proxy by default; override with DATABASE_URL.
 #   ./db/clear-seeds.sh                       # clear Cloud SQL (via 127.0.0.1:5433)
@@ -23,5 +20,5 @@ fi
 
 echo "before: $("$PSQL" "$URL" -tAc "SELECT 'seeds='||count(*) FROM seeds")"
 "$PSQL" "$URL" -v ON_ERROR_STOP=1 -c \
-  "TRUNCATE seeds, zone, zone_resource, zone_name CASCADE;"
+  "TRUNCATE seeds, zone, zone_resource CASCADE;"
 echo "after:  $("$PSQL" "$URL" -tAc "SELECT 'seeds='||count(*) FROM seeds")  (kept: resource, enum_value, meta)"

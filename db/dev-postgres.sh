@@ -27,11 +27,13 @@ case "${1:-start}" in
       "SELECT 1 FROM pg_database WHERE datname='$DB'" | grep -q 1 \
       || "$PGBIN/createdb" -h 127.0.0.1 -p "$PORT" -U postgres "$DB"
     "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -qf "$ROOT/db/schema.sql" >/dev/null
+    "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -qf "$ROOT/db/dictionary.sql" >/dev/null  # static code space
     echo "up. DATABASE_URL=$URL" ;;
   stop)  "$PGBIN/pg_ctl" -D "$PGDATA" -w stop ;;
   psql)  shift; exec "$PGBIN/psql" "$URL" "$@" ;;
   url)   echo "$URL" ;;
   reset) "$PGBIN/psql" "$URL" -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" \
-           && "$PGBIN/psql" "$URL" -qf "$ROOT/db/schema.sql" && echo "reset." ;;
+           && "$PGBIN/psql" "$URL" -qf "$ROOT/db/schema.sql" \
+           && "$PGBIN/psql" "$URL" -qf "$ROOT/db/dictionary.sql" && echo "reset." ;;
   *) echo "usage: $0 start|stop|psql|reset|url" >&2; exit 1 ;;
 esac
