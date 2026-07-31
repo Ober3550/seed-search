@@ -2,7 +2,8 @@
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
-const db = require("./db");
+const db = require("./db");         // LOCAL sqlite: jobs, workers, filters, surfaces
+const pgdb = require("./pgdb");      // REMOTE Cloud SQL: the seed/zone RESULTS (read-only)
 const { seedScore } = require("./score");
 const jobs = require("./job-manager");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
@@ -355,14 +356,17 @@ app.post("/api/seeds/rescore", (req, res) => {
   res.send(`<span class="hint">✅ Recomputed ${n.toLocaleString()} scores</span>`);
 });
 
-app.get("/seeds", (req, res) => {
+app.get("/seeds", async (req, res) => {
   const bucket = req.query.bucket || "";
   const defId = req.query.def ? parseInt(req.query.def) : null;
   const loot = req.query.loot || "";
   const k2q = req.query.k2 || ""; // "" any | "1" k2-only | "0" vanilla-only
   const k2filter = k2q === "1" ? true : k2q === "0" ? false : undefined;
 
-  const def = defId ? db.getFilterDef(defId) : null;
+  // Filter presets live in LOCAL sqlite (jobs side) — optional for browsing pg
+  // results, so tolerate them being absent/empty.
+  let def = null;
+  try { def = defId ? db.getFilterDef(defId) : null; } catch (_) {}
   const rules = def ? JSON.parse(def.rules) : [];
   // Count mode: rank by how many rules each seed satisfies instead of dropping
   // partial matches. Only meaningful when a filter is selected.
@@ -378,10 +382,13 @@ app.get("/seeds", (req, res) => {
   // scan a large window there. The plain list pages in the DB (indexed sort).
   const page0 = Math.max(0, parseInt(req.query.page) || 0);
   const base = { bucket: bucket || undefined, loot: loot || undefined, k2: k2filter, seed: seedQ || undefined, ...rng, sort };
+  // Seed RESULTS come from Cloud SQL (pg). Note: rule-preset filtering relied on
+  // the per-seed `criteria` cache, which isn't in the new schema — so a selected
+  // preset currently matches nothing (jobs/criteria migration is a follow-up).
   let seeds = filterActive
-    ? db.getSeeds({ ...base, withCriteria: true, page: 0, pageSize: 5000 })
-    : db.getSeeds({ ...base, page: page0, pageSize: PAGE_SIZE });
-  const total = filterActive ? null : db.countSeeds(base);
+    ? await pgdb.getSeeds({ ...base, withCriteria: true, page: 0, pageSize: 5000 })
+    : await pgdb.getSeeds({ ...base, page: page0, pageSize: PAGE_SIZE });
+  const total = filterActive ? null : await pgdb.countSeeds(base);
   if (countMode) {
     for (const s of seeds) {
       const c = seedCriteria(s);
@@ -393,8 +400,9 @@ app.get("/seeds", (req, res) => {
       return analyze.matchFilter(c, rules).match;
     });
   }
-  const defs = db.getFilterDefs();
-  const genCounts = db.getGeneratedZoneCounts();
+  let defs = [], genCounts = {};
+  try { defs = db.getFilterDefs(); } catch (_) {}
+  try { genCounts = db.getGeneratedZoneCounts(); } catch (_) {}
   page(req, res, "Seeds", renderSeedsPage(seeds, defs, { bucket, defId, def, loot, k2: k2q, count: countMode, ruleCount: rules.length, seed: seedQ, sort, page: page0, pageSize: PAGE_SIZE, total, filterActive, ...rng }, genCounts));
 });
 
@@ -602,33 +610,19 @@ const ORE_COLORS = (() => {
   } catch (_) { return {}; }
 })();
 
-app.get("/seed/:seed", (req, res) => {
-  const s = db.getSeed(parseInt(req.params.seed));
+app.get("/seed/:seed", async (req, res) => {
+  const s = await pgdb.getSeed(parseInt(req.params.seed));
   if (!s) return res.status(404).send(htmxPage("Not Found", "<h2>Seed not found</h2>"));
-  // Bulk generation only stored the Calidus home system. Opening the detail page
-  // kicks off a background job to fill in the rest of the universe (all star
-  // systems + asteroid fields). The banner (renderSeedDetail) polls until done.
-  if (!s.expanded) jobs.expandSeed(s.seed);
-  const c = seedCriteria(s) || { selectedZones: [], specials: {}, pairs: {} };
+  // Results come from Cloud SQL (pg). pg seeds have no expanded/bucket/criteria,
+  // and pg zones have no sqlite integer id, so the surface/expand plumbing
+  // (reconcileZoneSurfaces / expandSeed / writeSeedZonesFile — all keyed on those)
+  // is skipped here. Wiring surface generation to the pg zones is a follow-up.
+  s.bucket = s.bucket || "";
+  s.expanded = 1;
+  const c = { selectedZones: [], specials: {}, pairs: {} };
   const filterId = req.query.filter || null;
-
-  // Show ALL zones; criteria-relevant ones are pinned to the top and pre-checked.
-  const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
-  const zones = db.getZonesForSeed(s.seed).sort((a, b) => {
-    const ra = sel.has(a.name) ? 0 : 1, rb = sel.has(b.name) ? 0 : 1;
-    return ra - rb || (a.name || "").localeCompare(b.name || "");
-  });
-
-  // Reconcile the DB to the filesystem: if the user deleted a zone's output
-  // folder to force a regenerate, drop its stale 'done' surface-job rows so the
-  // zone reads as unpopulated (folder is the source of truth).
-  for (const z of zones)
-    jobs.reconcileZoneSurfaces(z.id, path.join(jobs.seedDir(s.bucket, s.seed), z.name));
-
-  // zones.jsonl always carries the criteria-relevant zones for the generator.
-  try { jobs.writeSeedZonesFile(s, null); }
-  catch (e) { console.error("writeSeedZonesFile:", e.message); }
-
+  const zones = (await pgdb.getZonesForSeed(s.seed))
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId, req.query.all === "1"));
 });
 

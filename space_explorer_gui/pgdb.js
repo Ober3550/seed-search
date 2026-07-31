@@ -76,10 +76,13 @@ function buildWhere(filter = {}) {
 async function getSeeds(filter = {}) {
   const { where, params } = buildWhere(filter);
   const ord = ORDERS[filter.sort] || ORDERS[DEFAULT_ORDER];
-  const pageSize = Math.min(Math.max(1, Number(filter.pageSize) || 200), 1000);
+  const pageSize = Math.min(Math.max(1, Number(filter.pageSize) || 200), 5000);
   const page = Math.max(0, Number(filter.page) || 0);
+  // vault_loot AS loot + a placeholder bucket keep the existing GUI's renderer
+  // (which references s.loot / s.bucket) happy without those columns existing.
   const sql =
-    `SELECT seed, k2, npl, npm, nw, ne, wp, ef, naqdv, fdv, ed, score
+    `SELECT seed, k2, npl, npm, nw, ne, wp, ef, naqdv, fdv, ed, score,
+            vault_loot AS loot, ''::text AS bucket
        FROM seeds ${where}
       ORDER BY ${ord}, seed
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
@@ -125,6 +128,36 @@ async function getZones(seed) {
   return rows;
 }
 
+// Zones for a seed, shaped with the OLD column names the existing GUI's
+// renderSeedDetail expects (zone_type, primary_resource, delta_v, in_calidus…).
+// `id` is synthetic (the new schema keys zones by (seed, name), no integer id).
+async function getZonesForSeed(seed) {
+  const { rows } = await pool.query(
+    `SELECT NULL::int AS id, zn.name AS name,
+            k.name AS zone_type, r.name AS primary_resource,
+            z.radius, z.dv AS delta_v,
+            tt.name AS temperature, wt.name AS water, mt.name AS moisture,
+            trt.name AS trees, at.name AS aux, ct.name AS cliff, et.name AS enemy,
+            z.stellar_x, z.stellar_y,
+            CASE WHEN sn.name = 'Calidus' THEN 1 ELSE 0 END AS in_calidus,
+            NULL::text AS resource_yields, NULL::text AS resource_scores
+       FROM zone z
+       JOIN zone_name zn ON zn.id = z.zone_name_id
+       JOIN enum_value k ON k.domain='kind' AND k.code = z.kind
+       LEFT JOIN zone_name sn ON sn.id = z.star_name_id
+       LEFT JOIN resource  r  ON r.id  = z.primary_id
+       LEFT JOIN enum_value tt  ON tt.domain='temperature' AND tt.code=z.temperature
+       LEFT JOIN enum_value wt  ON wt.domain='water'       AND wt.code=z.water
+       LEFT JOIN enum_value mt  ON mt.domain='moisture'    AND mt.code=z.moisture
+       LEFT JOIN enum_value trt ON trt.domain='trees'      AND trt.code=z.trees
+       LEFT JOIN enum_value at  ON at.domain='aux'         AND at.code=z.aux
+       LEFT JOIN enum_value ct  ON ct.domain='cliff'       AND ct.code=z.cliff
+       LEFT JOIN enum_value et  ON et.domain='enemy'       AND et.code=z.enemy
+      WHERE z.seed = $1
+      ORDER BY z.kind, zn.name`, [seed]);
+  return rows;
+}
+
 // Resources present on a seed's zones (fact table), decoded — for a seed's detail.
 async function getSeedResources(seed) {
   const { rows } = await pool.query(
@@ -137,7 +170,7 @@ async function getSeedResources(seed) {
   return rows;
 }
 
-module.exports = { pool, getSeeds, countSeeds, getSeed, getZones, getSeedResources, ORDERS, DEFAULT_ORDER };
+module.exports = { pool, getSeeds, countSeeds, getSeed, getZones, getZonesForSeed, getSeedResources, ORDERS, DEFAULT_ORDER };
 
 // ── self-test ─────────────────────────────────────────────────────────────
 if (require.main === module) {

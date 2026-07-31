@@ -89,19 +89,10 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_zones_name ON zones(name);
     CREATE INDEX IF NOT EXISTS idx_surface_jobs_zone ON surface_jobs(zone_id);
     CREATE INDEX IF NOT EXISTS idx_surface_jobs_status ON surface_jobs(status);
-    -- Seeds list: the only index used to be the seed PK, so every bucket view /
-    -- range filter / metric sort full-scanned the (multi-GB) table. Index the
-    -- columns getSeeds filters and orders by. (bucket,k2) covers the common bucket
-    -- view; the single-column ones serve the all-seeds metric sorts.
-    CREATE INDEX IF NOT EXISTS idx_seeds_bucket_k2 ON seeds(bucket, k2);
-    -- npm (planets+moons) is indexed as idx_seeds_npm by the np-to-npm rename
-    -- guard below (can't live here: this block runs before the rename, so the np
-    -- column may be gone and npm not yet present).
-    CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds(naqdv);
-    CREATE INDEX IF NOT EXISTS idx_seeds_fdv ON seeds(fdv);
-    CREATE INDEX IF NOT EXISTS idx_seeds_npl ON seeds(npl);
-    CREATE INDEX IF NOT EXISTS idx_seeds_ef ON seeds(ef);
-    CREATE INDEX IF NOT EXISTS idx_seeds_wp ON seeds(wp);
+    -- (Seeds-list indexes are created in the migrations block below, AFTER the
+    -- seeds table + its metric columns exist — creating them here forward-
+    -- references a table/columns that don't exist yet on a fresh DB, which aborts
+    -- this whole exec and leaves later tables uncreated.)
 
     -- Jobs queue table for FIFO processing
     CREATE TABLE IF NOT EXISTS job_log (
@@ -216,6 +207,14 @@ function initSchema() {
     // block above runs before migrations, and would throw on the missing column).
     "ALTER TABLE seeds ADD COLUMN score INTEGER",
     "CREATE INDEX IF NOT EXISTS idx_seeds_score ON seeds(score)",
+    // Seeds-list indexes (moved here from the schema block so they run AFTER the
+    // seeds table + metric columns exist — fresh DBs otherwise aborted on them).
+    "CREATE INDEX IF NOT EXISTS idx_seeds_bucket_k2 ON seeds(bucket, k2)",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds(naqdv)",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_fdv ON seeds(fdv)",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_npl ON seeds(npl)",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_ef ON seeds(ef)",
+    "CREATE INDEX IF NOT EXISTS idx_seeds_wp ON seeds(wp)",
   ];
   for (const m of migrations) {
     try { db.exec(m); } catch (_) { /* column exists */ }
