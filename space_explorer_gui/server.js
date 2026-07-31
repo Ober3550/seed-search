@@ -280,7 +280,31 @@ app.get("/", (req, res) => res.redirect("/universe"));
 app.get("/universe/table", (req, res) => res.send(renderBucketsTable(db.getUniverseJobs())));
 app.get("/universe", (req, res) => page(req, res, "Universe Buckets", renderUniversePage(db.getUniverseJobs())));
 
+// The extremity tail cutoffs are FIXED config in .env (single source of truth for
+// the generator too — see universe_generator/zig/run.sh). The GUI reads them; it
+// does NOT let users edit them per-job. Edit .env to change the tails.
+function getTailFilters() {
+  const env = {};
+  try {
+    for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").split("\n")) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!m) continue;
+      let v = m[2].trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      env[m[1]] = v;
+    }
+  } catch (_) {}
+  const n = (k) => Number(env[k]) || 0;
+  return {
+    naq_lo: n("NAQ_DV_LOW"), naq_hi: n("NAQ_DV_HIGH"),
+    pl_lo: n("PLANETS_LOW"), pl_hi: n("PLANETS_HIGH"),
+    wp_lo: n("WATER_PCT_LOW"), wp_hi: n("WATER_PCT_HIGH"),
+    ef_lo: n("ENEMY_PCT_LOW"), ef_hi: n("ENEMY_PCT_HIGH"),
+  };
+}
+
 function renderUniversePage(jobsList) {
+  const tf = getTailFilters();
   const bs = jobs.BUCKET_SIZE;
   const bsLabel = bs >= 1e6 ? `${bs / 1e6}M` : `${bs / 1000}k`;
   return `
@@ -308,19 +332,11 @@ function renderUniversePage(jobsList) {
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="" min="0" step="${bs}" placeholder="auto (continue after last bucket)"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
-          <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 170/100k bucket (a 100k bucket is 50k seeds — seedgen steps by 2). Blank = end off.</legend>
-          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~29/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k). Δv is game-exact (travel-only), so values are ~17k-160k.">
-            <input type="number" name="naq_lo" value="17500" min="0" step="any" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="37200" min="0" step="any" style="width:6em" placeholder="off">
-          </div>
-          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most, ~43/100k). NOTE: measured minimum P+M is 14, so a low cutoff below 14 never matches.">
-            <input type="number" name="pl_lo" value="16" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
-          </div>
-          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) that HAVE water, as a %. 0 = nowhere has water, 100 = everywhere does. Normalised, not a count — raw counts just track system size. Population: mean 69%, p1 50%, p99 88%. Defaults ≈ 28/100k (parched) and 21/100k (wet).">
-            <input type="number" name="wp_lo" value="40" min="0" max="100" style="width:4em" placeholder="off"> ≥ water % ≥ <input type="number" name="wp_hi" value="95" min="0" max="100" style="width:4em" placeholder="off">
-          </div>
-          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) with an enemy tag above none, as a %. Population: mean 70%, p1 52%, p99 84%. Defaults ≈ 30/100k (quiet) and 11/100k (warzone); use 87 for the high side if you want ~48.">
-            <input type="number" name="ef_lo" value="42" min="0" max="100" style="width:4em" placeholder="off"> ≥ hostile % ≥ <input type="number" name="ef_hi" value="88" min="0" max="100" style="width:4em" placeholder="off">
-          </div>
+          <legend class="hint">Extremity tails — fixed in <code>.env</code> (union: keep a seed in EITHER tail). Edit <code>.env</code> to change; applied identically by the CLI generator.</legend>
+          <div class="hint" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq); high = nearest ANY field Δv ≥ (furthest).">naq-prim Δv ≤ <strong>${tf.naq_lo || "off"}</strong> &nbsp;·&nbsp; any-field Δv ≥ <strong>${tf.naq_hi || "off"}</strong></div>
+          <div class="hint" title="Calidus planets+moons (incl. Nauvis): fewest / most.">P+M ≤ <strong>${tf.pl_lo || "off"}</strong> &nbsp;·&nbsp; P+M ≥ <strong>${tf.pl_hi || "off"}</strong></div>
+          <div class="hint" title="Share of Calidus planets+moons (excl. Nauvis) that HAVE water, %.">water% ≤ <strong>${tf.wp_lo || "off"}</strong> &nbsp;·&nbsp; water% ≥ <strong>${tf.wp_hi || "off"}</strong></div>
+          <div class="hint" title="Share of Calidus planets+moons (excl. Nauvis) carrying enemies, %.">hostile% ≤ <strong>${tf.ef_lo || "off"}</strong> &nbsp;·&nbsp; hostile% ≥ <strong>${tf.ef_hi || "off"}</strong></div>
         </fieldset>
         <label>K2: <input type="checkbox" name="k2_enabled"></label>
         <button type="submit" class="btn">Queue Buckets</button>
@@ -1220,16 +1236,9 @@ app.post("/api/universe/create", (req, res) => {
   const k2 = req.body.k2_enabled === "on" || req.body.k2_enabled === "1";
   const raw = (req.body.start_seed ?? "").toString().trim();
   const startSeed = raw === "" ? null : parseInt(raw);
-  // Tail-filter cutoffs (blank/0 = that side off). A seed is kept if it's in a
-  // tail of every enabled metric.
-  const num = (v) => { const n = parseInt(v); return Number.isFinite(n) && n > 0 ? n : 0; };
-  const filter = {
-    naq_lo: num(req.body.naq_lo), naq_hi: num(req.body.naq_hi),
-    pl_lo: num(req.body.pl_lo), pl_hi: num(req.body.pl_hi),
-    // Percentages (0..100) of Calidus bodies, not counts.
-    wp_lo: num(req.body.wp_lo), wp_hi: num(req.body.wp_hi),
-    ef_lo: num(req.body.ef_lo), ef_hi: num(req.body.ef_hi),
-  };
+  // Tail-filter cutoffs are IMPLICIT — read from .env, not the form (users can't
+  // edit them per-job). Same values the CLI generator uses (run.sh loads .env).
+  const filter = getTailFilters();
   const ids = jobs.createUniverseBuckets(units, k2, startSeed, filter);
   res.json({ ok: true, job_ids: ids, message: `Queued ${units} buckets` });
 });
