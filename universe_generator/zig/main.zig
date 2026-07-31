@@ -457,53 +457,11 @@ pub fn main(init: std.process.Init) !void {
                     const t = std.fmt.bufPrint(buf[pos..], ",\"enemy\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
-                const primary = primaries.get(z.name);
-                if (primary) |prim| {
-                    const scores = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
-                    // Output yield estimates
-                    var first = true;
-                    for (gen.resource_order, 0..) |rname, ri| {
-                        const y = gen.computeYield(scores[ri], false, z.radius, tags.water, rname);
-                        if (y >= 0.5) {
-                            if (first) {
-                                const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
-                                pos += p.len;
-                                first = false;
-                            } else {
-                                buf[pos] = ',';
-                                pos += 1;
-                            }
-                            var ybuf: [16]u8 = undefined;
-                            const ys = gen.formatYield(y, &ybuf);
-                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
-                            pos += rp.len;
-                        }
-                    }
-                    if (!first) {
-                        buf[pos] = '}';
-                        pos += 1;
-                    }
-                    // Also output normalized scores for ranking
-                    first = true;
-                    for (gen.resource_order, 0..) |rname, ri| {
-                        if (scores[ri] > 0.0001) {
-                            if (first) {
-                                const p = std.fmt.bufPrint(buf[pos..], ",\"rs\":{{", .{}) catch unreachable;
-                                pos += p.len;
-                                first = false;
-                            } else {
-                                buf[pos] = ',';
-                                pos += 1;
-                            }
-                            const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d:.4}", .{ rname, scores[ri] }) catch unreachable;
-                            pos += rp.len;
-                        }
-                    }
-                    if (!first) {
-                        buf[pos] = '}';
-                        pos += 1;
-                    }
-                    // Output primary resource
+                // Only the primary resource is emitted — the surface generator
+                // recomputes the actual ore from (seed, primary, tags, radius), so
+                // the old per-body yield ("y") / score ("rs") ESTIMATES were dead
+                // weight (and computing them was a per-body hot spot).
+                if (primaries.get(z.name)) |prim| {
                     const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim}) catch unreachable;
                     pos += pp.len;
                 }
@@ -516,34 +474,9 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
             if (z.ztype == .@"asteroid-field") {
-                const empty_tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
-                const fprim = field_primaries.get(z.name);
-                if (fprim) |fp| {
+                if (field_primaries.get(z.name)) |fp| {
                     const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{fp}) catch unreachable;
                     pos += pp.len;
-                }
-                const scores = gen.computeZoneResources(z.seed, z.ztype, fprim, empty_tags);
-                var first = true;
-                for (gen.resource_order, 0..) |rname, ri| {
-                    const y = gen.computeYield(scores[ri], true, 0, null, rname);
-                    if (y >= 0.5) {
-                        if (first) {
-                            const p = std.fmt.bufPrint(buf[pos..], ",\"y\":{{", .{}) catch unreachable;
-                            pos += p.len;
-                            first = false;
-                        } else {
-                            buf[pos] = ',';
-                            pos += 1;
-                        }
-                        var ybuf: [16]u8 = undefined;
-                        const ys = gen.formatYield(y, &ybuf);
-                        const rp = std.fmt.bufPrint(buf[pos..], "\"{s}\":\"{s}\"", .{ rname, ys }) catch unreachable;
-                        pos += rp.len;
-                    }
-                }
-                if (!first) {
-                    buf[pos] = '}';
-                    pos += 1;
                 }
 
                 const cx = universe.zones.items[calidus_zi].stellar_x;
