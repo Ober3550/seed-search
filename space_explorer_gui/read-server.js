@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Lean READ-ONLY explorer: browse the seeds/zones the generator wrote to
 // Postgres (Cloud SQL). No job system — that's re-added later. Uses pgdb.js
-// (read-only `explorer_ro` role). Run:  node read-server.js   (PORT env, def 3100)
+// (read-only `explorer_ro` role) and the existing public/style.css shell.
+// Run:  node read-server.js   (PORT env, default 3100)
 const express = require("express");
 const path = require("path");
 const db = require("./pgdb");
@@ -14,21 +15,24 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const nm = (r) => (r ? String(r).replace(/^se-/, "").replace(/^kr-/, "").replace(/-ore$/, "") : "—");
 const dv = (v) => (v == null ? "—" : v >= 10000000 ? "none" : Number(v).toLocaleString());
 
-function page(title, body) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/style.css">
-<style>
-  body{font-family:system-ui,sans-serif;margin:0;padding:1rem 1.5rem;max-width:1100px}
-  table{border-collapse:collapse;width:100%;font-size:14px}
-  th,td{padding:4px 8px;border-bottom:1px solid #8883;text-align:right}
-  th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
-  a{color:#4ea1ff;text-decoration:none} a:hover{text-decoration:underline}
-  .bar{display:flex;gap:.75rem;align-items:end;flex-wrap:wrap;margin:.5rem 0 1rem}
-  .bar label{font-size:12px;color:#888;display:flex;flex-direction:column}
-  input,select{padding:3px 6px}
-  .muted{color:#888} .pill{background:#4ea1ff22;border-radius:4px;padding:0 6px}
-</style></head><body>${body}</body></html>`;
+// Same shell as the main GUI (.app > .sidebar + main) so style.css applies.
+function page(title, content) {
+  return `<!DOCTYPE html><html lang="en"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${esc(title)} — SE Explorer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head><body>
+  <div class="app">
+    <nav class="sidebar">
+      <h1>🌌 SE Explorer</h1>
+      <ul class="nav-links">
+        <li><a href="/seeds">Seeds</a></li>
+      </ul>
+      <div class="sidebar-footer"><small>read-only · Cloud SQL<br>generator → db → explorer</small></div>
+    </nav>
+    <main id="main">${content}</main>
+  </div>
+</body></html>`;
 }
 
 // ── seeds list ──────────────────────────────────────────────────────────
@@ -43,35 +47,51 @@ app.get("/seeds", async (req, res) => {
     };
     const [rows, total] = await Promise.all([db.getSeeds(f), db.countSeeds(f)]);
     const pageN = Math.max(0, Number(req.query.page) || 0);
-    const sort = db.ORDERS[req.query.sort] ? req.query.sort : db.DEFAULT_ORDER;
-    const sortOpts = Object.keys(db.ORDERS).map((k) => `<option value="${k}"${k === sort ? " selected" : ""}>${k}</option>`).join("");
-    const qs = (extra) => {
-      const p = new URLSearchParams({ ...req.query, ...extra });
-      return "?" + p.toString();
+    const cur = db.ORDERS[req.query.sort] ? req.query.sort : db.DEFAULT_ORDER;
+    const qs = (extra) => "?" + new URLSearchParams({ ...req.query, ...extra }).toString();
+
+    // Clickable sort headers (toggle asc/desc), matching the main GUI's feel.
+    const sortTh = (label, col, title = "") => {
+      const asc = `${col}_asc`, desc = `${col}_desc`;
+      const next = cur === desc ? asc : desc;
+      const arrow = cur === desc ? " ▾" : cur === asc ? " ▴" : "";
+      return `<th class="sortable"${title ? ` title="${esc(title)}"` : ""}><a href="${qs({ sort: next, page: 0 })}">${label}${arrow}</a></th>`;
     };
-    const th = "<tr><th>Seed</th><th>K2</th><th>Planets</th><th>P+M</th><th>Naq Δv</th><th>Field Δv</th><th>Enemy</th><th>Water%</th><th>Hostile%</th><th>Score</th></tr>";
-    const body = rows.map((s) => `<tr>
+
+    const bodyRows = rows.map((s) => `<tr>
       <td><a href="/seed/${s.seed}">${s.seed}</a></td>
       <td>${s.k2 ? "✓" : ""}</td><td>${s.npl ?? "—"}</td><td>${s.npm ?? "—"}</td>
       <td>${dv(s.naqdv)}</td><td>${dv(s.fdv)}</td><td>${s.ed ?? "—"}</td>
       <td>${s.wp ?? "—"}</td><td>${s.ef ?? "—"}</td><td>${s.score ?? "—"}</td></tr>`).join("");
+
     res.send(page("Seeds", `
-      <h1>Seeds <span class="muted">(${total.toLocaleString()} in Cloud SQL)</span></h1>
-      <form class="bar" method="get">
-        <label>seed<input name="seed" value="${esc(req.query.seed || "")}" size="10"></label>
-        <label>K2<select name="k2"><option value="">any</option>
+      <h2>Seeds <small style="color:var(--muted)">${total.toLocaleString()} in Cloud SQL</small></h2>
+      <form method="get" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;margin:0 0 1rem">
+        <label>Seed<br><input name="seed" value="${esc(req.query.seed || "")}" placeholder="search"></label>
+        <label>K2<br><select name="k2"><option value="">any</option>
           <option value="1"${req.query.k2 == "1" ? " selected" : ""}>yes</option>
           <option value="0"${req.query.k2 == "0" ? " selected" : ""}>no</option></select></label>
-        <label>planets ≥<input name="npl_min" value="${esc(req.query.npl_min || "")}" size="3"></label>
-        <label>≤<input name="npl_max" value="${esc(req.query.npl_max || "")}" size="3"></label>
-        <label>sort<select name="sort">${sortOpts}</select></label>
-        <button>apply</button>
+        <label>Planets ≥<br><input type="number" name="npl_min" value="${esc(req.query.npl_min || "")}"></label>
+        <label>≤<br><input type="number" name="npl_max" value="${esc(req.query.npl_max || "")}"></label>
+        <input type="hidden" name="sort" value="${esc(cur)}">
+        <button type="submit" class="btn">Apply</button>
       </form>
-      <table><thead>${th}</thead><tbody>${body || `<tr><td colspan="10" class="muted">no seeds match</td></tr>`}</tbody></table>
-      <p class="bar">
-        ${pageN > 0 ? `<a href="${qs({ page: pageN - 1 })}">← prev</a>` : `<span class="muted">← prev</span>`}
-        <span class="muted">page ${pageN + 1}</span>
-        ${rows.length === 100 ? `<a href="${qs({ page: pageN + 1 })}">next →</a>` : `<span class="muted">next →</span>`}
+      <table class="data-table" id="seeds-table">
+        <thead><tr>
+          ${sortTh("Seed", "seed")}<th>K2</th>
+          ${sortTh("Planets", "npl", "Calidus planets (incl. Nauvis)")}
+          ${sortTh("P+M", "npm", "Calidus planets + moons")}
+          ${sortTh("Naq Δv", "naqdv", "Δv to nearest naquium-primary field")}
+          ${sortTh("Field Δv", "fdv", "Δv to nearest any asteroid field")}
+          ${sortTh("Enemy", "ed", "signed enemy value")}
+          ${sortTh("Water%", "wp")}${sortTh("Hostile%", "ef")}${sortTh("Score", "score")}
+        </tr></thead>
+        <tbody>${bodyRows || `<tr><td colspan="10" style="color:var(--muted)">no seeds match</td></tr>`}</tbody>
+      </table>
+      <p style="display:flex;gap:1rem;align-items:center;margin-top:1rem">
+        ${pageN > 0 ? `<a href="${qs({ page: pageN - 1 })}">← prev</a>` : `<span style="color:var(--muted)">← prev</span>`}
+        <span style="color:var(--muted)">page ${pageN + 1}</span>
+        ${rows.length === 100 ? `<a href="${qs({ page: pageN + 1 })}">next →</a>` : `<span style="color:var(--muted)">next →</span>`}
       </p>`));
   } catch (e) { res.status(500).send(page("error", `<pre>${esc(e.stack || e.message)}</pre>`)); }
 });
@@ -81,7 +101,7 @@ app.get("/seed/:seed", async (req, res) => {
   try {
     const seed = Number(req.params.seed);
     const [s, zones] = await Promise.all([db.getSeed(seed), db.getZones(seed)]);
-    if (!s) return res.status(404).send(page("not found", `<p>seed ${seed} not in DB. <a href="/seeds">back</a></p>`));
+    if (!s) return res.status(404).send(page("not found", `<h2>Seed ${seed} not in DB</h2><p><a href="/seeds">← back to seeds</a></p>`));
     const zrows = zones.map((z) => `<tr>
       <td>${esc(z.name)}</td><td>${esc(z.kind)}</td><td>${esc(z.star || "—")}</td>
       <td>${esc(z.parent || "—")}</td><td>${nm(z.primary)}</td>
@@ -89,11 +109,12 @@ app.get("/seed/:seed", async (req, res) => {
       <td>${esc(z.temperature || "")}</td><td>${esc(z.water || "")}</td><td>${esc(z.enemy || "")}</td></tr>`).join("");
     res.send(page(`Seed ${seed}`, `
       <p><a href="/seeds">← seeds</a></p>
-      <h1>Seed ${seed} ${s.k2 ? '<span class="pill">K2</span>' : ""}</h1>
-      <p class="muted">planets ${s.npl} · P+M ${s.npm} · naq Δv ${dv(s.naqdv)} · field Δv ${dv(s.fdv)} · enemy ${s.ed} · water% ${s.wp} · hostile% ${s.ef} · vault ${esc(s.vault_loot || "")}</p>
-      <h2>Zones <span class="muted">(${zones.length})</span></h2>
-      <table><thead><tr><th>Name</th><th>Kind</th><th>Star</th><th>Parent</th><th>Primary</th><th>Radius</th><th>Δv</th><th>Temp</th><th>Water</th><th>Enemy</th></tr></thead>
-      <tbody>${zrows}</tbody></table>`));
+      <h2>Seed ${seed} ${s.k2 ? '<span style="color:var(--purple)">[K2]</span>' : ""}</h2>
+      <p style="color:var(--muted)">planets ${s.npl} · P+M ${s.npm} · naq Δv ${dv(s.naqdv)} · field Δv ${dv(s.fdv)} · enemy ${s.ed} · water% ${s.wp} · hostile% ${s.ef} · vault ${esc(s.vault_loot || "—")}</p>
+      <h3>Zones <small style="color:var(--muted)">${zones.length}</small></h3>
+      <table class="data-table" id="zone-table">
+        <thead><tr><th>Name</th><th>Kind</th><th>Star</th><th>Parent</th><th>Primary</th><th>Radius</th><th>Δv</th><th>Temp</th><th>Water</th><th>Enemy</th></tr></thead>
+        <tbody>${zrows}</tbody></table>`));
   } catch (e) { res.status(500).send(page("error", `<pre>${esc(e.stack || e.message)}</pre>`)); }
 });
 
