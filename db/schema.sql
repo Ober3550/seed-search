@@ -102,9 +102,14 @@ CREATE TABLE IF NOT EXISTS zone_resource (
 -- seed list / filter / sort (join-free hot path)
 CREATE INDEX IF NOT EXISTS idx_seeds_score ON seeds (score DESC);
 CREATE INDEX IF NOT EXISTS idx_seeds_npl   ON seeds (npl);
+CREATE INDEX IF NOT EXISTS idx_seeds_npm   ON seeds (npm);
 CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds (naqdv);
 CREATE INDEX IF NOT EXISTS idx_seeds_fdv   ON seeds (fdv);
+CREATE INDEX IF NOT EXISTS idx_seeds_wp    ON seeds (wp);
+CREATE INDEX IF NOT EXISTS idx_seeds_ef    ON seeds (ef);
+CREATE INDEX IF NOT EXISTS idx_seeds_ed    ON seeds (ed);
 CREATE INDEX IF NOT EXISTS idx_seeds_k2    ON seeds (k2);
+-- (btree serves both ASC and DESC scans, so the DESC-default sorts reuse these)
 -- drill one universe / per-body corpus stats (index both ways)
 CREATE INDEX IF NOT EXISTS idx_zone_seed         ON zone (seed);
 CREATE INDEX IF NOT EXISTS idx_zone_name         ON zone (zone_name_id);
