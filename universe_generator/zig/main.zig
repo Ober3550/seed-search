@@ -40,6 +40,37 @@ fn resIdx(name: []const u8) ?u16 {
     return null;
 }
 
+/// The FIXED internal zone-name list, in a stable order, deduped — purely the
+/// data.zig name pools (+ Nauvis). A static dictionary that only changes when the
+/// code does; NO generated names. Every worker builds the identical name→id map
+/// (id = index), so parallel writers never race on interning. (Asteroid belts are
+/// not stored — they have no name/resource/tags.)
+fn buildNameList(alloc: std.mem.Allocator) !std.ArrayListUnmanaged([]const u8) {
+    var list: std.ArrayListUnmanaged([]const u8) = .empty;
+    var seen: std.StringHashMapUnmanaged(void) = .{};
+    const S = struct {
+        fn add(l: *std.ArrayListUnmanaged([]const u8), s: *std.StringHashMapUnmanaged(void), a: std.mem.Allocator, name: []const u8) !void {
+            if ((try s.getOrPut(a, name)).found_existing) return;
+            try l.append(a, name);
+        }
+    };
+    try S.add(&list, &seen, alloc, "Calidus"); // id 0 — home star
+    try S.add(&list, &seen, alloc, "Nauvis"); //  id 1 — homeworld (referenced as its moons' parent)
+    for (data.stars) |n| try S.add(&list, &seen, alloc, n); // Calidus already added → deduped
+    for (data.space_zones) |n| try S.add(&list, &seen, alloc, n);
+    for (data.vulcanite_planets_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.cryonite_moons_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.iridium_moons_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.holmium_moons_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.vitamelange_moons_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.haven_moons_names) |n| try S.add(&list, &seen, alloc, n);
+    for (data.unassigned_planets) |b| try S.add(&list, &seen, alloc, b.name);
+    for (data.unassigned_moons) |b| try S.add(&list, &seen, alloc, b.name);
+    for (data.unassigned_planets_or_moons) |b| try S.add(&list, &seen, alloc, b.name);
+    for (data.special_bodies) |b| try S.add(&list, &seen, alloc, b.name);
+    return list;
+}
+
 /// Stellar (solar-system) position of a zone: a field carries its own; a
 /// planet/moon inherits its star's, found by walking parent_index up to the star.
 fn starStellar(zones: []const gen.Zone, z: gen.Zone) struct { x: f64, y: f64 } {
@@ -129,7 +160,11 @@ pub fn main(init: std.process.Init) !void {
         try db.upsertEnum("aux", data.Aux);
         try db.upsertEnum("cliff", data.Cliff);
         try db.upsertEnum("enemy", data.Enemy);
-        std.debug.print("# writing to Postgres (DATABASE_URL set)\n", .{});
+        // Deterministic zone_name dictionary (static from data.zig) → all workers
+        // agree on name ids, so parallel writers don't race on interning.
+        const name_list = try buildNameList(std.heap.page_allocator);
+        try db.seedZoneNames(name_list.items);
+        std.debug.print("# writing to Postgres (DATABASE_URL set, {d} zone names)\n", .{name_list.items.len});
         break :blk db;
     } else null;
     defer if (pg_db) |*db| db.finish();
@@ -430,8 +465,10 @@ pub fn main(init: std.process.Init) !void {
             for (universe.zones.items, 0..) |z, si| {
                 if (!all_zones and !inCalidus(si, calidus_zi, zone_end, tail_start)) continue;
                 switch (z.ztype) {
-                    .star, .planet, .moon, .@"asteroid-belt", .@"asteroid-field" => {},
-                    else => continue, // skip orbit / anomaly
+                    .star, .planet, .moon, .@"asteroid-field" => {},
+                    // belts skipped: no name/resource/tags — reconstruct from the
+                    // tree later if needed. orbit/anomaly not surface-generatable.
+                    else => continue,
                 }
                 if (std.mem.eql(u8, z.name, "Nauvis")) continue; // map-gen UI, not universe gen
                 const zid: i64 = @intCast(try db.internName(z.name));

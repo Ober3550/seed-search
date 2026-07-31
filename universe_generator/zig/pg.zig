@@ -130,6 +130,38 @@ pub const Db = struct {
         try self.exec(@ptrCast(q.items.ptr));
     }
 
+    /// Seed the zone_name dictionary DETERMINISTICALLY from the static name
+    /// universe (data.zig pools + enumerated belt names). id = index in `names`.
+    /// Every worker builds the SAME list, so parallel writers agree on ids and
+    /// there is no interning race. Names not in the list still fall back to
+    /// dynamic ids via internName (shouldn't happen).
+    pub fn seedZoneNames(self: *Db, names: []const []const u8) !void {
+        self.next_name_id = @intCast(names.len);
+        var start: usize = 0;
+        while (start < names.len) {
+            const end = @min(start + 500, names.len);
+            var q = List(u8).init(self.alloc);
+            defer q.deinit();
+            try q.appendSlice("INSERT INTO zone_name(id,name) VALUES ");
+            var j = start;
+            while (j < end) : (j += 1) {
+                const name = names[j];
+                try self.names.put(self.alloc, try self.alloc.dupe(u8, name), @intCast(j));
+                if (j != start) try q.append(',');
+                try appFmt(&q, "({d},'", .{j});
+                for (name) |ch| {
+                    if (ch == '\'') try q.append('\'');
+                    try q.append(ch);
+                }
+                try q.appendSlice("')");
+            }
+            try q.appendSlice(" ON CONFLICT DO NOTHING;");
+            try q.append(0);
+            try self.exec(@ptrCast(q.items.ptr));
+            start = end;
+        }
+    }
+
     // ── row append (COPY text: tab-separated, \N = null) ──────────────────
     fn tab(buf: *List(u8), first: *bool) !void {
         if (first.*) first.* = false else try buf.append('\t');
