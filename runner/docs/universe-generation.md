@@ -18,21 +18,21 @@ as the game does.
 
 Harness side (this repo):
 
-| Step | File | What it does |
-|------|------|--------------|
-| Entry point | `generate.lua` | iterates seeds in a chunk, calls `summarize.summarize_seed(seed)` |
-| Per-seed driver | `summarize.lua` → `summarize_seed()` | sets `FactorioRNG.global_seed = seed`, resets globals, calls **`Universe.build()`**, then reads back `zones_by_name` / children |
-| Mod loader + stubs | `se_env.lua` | extracts the mod zip and `load()`s `scripts/universe.lua` etc.; stubs the Factorio runtime (`game`, `settings`, `defines`, RNG) |
-| PRNG implementation | native `rng` module (compiled into `bin/lua`) | `FactorioRNG.__call = rng.call` — replicates Factorio's `LuaRandomGenerator` |
+| Step                | File                                          | What it does                                                                                                                    |
+| ------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Entry point         | `generate.lua`                                | iterates seeds in a chunk, calls `summarize.summarize_seed(seed)`                                                               |
+| Per-seed driver     | `summarize.lua` → `summarize_seed()`          | sets `FactorioRNG.global_seed = seed`, resets globals, calls **`Universe.build()`**, then reads back `zones_by_name` / children |
+| Mod loader + stubs  | `se_env.lua`                                  | extracts the mod zip and `load()`s `scripts/universe.lua` etc.; stubs the Factorio runtime (`game`, `settings`, `defines`, RNG) |
+| PRNG implementation | native `rng` module (compiled into `bin/lua`) | `FactorioRNG.__call = rng.call` — replicates Factorio's `LuaRandomGenerator`                                                    |
 
 Mod side (inside `space-exploration_0.7.57.zip`):
 
-| File | Role |
-|------|------|
-| `scripts/universe.lua` | **`Universe.build()`** — the top-level generator |
-| `scripts/universe-raw.lua` | static data: star / planet / moon / asteroid-field name pools |
-| `scripts/universe-homesystem.lua` | `make_validate_homesystem()` — guarantees the starting system's resources (called at the end of `build`) |
-| `scripts/zone.lua`, `scripts/zonelist.lua` | zone objects & indexing |
+| File                                       | Role                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `scripts/universe.lua`                     | **`Universe.build()`** — the top-level generator                                                         |
+| `scripts/universe-raw.lua`                 | static data: star / planet / moon / asteroid-field name pools                                            |
+| `scripts/universe-homesystem.lua`          | `make_validate_homesystem()` — guarantees the starting system's resources (called at the end of `build`) |
+| `scripts/zone.lua`, `scripts/zonelist.lua` | zone objects & indexing                                                                                  |
 
 ## The two PRNG streams (most important thing to get right)
 
@@ -81,25 +81,25 @@ draws (`for i = #tbl, 2, -1 do random_generator(i) end`).
 
 In order. `F` = fixed number of draws, `V` = variable (data/loop-dependent).
 
-| # | `universe.lua` | Draws | Notes |
-|---|------|-------|-------|
-| 1 | 347 | F: 1 | `requested_planets` |
-| 2 | 364 | F: 14 | `shuffle(unassigned_moons)` — 15 entries → 14 |
-| 3 | 365 | F: 30 | `shuffle(stars)` — 31 → 30 |
-| 4 | 366 | F: 15 | `shuffle(unassigned_planets)` — 16 → 15 |
-| 5 | 367 | F: 533 | `shuffle(unassigned_planets_or_moons)` — 534 → 533 |
-| 6 | 376 | F: 16 | one `rng(1,#stars)` per unassigned planet (16) |
-| 7 | 383 | F: 0 | fill min-planets-per-star: pops only, no draws |
-| 8 | 393–402 | **V** | build remaining planets: `rng(1,#stars)` each iter, **+1** extra `rng()` only when a star is already full (`#children >= high_planets_per_star`, short-circuit) |
-| 9 | 406 | F: 15 | one `rng(1,#all_planets)` per unassigned moon (15) |
-| 10 | 415 | F: 0 | min-1-moon-per-planet: pops only |
-| 11 | 449–459 | **V** | build remaining moons: `rng(1,#all_planets)` each iter, **+1** extra `rng()` when planet already full |
-| 12 | 487–584 | **V** | per-star loop: `random_stellar_position` = **2** draws/star (`491/493`); `rng(1,max_asteroid_belts)` = 1/star (`505`); `shuffle(star.children)` (`508`); 1 `rng()` per inserted asteroid belt (`511`); per planet: `radius_multiplier` 1 draw (`547`) + `shuffle(planet.children)` (`562`); per moon: `radius_multiplier` 1 draw (`566`) |
-| 13 | 586 | **V** | `shuffle(space_zones)` — 45 → 44 draws |
-| 14 | 590 | F: 90 | `random_stellar_position` per space zone = 2 × 45 |
-| 15 | 594–597 | **V** | **one `rng(4294967295)` per zone in `zone_index`** (`595`) to assign `zone.seed`. `inflate_climate_controls` (`596`) uses the per-zone sub-stream, **not** the global stream |
-| 16 | 647 | **V** | `UniverseHomesystem.make_validate_homesystem` — up to ~11 global draws (`universe-homesystem.lua`), conditional on which guaranteed resources (vulcanite planet; cryonite/iridium/holmium/vitamelange/haven moons) are missing from the rolled home system; may create new zones and draw seeds/radii for them |
-| 17 | 651+ | F: 0 (global) | `load_resource_data` / resource assignment use **independent** generators seeded from `storage.seed` and `zone.seed`, not the global stream |
+| #   | `universe.lua` | Draws         | Notes                                                                                                                                                                                                                                                                                                                                    |
+| --- | -------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 347            | F: 1          | `requested_planets`                                                                                                                                                                                                                                                                                                                      |
+| 2   | 364            | F: 14         | `shuffle(unassigned_moons)` — 15 entries → 14                                                                                                                                                                                                                                                                                            |
+| 3   | 365            | F: 30         | `shuffle(stars)` — 31 → 30                                                                                                                                                                                                                                                                                                               |
+| 4   | 366            | F: 15         | `shuffle(unassigned_planets)` — 16 → 15                                                                                                                                                                                                                                                                                                  |
+| 5   | 367            | F: 533        | `shuffle(unassigned_planets_or_moons)` — 534 → 533                                                                                                                                                                                                                                                                                       |
+| 6   | 376            | F: 16         | one `rng(1,#stars)` per unassigned planet (16)                                                                                                                                                                                                                                                                                           |
+| 7   | 383            | F: 0          | fill min-planets-per-star: pops only, no draws                                                                                                                                                                                                                                                                                           |
+| 8   | 393–402        | **V**         | build remaining planets: `rng(1,#stars)` each iter, **+1** extra `rng()` only when a star is already full (`#children >= high_planets_per_star`, short-circuit)                                                                                                                                                                          |
+| 9   | 406            | F: 15         | one `rng(1,#all_planets)` per unassigned moon (15)                                                                                                                                                                                                                                                                                       |
+| 10  | 415            | F: 0          | min-1-moon-per-planet: pops only                                                                                                                                                                                                                                                                                                         |
+| 11  | 449–459        | **V**         | build remaining moons: `rng(1,#all_planets)` each iter, **+1** extra `rng()` when planet already full                                                                                                                                                                                                                                    |
+| 12  | 487–584        | **V**         | per-star loop: `random_stellar_position` = **2** draws/star (`491/493`); `rng(1,max_asteroid_belts)` = 1/star (`505`); `shuffle(star.children)` (`508`); 1 `rng()` per inserted asteroid belt (`511`); per planet: `radius_multiplier` 1 draw (`547`) + `shuffle(planet.children)` (`562`); per moon: `radius_multiplier` 1 draw (`566`) |
+| 13  | 586            | **V**         | `shuffle(space_zones)` — 45 → 44 draws                                                                                                                                                                                                                                                                                                   |
+| 14  | 590            | F: 90         | `random_stellar_position` per space zone = 2 × 45                                                                                                                                                                                                                                                                                        |
+| 15  | 594–597        | **V**         | **one `rng(4294967295)` per zone in `zone_index`** (`595`) to assign `zone.seed`. `inflate_climate_controls` (`596`) uses the per-zone sub-stream, **not** the global stream                                                                                                                                                             |
+| 16  | 647            | **V**         | `UniverseHomesystem.make_validate_homesystem` — up to ~11 global draws (`universe-homesystem.lua`), conditional on which guaranteed resources (vulcanite planet; cryonite/iridium/holmium/vitamelange/haven moons) are missing from the rolled home system; may create new zones and draw seeds/radii for them                           |
+| 17  | 651+           | F: 0 (global) | `load_resource_data` / resource assignment use **independent** generators seeded from `storage.seed` and `zone.seed`, not the global stream                                                                                                                                                                                              |
 
 So the global draw count ≈ `1 + 14 + 30 + 15 + 533 + 16 + 15` fixed prologue
 (= 624), plus the star/planet/moon structural draws (depend on how the pool got
@@ -108,21 +108,21 @@ partitioned), plus one seed draw per generated zone, plus the homesystem draws.
 
 ## Static pool sizes (`universe-raw.lua`, v0.7.57)
 
-| Pool | Count |
-|------|------:|
-| `stars` (incl. Calidus; Nauvis is Calidus's child) | 31 |
-| `space_zones` (asteroid fields etc.) | 45 |
-| `anomaly` | 1 |
-| `unassigned_planets` | 16 |
-| `unassigned_moons` | 15 |
-| `unassigned_planets_or_moons` | 534 |
-| `haven_moons` | 33 |
-| `vulcanite_planets` | 18 |
-| `cryonite_moons` | 16 |
-| `iridium_moons` | 16 |
-| `holmium_moons` | 16 |
-| `vitamelange_moons` | 17 |
-| `prototypes_by_name` (all, deduped) | 758 |
+| Pool                                               | Count |
+| -------------------------------------------------- | ----: |
+| `stars` (incl. Calidus; Nauvis is Calidus's child) |    31 |
+| `space_zones` (asteroid fields etc.)               |    45 |
+| `anomaly`                                          |     1 |
+| `unassigned_planets`                               |    16 |
+| `unassigned_moons`                                 |    15 |
+| `unassigned_planets_or_moons`                      |   534 |
+| `haven_moons`                                      |    33 |
+| `vulcanite_planets`                                |    18 |
+| `cryonite_moons`                                   |    16 |
+| `iridium_moons`                                    |    16 |
+| `holmium_moons`                                    |    16 |
+| `vitamelange_moons`                                |    17 |
+| `prototypes_by_name` (all, deduped)                |   758 |
 
 ## Generation constants (`universe.lua:49-57`)
 

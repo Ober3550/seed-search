@@ -6,14 +6,14 @@ truly vanilla world (empty mod dir, isolated write-data), force-generates
 
 ## Control sweep vs our surfacegen (same settings)
 
-| case    | GT tiles | GEN tiles | ratio | notes |
-|---------|----------|-----------|-------|-------|
-| base    | 8190     | 7621      | 0.93  | 57% exact tile overlap |
+| case    | GT tiles | GEN tiles | ratio | notes                                          |
+| ------- | -------- | --------- | ----- | ---------------------------------------------- |
+| base    | 8190     | 7621      | 0.93  | 57% exact tile overlap                         |
 | freq2   | 13620    | 14031     | 1.03  | existing patches keep size/pos; new ones added |
-| freq4   | 28331    | 25955     | 0.92  | SE-level freq — still ~1x |
-| freq0.5 | 6344     | 4973      | 0.78  | GT keeps starting patch we lack |
-| size2   | 13500    | 11956     | 0.89  | tiles scale ~2^(2/3)=1.59 in BOTH (1.63) |
-| size0.5 | 5254     | 4889      | 0.93  | |
+| freq4   | 28331    | 25955     | 0.92  | SE-level freq — still ~1x                      |
+| freq0.5 | 6344     | 4973      | 0.78  | GT keeps starting patch we lack                |
+| size2   | 13500    | 11956     | 0.89  | tiles scale ~2^(2/3)=1.59 in BOTH (1.63)       |
+| size0.5 | 5254     | 4889      | 0.93  |                                                |
 
 CONCLUSION: frequency & size handling in the core port is CORRECT (0.9-1.0x at
 every setting incl. freq4). Patch positions match GT to <5 tiles.

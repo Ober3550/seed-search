@@ -20,11 +20,11 @@ time for i in $(seq 1 50); do ./runner/native/zig/seedgen > /dev/null 2>&1; done
 
 ## Expected Results (Apple Silicon M-series)
 
-| Implementation | 50 seeds | Per seed |
-|---|---|---|
-| Zig (native ARM64) | ~300ms | ~6ms |
-| Lua (Docker, emulated x86_64) | ~40,000ms | ~800ms |
-| **Speedup** | | **~130×** |
+| Implementation                | 50 seeds  | Per seed  |
+| ----------------------------- | --------- | --------- |
+| Zig (native ARM64)            | ~300ms    | ~6ms      |
+| Lua (Docker, emulated x86_64) | ~40,000ms | ~800ms    |
+| **Speedup**                   |           | **~130×** |
 
 On native x86_64 Linux, Lua runs ~30-50% faster (no emulation overhead), giving Zig a ~50-80× advantage.
 

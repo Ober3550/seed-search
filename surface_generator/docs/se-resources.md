@@ -18,20 +18,20 @@ map-gen controls are known.
 
 ## 1. SE-wide constants (differ from vanilla `__core__`)
 
-| Constant | SE | vanilla | Where used |
-|---|---|---|---|
-| `base_distance` / `double_density_distance` | **5000** | 1300 | density/richness distance scaling |
-| `regular_patch_fade_in_distance` | **320** | 300 | fade-in ring width |
-| `starting_resource_placement_radius` | **140** | 120 | starting patch region |
-| `starting_patches_split` | **1/4** | 1/2 | starting spot quantity divisor |
-| `candidate_spot_count` | **64** (all resources) | 21/22/32 | spot candidates per region |
-| `suggested_minimum_candidate_point_spacing` (starting) | **128** | 32 | Poisson spacing |
-| `rs_suggested_minimum_candidate_point_spacing` (regular) | **128** | 45.2548 | Poisson spacing |
-| `size_boost` | **4** | 0 | flat spot-radius bonus |
-| `maximum_spot_basement_radius` (starting) | **64** | 128 | basement cull radius |
-| `maximum_spot_basement_radius` (regular) | 128 | 128 | basement cull radius |
-| `starting_amount_val` | **100000** | 20000 | starting patch total |
-| `starting_rq_factor` divisor | **/8** | /7 | starting radius factor |
+| Constant                                                 | SE                     | vanilla  | Where used                        |
+| -------------------------------------------------------- | ---------------------- | -------- | --------------------------------- |
+| `base_distance` / `double_density_distance`              | **5000**               | 1300     | density/richness distance scaling |
+| `regular_patch_fade_in_distance`                         | **320**                | 300      | fade-in ring width                |
+| `starting_resource_placement_radius`                     | **140**                | 120      | starting patch region             |
+| `starting_patches_split`                                 | **1/4**                | 1/2      | starting spot quantity divisor    |
+| `candidate_spot_count`                                   | **64** (all resources) | 21/22/32 | spot candidates per region        |
+| `suggested_minimum_candidate_point_spacing` (starting)   | **128**                | 32       | Poisson spacing                   |
+| `rs_suggested_minimum_candidate_point_spacing` (regular) | **128**                | 45.2548  | Poisson spacing                   |
+| `size_boost`                                             | **4**                  | 0        | flat spot-radius bonus            |
+| `maximum_spot_basement_radius` (starting)                | **64**                 | 128      | basement cull radius              |
+| `maximum_spot_basement_radius` (regular)                 | 128                    | 128      | basement cull radius              |
+| `starting_amount_val`                                    | **100000**             | 20000    | starting patch total              |
+| `starting_rq_factor` divisor                             | **/8**                 | /7       | starting radius factor            |
 
 ## 2. Structural differences vs. the vanilla port we already have
 
@@ -118,23 +118,23 @@ Fluid branch (resources with `collision_box[1][1] < -0.5`, e.g. oil-like): defau
 `base_spots_per_km2=1.8`, and if no `random_probability` set: `random_probability=1/48`,
 `random_spot_size_min/max=1`, `additional_richness=220000`, `has_starting=false`.
 
-| Resource | base_density | base_spots_per_km2 | random_prob | rq_mult (reg/start) | random_spot_size (min/max) | has_starting | additional_richness | order |
-|---|---|---|---|---|---|---|---|---|
-| iron-ore | 14 | 2.5 | 1 | 1.1 / 1.5 | 0.25 / 2.0 | yes | 0 | c-a |
-| copper-ore | 12 | 2.5 | 1 | 1.1 / 1.5 | 0.25 / 2.0 | yes | 0 | c-b |
-| stone | 12 | 2.5 | 1 | 1.1 / 1.5 | 0.25 / 2.0 | yes | 0 | c-c |
-| coal | 9 | 2.5 | 1 | 1.1 / 1.5 | 0.25 / 2.0 | yes | 0 | c-e |
-| uranium-ore | 1 | 2 | 1 | 1.1 / 1 | 2 / 4 | **no** | 0 | c-d |
-| crude-oil | 8 | 2.5 | **1/24** | 1.2 / 1.5 | 1 / 1 | yes | **220000** | e-a |
-| se-vulcanite | 10 | 5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | b-v |
-| se-cryonite | 10 | 5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | b-c |
-| se-vitamelange | 10 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | a-a |
-| se-iridium-ore | 5 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | a-b |
-| se-holmium-ore | 5 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | a-b |
-| se-beryllium-ore | 5 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | a-b |
-| se-naquium-ore | 1 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | a-a |
-| se-water-ice | 5 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | f-a |
-| se-methane-ice | 5 | 2.5 | 1 | 1.1 / 1 | 0.25 / 2.0 | yes | 0 | f-b |
+| Resource         | base_density | base_spots_per_km2 | random_prob | rq_mult (reg/start) | random_spot_size (min/max) | has_starting | additional_richness | order |
+| ---------------- | ------------ | ------------------ | ----------- | ------------------- | -------------------------- | ------------ | ------------------- | ----- |
+| iron-ore         | 14           | 2.5                | 1           | 1.1 / 1.5           | 0.25 / 2.0                 | yes          | 0                   | c-a   |
+| copper-ore       | 12           | 2.5                | 1           | 1.1 / 1.5           | 0.25 / 2.0                 | yes          | 0                   | c-b   |
+| stone            | 12           | 2.5                | 1           | 1.1 / 1.5           | 0.25 / 2.0                 | yes          | 0                   | c-c   |
+| coal             | 9            | 2.5                | 1           | 1.1 / 1.5           | 0.25 / 2.0                 | yes          | 0                   | c-e   |
+| uranium-ore      | 1            | 2                  | 1           | 1.1 / 1             | 2 / 4                      | **no**       | 0                   | c-d   |
+| crude-oil        | 8            | 2.5                | **1/24**    | 1.2 / 1.5           | 1 / 1                      | yes          | **220000**          | e-a   |
+| se-vulcanite     | 10           | 5                  | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | b-v   |
+| se-cryonite      | 10           | 5                  | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | b-c   |
+| se-vitamelange   | 10           | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | a-a   |
+| se-iridium-ore   | 5            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | a-b   |
+| se-holmium-ore   | 5            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | a-b   |
+| se-beryllium-ore | 5            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | a-b   |
+| se-naquium-ore   | 1            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | a-a   |
+| se-water-ice     | 5            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | f-a   |
+| se-methane-ice   | 5            | 2.5                | 1           | 1.1 / 1             | 0.25 / 2.0                 | yes          | 0                   | f-b   |
 
 `se-` prefix = `data_util.mod_prefix` (`"se-"`). Krastorio2 compat adds
 `kr-rare-metal-ore`, `kr-mineral-water`, `kr-imersite` when K2 present (see

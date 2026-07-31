@@ -61,12 +61,12 @@ EntityMapGenerationTask
 
 ## Key Addresses (arm64)
 
-| Function | Address |
-|---|---|
-| `CompiledMapGenSettings::prepareAutoplacers<EntityPrototype>` | `0x10014b9a40` |
+| Function                                                          | Address        |
+| ----------------------------------------------------------------- | -------------- |
+| `CompiledMapGenSettings::prepareAutoplacers<EntityPrototype>`     | `0x10014b9a40` |
 | `CompiledMapGenSettings::prepareAutoplacers<DecorativePrototype>` | `0x10014b908c` |
-| `CompiledMapGenSettings::prepareAutoplacers<TilePrototype>` | `0x10014ba3f4` |
-| `CompiledMapGenSettings::getRegisterOwner<EntityPrototype>` | `0x10014bc1c8` |
+| `CompiledMapGenSettings::prepareAutoplacers<TilePrototype>`       | `0x10014ba3f4` |
+| `CompiledMapGenSettings::getRegisterOwner<EntityPrototype>`       | `0x10014bc1c8` |
 
 ## Collision Mask / Tile Restriction
 
@@ -101,21 +101,21 @@ bool EntityMapGenerationTask::tryPlaceEntity(x, y, compiled_autoplacer) {
 
 Vanilla Factorio restricts resources to non-water tiles:
 
-| Resource | Blocked By |
-|---|---|
+| Resource                          | Blocked By                                     |
+| --------------------------------- | ---------------------------------------------- |
 | iron-ore, copper-ore, coal, stone | water, deepwater, water-green, deepwater-green |
-| uranium-ore | water, deepwater, water-green, deepwater-green |
-| crude-oil | (nothing — can appear on water) |
+| uranium-ore                       | water, deepwater, water-green, deepwater-green |
+| crude-oil                         | (nothing — can appear on water)                |
 
 ### Key Functions
 
-| Function | Role |
-|---|---|
+| Function                                                       | Role                                        |
+| -------------------------------------------------------------- | ------------------------------------------- |
 | `PrototypeFilterHelpers::make_collision_mask<EntityPrototype>` | Builds entity collision mask from prototype |
-| `PrototypeFilterHelpers::make_collision_mask<TilePrototype>` | Builds tile collision mask |
-| `MapGenerator::clearEntitiesForTile` (`0x10014fba18`) | Removes entities when tile changes |
-| `MapGenerator::clearEntitiesAndSetTile` (`0x10002468fc`) | Sets tile + clears conflicting entities |
-| `CollisionSquareDetectionLogic` | Entity-tile collision detection |
+| `PrototypeFilterHelpers::make_collision_mask<TilePrototype>`   | Builds tile collision mask                  |
+| `MapGenerator::clearEntitiesForTile` (`0x10014fba18`)          | Removes entities when tile changes          |
+| `MapGenerator::clearEntitiesAndSetTile` (`0x10002468fc`)       | Sets tile + clears conflicting entities     |
+| `CollisionSquareDetectionLogic`                                | Entity-tile collision detection             |
 
 ## Implications for Ore-First Generation
 

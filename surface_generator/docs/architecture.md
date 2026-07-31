@@ -38,56 +38,56 @@ This means we can compute ore placement without generating terrain first:
 
 ### Map Generation Pipeline
 
-| Function | Address | Role |
-|---|---|---|
-| `Surface::requestToGenerateChunk` | `0x1000639014` | Entry point |
-| `MapGenerationTask::canStartTask` | `0x10014f3068` | Scheduler gate |
-| `AsyncBasicTilesTask` ctor | `0x1002229684` | Terrain tile generation |
-| `EntityMapGenerationTask` ctor | `0x10014caaf0` | Entity + resource + cliff generation |
-| `EntityMapGenerationTask::applyCliffs` | `0x10014cc484` | Cliff placement |
-| `RegenerationTaskWrapper` ctor | `0x100222a720` | Re-generation wrapper |
-| `MapGenerator::regenerateInternal` | `0x10014f9650` | Core regeneration dispatch |
-| `MapGenerator::regenerateEntity` | `0x10014f95f0` | Single-prototype entity regeneration |
-| `MapGenerator::regenerateDecorative` | `0x10014fa360` | Decorative regeneration |
-| `MapGenerationManager::AsyncHelper::generateAllOfStatus<AsyncBasicTilesTask>` | `0x10014f1690` | Dispatches basic tile tasks |
-| `MapGenerationManager::AsyncHelper::generateAllOfStatus<AsyncEntityTask>` | `0x10014f2918` | Dispatches entity tasks |
+| Function                                                                      | Address        | Role                                 |
+| ----------------------------------------------------------------------------- | -------------- | ------------------------------------ |
+| `Surface::requestToGenerateChunk`                                             | `0x1000639014` | Entry point                          |
+| `MapGenerationTask::canStartTask`                                             | `0x10014f3068` | Scheduler gate                       |
+| `AsyncBasicTilesTask` ctor                                                    | `0x1002229684` | Terrain tile generation              |
+| `EntityMapGenerationTask` ctor                                                | `0x10014caaf0` | Entity + resource + cliff generation |
+| `EntityMapGenerationTask::applyCliffs`                                        | `0x10014cc484` | Cliff placement                      |
+| `RegenerationTaskWrapper` ctor                                                | `0x100222a720` | Re-generation wrapper                |
+| `MapGenerator::regenerateInternal`                                            | `0x10014f9650` | Core regeneration dispatch           |
+| `MapGenerator::regenerateEntity`                                              | `0x10014f95f0` | Single-prototype entity regeneration |
+| `MapGenerator::regenerateDecorative`                                          | `0x10014fa360` | Decorative regeneration              |
+| `MapGenerationManager::AsyncHelper::generateAllOfStatus<AsyncBasicTilesTask>` | `0x10014f1690` | Dispatches basic tile tasks          |
+| `MapGenerationManager::AsyncHelper::generateAllOfStatus<AsyncEntityTask>`     | `0x10014f2918` | Dispatches entity tasks              |
 
 ### Cliff Generation
 
-| Function | Address |
-|---|---|
+| Function                            | Address        |
+| ----------------------------------- | -------------- |
 | `CliffGenerator::crossingsForChunk` | `0x10014b5650` |
-| `CliffGenerator::crossesCliff` | `0x10014b5598` |
+| `CliffGenerator::crossesCliff`      | `0x10014b5598` |
 | `CliffGenerator::getNoiseCacheSize` | `0x10014b5624` |
 
 ### Autoplace System
 
-| Function | Address |
-|---|---|
-| `CompiledMapGenSettings::prepareAutoplacers<EntityPrototype>` | `0x10014b9a40` |
-| `CompiledMapGenSettings::prepareAutoplacers<TilePrototype>` | `0x10014ba3f4` |
+| Function                                                          | Address        |
+| ----------------------------------------------------------------- | -------------- |
+| `CompiledMapGenSettings::prepareAutoplacers<EntityPrototype>`     | `0x10014b9a40` |
+| `CompiledMapGenSettings::prepareAutoplacers<TilePrototype>`       | `0x10014ba3f4` |
 | `CompiledMapGenSettings::prepareAutoplacers<DecorativePrototype>` | `0x10014b908c` |
-| `CompiledMapGenSettings::getRegisterOwner<EntityPrototype>` | `0x10014bc1c8` |
+| `CompiledMapGenSettings::getRegisterOwner<EntityPrototype>`       | `0x10014bc1c8` |
 
 ### Noise System
 
-| Function | Address |
-|---|---|
-| `NoiseProgramBuilder::compileExpression` | `0x10015e5b9c` |
+| Function                                     | Address        |
+| -------------------------------------------- | -------------- |
+| `NoiseProgramBuilder::compileExpression`     | `0x10015e5b9c` |
 | `NoiseProgramBuilder::getCompiledExpression` | `0x10015e5ee4` |
-| `NoiseProgramBuilder::computeChecksum` | `0x10015e5b2c` |
-| `NoiseProgramBuilder::requestRegister` | `0x10015e5cc4` |
-| `NoiseProgramBuilder::getOperation` | `0x10015e5ed8` |
+| `NoiseProgramBuilder::computeChecksum`       | `0x10015e5b2c` |
+| `NoiseProgramBuilder::requestRegister`       | `0x10015e5cc4` |
+| `NoiseProgramBuilder::getOperation`          | `0x10015e5ed8` |
 
 ### Collision / Tile Validation
 
-| Function | Address |
-|---|---|
-| `MapGenerator::clearEntitiesForTile` | `0x10014fba18` |
-| `MapGenerator::clearEntitiesAndSetTile` | `0x10002468fc` |
-| `CollisionSquareDetectionLogic` | (multiple addresses) |
+| Function                                                       | Address               |
+| -------------------------------------------------------------- | --------------------- |
+| `MapGenerator::clearEntitiesForTile`                           | `0x10014fba18`        |
+| `MapGenerator::clearEntitiesAndSetTile`                        | `0x10002468fc`        |
+| `CollisionSquareDetectionLogic`                                | (multiple addresses)  |
 | `PrototypeFilterHelpers::make_collision_mask<EntityPrototype>` | (symbol, address TBD) |
-| `PrototypeFilterHelpers::make_collision_mask<TilePrototype>` | (symbol, address TBD) |
+| `PrototypeFilterHelpers::make_collision_mask<TilePrototype>`   | (symbol, address TBD) |
 
 ## Source Files (from debug paths in binary)
 

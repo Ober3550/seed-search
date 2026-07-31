@@ -28,12 +28,12 @@
 Key areas to identify in the binary:
 
 ### Map Generation Pipeline
-| Lua/Symbol | C++ Equivalent | Pattern to Search |
-|---|---|---|
-| `MapGenSettings` | `MapGenSettings` struct | String refs to "water", "autoplace" |
-| `noise.expression` | `NoiseExpression` evaluate() | Float math + RNG |
-| `chunk.generate()` | `Chunk::generate()` | 32×32 loop, tile placement |
-| `autoplace` | `AutoplaceGenerator` | Probability distribution, peaks |
+| Lua/Symbol         | C++ Equivalent               | Pattern to Search                   |
+| ------------------ | ---------------------------- | ----------------------------------- |
+| `MapGenSettings`   | `MapGenSettings` struct      | String refs to "water", "autoplace" |
+| `noise.expression` | `NoiseExpression` evaluate() | Float math + RNG                    |
+| `chunk.generate()` | `Chunk::generate()`          | 32×32 loop, tile placement          |
+| `autoplace`        | `AutoplaceGenerator`         | Probability distribution, peaks     |
 
 ### RNG
 Search for the characteristic triple-LFSR pattern:
