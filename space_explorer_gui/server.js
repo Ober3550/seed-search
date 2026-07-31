@@ -126,8 +126,9 @@ function resChips(prefix, chips) {
   return `${prefix}${chips.join(" ")}`;
 }
 
-// Inner HTML of the Resources cell: measured amounts if a summary exists,
-// otherwise the universe-generator estimates. Highest quantity first, with the
+// Inner HTML of the Resources cell: measured amounts if a surface summary
+// exists, otherwise "—" (no estimates — the universe generator no longer emits
+// them; see resource-estimation-direction). Highest quantity first, with the
 // long tail collapsed behind a chevron.
 function renderZoneResources(bucket, seed, zone) {
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
@@ -727,7 +728,7 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
           <th><input type="checkbox" onclick="selectAllVisible(this)"></th>
           ${th("Zone", "zone")}${th("Type", "type")}${th("Radius", "radius")}${th("Δv", "dv")}${th("Water", "water")}${th("Enemy", "enemy")}
           <th>★</th>
-          <th>Resources <small>(measured if generated, else est.)</small></th><th></th>
+          <th>Resources <small>(measured once generated)</small></th><th></th>
         </tr></thead>
         <tbody>
           ${rows.map(z => {
@@ -985,8 +986,8 @@ function renderOreLegend(seed, zoneId, oob = false) {
           .map(([r, v]) => `<tr><td><input type="checkbox" class="ore-toggle" data-res="${r}" checked></td><td>${swatch(r)}${nm(r)}</td><td class="num"><strong>${v.display || fmtAmount(v.amount)}</strong></td><td class="num">${v.tiles || 0}</td></tr>`).join("")}
       </tbody></table>
       <div class="ore-toggle-actions"><button type="button" class="btn-sm" onclick="oreToggleAll(true)">show all</button> <button type="button" class="btn-sm" onclick="oreToggleAll(false)">hide all</button></div>`
-    : `<p class="hint">Ore not generated yet — estimates:</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
-  return wrap(`<h3>Ore ${summary ? "<span class='badge done'>measured</span>" : "<span class='badge'>estimate</span>"}</h3>${oreBlock}`);
+    : `<p class="hint">Ore not generated yet.</p><div class="yields-cell">${renderZoneResources(s.bucket, seed, zone)}</div>`;
+  return wrap(`<h3>Ore ${summary ? "<span class='badge done'>measured</span>" : "<span class='badge'>not generated</span>"}</h3>${oreBlock}`);
 }
 
 // Full surface detail page (breadcrumb + embedded live grid) — nested under the
