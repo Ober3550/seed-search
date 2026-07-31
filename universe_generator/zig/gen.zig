@@ -226,12 +226,22 @@ fn findPlanetRadius(zones: ArrayList(Zone), name: []const u8) f64 {
 }
 
 // Look up a body's radius_multiplier from the raw data pools
+// Static per-process map: name → its radius_multiplier, in the same first-array-
+// wins order as the old linear scan (which returned the FIRST name match's value,
+// null or not — so store ?f64 and only insert a name the first time it is seen).
+// Built lazily once; the arrays are comptime-static, so it never changes.
+var g_radmult: ?std.StringHashMapUnmanaged(?f64) = null;
 fn lookupRadiusMultiplier(name: []const u8) ?f64 {
-    for (&data.unassigned_planets) |b| { if (std.mem.eql(u8, b.name, name)) return b.radius_multiplier; }
-    for (&data.unassigned_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b.radius_multiplier; }
-    for (&data.unassigned_planets_or_moons) |b| { if (std.mem.eql(u8, b.name, name)) return b.radius_multiplier; }
-    for (&data.special_moon_multipliers) |s| { if (std.mem.eql(u8, s.name, name)) return s.radius_multiplier; }
-    return null;
+    if (g_radmult == null) {
+        var m: std.StringHashMapUnmanaged(?f64) = .{};
+        const A = std.heap.page_allocator;
+        for (&data.unassigned_planets) |b| if (!m.contains(b.name)) m.put(A, b.name, b.radius_multiplier) catch {};
+        for (&data.unassigned_moons) |b| if (!m.contains(b.name)) m.put(A, b.name, b.radius_multiplier) catch {};
+        for (&data.unassigned_planets_or_moons) |b| if (!m.contains(b.name)) m.put(A, b.name, b.radius_multiplier) catch {};
+        for (&data.special_moon_multipliers) |s| if (!m.contains(s.name)) m.put(A, s.name, s.radius_multiplier) catch {};
+        g_radmult = m;
+    }
+    return g_radmult.?.get(name) orelse null;
 }
 
 // Compute planet radius: consumes RNG, then checks prototype for override. Returns raw f64.

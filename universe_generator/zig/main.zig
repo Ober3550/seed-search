@@ -77,6 +77,11 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const a = arena.allocator();
 
+    // Body prototypes are static (built from the data tables), so build the lookup
+    // map ONCE on a persistent allocator instead of rebuilding it every seed on
+    // the per-seed arena — that was ~200 string-hash inserts/seed for nothing.
+    const bodyMap = try gen.buildBodyMap(std.heap.page_allocator);
+
     const end_seed = getEnvU32("END_SEED", 100000);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
     const start_seed = getEnvU32("START_SEED", 0);
@@ -135,7 +140,6 @@ pub fn main(init: std.process.Init) !void {
             continue;
         };
 
-        const bodyMap = try gen.buildBodyMap(a);
         const primaries = gen.resolvePrimaries(a, universe.zones, bodyMap, k2_enabled) catch unreachable;
         const field_primaries = gen.resolveFieldPrimaries(a, universe.zones, k2_enabled) catch unreachable;
         gen.computeGravityWells(&universe);
