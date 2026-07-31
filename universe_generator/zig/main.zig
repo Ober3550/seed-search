@@ -221,7 +221,10 @@ pub fn main(init: std.process.Init) !void {
     defer if (pg_db) |*db| db.finish();
 
     var since_flush: u32 = 0;
-    while (seed <= end_seed) : (seed += 2) {
+    // [start_seed, end_seed) — END IS EXCLUSIVE so adjacent chunks/buckets don't
+    // share a boundary seed (that duplicate made concurrent COPYs abort whole
+    // batches). Single-seed callers pass end = seed+1.
+    while (seed < end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
         // Push buffered rows at ~100k-seed boundaries (like the old 100k buckets)
         // so writes are spread through the run instead of one spike at the end —

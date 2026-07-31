@@ -659,7 +659,7 @@ function expandSeed(seed) {
   expandInFlight.add(seed);
   const env = {
     ...process.env,
-    START_SEED: String(seed), END_SEED: String(seed),
+    START_SEED: String(seed), END_SEED: String(seed + 1),
     SE_K2: row.k2 ? "1" : "0",
     ALL_ZONES: "1",
     MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0",
@@ -712,7 +712,7 @@ function generateSeed(seed, k2 = false) {
     const bucket = manualBucket(k2);
     const env = {
       ...process.env,
-      START_SEED: String(seed), END_SEED: String(seed),
+      START_SEED: String(seed), END_SEED: String(seed + 1),
       SE_K2: k2 ? "1" : "0",
       ALL_ZONES: "1",
       MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0", METRICS_SCAN: "0",

@@ -244,7 +244,7 @@ pub const Db = struct {
     }
 
     pub fn finish(self: *Db) void {
-        self.flush() catch {};
+        self.flush() catch |e| std.debug.print("# pg FINAL flush FAILED ({}) — {d} rows lost\n", .{ e, self.batch });
         c.PQfinish(self.conn);
     }
 };
