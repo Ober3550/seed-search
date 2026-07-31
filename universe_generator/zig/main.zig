@@ -20,6 +20,7 @@
 const std = @import("std");
 const gen = @import("gen.zig");
 const data = @import("data.zig");
+const pg = @import("pg.zig");
 
 fn getEnvU32(comptime name: [:0]const u8, default: u32) u32 {
     const val = std.c.getenv(name) orelse return default;
@@ -29,6 +30,14 @@ fn getEnvBool(comptime name: [:0]const u8) bool {
     const val = std.c.getenv(name) orelse return false;
     const s = std.mem.sliceTo(val, 0);
     return std.mem.eql(u8, s, "1") or std.mem.eql(u8, s, "true");
+}
+
+/// Resource name → its code (index in gen.resource_order). null if unknown.
+fn resIdx(name: []const u8) ?u16 {
+    for (gen.resource_order, 0..) |n, i| {
+        if (std.mem.eql(u8, n, name)) return @intCast(i);
+    }
+    return null;
 }
 
 /// Stellar (solar-system) position of a zone: a field carries its own; a
@@ -105,6 +114,25 @@ pub fn main(init: std.process.Init) !void {
     var stdout_buf: [1 << 16]u8 = undefined;
     var stdout_fw = std.Io.File.stdout().writer(io, &stdout_buf);
     const stdout_w = &stdout_fw.interface;
+
+    // DATABASE_URL set → write rows directly to Postgres (libpq) instead of JSONL.
+    // The writer batches COPY across seeds, so it lives on a PERSISTENT allocator
+    // (the per-seed arena above is reset every iteration).
+    var pg_db: ?pg.Db = if (std.c.getenv("DATABASE_URL")) |url| blk: {
+        var db = try pg.Db.connect(std.heap.page_allocator, url);
+        try db.upsertStaticDicts(gen.resource_order[0..]);
+        try db.upsertEnum("kind", data.ZoneType);
+        try db.upsertEnum("temperature", data.Temperature);
+        try db.upsertEnum("water", data.Water);
+        try db.upsertEnum("moisture", data.Moisture);
+        try db.upsertEnum("trees", data.Trees);
+        try db.upsertEnum("aux", data.Aux);
+        try db.upsertEnum("cliff", data.Cliff);
+        try db.upsertEnum("enemy", data.Enemy);
+        std.debug.print("# writing to Postgres (DATABASE_URL set)\n", .{});
+        break :blk db;
+    } else null;
+    defer if (pg_db) |*db| db.finish();
 
     while (seed <= end_seed) : (seed += 2) {
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
@@ -377,6 +405,96 @@ pub fn main(init: std.process.Init) !void {
                 const ls = std.fmt.bufPrint(&lb, "{d}\n", .{best_dv}) catch unreachable;
                 _ = stdout_w.writeAll(ls) catch {};
             }
+            continue;
+        }
+
+        // --- Postgres path (DATABASE_URL): write rows, skip JSONL ---
+        if (pg_db) |*db| {
+            try db.addSeed(.{
+                .seed = @intCast(seed),
+                .k2 = k2_enabled,
+                .draws = @intCast(universe.draws),
+                .vault_loot = universe.vault_loot,
+                .npl = @intCast(npl),
+                .npm = @intCast(np),
+                .nw = @intCast(nw),
+                .ne = @intCast(ne),
+                .wp = @intCast(wp),
+                .ef = @intCast(ef),
+                .naqdv = @intCast(naqdv),
+                .fdv = @intCast(fdv),
+                .ed = @intCast(ed),
+            });
+            const cx = universe.zones.items[calidus_zi].stellar_x;
+            const cy = universe.zones.items[calidus_zi].stellar_y;
+            for (universe.zones.items, 0..) |z, si| {
+                if (!all_zones and !inCalidus(si, calidus_zi, zone_end, tail_start)) continue;
+                switch (z.ztype) {
+                    .star, .planet, .moon, .@"asteroid-belt", .@"asteroid-field" => {},
+                    else => continue, // skip orbit / anomaly
+                }
+                if (std.mem.eql(u8, z.name, "Nauvis")) continue; // map-gen UI, not universe gen
+                const zid: i64 = @intCast(try db.internName(z.name));
+                const parent_id: ?i64 = if (z.parent_index >= 0)
+                    @intCast(try db.internName(universe.zones.items[@intCast(z.parent_index)].name))
+                else
+                    null;
+                // walk parents to the owning star
+                var star_id: ?i64 = null;
+                var cur: i32 = @intCast(si);
+                while (cur >= 0) {
+                    const cz = universe.zones.items[@intCast(cur)];
+                    if (cz.ztype == .star) {
+                        star_id = @intCast(try db.internName(cz.name));
+                        break;
+                    }
+                    cur = cz.parent_index;
+                }
+                const is_body = z.ztype == .planet or z.ztype == .moon or z.ztype == .@"asteroid-field";
+                var tags: gen.Tags = .{ .temperature = null, .water = null, .moisture = null, .trees = null, .aux = null, .cliff = null, .enemy = null };
+                var prim_name: ?[]const u8 = null;
+                var present_mask: i64 = 0;
+                var dv_val: ?i64 = null;
+                if (is_body) {
+                    tags = gen.computeTags(z.seed, z.name, bodyMap);
+                    prim_name = primaries.get(z.name) orelse field_primaries.get(z.name);
+                    if (nauvis_sgw > 0) dv_val = @intFromFloat(@round(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, cx, cy)));
+                    const controls = gen.computeZoneMapgenControls(z.seed, z.ztype, prim_name, tags, z.radius, false);
+                    // Only store PRESENT resources — absence is implied (and captured
+                    // by present_mask). Skipping the ~15 present=false zeros per body
+                    // cuts zone_resource volume ~6x (a big COPY win over the network).
+                    for (controls, 0..) |ctrl, ri| {
+                        if (!ctrl.present) continue;
+                        present_mask |= (@as(i64, 1) << @intCast(ri));
+                        try db.addZoneResource(@intCast(seed), zid, @intCast(ri), true, ctrl.frequency, ctrl.size, ctrl.richness);
+                    }
+                }
+                const prim_id: ?i64 = if (prim_name) |pn| (if (resIdx(pn)) |ix| @as(i64, ix) else null) else null;
+                const is_top = z.ztype == .star or z.ztype == .@"asteroid-field";
+                try db.addZone(.{
+                    .seed = @intCast(seed),
+                    .zone_name_id = zid,
+                    .kind = @intFromEnum(z.ztype),
+                    .star_name_id = star_id,
+                    .parent_name_id = parent_id,
+                    .zone_seed = @intCast(z.seed),
+                    .radius = if (z.radius > 0) z.radius else null,
+                    .primary_id = prim_id,
+                    .dv = dv_val,
+                    .temperature = if (tags.temperature) |v| @intFromEnum(v) else null,
+                    .water = if (tags.water) |v| @intFromEnum(v) else null,
+                    .moisture = if (tags.moisture) |v| @intFromEnum(v) else null,
+                    .trees = if (tags.trees) |v| @intFromEnum(v) else null,
+                    .aux = if (tags.aux) |v| @intFromEnum(v) else null,
+                    .cliff = if (tags.cliff) |v| @intFromEnum(v) else null,
+                    .enemy = if (tags.enemy) |v| @intFromEnum(v) else null,
+                    .stellar_x = if (is_top) z.stellar_x else null,
+                    .stellar_y = if (is_top) z.stellar_y else null,
+                    .present_mask = if (is_body) present_mask else null,
+                });
+            }
+            try db.endSeed();
+            passed += 1;
             continue;
         }
 
