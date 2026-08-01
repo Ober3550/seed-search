@@ -282,6 +282,18 @@ function getPgIncludeDir() {
   return null;
 }
 
+// The matching library dir. Keg-only Homebrew installs (postgresql@15, libpq)
+// put libpq outside the default linker search path, so -lpq alone fails even
+// though the headers were found; pass -L alongside -I.
+function getPgLibDir() {
+  const r = spawnSync("pg_config", ["--libdir"], { encoding: "utf8" });
+  if (!r.error && r.status === 0) {
+    const lib = r.stdout.trim();
+    if (lib && fs.existsSync(lib)) return lib;
+  }
+  return null;
+}
+
 function isAptSystem() {
   if (process.platform !== "linux") return false;
   const r = spawnSync("apt-get", ["--version"], { encoding: "utf8" });
@@ -325,6 +337,8 @@ function buildSeedgen() {
     }
   }
   args.push(`-I${pgInc}`);
+  const pgLib = getPgLibDir();
+  if (pgLib) args.push(`-L${pgLib}`);
   args.push("-lpq");
   run("zig", args, dir);
   ok(`seedgen → universe_generator/zig/${out}`);
