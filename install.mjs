@@ -282,6 +282,18 @@ function getPgIncludeDir() {
   return null;
 }
 
+function isAptSystem() {
+  if (process.platform !== "linux") return false;
+  const r = spawnSync("apt-get", ["--version"], { encoding: "utf8" });
+  if (!r.error && r.status === 0) return true;
+  try {
+    const osRelease = fs.readFileSync("/etc/os-release", "utf8");
+    return /ubuntu|debian|linuxmint|pop/i.test(osRelease);
+  } catch {
+    return false;
+  }
+}
+
 function buildSeedgen() {
   // universe_generator has no build.zig — it's a single-file build-exe.
   //
@@ -297,7 +309,22 @@ function buildSeedgen() {
   // libpq headers are not in the default include path on many Linux
   // distributions.  `-I` and `-lpq` make the C import and linking work.
   const pgInc = getPgIncludeDir();
-  if (pgInc) args.push(`-I${pgInc}`);
+  if (!pgInc) {
+    if (isAptSystem()) {
+      fail(
+        "libpq-fe.h not found.\n" +
+          "  On Debian/Ubuntu run:  sudo apt install libpq-dev\n" +
+          "  Then re-run this installer."
+      );
+    } else {
+      fail(
+        "libpq-fe.h not found.\n" +
+          "  Install the PostgreSQL client development headers for your OS\n" +
+          "  (or set the include path manually) and re-run this installer."
+      );
+    }
+  }
+  args.push(`-I${pgInc}`);
   args.push("-lpq");
   run("zig", args, dir);
   ok(`seedgen → universe_generator/zig/${out}`);
