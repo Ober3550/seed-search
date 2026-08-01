@@ -1,4 +1,22 @@
 #!/usr/bin/env node
+// Ensure a larger V8 heap for the GUI.  When this process was not launched with
+// an explicit --max-old-space-size, re-exec ourselves with a heap of at least
+// SE_GUI_HEAP MB (default 8192).  Add SE_GUI_HEAP_BOOT=1 to the child env to
+// prevent endless re-exec.
+// Example: SE_GUI_HEAP=12288 npm start
+const { spawnSync } = require("node:child_process");
+if (!process.env.SE_GUI_HEAP_BOOT) {
+  const heapMB = process.env.SE_GUI_HEAP || "8192";
+  const res = spawnSync(process.execPath, [`--max-old-space-size=${heapMB}`, __filename], {
+    stdio: "inherit",
+    env: { ...process.env, SE_GUI_HEAP_BOOT: "1" },
+  });
+  if (res.error) {
+    console.error(`Failed to re-exec with larger heap: ${res.error.message}`);
+    process.exit(1);
+  }
+  process.exit(res.status === null ? 1 : res.status);
+}
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
