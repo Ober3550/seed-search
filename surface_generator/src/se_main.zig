@@ -7,6 +7,10 @@ const universe = @import("universe_gen");
 // params + precomputed spots for gpu_ore instead of computing ore on the CPU.
 var g_gpu_ore_dump: ?[]const u8 = null;
 
+// --dump-ctrl: emit one round-trippable `CTRLJSON {n,f,s,r}` line per present
+// resource per zone (stderr). Feeds the recompute-vs-injected FSR A/B harness.
+var g_dump_ctrl: bool = false;
+
 /// Factorio/SE/K2 map colors (RGB), matching the ground-truth renderer
 /// calibration/mod-dump/convert_jsonl.py so generated images are directly
 /// comparable to Horaerratum.png. Unknown -> grey; se-core-fragment-* inherits
@@ -315,11 +319,43 @@ fn runZoneDriver(
             .cliff = tagOf(universe.data.Cliff, z, "cliff"),
             .enemy = tagOf(universe.data.Enemy, z, "enemy"),
         };
-        const controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
+        var controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
+        // Optional FSR injection: if the zone carries a "ctrl":[{n,f,s,r},…] array,
+        // DISCARD the recomputed controls and use those verbatim. This exists to
+        // A/B the recompute-from-zone-fields path (zone_seed/type/primary/tags/
+        // radius) against externally supplied controls — e.g. the universe-gen
+        // zone_resource values we stopped persisting. If the two surfaces match,
+        // the surface is a pure function of {tags + per-resource FSR} and the
+        // persisted zone fields are sufficient to reproduce it.
+        if (z.get("ctrl")) |cv| {
+            for (&controls) |*c| c.* = .{}; // reset all to present=false
+            for (cv.array.items) |ev| {
+                const eo = ev.object;
+                const rname = (eo.get("n") orelse continue).string;
+                for (universe.resource_order, 0..) |rn, ri| {
+                    if (std.mem.eql(u8, rn, rname)) {
+                        controls[ri] = .{
+                            .present = true,
+                            .frequency = jnum(eo.get("f")),
+                            .size = jnum(eo.get("s")),
+                            .richness = jnum(eo.get("r")),
+                        };
+                        break;
+                    }
+                }
+            }
+            std.debug.print("== zone {s}: USING INJECTED ctrl ({d} resources)\n", .{ name, cv.array.items.len });
+        }
         for (universe.resource_order, 0..) |rn, ri| {
             const c = controls[ri];
             if (c.present) std.debug.print("   ctrl {s}: f={d:.4} s={d:.4} r={d:.4}\n", .{ rn, c.frequency, c.size, c.richness });
         }
+        // Full-precision (round-trippable) control dump for the A/B equivalence
+        // harness — one JSON object per present resource, prefixed CTRLJSON.
+        if (g_dump_ctrl) for (universe.resource_order, 0..) |rn, ri| {
+            const c = controls[ri];
+            if (c.present) std.debug.print("CTRLJSON {{\"n\":\"{s}\",\"f\":{d},\"s\":{d},\"r\":{d}}}\n", .{ rn, c.frequency, c.size, c.richness });
+        };
 
         // build resource inputs: our config table + the zone's controls
         var inputs_buf: [RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
@@ -685,6 +721,16 @@ fn appendFmt(a: std.mem.Allocator, list: *std.ArrayList(u8), comptime fmt: []con
     try list.appendSlice(a, sl);
 }
 
+/// Read a JSON number that may be encoded as int or float (0 if absent/other).
+fn jnum(v: ?std.json.Value) f64 {
+    const val = v orelse return 0;
+    return switch (val) {
+        .integer => |i| @floatFromInt(i),
+        .float => |f| f,
+        else => 0,
+    };
+}
+
 fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {
     const v = z.get(key) orelse return null;
     if (v != .string) return null;
@@ -835,6 +881,8 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--out")) {
             i += 1;
             out_dir = args[i];
+        } else if (std.mem.eql(u8, args[i], "--dump-ctrl")) {
+            g_dump_ctrl = true;
         } else if (std.mem.eql(u8, args[i], "--k2")) {
             k2_enable = true;
         } else if (std.mem.eql(u8, args[i], "--water")) {
