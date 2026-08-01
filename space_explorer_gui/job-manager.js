@@ -185,7 +185,27 @@ function createUniverseBuckets(units, k2Enabled, startSeed, filter = {}) {
 // job is next (universe seedgen OR surface segen). Optional per-type caps limit
 // how many of the pool a type may use at once (default = maxWorkers = no limit,
 // i.e. fully shared). Set e.g. universe=5/surface=5 to reserve the split.
-let maxWorkers = parseInt(process.env.WORKERS || "8");
+// Default to the number of physical cores on Linux (excluding hyperthreads),
+// falling back to 8 when we can't determine it (e.g. non-Linux or no /sys).
+function physicalCoreCount() {
+  if (process.platform !== "linux") return 0;
+  try {
+    const cpuRoot = "/sys/devices/system/cpu";
+    const cpuDirs = fs.readdirSync(cpuRoot).filter((n) => /^cpu\d+$/.test(n));
+    const seen = new Set();
+    for (const dir of cpuDirs) {
+      try {
+        const pkg = fs.readFileSync(path.join(cpuRoot, dir, "topology", "physical_package_id"), "utf8").trim();
+        const core = fs.readFileSync(path.join(cpuRoot, dir, "topology", "core_id"), "utf8").trim();
+        seen.add(`${pkg}:${core}`);
+      } catch (_) {}
+    }
+    if (seen.size > 0) return seen.size;
+  } catch (_) {}
+  return 0;
+}
+const defaultWorkers = physicalCoreCount() || 8;
+let maxWorkers = parseInt(process.env.WORKERS || String(defaultWorkers));
 let maxUniverse = parseInt(process.env.UNIVERSE_CONCURRENCY || String(maxWorkers));
 let maxSurface = parseInt(process.env.SURFACE_CONCURRENCY || String(maxWorkers));
 const runningUniverse = new Set();
