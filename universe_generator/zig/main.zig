@@ -21,6 +21,7 @@ const std = @import("std");
 const gen = @import("gen.zig");
 const data = @import("data.zig");
 const pg = @import("pg.zig");
+const score = @import("score.zig");
 
 fn getEnvU32(comptime name: [:0]const u8, default: u32) u32 {
     const val = std.c.getenv(name) orelse return default;
@@ -30,6 +31,10 @@ fn getEnvBool(comptime name: [:0]const u8) bool {
     const val = std.c.getenv(name) orelse return false;
     const s = std.mem.sliceTo(val, 0);
     return std.mem.eql(u8, s, "1") or std.mem.eql(u8, s, "true");
+}
+fn getEnvI32(comptime name: [:0]const u8, default: i32) i32 {
+    const val = std.c.getenv(name) orelse return default;
+    return std.fmt.parseInt(i32, std.mem.sliceTo(val, 0), 10) catch default;
 }
 
 /// Resource name → its code (index in gen.resource_order). null if unknown.
@@ -173,6 +178,15 @@ pub fn main(init: std.process.Init) !void {
     // map ONCE on a persistent allocator instead of rebuilding it every seed on
     // the per-seed arena — that was ~200 string-hash inserts/seed for nothing.
     const bodyMap = try gen.buildBodyMap(std.heap.page_allocator);
+
+    // Desirability score config (weights/calibration/cutoffs) — shared JSON,
+    // loaded once. SCORE_CONFIG overrides the embedded default. Env SCORE_POS /
+    // SCORE_NEG / MANY_PLANETS still override the config's cutoffs if set.
+    const score_cfg = score.load(std.heap.page_allocator, io) catch |e| {
+        std.debug.print("# FATAL: could not load score config: {}\n", .{e});
+        return e;
+    };
+    const cfg = score_cfg.value;
 
     const end_seed = getEnvU32("END_SEED", 100000);
     const k2_enabled = getEnvBool("SE_K2") or getEnvBool("SE_ENABLE_K2");
@@ -428,48 +442,60 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
+        // Signed desirability score in [-100, 100] (0 = par). Weighted sum of the
+        // per-metric components in score.config.json (score.zig). Drives both the
+        // stored `score` and the score-tail filter below.
+        const sc = score.seedScore(cfg, .{ .ef = ef, .wp = wp, .naqdv = naqdv, .fdv = fdv, .npl = npl, .npm = np });
+
         // --- Distribution scan (tuning aid) ---
-        // One CSV row per seed, emitted BEFORE the tail filters so the cutoffs
-        // below can be picked from the real population rather than guessed.
-        // Skips JSONL entirely. Columns: seed,np,nw,ne,naqdv,fdv,ed
+        // One CSV row per seed, emitted BEFORE the filters so the cutoffs below can
+        // be picked from the real population rather than guessed. Skips JSONL.
+        // Columns: seed,np,nw,ne,wp,ef,naqdv,fdv,ed,npl,score
         if (getEnvBool("METRICS_SCAN")) {
-            var mb: [160]u8 = undefined;
-            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
+            var mb: [192]u8 = undefined;
+            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wp, ef, naqdv, fdv, ed, npl, sc }) catch unreachable;
             _ = stdout_w.writeAll(ms) catch {};
             continue;
         }
 
-        // --- Tail filters: UNION of up to eight extremity tails ---
-        // Each metric is roughly bell-shaped across seeds; these cutoffs keep the
-        // two extremes and discard the middle. Keep a seed if it falls in ANY
-        // enabled tail: naquium-PRIMARY field <= NAQ_DV_LOW (closest, rich naq)
-        // or ANY field >= NAQ_DV_HIGH (furthest, even basic naq is a long haul);
-        // Calidus planets+moons >= PLANETS_HIGH (most) or <= PLANETS_LOW
-        // (fewest); water share <= WATER_PCT_LOW (a parched system) or >=
-        // WATER_PCT_HIGH (a wet one); hostile share <= ENEMY_PCT_LOW (a quiet
-        // system) or >= ENEMY_PCT_HIGH (a warzone). The last four are
-        // PERCENTAGES (0..100), not counts — see wp/ef above.
-        // Each cutoff of 0 disables that tail; no cutoffs set → keep everything.
-        // Union (not AND). MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
-        const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
-        const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
-        const pl_lo = getEnvU32("PLANETS_LOW", 0);
-        const pl_hi = getEnvU32("PLANETS_HIGH", 0);
-        const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
-        const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
-        const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
-        const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
-        const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
-            wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
-        const keep = !any_cut or
-            (naq_lo > 0 and naqdv <= naq_lo) or
-            (naq_hi > 0 and fdv >= naq_hi) or
-            (pl_hi > 0 and np >= pl_hi) or
-            (pl_lo > 0 and np <= pl_lo) or
-            (wp_hi > 0 and wp >= wp_hi) or
-            (wp_lo > 0 and wp <= wp_lo) or
-            (ef_hi > 0 and ef >= ef_hi) or
-            (ef_lo > 0 and ef <= ef_lo);
+        // --- Score-tail filter: keep the two ENDS of the signed-score bell ---
+        // Capture a seed if its desirability score is in the positive tail
+        // (sc >= SCORE_POS) or the negative tail (sc <= SCORE_NEG), plus a cheap
+        // guarantee for the rare many-planet systems (npl >= MANY_PLANETS). The
+        // score is a centred, weighted sum (score.zig), so ONE pair of cutoffs
+        // replaces the old eight-way metric union. Defaults disable it (score max
+        // ~100), in which case we fall back to the legacy per-metric union below.
+        const score_pos = getEnvI32("SCORE_POS", cfg.pos_cut); // >=101 → positive tail off
+        const score_neg = getEnvI32("SCORE_NEG", cfg.neg_cut); // <=-101 → negative tail off
+        const many_planets = getEnvU32("MANY_PLANETS", cfg.many_planets); // 0 = off
+        const score_active = score_pos <= 100 or score_neg >= -100;
+        const keep = if (score_active)
+            (sc >= score_pos) or (sc <= score_neg) or
+                (many_planets > 0 and npl >= many_planets)
+        else legacy: {
+            // Legacy UNION of up to eight per-metric extremity tails (back-compat).
+            // Each cutoff of 0 disables that tail; none set → keep everything.
+            // MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
+            const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
+            const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
+            const pl_lo = getEnvU32("PLANETS_LOW", 0);
+            const pl_hi = getEnvU32("PLANETS_HIGH", 0);
+            const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
+            const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
+            const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
+            const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
+            const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
+                wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
+            break :legacy !any_cut or
+                (naq_lo > 0 and naqdv <= naq_lo) or
+                (naq_hi > 0 and fdv >= naq_hi) or
+                (pl_hi > 0 and np >= pl_hi) or
+                (pl_lo > 0 and np <= pl_lo) or
+                (wp_hi > 0 and wp >= wp_hi) or
+                (wp_lo > 0 and wp <= wp_lo) or
+                (ef_hi > 0 and ef >= ef_hi) or
+                (ef_lo > 0 and ef <= ef_lo);
+        };
         if (!keep) continue;
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
@@ -524,6 +550,7 @@ pub fn main(init: std.process.Init) !void {
                 .naqdv = @intCast(naqdv),
                 .fdv = @intCast(fdv),
                 .ed = @intCast(ed),
+                .score = sc,
             });
             const cx = universe.zones.items[calidus_zi].stellar_x;
             const cy = universe.zones.items[calidus_zi].stellar_y;
@@ -562,13 +589,13 @@ pub fn main(init: std.process.Init) !void {
                     prim_name = primaries.get(z.name) orelse field_primaries.get(z.name);
                     if (nauvis_sgw > 0) dv_val = @intFromFloat(@round(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, cx, cy)));
                     const controls = gen.computeZoneMapgenControls(z.seed, z.ztype, prim_name, tags, z.radius, false);
-                    // Only store PRESENT resources — absence is implied (and captured
-                    // by present_mask). Skipping the ~15 present=false zeros per body
-                    // cuts zone_resource volume ~6x (a big COPY win over the network).
+                    // Presence → present_mask ONLY. The per-resource controls
+                    // (freq/size/richness) are deterministic (recomputable from
+                    // seed/tags/radius), so storing a zone_resource row per present
+                    // resource is redundant + was ~87% of the DB. zone_resource is
+                    // now reserved for real MEASURED quantities (GPU kernel, later).
                     for (controls, 0..) |ctrl, ri| {
-                        if (!ctrl.present) continue;
-                        present_mask |= (@as(i64, 1) << @intCast(ri));
-                        try db.addZoneResource(@intCast(seed), zid, @intCast(ri), true, ctrl.frequency, ctrl.size, ctrl.richness);
+                        if (ctrl.present) present_mask |= (@as(i64, 1) << @intCast(ri));
                     }
                 }
                 const prim_id: ?i64 = if (prim_name) |pn| (if (resIdx(pn)) |ix| @as(i64, ix) else null) else null;

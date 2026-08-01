@@ -142,6 +142,7 @@ pub const Db = struct {
         naqdv: ?i64,
         fdv: ?i64,
         ed: ?i64,
+        score: i32,
     };
 
     pub fn addSeed(self: *Db, r: SeedRow) !void {
@@ -160,6 +161,7 @@ pub const Db = struct {
         try optI(b, &f, r.naqdv);
         try optI(b, &f, r.fdv);
         try optI(b, &f, r.ed);
+        try iField(b, &f, r.score);
         try b.append('\n');
     }
 
@@ -233,7 +235,7 @@ pub const Db = struct {
         // Pure integer/float COPY — no name strings written (the dictionaries are
         // pre-seeded from db/dictionary.sql; ids come from the in-memory maps).
         try self.exec("BEGIN");
-        try self.copyIn("seeds(seed,k2,draws,vault_loot,npl,npm,nw,ne,wp,ef,naqdv,fdv,ed)", self.seeds.items);
+        try self.copyIn("seeds(seed,k2,draws,vault_loot,npl,npm,nw,ne,wp,ef,naqdv,fdv,ed,score)", self.seeds.items);
         try self.copyIn("zone(seed,zone_name_id,kind,star_name_id,parent_name_id,zone_seed,radius,primary_id,dv,temperature,water,moisture,trees,aux,cliff,enemy,stellar_x,stellar_y,present_mask)", self.zone.items);
         try self.copyIn("zone_resource(seed,zone_name_id,resource_id,present,frequency,size,richness)", self.zres.items);
         try self.exec("COMMIT");

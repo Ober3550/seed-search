@@ -62,3 +62,9 @@ zig-pkg/
 
 # local dev postgres data (db/dev-postgres.sh)
 .pgdata/
+
+# Python venv (plotting/analysis tooling)
+.venv/
+
+# build-synced copy of the shared score config (source of truth: repo-root score.config.json)
+universe_generator/zig/score.config.json
