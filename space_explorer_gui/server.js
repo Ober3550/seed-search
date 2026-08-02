@@ -571,7 +571,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
         ${sortTh("Field Δv", "fdv", "Δv to nearest ANY asteroid field (any field yields some naquium) — click for furthest / closest")}
         ${sortTh("Hostile%", "ef", "share of Calidus planets+moons (excl. Nauvis) carrying enemies — click for most hostile / quietest")}
         ${sortTh("Water%", "wp", "share of Calidus planets+moons (excl. Nauvis) that HAVE water — click for wettest / driest")}
-        ${sortTh("Score", "score", "−100…+100 overall desirability (0 = par): most Calidus planets+moons (60%), naquium access (20%), fewest enemies (15%), most water (5%) — every component on the same signed scale, weighted-averaged. Click for best / worst")}
+        ${sortTh("Score", "score", "Tail-match count: how many metric extremes this seed hits (hostility, water, naquium/field Δv, planets≥12, moons). Capture is the UNION of per-metric tails — a seed is kept if it's extreme in ANY dimension. Click for most-extreme / fewest.")}
       </tr></thead>
       <tbody>
         ${seeds.slice(0, 500).map(s => {
@@ -581,16 +581,16 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
           const gen = genCounts[s.seed] || 0;
           const score = s.score; // stored (score.js), computed at insert
           return `
-        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-npm="${s.npm ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ef="${s.ef ?? 0}" data-wp="${s.wp ?? 0}" data-score="${score ?? 0}"
+        <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-npm="${s.bodies ?? 0}" data-npl="${s.planets ?? 0}" data-naqdv="${s.naquium_dv ?? 0}" data-fdv="${s.field_dv ?? 0}" data-ef="${s.hostility_pct ?? 0}" data-wp="${s.water_pct ?? 0}" data-score="${score ?? 0}"
           hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
-          <td>${s.npl ?? "—"}</td>
-          <td>${s.npm ?? "—"}</td>
-          <td>${s.naqdv == null ? "—" : (s.naqdv >= NO_NAQ_DV ? "none" : s.naqdv.toLocaleString())}</td>
-          <td>${s.fdv == null ? "—" : (s.fdv >= NO_NAQ_DV ? "none" : s.fdv.toLocaleString())}</td>
-          <td>${s.ef == null ? "—" : s.ef + "%"}</td>
-          <td>${s.wp == null ? "—" : s.wp + "%"}</td>
+          <td>${s.planets ?? "—"}</td>
+          <td>${s.bodies ?? "—"}</td>
+          <td>${s.naquium_dv == null ? "—" : (s.naquium_dv >= NO_NAQ_DV ? "none" : s.naquium_dv.toLocaleString())}</td>
+          <td>${s.field_dv == null ? "—" : (s.field_dv >= NO_NAQ_DV ? "none" : s.field_dv.toLocaleString())}</td>
+          <td>${s.hostility_pct == null ? "—" : s.hostility_pct + "%"}</td>
+          <td>${s.water_pct == null ? "—" : s.water_pct + "%"}</td>
           <td><strong>${score == null ? "—" : score}</strong></td>
         </tr>`;}).join("")}
         ${seeds.length === 0 ? `<tr><td colspan="${f.count ? 12 : 11}">No seeds match.</td></tr>` : ""}
@@ -727,7 +727,7 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code>
-      ${naq ? `<span class="badge zone-type" title="nearest asteroid field whose PRIMARY yield is naquium — pinned to the top of the table and pre-selected${s.naqdv != null && s.naqdv < 10000000 ? `, Δv ${s.naqdv.toLocaleString()}` : ""}">☄ naq: ${naq}</span>` : `<span class="hint" title="no asteroid field in this universe has naquium as its primary yield">☄ no naq-primary field</span>`}</h2>
+      ${naq ? `<span class="badge zone-type" title="nearest asteroid field whose PRIMARY yield is naquium — pinned to the top of the table and pre-selected${s.naquium_dv != null && s.naquium_dv < 10000000 ? `, Δv ${s.naquium_dv.toLocaleString()}` : ""}">☄ naq: ${naq}</span>` : `<span class="hint" title="no asteroid field in this universe has naquium as its primary yield">☄ no naq-primary field</span>`}</h2>
     ${s.expanded ? "" : `<div id="expand-wrap" class="expand-banner" hx-get="/api/seed/${s.seed}/expand" hx-trigger="load delay:800ms, every 2s" hx-target="#expand-wrap" hx-swap="innerHTML"><span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span></div>`}
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">

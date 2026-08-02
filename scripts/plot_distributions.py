@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Render distribution histograms for the seed-score metrics + the score itself.
+"""Render distribution histograms for the capture metrics + the union result.
 
 Reads a METRICS_SCAN CSV (seedgen METRICS_SCAN=1) and score.config.json, then
-writes one PNG per metric (with lo/hi calibration + median overlaid) and a score
-PNG with the capture cutoffs. Bucketing: small-count scales use integer buckets,
-10k–150k Δv scales use 5k buckets (per-component `bucket` in the config).
+writes one PNG per metric with its enabled tail thresholds (lo/hi) marked and the
+captured tails shaded, plus a "tail-match count" PNG (how many metrics each seed
+is extreme in). Capture = UNION of the per-metric tails; no composite score.
 
   .venv/bin/python scripts/plot_distributions.py [metrics.csv] [out_dir]
-
-The score is recomputed here from the SAME config the generator/GUI use, so
-editing weights/lo/hi in score.config.json and re-running reflects immediately.
 """
 import sys, os, json, math
 import numpy as np
@@ -23,87 +20,81 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "plots")
 CFG = json.load(open(os.path.join(ROOT, "score.config.json")))
 os.makedirs(OUT, exist_ok=True)
 
-# METRICS_SCAN columns -> index
-COL = {"seed":0,"npm":1,"nw":2,"ne":3,"wp":4,"ef":5,"naqdv":6,"fdv":7,"ed":8,"npl":9}
+# METRICS_SCAN column indices; `moons` is derived (npm − npl).
+COL = {"bodies": 1, "water_pct": 4, "hostility_pct": 5, "naquium_dv": 6,
+       "field_dv": 7, "planets": 9}
 SENTINEL = 10_000_000
 d = np.loadtxt(CSV, delimiter=",")
 N = len(d)
 
-# ---- score (mirror of score.js / score.zig, driven by the config) ----
-def odd_pow(v, p):
-    x = v / 100.0
-    return math.copysign(abs(x) ** p, x) * 100.0
+def metric(key):
+    if key == "moons":
+        return d[:, 1] - d[:, 9]
+    return d[:, COL[key]]
 
-def component(v, c, exp):
-    lo, hi = c["lo"], c["hi"]
-    t = max(0.0, min(1.0, (v - lo) / (hi - lo)))
-    good = t if c["higher_better"] else 1.0 - t
-    return odd_pow(good * 100.0, exp) if c["kind"] == "bonus" else odd_pow(good * 200.0 - 100.0, exp)
+BLUE, RED = "#3b7dd8", "#d84b3b"
 
-def score_row(row, exp):
-    s = 0.0
-    for c in CFG["components"]:
-        v = row[COL[c["key"]]]
-        if c["key"] in ("naqdv", "fdv") and v >= SENTINEL:
-            v = c["hi"]  # "none" -> far end
-        s += c["weight"] * component(v, c, exp)
-    return round(s)
-
-exp = CFG["exp"]
-scores = np.array([score_row(r, exp) for r in d])
-
-BLUE, RED, GREEN, ORANGE = "#3b7dd8", "#d84b3b", "#2fa84f", "#e08a00"
-
-def hist(ax, vals, bucket, title, lo=None, hi=None, cuts=None):
+def hist(ax, vals, bucket, title, lo=None, hi=None):
     vals = np.asarray(vals, float)
-    vmin, vmax = np.floor(vals.min()/bucket)*bucket, np.ceil(vals.max()/bucket)*bucket + bucket
+    vmin = np.floor(vals.min() / bucket) * bucket
+    vmax = np.ceil(vals.max() / bucket) * bucket + bucket
     edges = np.arange(vmin, vmax + bucket, bucket)
     ax.hist(vals, bins=edges, color=BLUE, edgecolor="white", linewidth=0.3)
-    med = np.median(vals)
-    ax.axvline(med, color="black", lw=1.4, ls="-", label=f"median {med:.0f}")
-    if lo is not None: ax.axvline(lo, color=GREEN, lw=1.2, ls="--", label=f"lo {lo:g}")
-    if hi is not None: ax.axvline(hi, color=ORANGE, lw=1.2, ls="--", label=f"hi {hi:g}")
-    for cv in (cuts or []): ax.axvline(cv, color=RED, lw=1.4, ls="-.")
-    ax.set_title(title, fontsize=11, fontweight="bold")
-    ax.legend(fontsize=8, framealpha=0.85)
-    ax.grid(axis="y", alpha=0.25)
+    ax.axvline(np.median(vals), color="black", lw=1.3, label=f"median {np.median(vals):.0f}")
+    lo_c = hi_c = 0
+    if lo is not None:
+        ax.axvline(lo, color=RED, lw=1.5, ls="--")
+        ax.axvspan(vmin, lo, color=RED, alpha=0.10); lo_c = int((vals <= lo).sum())
+    if hi is not None:
+        ax.axvline(hi, color=RED, lw=1.5, ls="--")
+        ax.axvspan(hi, vmax, color=RED, alpha=0.10); hi_c = int((vals >= hi).sum())
+    tag = "  ".join(x for x in [f"lo≤{lo:g}·{lo_c}" if lo is not None else "",
+                                 f"hi≥{hi:g}·{hi_c}" if hi is not None else ""] if x)
+    ax.set_title(f"{title}\n{tag}", fontsize=10, fontweight="bold")
+    ax.legend(fontsize=8, framealpha=0.85); ax.grid(axis="y", alpha=0.25)
+
+# ---- union capture + tail-match count ----
+hits = np.zeros(N, int)
+for f in CFG["filters"]:
+    v = metric(f["key"])
+    if f.get("lo") is not None: hits += (v <= f["lo"])
+    if f.get("hi") is not None: hits += (v >= f["hi"])
+kept = int((hits > 0).sum())
 
 # ---- per-metric PNGs ----
-panels = []
-for c in CFG["components"]:
-    v = d[:, COL[c["key"]]]
-    n_sent = int((v >= SENTINEL).sum())
-    v = v[v < SENTINEL]
-    title = f'{c["label"]}  (w={c["weight"]}, {"↑" if c["higher_better"] else "↓"} better)'
-    if n_sent: title += f"  [{n_sent} none]"
+for f in CFG["filters"]:
+    v = metric(f["key"])
+    vd = v[v < SENTINEL]  # drop Δv sentinel for the display range
+    nsent = int((v >= SENTINEL).sum())
+    title = f["label"] + (f"  [{nsent} none]" if nsent else "")
     fig, ax = plt.subplots(figsize=(7, 4))
-    hist(ax, v, c["bucket"], title, c["lo"], c["hi"])
-    ax.set_xlabel(c["key"]); ax.set_ylabel("seeds")
-    fig.tight_layout(); path = os.path.join(OUT, f'metric_{c["key"]}.png')
-    fig.savefig(path, dpi=110); plt.close(fig); panels.append((c, path))
+    hist(ax, vd, f["bucket"], title, f.get("lo"), f.get("hi"))
+    ax.set_xlabel(f["key"]); ax.set_ylabel("seeds")
+    fig.tight_layout(); fig.savefig(os.path.join(OUT, f'metric_{f["key"]}.png'), dpi=110); plt.close(fig)
 
-# ---- score PNG ----
-fig, ax = plt.subplots(figsize=(8, 4.2))
-hist(ax, scores, 2, f"Seed score  (signed, N={N})", cuts=[CFG["pos_cut"], CFG["neg_cut"]])
-kept = int(((scores >= CFG["pos_cut"]) | (scores <= CFG["neg_cut"]) |
-            (d[:, COL["npl"]] >= CFG["many_planets"])).sum())
-ax.set_xlabel("score  (red = capture cutoffs)"); ax.set_ylabel("seeds")
-ax.text(0.02, 0.95, f"captured: {kept}/{N}  ({kept/N*100:.2f}%)\ncut ≥{CFG['pos_cut']} / ≤{CFG['neg_cut']}",
-        transform=ax.transAxes, va="top", fontsize=9,
-        bbox=dict(boxstyle="round", fc="white", ec="0.7"))
-fig.tight_layout(); fig.savefig(os.path.join(OUT, "score.png"), dpi=110); plt.close(fig)
+# ---- tail-match count PNG ----
+fig, ax = plt.subplots(figsize=(7, 4.2))
+mx = int(hits.max())
+ax.hist(hits, bins=np.arange(-0.5, mx + 1.5), color=BLUE, edgecolor="white")
+ax.set_title(f"Tail-match count  (union captured = {kept}/{N} = {kept/N*100:.3f}%)", fontsize=11, fontweight="bold")
+ax.set_xlabel("# metrics the seed is extreme in (0 = discarded)"); ax.set_ylabel("seeds")
+ax.set_xticks(range(mx + 1)); ax.grid(axis="y", alpha=0.25)
+fig.tight_layout(); fig.savefig(os.path.join(OUT, "matches.png"), dpi=110); plt.close(fig)
 
 # ---- combined overview grid ----
-ncol = 3; nrow = math.ceil((len(CFG["components"]) + 1) / ncol)
-fig, axes = plt.subplots(nrow, ncol, figsize=(6.5*ncol, 4*nrow))
-axes = axes.flatten()
-for i, c in enumerate(CFG["components"]):
-    v = d[:, COL[c["key"]]]; v = v[v < SENTINEL]
-    hist(axes[i], v, c["bucket"], c["label"], c["lo"], c["hi"])
-hist(axes[len(CFG["components"])], scores, 2, "SCORE", cuts=[CFG["pos_cut"], CFG["neg_cut"]])
-for j in range(len(CFG["components"])+1, len(axes)): axes[j].axis("off")
-fig.suptitle("Seed-score metric distributions", fontsize=15, fontweight="bold")
+nf = len(CFG["filters"]); ncol = 3; nrow = math.ceil((nf + 1) / ncol)
+fig, axes = plt.subplots(nrow, ncol, figsize=(6.5 * ncol, 4 * nrow)); axes = axes.flatten()
+for i, f in enumerate(CFG["filters"]):
+    v = metric(f["key"]); hist(axes[i], v[v < SENTINEL], f["bucket"], f["label"], f.get("lo"), f.get("hi"))
+axes[nf].hist(hits, bins=np.arange(-0.5, mx + 1.5), color=BLUE, edgecolor="white")
+axes[nf].set_title(f"MATCHES → {kept} kept", fontsize=10, fontweight="bold"); axes[nf].set_xticks(range(mx + 1))
+for j in range(nf + 1, len(axes)): axes[j].axis("off")
+fig.suptitle("Capture metrics — per-metric tails (shaded) + union", fontsize=15, fontweight="bold")
 fig.tight_layout(); fig.savefig(os.path.join(OUT, "overview.png"), dpi=100); plt.close(fig)
 
-print(f"N={N}  score min={scores.min()} p50={int(np.median(scores))} max={scores.max()}  captured={kept} ({kept/N*100:.2f}%)")
-print(f"wrote {len(panels)+2} PNGs to {OUT}/")
+per = {f["key"]: (int((metric(f["key"]) <= f["lo"]).sum()) if f.get("lo") is not None else 0,
+                  int((metric(f["key"]) >= f["hi"]).sum()) if f.get("hi") is not None else 0)
+       for f in CFG["filters"]}
+print(f"N={N}  union captured={kept} ({kept/N*100:.3f}% → {int(kept/N*1e5)}/100k)")
+print("per-tail (lo,hi):", per)
+print(f"wrote {nf + 2} PNGs to {OUT}/")

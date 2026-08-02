@@ -2,6 +2,15 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const { seedScore } = require("./score");
 
+// The local SQLite `seeds` table still uses the legacy metric column names
+// (npl/npm/ef/wp/naqdv/fdv) — a transitional store; the GUI reads seeds from
+// Postgres. Map those to score.js's current keys so the score still computes.
+// (The whole SQLite seed path is folded into the "job system on Postgres" task.)
+const scoreOf = (r) => seedScore({
+  planets: r.npl, bodies: r.npm, water_pct: r.wp,
+  hostility_pct: r.ef, naquium_dv: r.naqdv, field_dv: r.fdv,
+});
+
 const DB_PATH = process.env.SE_GUI_DB || path.join(__dirname, "data.sqlite");
 
 let db;
@@ -501,7 +510,7 @@ function insertSeeds(rows) {
     for (const r of rows) {
       stmt.run(r.seed, r.job_id, r.bucket, r.loot, r.k2 ? 1 : 0, r.zone_count, r.line, r.criteria || null,
         r.npm ?? null, r.npl ?? null, r.naqdv ?? null, r.fdv ?? null, r.ed ?? null, r.wp ?? null, r.ef ?? null,
-        seedScore(r) ?? null);
+        scoreOf(r) ?? null);
     }
   });
   tx();
@@ -608,13 +617,13 @@ function countSeeds(filter = {}) {
 // holds one giant transaction over the multi-GB table.
 function backfillScores({ batch = 20000 } = {}) {
   const d = getDb();
-  const sel = d.prepare("SELECT seed, npl, ef, wp, naqdv, fdv FROM seeds WHERE seed > ? ORDER BY seed LIMIT ?");
+  const sel = d.prepare("SELECT seed, npl, npm, ef, wp, naqdv, fdv FROM seeds WHERE seed > ? ORDER BY seed LIMIT ?");
   const upd = d.prepare("UPDATE seeds SET score = ? WHERE seed = ?");
   let last = -1, total = 0;
   for (;;) {
     const rows = sel.all(last, batch);
     if (rows.length === 0) break;
-    d.transaction(() => { for (const r of rows) upd.run(seedScore(r) ?? null, r.seed); })();
+    d.transaction(() => { for (const r of rows) upd.run(scoreOf(r) ?? null, r.seed); })();
     last = rows[rows.length - 1].seed;
     total += rows.length;
   }

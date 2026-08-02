@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS resource (
 );
 
 CREATE TABLE IF NOT EXISTS zone_name (
-  id   INTEGER PRIMARY KEY,    -- index in the deduped name-pool union (~757 entries)
+  id   SMALLINT PRIMARY KEY,   -- index in the deduped name-pool union (758 entries, ≤1023)
   name TEXT UNIQUE NOT NULL
 );
 
@@ -42,49 +42,51 @@ CREATE TABLE IF NOT EXISTS enum_value (
 );
 
 -- ── TRUNK: one row per universe ──────────────────────────────────────────
--- seed / zone_seed are u32 in the generator → BIGINT here (u32 max > int4 max).
+-- seed / zone_seed are u32 in the generator. Postgres has no unsigned int4, so
+-- they are stored as INTEGER = (u32 − 2^31); add 2^31 back on read. The offset
+-- preserves sort order (monotonic), so ORDER BY seed still works.
 CREATE TABLE IF NOT EXISTS seeds (
-  seed       BIGINT PRIMARY KEY,
-  k2         BOOLEAN  NOT NULL,
-  draws      INTEGER,
-  vault_loot TEXT,
+  seed          INTEGER PRIMARY KEY,   -- u32 as (seed − 2^31)
+  k2            BOOLEAN  NOT NULL,
+  vault_loot    TEXT,
   -- header metrics (kept flat for join-free list/filter/sort)
-  npl   SMALLINT,
-  npm   SMALLINT,
-  nw    SMALLINT,
-  ne    SMALLINT,
-  wp    SMALLINT,
-  ef    SMALLINT,
-  naqdv INTEGER,   -- 10_000_000 = none
-  fdv   INTEGER,
-  ed    SMALLINT,
-  score INTEGER,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  naquium_dv    INTEGER,   -- Δv to nearest naquium-primary field; 10_000_000 = none
+  field_dv      INTEGER,   -- Δv to nearest any field; 10_000_000 = none
+  planets       SMALLINT,  -- planets only
+  bodies        SMALLINT,  -- planets + moons
+  water_bodies  SMALLINT,  -- count of bodies with water
+  enemy_bodies  SMALLINT,  -- count of bodies with enemies
+  water_pct     SMALLINT,
+  hostility_pct SMALLINT,
+  enemy_danger  SMALLINT,  -- signed −100..100
+  score         SMALLINT
 );
 
 -- ── FLAT LEAVES: every node (star/planet/moon/belt/field) is one row ─────
+-- Column order mirrors docs/storage-column-analysis.md: u32 identifiers and the
+-- 4-byte numerics first, then the 2-byte enum/dict columns, then the mask.
 CREATE TABLE IF NOT EXISTS zone (
-  seed           BIGINT   NOT NULL REFERENCES seeds(seed) ON DELETE CASCADE,
-  zone_name_id   INTEGER  NOT NULL REFERENCES zone_name(id),
-  kind           SMALLINT NOT NULL,   -- enum_value domain='kind'
-  star_name_id   INTEGER,             -- denormalized system (self for a star)
-  parent_name_id INTEGER,             -- planet for a moon; star for planet/belt; null for star/field
-  zone_seed      BIGINT   NOT NULL,
-  radius         REAL,                -- f32 sufficient (see binary-format packing)
-  primary_id     SMALLINT REFERENCES resource(id),
-  dv             INTEGER,
-  temperature SMALLINT, water SMALLINT, moisture SMALLINT,
-  trees SMALLINT, aux SMALLINT, cliff SMALLINT, enemy SMALLINT,
-  stellar_x  DOUBLE PRECISION,        -- set for kind=star / field
-  stellar_y  DOUBLE PRECISION,
-  present_mask BIGINT,                -- bitset of present resources (≤63; SE+K2 uses 18)
+  seed            INTEGER  NOT NULL REFERENCES seeds(seed) ON DELETE CASCADE,  -- u32 as (seed − 2^31)
+  zone_seed       INTEGER  NOT NULL,   -- u32 as (zone_seed − 2^31)
+  delta_v         INTEGER,             -- Δv from Nauvis (field Δv reaches ~150k → 4B)
+  radius          REAL,
+  stellar_x       REAL,                -- set for kind=star / field (Δv stored → REAL precision ok)
+  stellar_y       REAL,
+  kind            SMALLINT NOT NULL,   -- enum_value domain='kind'
+  star_name_id    SMALLINT,            -- owning system (self for a star); many in full universes
+  parent_name_id  SMALLINT,            -- planet for a moon; star for planet/belt; null for star/field
+  zone_name_id    SMALLINT NOT NULL REFERENCES zone_name(id),
+  primary_id      SMALLINT REFERENCES resource(id),
+  temperature_idx SMALLINT, water_idx SMALLINT, moisture_idx SMALLINT,
+  trees_idx SMALLINT, aux_idx SMALLINT, cliff_idx SMALLINT, enemy_idx SMALLINT,
+  resource_mask   INTEGER,             -- bitset of present resources (18 bits, SE+K2)
   PRIMARY KEY (seed, zone_name_id)
 );
 
 -- ── FACTS: resources on a leaf ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS zone_resource (
-  seed           BIGINT   NOT NULL,
-  zone_name_id   INTEGER  NOT NULL,
+  seed           INTEGER  NOT NULL,   -- u32 as (seed − 2^31)
+  zone_name_id   SMALLINT NOT NULL,
   resource_id    SMALLINT NOT NULL REFERENCES resource(id),
   present        BOOLEAN  NOT NULL,
   -- universe-gen CONTROLS (the driver + estimator input)
@@ -100,15 +102,15 @@ CREATE TABLE IF NOT EXISTS zone_resource (
 
 -- ── Indexes ──────────────────────────────────────────────────────────────
 -- seed list / filter / sort (join-free hot path)
-CREATE INDEX IF NOT EXISTS idx_seeds_score ON seeds (score DESC);
-CREATE INDEX IF NOT EXISTS idx_seeds_npl   ON seeds (npl);
-CREATE INDEX IF NOT EXISTS idx_seeds_npm   ON seeds (npm);
-CREATE INDEX IF NOT EXISTS idx_seeds_naqdv ON seeds (naqdv);
-CREATE INDEX IF NOT EXISTS idx_seeds_fdv   ON seeds (fdv);
-CREATE INDEX IF NOT EXISTS idx_seeds_wp    ON seeds (wp);
-CREATE INDEX IF NOT EXISTS idx_seeds_ef    ON seeds (ef);
-CREATE INDEX IF NOT EXISTS idx_seeds_ed    ON seeds (ed);
-CREATE INDEX IF NOT EXISTS idx_seeds_k2    ON seeds (k2);
+CREATE INDEX IF NOT EXISTS idx_seeds_score        ON seeds (score DESC);
+CREATE INDEX IF NOT EXISTS idx_seeds_planets      ON seeds (planets);
+CREATE INDEX IF NOT EXISTS idx_seeds_bodies       ON seeds (bodies);
+CREATE INDEX IF NOT EXISTS idx_seeds_naquium_dv   ON seeds (naquium_dv);
+CREATE INDEX IF NOT EXISTS idx_seeds_field_dv     ON seeds (field_dv);
+CREATE INDEX IF NOT EXISTS idx_seeds_water_pct    ON seeds (water_pct);
+CREATE INDEX IF NOT EXISTS idx_seeds_hostility    ON seeds (hostility_pct);
+CREATE INDEX IF NOT EXISTS idx_seeds_enemy_danger ON seeds (enemy_danger);
+CREATE INDEX IF NOT EXISTS idx_seeds_k2           ON seeds (k2);
 -- (btree serves both ASC and DESC scans, so the DESC-default sorts reuse these)
 -- drill one universe / per-body corpus stats (index both ways)
 CREATE INDEX IF NOT EXISTS idx_zone_seed         ON zone (seed);

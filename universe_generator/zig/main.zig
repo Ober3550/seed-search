@@ -442,10 +442,10 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        // Signed desirability score in [-100, 100] (0 = par). Weighted sum of the
-        // per-metric components in score.config.json (score.zig). Drives both the
-        // stored `score` and the score-tail filter below.
-        const sc = score.seedScore(cfg, .{ .ef = ef, .wp = wp, .naqdv = naqdv, .fdv = fdv, .npl = npl, .npm = np });
+        // Union-of-extremes capture (score.zig): `sc` is the tail-match COUNT — how
+        // many enabled per-metric tails (score.config.json) this seed lands in.
+        // moons is derived (np − npl). Stored as `score`; count > 0 keeps the seed.
+        const sc = score.tailCount(cfg, .{ .hostility_pct = ef, .water_pct = wp, .naquium_dv = naqdv, .field_dv = fdv, .planets = npl, .moons = np - npl });
 
         // --- Distribution scan (tuning aid) ---
         // One CSV row per seed, emitted BEFORE the filters so the cutoffs below can
@@ -458,45 +458,10 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
 
-        // --- Score-tail filter: keep the two ENDS of the signed-score bell ---
-        // Capture a seed if its desirability score is in the positive tail
-        // (sc >= SCORE_POS) or the negative tail (sc <= SCORE_NEG), plus a cheap
-        // guarantee for the rare many-planet systems (npl >= MANY_PLANETS). The
-        // score is a centred, weighted sum (score.zig), so ONE pair of cutoffs
-        // replaces the old eight-way metric union. Defaults disable it (score max
-        // ~100), in which case we fall back to the legacy per-metric union below.
-        const score_pos = getEnvI32("SCORE_POS", cfg.pos_cut); // >=101 → positive tail off
-        const score_neg = getEnvI32("SCORE_NEG", cfg.neg_cut); // <=-101 → negative tail off
-        const many_planets = getEnvU32("MANY_PLANETS", cfg.many_planets); // 0 = off
-        const score_active = score_pos <= 100 or score_neg >= -100;
-        const keep = if (score_active)
-            (sc >= score_pos) or (sc <= score_neg) or
-                (many_planets > 0 and npl >= many_planets)
-        else legacy: {
-            // Legacy UNION of up to eight per-metric extremity tails (back-compat).
-            // Each cutoff of 0 disables that tail; none set → keep everything.
-            // MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
-            const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
-            const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
-            const pl_lo = getEnvU32("PLANETS_LOW", 0);
-            const pl_hi = getEnvU32("PLANETS_HIGH", 0);
-            const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
-            const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
-            const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
-            const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
-            const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
-                wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
-            break :legacy !any_cut or
-                (naq_lo > 0 and naqdv <= naq_lo) or
-                (naq_hi > 0 and fdv >= naq_hi) or
-                (pl_hi > 0 and np >= pl_hi) or
-                (pl_lo > 0 and np <= pl_lo) or
-                (wp_hi > 0 and wp >= wp_hi) or
-                (wp_lo > 0 and wp <= wp_lo) or
-                (ef_hi > 0 and ef >= ef_hi) or
-                (ef_lo > 0 and ef <= ef_lo);
-        };
-        if (!keep) continue;
+        // --- Union-of-extremes filter ---
+        // Keep the seed if it lands in ANY enabled per-metric tail (score.zig
+        // tailCount > 0). No composite score or gates.
+        if (sc == 0) continue;
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
@@ -539,17 +504,16 @@ pub fn main(init: std.process.Init) !void {
             try db.addSeed(.{
                 .seed = @intCast(seed),
                 .k2 = k2_enabled,
-                .draws = @intCast(universe.draws),
                 .vault_loot = universe.vault_loot,
-                .npl = @intCast(npl),
-                .npm = @intCast(np),
-                .nw = @intCast(nw),
-                .ne = @intCast(ne),
-                .wp = @intCast(wp),
-                .ef = @intCast(ef),
-                .naqdv = @intCast(naqdv),
-                .fdv = @intCast(fdv),
-                .ed = @intCast(ed),
+                .naquium_dv = @intCast(naqdv),
+                .field_dv = @intCast(fdv),
+                .planets = @intCast(npl),
+                .bodies = @intCast(np),
+                .water_bodies = @intCast(nw),
+                .enemy_bodies = @intCast(ne),
+                .water_pct = @intCast(wp),
+                .hostility_pct = @intCast(ef),
+                .enemy_danger = @intCast(ed),
                 .score = sc,
             });
             const cx = universe.zones.items[calidus_zi].stellar_x;
@@ -602,24 +566,24 @@ pub fn main(init: std.process.Init) !void {
                 const is_top = z.ztype == .star or z.ztype == .@"asteroid-field";
                 try db.addZone(.{
                     .seed = @intCast(seed),
-                    .zone_name_id = zid,
+                    .zone_seed = @intCast(z.seed),
+                    .delta_v = dv_val,
+                    .radius = if (z.radius > 0) z.radius else null,
+                    .stellar_x = if (is_top) z.stellar_x else null,
+                    .stellar_y = if (is_top) z.stellar_y else null,
                     .kind = @intFromEnum(z.ztype),
                     .star_name_id = star_id,
                     .parent_name_id = parent_id,
-                    .zone_seed = @intCast(z.seed),
-                    .radius = if (z.radius > 0) z.radius else null,
+                    .zone_name_id = zid,
                     .primary_id = prim_id,
-                    .dv = dv_val,
-                    .temperature = if (tags.temperature) |v| @intFromEnum(v) else null,
-                    .water = if (tags.water) |v| @intFromEnum(v) else null,
-                    .moisture = if (tags.moisture) |v| @intFromEnum(v) else null,
-                    .trees = if (tags.trees) |v| @intFromEnum(v) else null,
-                    .aux = if (tags.aux) |v| @intFromEnum(v) else null,
-                    .cliff = if (tags.cliff) |v| @intFromEnum(v) else null,
-                    .enemy = if (tags.enemy) |v| @intFromEnum(v) else null,
-                    .stellar_x = if (is_top) z.stellar_x else null,
-                    .stellar_y = if (is_top) z.stellar_y else null,
-                    .present_mask = if (is_body) present_mask else null,
+                    .temperature_idx = if (tags.temperature) |v| @intFromEnum(v) else null,
+                    .water_idx = if (tags.water) |v| @intFromEnum(v) else null,
+                    .moisture_idx = if (tags.moisture) |v| @intFromEnum(v) else null,
+                    .trees_idx = if (tags.trees) |v| @intFromEnum(v) else null,
+                    .aux_idx = if (tags.aux) |v| @intFromEnum(v) else null,
+                    .cliff_idx = if (tags.cliff) |v| @intFromEnum(v) else null,
+                    .enemy_idx = if (tags.enemy) |v| @intFromEnum(v) else null,
+                    .resource_mask = if (is_body) present_mask else null,
                 });
             }
             try db.endSeed();

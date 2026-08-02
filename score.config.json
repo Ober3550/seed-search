@@ -1,15 +1,11 @@
 {
-  "_comment": "Single source of truth for the seed desirability score. Read by score.js (GUI), score.zig (generator), and scripts/plot_distributions.py. SIGNED scale [-100,100], 0=par: score = round(sum(weight * component)). Each component maps its metric to a signed value centred on its median (lo/hi), with an odd-power emphasis (exp). kind 'signed' spans [-100,100]; kind 'bonus' is one-sided [0,100] (a floor value contributes 0, only high values lift). Edit weights/lo/hi and re-run the plotter to retune; the generator picks it up via SCORE_CONFIG (no rebuild).",
-  "exp": 3,
-  "pos_cut": 50,
-  "neg_cut": -54,
-  "many_planets": 12,
-  "components": [
-    { "key": "ef",    "label": "Hostility %",         "weight": 0.25, "lo": 57,    "hi": 85,    "higher_better": false, "kind": "signed", "bucket": 1 },
-    { "key": "naqdv", "label": "Naquium-primary Δv", "weight": 0.25, "lo": 17000, "hi": 45000, "higher_better": false, "kind": "signed", "bucket": 5000 },
-    { "key": "npm",   "label": "Planets + moons",      "weight": 0.15, "lo": 14,    "hi": 36,    "higher_better": true,  "kind": "signed", "bucket": 1 },
-    { "key": "fdv",   "label": "Nearest field Δv",  "weight": 0.15, "lo": 17000, "hi": 20000, "higher_better": false, "kind": "signed", "bucket": 5000 },
-    { "key": "npl",   "label": "Planets",              "weight": 0.10, "lo": 6,     "hi": 13,    "higher_better": true,  "kind": "bonus",  "bucket": 1 },
-    { "key": "wp",    "label": "Water %",              "weight": 0.10, "lo": 56,    "hi": 84,    "higher_better": true,  "kind": "signed", "bucket": 1 }
+  "_comment": "Union-of-extremes capture (no composite score). A seed is KEPT if it lands in ANY enabled per-metric tail: value <= lo (low tail) OR value >= hi (high tail). A null bound disables that tail. Thresholds are raw metric values, set from each distribution's percentiles (~0.05%/tail unless noted). The stored `score` column is the tail-match COUNT — how many metrics the seed is extreme in — for sorting. `moons` is derived (npm − npl). Read by score.js, score.zig, scripts/plot_distributions.py; the generator picks it up via SCORE_CONFIG.",
+  "filters": [
+    { "key": "hostility_pct", "label": "Hostility %",         "lo": 42,    "hi": 87,     "bucket": 1 },
+    { "key": "water_pct",     "label": "Water %",              "lo": 40,    "hi": 94,     "bucket": 1 },
+    { "key": "naquium_dv",    "label": "Naquium-primary Δv", "lo": 17500, "hi": 134000, "bucket": 5000 },
+    { "key": "field_dv",      "label": "Nearest field Δv",  "lo": null,  "hi": 37000,  "bucket": 5000 },
+    { "key": "planets",       "label": "Planets",              "lo": null,  "hi": 12,     "bucket": 1 },
+    { "key": "moons",         "label": "Moons (npm−npl)",      "lo": 8,     "hi": 38,     "bucket": 1 }
   ]
 }
