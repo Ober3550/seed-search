@@ -139,6 +139,70 @@ START_SEED=0 END_SEED=100000 SE_K2=1 \
 
 Bucket output goes to `output/<bucket>/seeds.jsonl`.
 
+### Run as a systemd service
+
+To keep the server running in the background and restart it after reboots,
+install it as a systemd service. The unit below assumes the repo lives at
+`<PROJECT_ROOT>` (replace with your real path) and runs under a dedicated
+user `<user>`. Tune `PORT` and the heap size to taste.
+
+Create `/etc/systemd/system/seed-search.service`:
+
+```ini
+[Unit]
+Description=SE Universe Seed Finder web GUI
+Documentation=https://github.com/Ober3550/seed-search
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<USER>
+WorkingDirectory=<PROJECT_ROOT>/space_explorer_gui
+# server.js re-execs itself with a larger V8 heap (SE_GUI_HEAP, default 8GB).
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3456
+Environment=SE_GUI_HEAP=8192
+# Give the re-exec'd child plenty of runway to compile/load on first boot.
+TimeoutStartSec=120
+# The server holds ~8GB heap; keep the OOM killer from preemptively killing it.
+OOMScoreAdjust=-300
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now seed-search
+```
+
+If you front the server with a reverse proxy (e.g. Caddy) on the same host,
+you can force it loopback-only so it is not reachable directly on the LAN.
+Add a drop-in at `/etc/systemd/system/seed-search.service.d/loopback-only.conf`
+with the following. The Node app still binds `*:3456`, but systemd's network
+sandbox drops anything that is not loopback, so only the proxy can reach it:
+
+```ini
+[Service]
+IPAddressAllow=127.0.0.0/8
+IPAddressAllow=::1/128
+IPAddressDeny=any
+```
+
+(Use explicit CIDRs here — the `loopback` shorthand is not accepted by
+`IPAddressAllow=`.) Reload and restart to apply:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart seed-search
+```
+
 ## Analysis
 
 ```bash
