@@ -10,7 +10,7 @@ const SURFACE_GEN_DIR = path.join(PROJECT_ROOT, "surface_generator");
 const UNIVERSE_GEN_DIR = path.join(PROJECT_ROOT, "universe_generator", "zig");
 
 // Shared repo output hierarchy (universe → seeds → zones → surface):
-//   output/<bucket>/seeds.jsonl                      universe job (bucket = upper bound, e.g. "100k")
+//   output/<bucket>/seeds.jsonl                      universe job (bucket = hex prefix label, e.g. "0x001")
 //   output/<bucket>/seed_<n>/zones.jsonl             filtered world line for that seed
 //   output/<bucket>/seed_<n>/<Zone>/ore.jsonl        surface
 //   output/<bucket>/seed_<n>/<Zone>/summary.json
@@ -20,26 +20,27 @@ if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
 // Every universe job is exactly one fixed-size bucket. Override with
 // UNIVERSE_BUCKET_SIZE (e.g. 10000 for a faster demo).
-const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "100000");
+const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "1048576");
 
-// Bucket label from the job's upper bound: 100k, 200k, ..., 1M, 1.1M, ...
-// K2-enabled buckets get a "-k2" suffix so they live in separate folders/jobs
-// from the vanilla run of the same seed range (output/100k vs output/100k-k2).
+// Human bucket-size label: 1048576 -> "1Mi", 1048576*3 -> "3Mi", 65536 ->
+// "64Ki", 1048576*4 = 4194304 -> "4Mi". Uses the 1024-based binary prefixes.
+function formatBucketSize(size) {
+  if (size % 1048576 === 0) return `${size / 1048576}Mi`;
+  if (size % 1024 === 0) return `${size / 1024}Ki`;
+  return `${size}`;
+}
+
+// Bucket label is the batch's seed hex prefix, i.e. the 0-based batch number
+// zero-padded to 3 hex digits: [0, 1048576[ -> "0x000", [1048576, 2097152[ ->
+// "0x001", ... With BUCKET_SIZE 1048576 (= 0x100000 = 1Mi) that prefix equals
+// the high 20 bits of every seed in the batch, and a full u32 sweep (0..2^32-1)
+// spans exactly 0x000..0xFFF. K2-enabled buckets get a "-k2" suffix so they
+// live in separate folders/jobs from the vanilla run of the same seed range
+// (output/0x000 vs output/0x000-k2).
 function bucketLabel(seedEnd, k2) {
-  // Label must be UNIQUE per BUCKET_SIZE boundary — it names the output dir and
-  // the DB bucket column. The old "1.8M" (toFixed(1)) form only had 0.1M
-  // resolution, so with 10k buckets every 10 consecutive buckets above 1M
-  // collided on one label and overwrote each other's seeds.jsonl. Use "M" only
-  // for whole millions, else "k" (seedEnd is always a multiple of BUCKET_SIZE).
-  let base;
-  if (seedEnd >= 1_000_000 && seedEnd % 1_000_000 === 0) {
-    base = `${seedEnd / 1_000_000}M`;   // 2000000 -> "2M"
-  } else if (seedEnd % 1000 === 0) {
-    base = `${seedEnd / 1000}k`;        // 1810000 -> "1810k", 20000 -> "20k"
-  } else {
-    base = `${seedEnd}`;                // sub-1k bucket sizes: raw seed
-  }
-  return k2 ? `${base}-k2` : base;
+  const index = seedEnd / BUCKET_SIZE - 1; // 1-based upper bound -> 0-based batch
+  const hex = Math.floor(index).toString(16).padStart(3, "0");
+  return k2 ? `0x${hex}-k2` : `0x${hex}`;
 }
 
 function bucketDir(label) {
@@ -427,7 +428,7 @@ async function processQueue() {
   }
 }
 
-// ── Universe bucket run (one seedgen process per 100k bucket) ──────────
+// ── Universe bucket run (one seedgen process per 1Mi bucket) ──────────
 
 function runUniverseBucket(job) {
   return new Promise((resolve) => {
@@ -465,7 +466,7 @@ function runUniverseBucket(job) {
     };
 
     console.log(`[universe ${label}] seeds ${job.seed_start.toLocaleString()} → ${job.seed_end.toLocaleString()}`);
-    db.addJobLog("universe", job.id, `Bucket ${label}: scanning ${BUCKET_SIZE.toLocaleString()} seeds`);
+    db.addJobLog("universe", job.id, `Bucket ${label}: scanning ${formatBucketSize(BUCKET_SIZE)} seeds`);
 
     const child = spawn(binPath, [], { env, stdio: ["ignore", "pipe", "pipe"] });
     universeChildren.set(job.id, child);
@@ -1231,5 +1232,6 @@ module.exports = {
   bucketDir,
   seedDir,
   BUCKET_SIZE,
+  formatBucketSize,
   OUTPUT_DIR,
 };

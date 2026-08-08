@@ -293,7 +293,7 @@ app.get("/universe", (req, res) => page(req, res, "Universe Buckets", renderUniv
 
 function renderUniversePage(jobsList) {
   const bs = jobs.BUCKET_SIZE;
-  const bsLabel = bs >= 1e6 ? `${bs / 1e6}M` : `${bs / 1000}k`;
+  const bsLabel = jobs.formatBucketSize(bs);
   return `
   <div class="page">
     <div class="page-head">
@@ -319,17 +319,17 @@ function renderUniversePage(jobsList) {
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="" min="0" step="${bs}" placeholder="auto (continue after last bucket)"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
-          <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 170/100k bucket (a 100k bucket is 50k seeds — seedgen steps by 2). Blank = end off.</legend>
-          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~29/100k); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~25/100k). Δv is game-exact (travel-only), so values are ~17k-160k.">
+          <legend class="hint">Extremity tails — keep a seed at EITHER end (union). Low ≥ metric ≥ High. Defaults ≈ 1776/Mi bucket (a Mi bucket is 512Ki seeds — seedgen steps by 2). Blank = end off.</legend>
+          <div class="tail-row" title="low = nearest naquium-PRIMARY field Δv ≤ (closest, rich naq ~304/Mi); high = nearest ANY field Δv ≥ (furthest — even a basic field is a long haul ~256/Mi). Δv is game-exact (travel-only), so values are ~17k-160k.">
             <input type="number" name="naq_lo" value="17500" min="0" step="any" style="width:6em" placeholder="off"> ≥ naq-prim ≤ | any-field ≥ <input type="number" name="naq_hi" value="37200" min="0" step="any" style="width:6em" placeholder="off">
           </div>
-          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most, ~43/100k). NOTE: measured minimum P+M is 14, so a low cutoff below 14 never matches.">
+          <div class="tail-row" title="keep seeds with ≤ the low value Calidus planets+moons incl. Nauvis (fewest) OR ≥ the high value (most, ~448/Mi). NOTE: measured minimum P+M is 14, so a low cutoff below 14 never matches.">
             <input type="number" name="pl_lo" value="16" min="0" style="width:4em" placeholder="off"> ≥ P+M ≥ <input type="number" name="pl_hi" value="46" min="0" style="width:4em" placeholder="off">
           </div>
-          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) that HAVE water, as a %. 0 = nowhere has water, 100 = everywhere does. Normalised, not a count — raw counts just track system size. Population: mean 69%, p1 50%, p99 88%. Defaults ≈ 28/100k (parched) and 21/100k (wet).">
+          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) that HAVE water, as a %. 0 = nowhere has water, 100 = everywhere does. Normalised, not a count — raw counts just track system size. Population: mean 69%, p1 50%, p99 88%. Defaults ≈ 288/Mi (parched) and 224/Mi (wet).">
             <input type="number" name="wp_lo" value="40" min="0" max="100" style="width:4em" placeholder="off"> ≥ water % ≥ <input type="number" name="wp_hi" value="95" min="0" max="100" style="width:4em" placeholder="off">
           </div>
-          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) with an enemy tag above none, as a %. Population: mean 70%, p1 52%, p99 84%. Defaults ≈ 30/100k (quiet) and 11/100k (warzone); use 87 for the high side if you want ~48.">
+          <div class="tail-row" title="Share of Calidus planets+moons (excl. Nauvis) with an enemy tag above none, as a %. Population: mean 70%, p1 52%, p99 84%. Defaults ≈ 320/Mi (quiet) and 112/Mi (warzone); use 87 for the high side if you want ~48.">
             <input type="number" name="ef_lo" value="42" min="0" max="100" style="width:4em" placeholder="off"> ≥ hostile % ≥ <input type="number" name="ef_hi" value="88" min="0" max="100" style="width:4em" placeholder="off">
           </div>
         </fieldset>

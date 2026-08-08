@@ -101,7 +101,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS seeds (
       seed INTEGER PRIMARY KEY,
       job_id INTEGER REFERENCES universe_jobs(id),
-      bucket TEXT,               -- e.g. "100k" (job upper bound label = output dir)
+      bucket TEXT,               -- e.g. "0x001" (hex-prefix label = output dir)
       loot TEXT,
       k2 INTEGER DEFAULT 0,
       zone_count INTEGER DEFAULT 0,
