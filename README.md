@@ -123,8 +123,9 @@ Key settings:
 
 ## Running
 
-Start the server and queue 100K-seed buckets from the GUI — the built-in job
-manager runs them in parallel and imports the results:
+Start the server and queue 1Mi-seed buckets from the GUI — the built-in job
+manager runs them in parallel and imports the results. Each bucket is labeled
+by its seed hex prefix (`0x000`, `0x001`, ...):
 
 ```bash
 npm start             # → http://localhost:3456
@@ -133,8 +134,8 @@ npm start             # → http://localhost:3456
 To run a single bucket directly against the generator binary:
 
 ```bash
-START_SEED=0 END_SEED=100000 SE_K2=1 \
-  universe_generator/zig/seedgen > output/seeds_100000.jsonl
+START_SEED=0 END_SEED=1048576 SE_K2=1 \
+  universe_generator/zig/seedgen > output/0x000/seeds.jsonl
 ```
 
 Bucket output goes to `output/<bucket>/seeds.jsonl`.

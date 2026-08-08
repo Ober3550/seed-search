@@ -138,7 +138,7 @@ written **once per bucket** and every world in it references the shared codes:
   names** (see [Zone-name inventory](#zone-name-inventory)) — not even
   bucket-computed; it's the same static set for every bucket of a given mod-set,
   generated straight from `data.zig`.
-- **Amortised to nothing.** One dictionary for ~100k seeds; the per-world overhead
+- **Amortised to nothing.** One dictionary for ~1Mi seeds; the per-world overhead
   of self-description rounds to zero.
 - **No escape hatch needed.** Every body/field name is a dictionary code, and
   belt names are *inferred* from tree position (see
@@ -276,7 +276,7 @@ package seedsearch.v1;
 
 // Emitted ONCE PER BUCKET (first length-delimited message of the bucket/stream).
 // Makes the bucket self-describing: code → canonical string for every stringy
-// field, shared by all ~100k universes. Adding a mod resource/tag/name = a new
+// field, shared by all ~1Mi universes. Adding a mod resource/tag/name = a new
 // map entry here, nothing else. Resource code 0 = "inline string follows".
 message Dictionary {
   string format         = 1;   // "seedsearch"
@@ -431,7 +431,7 @@ The bytes concentrate in a few places, and the real levers are:
    would have to describe a bit *layout*, and adding an 8th tag repacks the field).
    Given extensibility/self-description are the whole point of this format,
    **recommended: keep the seven tags as separate fields and do NOT bit-pack.**
-5. **gzip is the real size lever.** The stream is ~100k near-identical records; a
+5. **gzip is the real size lever.** The stream is ~1Mi near-identical records; a
    generic gzip pass reclaims far more than field-level micro-packing (which
    fights the format's goals). Evaluate gzip (decision row 5) before hand-packing.
 
@@ -554,7 +554,7 @@ Record each decision here as it's made (date + who + rationale).
 | 1d  | Belt names                                                                    | **Inferred** `"<star> Asteroid Belt <ordinal>"` from list position — not stored                                                   | 2026-07-31 | Belts kept (user), but the name is derivable; orbits dropped entirely (never serialized)                                                                                                                                                             |
 | 1e  | Resources / tags / **zone name**                                              | **`uint32` codes resolved via the Dictionary** (not protobuf enums, not inline strings)                                           | 2026-07-31 | Self-describing (code→string in the dict); name roster is a static ~757-entry set; adding a mod value = new dict entry, zero `.proto` edit                                                                                                           |
 | 1f  | Self-description level                                                        | **Level 1** (embed code→string Dictionary)                                                                                        | 2026-07-31 | Values decodable without the `.proto`; field names still from the checked-in schema. Level 2 (embed FileDescriptorSet) available if needed                                                                                                           |
-| 1g  | **Dictionary scope**                                                          | **Per bucket** (one dict shared by ~100k universes)                                                                               | 2026-07-31 | Same names across all universes in a bucket → write once, amortise to ~nothing                                                                                                                                                                       |
+| 1g  | **Dictionary scope**                                                          | **Per bucket** (one dict shared by ~1Mi universes)                                                                               | 2026-07-31 | Same names across all universes in a bucket → write once, amortise to ~nothing                                                                                                                                                                       |
 | 2   | On-disk layout                                                                | _tbd_ (single `universes.pb` per bucket, vs per-seed `universe.pb` + shared `dict.pb`)                                            |            | bucket is the portable/self-contained unit either way                                                                                                                                                                                                |
 | 3   | Re-expand source in DB: BLOB vs JSON projection                               | _tbd_                                                                                                                             |            |                                                                                                                                                                                                                                                      |
 | 4   | Code assignment: stable per (mod_set, version) from `data.zig`, vs per-bucket | _tbd_ (leaning stable)                                                                                                            |            |                                                                                                                                                                                                                                                      |
