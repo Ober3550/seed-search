@@ -47,6 +47,74 @@ function bucketDir(label) {
   return path.join(OUTPUT_DIR, label);
 }
 
+// Build the Filter DSL JSON document (passed to seedgen as the single FILTER env
+// var) from a universe job's extremity-tail cutoffs. A cutoff of 0/blank means
+// that side is off. Returns null when no tail is enabled (seedgen then keeps
+// everything, its no-filter fast path).
+//
+// The document is the union (||) of the enabled tails:
+//   naq-primary asteroid within naq_lo  OR  any asteroid beyond naq_hi
+//   Calidus planets+moons <= pl_lo OR >= pl_hi
+//   Calidus water share   <= wp_lo  OR >= wp_hi   (fraction of body_cnt with water)
+//   Calidus hostile share <= ef_lo  OR >= ef_hi   (fraction of body_cnt hostile)
+// Each is a $count/$fraction whose `is` is a || of the two bounds.
+function buildTailFilter(job) {
+  const lo = (v) => (v > 0 ? v : null);
+  const branches = [];
+
+  // naq: nearest naquium-PRIMARY field within naq_lo, or ANY field beyond naq_hi.
+  const naqLo = lo(job.naq_lo), naqHi = lo(job.naq_hi);
+  if (naqLo) {
+    branches.push({ $count: {
+      of: { "&&": [ { type: { "==": "asteroidField" } }, { naquium: { ">": 0.0 } }, { deltaV: { "<=": naqLo } } ] },
+      is: { ">=": 1 },
+    }});
+  }
+  if (naqHi) {
+    branches.push({ $count: {
+      of: { "&&": [ { type: { "==": "asteroidField" } }, { deltaV: { ">=": naqHi } } ] },
+      is: { ">=": 1 },
+    }});
+  }
+
+  const calidusPM = { "&&": [ { starSystem: { "==": "Calidus" } }, { type: { "||": [ { "==": "planet" }, { "==": "moon" } ] } } ] };
+  // Calidus planets+moons count.
+  const plLo = lo(job.pl_lo), plHi = lo(job.pl_hi);
+  if (plLo || plHi) {
+    const bounds = [];
+    if (plLo) bounds.push({ "<=": plLo });
+    if (plHi) bounds.push({ ">=": plHi });
+    branches.push({ $count: { of: calidusPM, is: bounds.length > 1 ? { "||": bounds } : bounds[0] } });
+  }
+
+  // water / hostile shares are ratios of Calidus bodies carrying the tag. The
+  // legacy job cutoffs were PERCENTAGES (0..100); the DSL $fraction is a ratio
+  // in [0,1], so scale by ÷100 to stay consistent with the reference doc.
+  const wpLo = lo(job.wp_lo), wpHi = lo(job.wp_hi);
+  if (wpLo || wpHi) {
+    const bounds = [];
+    if (wpLo) bounds.push({ "<=": wpLo / 100 });
+    if (wpHi) bounds.push({ ">=": wpHi / 100 });
+    branches.push({ $fraction: {
+      of: calidusPM, matching: { water: { ">=": "low" } },
+      is: bounds.length > 1 ? { "||": bounds } : bounds[0],
+    }});
+  }
+  const efLo = lo(job.ef_lo), efHi = lo(job.ef_hi);
+  if (efLo || efHi) {
+    const bounds = [];
+    if (efLo) bounds.push({ "<=": efLo / 100 });
+    if (efHi) bounds.push({ ">=": efHi / 100 });
+    branches.push({ $fraction: {
+      of: calidusPM, matching: { enemy: { ">=": "very_low" } },
+      is: bounds.length > 1 ? { "||": bounds } : bounds[0],
+    }});
+  }
+
+  if (branches.length === 0) return null;
+  return JSON.stringify(branches.length === 1 ? branches[0] : { "||": branches });
+}
+
 function seedDir(label, seed) {
   return path.join(bucketDir(label), `seed_${seed}`);
 }
@@ -452,15 +520,10 @@ function runUniverseBucket(job) {
       END_SEED: String(job.seed_end),
       SE_K2: job.k2_enabled ? "1" : "0",
       // Tail-filter cutoffs the bucket was queued with (0 = side off).
-      NAQ_DV_LOW: String(job.naq_lo || 0),
-      NAQ_DV_HIGH: String(job.naq_hi || 0),
-      PLANETS_LOW: String(job.pl_lo || 0),
-      PLANETS_HIGH: String(job.pl_hi || 0),
-      // Percentages (0..100), not counts — see wp/ef in main.zig.
-      WATER_PCT_LOW: String(job.wp_lo || 0),
-      WATER_PCT_HIGH: String(job.wp_hi || 0),
-      ENEMY_PCT_LOW: String(job.ef_lo || 0),
-      ENEMY_PCT_HIGH: String(job.ef_hi || 0),
+      // Emitted as a single Filter-DSL JSON document (FILTER env var) consumed
+      // by seedgen's generic evaluator; null means "keep everything" and no
+      // FILTER is sent (seedgen then uses its no-filter fast path).
+      FILTER: buildTailFilter(job) ?? undefined,
       MIN_PROD_MODULES: "0",
       WORKER_ID: "0",
     };

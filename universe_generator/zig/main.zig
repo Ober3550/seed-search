@@ -20,6 +20,7 @@
 const std = @import("std");
 const gen = @import("gen.zig");
 const data = @import("data.zig");
+const filter_mod = @import("filter.zig");
 
 fn getEnvU32(comptime name: [:0]const u8, default: u32) u32 {
     const val = std.c.getenv(name) orelse return default;
@@ -90,6 +91,14 @@ pub fn main(init: std.process.Init) !void {
     // GUI's per-seed "expand" job; bulk generation leaves it off to keep storage
     // to the Calidus system only.
     const all_zones = getEnvBool("ALL_ZONES");
+
+    // DSL filter: the frontend ships a single JSON filter as FILTER. Parse it
+    // ONCE on the page allocator — the Node tree must survive across arena
+    // resets (per-seed loop). Leaked at process exit, fine for a batch runner.
+    const filter: ?filter_mod.Filter = if (std.c.getenv("FILTER")) |fenv|
+        filter_mod.Filter.parse(std.heap.page_allocator, std.mem.sliceTo(fenv, 0)) catch null
+    else
+        null;
 
     std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
@@ -311,38 +320,62 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
 
-        // --- Tail filters: UNION of up to eight extremity tails ---
-        // Each metric is roughly bell-shaped across seeds; these cutoffs keep the
-        // two extremes and discard the middle. Keep a seed if it falls in ANY
-        // enabled tail: naquium-PRIMARY field <= NAQ_DV_LOW (closest, rich naq)
-        // or ANY field >= NAQ_DV_HIGH (furthest, even basic naq is a long haul);
-        // Calidus planets+moons >= PLANETS_HIGH (most) or <= PLANETS_LOW
-        // (fewest); water share <= WATER_PCT_LOW (a parched system) or >=
-        // WATER_PCT_HIGH (a wet one); hostile share <= ENEMY_PCT_LOW (a quiet
-        // system) or >= ENEMY_PCT_HIGH (a warzone). The last four are
-        // PERCENTAGES (0..100), not counts — see wp/ef above.
-        // Each cutoff of 0 disables that tail; no cutoffs set → keep everything.
-        // Union (not AND). MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
-        const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
-        const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
-        const pl_lo = getEnvU32("PLANETS_LOW", 0);
-        const pl_hi = getEnvU32("PLANETS_HIGH", 0);
-        const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
-        const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
-        const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
-        const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
-        const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
-            wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
-        const keep = !any_cut or
-            (naq_lo > 0 and naqdv <= naq_lo) or
-            (naq_hi > 0 and fdv >= naq_hi) or
-            (pl_hi > 0 and np >= pl_hi) or
-            (pl_lo > 0 and np <= pl_lo) or
-            (wp_hi > 0 and wp >= wp_hi) or
-            (wp_lo > 0 and wp <= wp_lo) or
-            (ef_hi > 0 and ef >= ef_hi) or
-            (ef_lo > 0 and ef <= ef_lo);
-        if (!keep) continue;
+        // --- Tail filters ---
+        // No FILTER env → legacy UNION of up to eight extremity tails (below),
+        // unchanged fast path (no cutoffs set → keep everything). FILTER env →
+        // the generic JSON filter evaluator decides keep/discard; it parses once
+        // at startup and evaluates per seed with no allocation, computing each
+        // surface's deltaV / resource-FSR lazily only when a predicate queries it.
+        if (filter) |flt| {
+            var cache: filter_mod.SurfaceCache = undefined;
+            const ein = filter_mod.EvalInput{
+                .zones = universe.zones.items,
+                .body_map = bodyMap,
+                .primaries = primaries,
+                .field_primaries = field_primaries,
+                .calidus_zi = calidus_zi,
+                .zone_end = zone_end,
+                .tail_start = tail_start,
+                .nauvis_sgw = nauvis_sgw,
+                .nauvis_pgw = nauvis_pgw,
+                .cx = universe.zones.items[calidus_zi].stellar_x,
+                .cy = universe.zones.items[calidus_zi].stellar_y,
+            };
+            if (!flt.eval(&ein, &cache)) continue;
+        } else {
+            // --- Tail filters: UNION of up to eight extremity tails ---
+            // Each metric is roughly bell-shaped across seeds; these cutoffs keep the
+            // two extremes and discard the middle. Keep a seed if it falls in ANY
+            // enabled tail: naquium-PRIMARY field <= NAQ_DV_LOW (closest, rich naq)
+            // or ANY field >= NAQ_DV_HIGH (furthest, even basic naq is a long haul);
+            // Calidus planets+moons >= PLANETS_HIGH (most) or <= PLANETS_LOW
+            // (fewest); water share <= WATER_PCT_LOW (a parched system) or >=
+            // WATER_PCT_HIGH (a wet one); hostile share <= ENEMY_PCT_LOW (a quiet
+            // system) or >= ENEMY_PCT_HIGH (a warzone). The last four are
+            // PERCENTAGES (0..100), not counts — see wp/ef above.
+            // Each cutoff of 0 disables that tail; no cutoffs set → keep everything.
+            // Union (not AND). MIN_NAQ_DV is a back-compat alias for NAQ_DV_LOW.
+            const naq_lo = getEnvU32("NAQ_DV_LOW", getEnvU32("MIN_NAQ_DV", 0));
+            const naq_hi = getEnvU32("NAQ_DV_HIGH", 0);
+            const pl_lo = getEnvU32("PLANETS_LOW", 0);
+            const pl_hi = getEnvU32("PLANETS_HIGH", 0);
+            const wp_lo = getEnvU32("WATER_PCT_LOW", 0);
+            const wp_hi = getEnvU32("WATER_PCT_HIGH", 0);
+            const ef_lo = getEnvU32("ENEMY_PCT_LOW", 0);
+            const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
+            const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
+                wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
+            const keep = !any_cut or
+                (naq_lo > 0 and naqdv <= naq_lo) or
+                (naq_hi > 0 and fdv >= naq_hi) or
+                (pl_hi > 0 and np >= pl_hi) or
+                (pl_lo > 0 and np <= pl_lo) or
+                (wp_hi > 0 and wp >= wp_hi) or
+                (wp_lo > 0 and wp <= wp_lo) or
+                (ef_hi > 0 and ef >= ef_hi) or
+                (ef_lo > 0 and ef <= ef_lo);
+            if (!keep) continue;
+        }
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {
@@ -457,13 +490,39 @@ pub fn main(init: std.process.Init) !void {
                     const t = std.fmt.bufPrint(buf[pos..], ",\"enemy\":\"{s}\"", .{@tagName(v)}) catch unreachable;
                     pos += t.len;
                 }
-                // Only the primary resource is emitted — the surface generator
-                // recomputes the actual ore from (seed, primary, tags, radius), so
-                // the old per-body yield ("y") / score ("rs") ESTIMATES were dead
-                // weight (and computing them was a per-body hot spot).
-                if (primaries.get(z.name)) |prim| {
-                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim}) catch unreachable;
+                // Primary resource + per-resource FSR scores. The primary is
+                // emitted as "p"; the normalized FSR scores (freq*size*richness
+                // / norm, indexed by resource_order) as an "rs" map keyed by
+                // resource name. Only nonzero scores are emitted. The primary's
+                // score is included and is the max (==1.0 on planets); this lets
+                // consumers derive "primary" as the max-score resource and
+                // filter on richness directly, instead of relying on a separate
+                // boolean.
+                const primary = primaries.get(z.name) orelse field_primaries.get(z.name);
+                if (primary) |prim| {
+                    const prim_out = gen.resourceOutputName(prim);
+                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim_out}) catch unreachable;
                     pos += pp.len;
+                    const controls = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
+                    var first_res = true;
+                    buf[pos] = ','; pos += 1;
+                    const rsO = std.fmt.bufPrint(buf[pos..], "\"rs\":{{", .{}) catch unreachable;
+                    pos += rsO.len;
+                    for (gen.resource_name_output, controls) |rname, score| {
+                        if (!first_res) { buf[pos] = ','; pos += 1; }
+                        first_res = false;
+                        // Missing resources (score <= 0) are emitted as 0.0, so
+                        // "present" is testable with { ">": 0 }; present
+                        // resources have scores in (0, 1].
+                        if (score <= 0) {
+                            const en = std.fmt.bufPrint(buf[pos..], "\"{s}\":0.0", .{rname}) catch unreachable;
+                            pos += en.len;
+                        } else {
+                            const en = std.fmt.bufPrint(buf[pos..], "\"{s}\":{d}", .{ rname, score }) catch unreachable;
+                            pos += en.len;
+                        }
+                    }
+                    buf[pos] = '}'; pos += 1;
                 }
                 if (nauvis_sgw > 0) {
                     const cx = universe.zones.items[calidus_zi].stellar_x;
@@ -474,11 +533,6 @@ pub fn main(init: std.process.Init) !void {
                 }
             }
             if (z.ztype == .@"asteroid-field") {
-                if (field_primaries.get(z.name)) |fp| {
-                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{fp}) catch unreachable;
-                    pos += pp.len;
-                }
-
                 const cx = universe.zones.items[calidus_zi].stellar_x;
                 const cy = universe.zones.items[calidus_zi].stellar_y;
                 const dv: u32 = @intFromFloat(@round(deltaVFromNauvis(universe.zones.items, z, nauvis_sgw, nauvis_pgw, cx, cy)));
