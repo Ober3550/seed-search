@@ -31,25 +31,29 @@ body {
 }
 
 /* ── Layout ─────────────────────────────────────────────────────────── */
-/* The document scrolls, not <main>. The sidebar is an ordinary flex item, so
-   scrolling right moves it off-screen like any other content — it used to be
-   effectively fixed (main was the scroll container with max-height: 100vh),
-   which meant its 220px grew with browser zoom and ate the window with no way
-   to scroll past it. Content wider than the window now overflows to the right
-   and the viewport gets a real horizontal scrollbar. */
+/* The sidebar is position:fixed so it stays pinned while the rest of the page
+   scrolls (the bucket list under it can grow without dragging the nav away).
+   .app gets padding-left equal to the sidebar width so content isn't covered;
+   the sidebar itself scrolls internally (overflow-y:auto) if its links outgrow
+   the viewport height. */
 .app {
   display: flex;
   min-height: 100vh;
+  padding-left: 220px;
 }
 
 .sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
   width: 220px;
   background: var(--surface);
   border-right: 1px solid var(--border);
   padding: 20px 0;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .sidebar h1 {
@@ -79,6 +83,15 @@ body {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+/* Stack the git/uptime lines vertically instead of on one line. */
+.sidebar-footer small {
+  display: block;
+}
+
+.sidebar-footer small + small {
+  margin-top: 4px;
 }
 
 main {

@@ -25,6 +25,55 @@ const { seedScore } = require("./score");
 const jobs = require("./job-manager");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
+// Git commit + timestamp for this deploy, resolved once at startup. The workflow
+// dir is one level above server.js (the repo root); git may be absent or the
+// tree may not be a checkout, so this is best-effort — null when undeterminable,
+// and the sidebar then shows nothing.
+const GIT_INFO = (() => {
+  try {
+    const { execFileSync } = require("node:child_process");
+    const repo = path.join(__dirname, "..");
+    const short = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const ts = execFileSync("git", ["log", "-1", "--date=iso-strict", "--format=%ad"], {
+      cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!short || !ts) return null;
+    return { short, ts };
+  } catch {
+    return null;
+  }
+})();
+
+// When this process started (server boot), so the sidebar can show uptime and
+// make a crashed/restarted server obvious.
+const BOOT_AT = Date.now();
+
+// Human uptime string like "3d 04:12:33", from BOOT_AT to now.
+function uptimeString() {
+  const s = Math.max(0, Math.floor((Date.now() - BOOT_AT) / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const hh = String(h).padStart(2, "0"), mm = String(m).padStart(2, "0"), ss = String(sec).padStart(2, "0");
+  return d > 0 ? `${d}d ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`;
+}
+
+// Live V8 heap line for the sidebar, e.g. "heap: 9.3 MiB / 256 MiB".
+// Both used and the heap_size_limit cap are reported in MiB (never GiB).
+function heapLine() {
+  try {
+    const v = require("v8").getHeapStatistics();
+    const MiB = 1 << 20;
+    const trim = (val) => Math.round(val * 1000) / 1000;
+    return `heap: ${trim(v.used_heap_size / MiB)} MiB / ${trim(v.heap_size_limit / MiB)} MiB`;
+  } catch {
+    return null;
+  }
+}
+
 const RESOURCES = [
   "se-vulcanite", "se-cryonite", "se-vitamelange", "se-holmium-ore",
   "se-beryllium-ore", "se-iridium-ore", "se-naquium-ore",
@@ -99,7 +148,9 @@ function htmxPage(title, content) {
           hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
           🗑 Wipe system
         </button>
-        <small>buckets → seeds → zone → surface</small>
+        ${GIT_INFO ? `<small class="git-info" title="Commit ${GIT_INFO.short} · ${GIT_INFO.ts}">git: ${GIT_INFO.short}</small>` : ""}
+        <small class="uptime" title="Server up since ${new Date(BOOT_AT).toISOString()}">up: ${uptimeString()}</small>
+        ${heapLine() ? `<small class="heap">${heapLine()}</small>` : ""}
       </div>
     </nav>
     <main id="main">${content}</main>
