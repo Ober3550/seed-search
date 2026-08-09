@@ -499,7 +499,9 @@ function runUniverseBucket(job) {
         return resolve();
       }
       try {
-        const { seeds, zones } = await importBucket(outFile, job.id, label);
+        // Serialize with other in-flight imports so only one bucket stages its
+        // rows in the heap at a time (see enqueueImport above).
+        const { seeds, zones } = await enqueueImport(() => importBucket(outFile, job.id, label));
         db.updateUniverseJob(job.id, {
           status: "done",
           passed_seeds: seeds,
@@ -523,12 +525,72 @@ function runUniverseBucket(job) {
   });
 }
 
+// Serialize bucket imports: multiple seedgen workers finish ~in parallel, and
+// each completion stages its whole bucket (seed rows + zone rows + raw JSON
+// lines) in the JS heap before the bulk SQLite insert. Running the imports one
+// at a time caps peak heap at a single bucket instead of several stacked ones.
+// A promise-chain is the idiomatic single-process async queue — no lock needed.
+let importQueue = Promise.resolve();
+function enqueueImport(fn) {
+  const run = importQueue.then(fn, fn);
+  // Keep the chain alive even if one import throws; the error is the caller's
+  // to observe via its own await on the returned promise.
+  importQueue = run.catch(() => {});
+  return run;
+}
+
 // Import a bucket's seeds.jsonl into the seeds + zones tables.
 async function importBucket(filePath, jobId, label) {
   const rl = readline.createInterface({ input: fs.createReadStream(filePath) });
-  const seedRows = [];
-  const zoneRows = [];
-  let zones = 0;
+  const d = db.getDb();
+  // Zone insert statement + transaction used for every flushed batch.
+  const zstmt = d.prepare(`
+    INSERT OR REPLACE INTO zones
+      (job_id, seed, name, zone_type, radius, primary_resource,
+       temperature, water, moisture, trees, aux, cliff, enemy,
+       delta_v, star_gravity_well, planet_gravity_well,
+       resource_scores, resource_yields, stellar_x, stellar_y)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const ztx = d.transaction((rows) => {
+    for (const z of rows) {
+      zstmt.run(
+        z.job_id, z.seed, z.name, z.zone_type, z.radius, z.primary_resource,
+        z.temperature, z.water, z.moisture, z.trees, z.aux, z.cliff, z.enemy,
+        z.delta_v, z.star_gravity_well, z.planet_gravity_well,
+        z.resource_scores ? JSON.stringify(z.resource_scores) : null,
+        z.resource_yields ? JSON.stringify(z.resource_yields) : null,
+        z.stellar_x, z.stellar_y
+      );
+    }
+  });
+
+  // Stream the JSONL in batches instead of staging the whole bucket: never hold
+  // more than ~BATCH_BYTES of parsed rows in memory, so peak heap stays flat no
+  // matter how big the bucket is. Each flush wraps seeds + zones in a DB tx.
+  var seedRows = [];
+  var zoneRows = [];
+  var tallyBytes = 0;
+  const BATCH_BYTES = 2 * 1024 * 1024; // flush once staged bytes exceed ~2 MiB
+  let totalSeeds = 0, totalZones = 0;
+  var peakHeapUse = 0, peakRss = 0;
+
+  // Diagnostic: track the high-water heap across the whole loop. With batching
+  // this is a few MiB (a single batch), not the whole bucket.
+  const notePeak = () => {
+    const h = process.memoryUsage().heapUsed, r = process.memoryUsage().rss;
+    if (h > peakHeapUse) peakHeapUse = h;
+    if (r > peakRss) peakRss = r;
+  };
+
+  const flush = () => {
+    if (seedRows.length > 0) db.insertSeeds(seedRows);
+    if (zoneRows.length > 0) ztx(zoneRows);
+    totalSeeds += seedRows.length;
+    seedRows = [];
+    zoneRows = [];
+    tallyBytes = 0;
+  };
 
   for await (const line of rl) {
     if (!line.trim().startsWith("{")) continue;
@@ -554,6 +616,9 @@ async function importBucket(filePath, jobId, label) {
       wp: data.wp ?? null,
       ef: data.ef ?? null,
     });
+    // tally: the raw seed line dominates (a few KB); the ~17 zone rows are
+    // derived and lighter, count a rough share of the line too.
+    tallyBytes += line.length + data.z.length * 128;
     for (const z of data.z) {
       zoneRows.push({
         job_id: jobId,
@@ -577,34 +642,24 @@ async function importBucket(filePath, jobId, label) {
         stellar_x: null,
         stellar_y: null,
       });
-      zones++;
+      totalZones++;
     }
+    if (tallyBytes >= BATCH_BYTES) flush();
+    notePeak();
   }
 
-  db.insertSeeds(seedRows);
-  const d = db.getDb();
-  const stmt = d.prepare(`
-    INSERT OR REPLACE INTO zones
-      (job_id, seed, name, zone_type, radius, primary_resource,
-       temperature, water, moisture, trees, aux, cliff, enemy,
-       delta_v, star_gravity_well, planet_gravity_well,
-       resource_scores, resource_yields, stellar_x, stellar_y)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const tx = d.transaction(() => {
-    for (const z of zoneRows) {
-      stmt.run(
-        z.job_id, z.seed, z.name, z.zone_type, z.radius, z.primary_resource,
-        z.temperature, z.water, z.moisture, z.trees, z.aux, z.cliff, z.enemy,
-        z.delta_v, z.star_gravity_well, z.planet_gravity_well,
-        z.resource_scores ? JSON.stringify(z.resource_scores) : null,
-        z.resource_yields ? JSON.stringify(z.resource_yields) : null,
-        z.stellar_x, z.stellar_y
-      );
-    }
-  });
-  tx();
-  return { seeds: seedRows.length, zones };
+  // Diagnostic: with streaming batches the high-water heap is a single ~2 MiB
+  // batch, not the whole bucket. Log the observed peak (not staged-at-end).
+  {
+    const v = require("v8").getHeapStatistics();
+    const mb = (b) => (b / 1048576).toFixed(1);
+    console.log(`[import ${label}] ${totalSeeds} seeds / ${totalZones} zones, ` +
+      `peak heapUsed ${mb(peakHeapUse)} MiB, peak rss ${mb(peakRss)} MiB, ` +
+      `heapLimit ${mb(v.heap_size_limit)} MiB`);
+  }
+
+  flush(); // final (possibly empty) batch
+  return { seeds: totalSeeds, zones: totalZones };
 }
 
 // ── Per-seed universe expansion ────────────────────────────────────────
