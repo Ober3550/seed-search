@@ -407,6 +407,27 @@ pub const resource_order = [_][]const u8{
     "kr-imersite", "kr-mineral-water", "kr-rare-metal-ore",
 };
 
+/// camelCase output names for the same 18 resources, same order as
+/// `resource_order`. Used for the emitted "rs" map keys and the "p" primary
+/// (stripped se-/kr prefixes and -ore/-oil/-ice suffixes where appropriate).
+/// The internal Factorio/SE identifiers in `resource_order` stay untouched;
+/// this mapping exists only at the emission boundary.
+pub const resource_name_output = [_][]const u8{
+    "iron", "copper", "uranium", "coal", "crudeOil", "stone",
+    "vulcanite", "cryonite", "vitamelange", "naquium", "methaneIce", "waterIce",
+    "beryllium", "iridium", "holmium",
+    "imersite", "mineralWater", "rareMetal",
+};
+
+/// Translate a raw Factorio/SE resource name to its emitted camelCase form,
+/// or return the input unchanged if it is not one of the known resources.
+pub fn resourceOutputName(raw: []const u8) []const u8 {
+    for (resource_order, 0..) |orig, i| {
+        if (std.mem.eql(u8, orig, raw)) return resource_name_output[i];
+    }
+    return raw;
+}
+
 /// Per-resource, per-zone autoplace controls (indexed by `resource_order`).
 /// These are the raw map-gen control values SE feeds into the resource autoplace
 /// expressions as `control:<name>:frequency/size/richness`. Downstream, SE raises
@@ -651,7 +672,6 @@ pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, pri
     const size_hi: f64 = if (is_field) 4 else 2;
     const rich_lo: f64 = 0.1;
     const rich_hi: f64 = if (is_field) 2 else 2;
-    const norm: f64 = if (is_field) RESOURCE_NORM_FIELD else RESOURCE_NORM_PLANET;
 
     // Recompute primary position in filtered list
     primary_pos = -1;
@@ -662,7 +682,13 @@ pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, pri
         }
     }
 
-    // Compute FSR using correct ordered_bias = (N - i) / N
+    // Compute FSR using correct ordered_bias = (N - i) / N. Compute each
+    // resource's raw frequency/size/richness and FSR, tracking the max FSR, then
+    // normalize the score by max_fsr so the primary (the largest fsr) is EXACTLY
+    // 1.0 on both planets/moons and asteroid fields — independent of the category
+    // norm constant.
+    var raw_fsr: [18]f64 = @splat(0);
+    var max_fsr: f64 = 0;
     for (filtered_ri[0..filtered_n], 0..) |ri, pos| {
         const base_bias: f64 = if (pos == primary_pos) 1.0 else biases[ri];
         const ordered_bias: f64 = @as(f64, @floatFromInt(filtered_n - @as(u32, @intCast(pos)) - 1)) / @as(f64, @floatFromInt(filtered_n));
@@ -677,13 +703,20 @@ pub fn computeZoneResourceControls(zone_seed: u32, zone_type: data.ZoneType, pri
         const size = size_lo + resource_value * (size_hi - size_lo);
         const richness = rich_lo + resource_value * (rich_hi - rich_lo);
         const fsr = freq * size * richness;
+        raw_fsr[ri] = fsr;
+        if (fsr > max_fsr) max_fsr = fsr;
         controls[ri] = .{
             .present = true,
             .frequency = freq,
             .size = size,
             .richness = richness,
-            .fsr_score = fsr / norm,
+            .fsr_score = 0, // filled after max_fsr is known
         };
+    }
+    // Second pass: normalize fsr_score by max_fsr (guard divide-by-zero).
+    const denom: f64 = if (max_fsr > 0) max_fsr else 1.0;
+    for (filtered_ri[0..filtered_n]) |ri| {
+        controls[ri].fsr_score = raw_fsr[ri] / denom;
     }
 
     return controls;
