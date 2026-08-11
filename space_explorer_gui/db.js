@@ -332,8 +332,10 @@ function createUniverseJob(seedStart, seedEnd, workers, k2Enabled = false, filte
 function getUniverseJobs() {
   const d = getDb();
   // Show every bucket (no LIMIT) so the universe table lists all of them.
+  // Sort by the bucket label (lexicographic) so the list is in a stable,
+  // readable bucket order (0x000, 0x001, ...) rather than insertion order.
   return d.prepare(
-    "SELECT * FROM universe_jobs ORDER BY created_at DESC"
+    "SELECT * FROM universe_jobs ORDER BY bucket ASC"
   ).all();
 }
 

@@ -339,10 +339,21 @@ app.get("/", (req, res) => res.redirect("/universe"));
 
 // ── Level 1: Universe buckets ──────────────────────────────────────────
 
-app.get("/universe/table", (req, res) => res.send(renderBucketsTable(db.getUniverseJobs())));
-app.get("/universe", (req, res) => page(req, res, "Universe Buckets", renderUniversePage(db.getUniverseJobs())));
+// Statuses to show in the bucket list; each defaults to enabled. Reads the
+// ?status=queued&status=running&status=done query params (absent = all on).
+const BUCKET_STATUSES = ["queued", "running", "done"];
+function bucketStatusFilter(req) {
+  const q = req.query.status;
+  if (q === undefined) return new Set(BUCKET_STATUSES);
+  const list = Array.isArray(q) ? q : [q];
+  const on = new Set(list);
+  return on;
+}
 
-function renderUniversePage(jobsList) {
+app.get("/universe/table", (req, res) => { const f = bucketStatusFilter(req); res.send(renderBucketsTable(db.getUniverseJobs(), f)); });
+app.get("/universe", (req, res) => { const f = bucketStatusFilter(req); page(req, res, "Universe Buckets", renderUniversePage(db.getUniverseJobs(), f)); });
+
+function renderUniversePage(jobsList, statusFilter) {
   const bs = jobs.BUCKET_SIZE;
   const bsLabel = jobs.formatBucketSize(bs);
   return `
@@ -366,7 +377,7 @@ function renderUniversePage(jobsList) {
     <code>output/&lt;bucket&gt;/seeds.jsonl</code> (seedgen's rough pass).</p>
     <div class="job-form">
       <form hx-post="/api/universe/create" hx-swap="none"
-            hx-on::after-request="htmx.ajax('GET','/universe/table',{target:'#jobs-table'})">
+            hx-on::after-request="htmx.trigger('#jobs-table','refresh')">
         <label title="Each unit = one ${bsLabel} bucket">Buckets (×${bsLabel}): <input type="number" name="units" value="10" min="1" max="1000" required></label>
         <label title="Dev shortcut: begin at this seed (snapped to a ${bsLabel} boundary). Blank = continue after the last bucket.">Start seed: <input type="number" name="start_seed" value="" min="0" step="${bs}" placeholder="auto (continue after last bucket)"></label>
         <fieldset class="tail-filter" style="border:1px solid var(--border,#333);padding:6px 10px;border-radius:6px">
@@ -388,16 +399,35 @@ function renderUniversePage(jobsList) {
         <button type="submit" class="btn">Queue Buckets</button>
       </form>
     </div>
-    <div id="jobs-table" hx-get="/universe/table" hx-trigger="every 3s" hx-sync="#main:drop">${renderBucketsTable(jobsList)}</div>
+    <div class="status-filter" style="margin:10px 0">
+      <span class="hint" style="margin-right:8px">Show:</span>
+      ${BUCKET_STATUSES.map(s => `
+        <label style="margin-right:12px"><input type="checkbox" name="status" value="${s}"
+          ${!statusFilter || statusFilter.has(s) ? "checked" : ""}
+          onchange="updateBucketFilter()"> ${s}</label>
+      `).join("")}
+    </div>
+    <script>
+      function updateBucketFilter() {
+        // Trigger the table refresh now; hx-include carries the current checkbox
+        // state so both this fetch and the 3s auto-refresh respect the filter.
+        htmx.trigger('#jobs-table', 'refresh');
+      }
+    </script>
+    <div id="jobs-table" hx-get="/universe/table" hx-trigger="every 3s, refresh from:body"
+         hx-include=".status-filter input[name=status]" hx-sync="#main:drop">${renderBucketsTable(jobsList, statusFilter)}
+    </div>
   </div>`;
 }
 
-function renderBucketsTable(jobsList) {
+function renderBucketsTable(jobsList, statusFilter) {
+  // Keep only the buckets whose status is enabled in the filter (default all).
+  const shown = statusFilter ? jobsList.filter(j => statusFilter.has(j.status)) : jobsList;
   return `
     <table class="data-table">
       <thead><tr><th>Bucket</th><th>Seed Range</th><th>K2</th><th>Status</th><th>Passed</th><th>Zones</th><th>Created</th><th></th></tr></thead>
       <tbody>
-        ${jobsList.map(j => `
+        ${shown.map(j => `
         <tr class="row-${j.status}">
           <td><strong>${j.bucket || "—"}</strong></td>
           <td>${j.seed_start.toLocaleString()} – ${j.seed_end.toLocaleString()}</td>
@@ -408,7 +438,7 @@ function renderBucketsTable(jobsList) {
           <td>${j.created_at}</td>
           <td>${j.status === "done" ? `<a href="/seeds?bucket=${j.bucket}" hx-get="/seeds?bucket=${j.bucket}" hx-target="#main" hx-push-url="true" class="btn-sm">Seeds →</a>` : ""}</td>
         </tr>`).join("")}
-        ${jobsList.length === 0 ? `<tr><td colspan="8">No buckets yet.</td></tr>` : ""}
+        ${shown.length === 0 ? `<tr><td colspan="8">No buckets in the selected status.</td></tr>` : ""}
       </tbody>
     </table>`;
 }
