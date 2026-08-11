@@ -34,13 +34,13 @@ function formatBucketSize(size) {
 // zero-padded to 3 hex digits: [0, 1048576[ -> "0x000", [1048576, 2097152[ ->
 // "0x001", ... With BUCKET_SIZE 1048576 (= 0x100000 = 1Mi) that prefix equals
 // the high 20 bits of every seed in the batch, and a full u32 sweep (0..2^32-1)
-// spans exactly 0x000..0xFFF. K2-enabled buckets get a "-k2" suffix so they
-// live in separate folders/jobs from the vanilla run of the same seed range
-// (output/0x000 vs output/0x000-k2).
+// spans exactly 0x000..0xFFF. Vanilla buckets are prefixed "se-" (se-0x000) and
+// K2 buckets "k2-" (k2-0x000) so they live in separate folders/jobs from each
+// other and from the vanilla run of the same seed range.
 function bucketLabel(seedEnd, k2) {
   const index = seedEnd / BUCKET_SIZE - 1; // 1-based upper bound -> 0-based batch
   const hex = Math.floor(index).toString(16).padStart(3, "0");
-  return k2 ? `0x${hex}-k2` : `0x${hex}`;
+  return k2 ? `k2-0x${hex}` : `se-0x${hex}`;
 }
 
 function bucketDir(label) {
@@ -194,6 +194,106 @@ const requireGpuBiome = () => requireGpuBin("gpu_biome");     // shared classify
 
 const requireGpuOre = () => requireGpuBin("gpu_ore");         // GPU ore placement
 
+// ── Container (Docker) worker execution ────────────────────────────────
+// The Zig workers can run inside the seed-search-worker image instead of as
+// bare host processes. SE_WORKER_MODE=docker opts in; anything else (default)
+// spawns the binaries directly on the host (the pre-docker behavior).
+//
+// A host worker is  spawn(bin, args, { env, cwd }). The container equivalent
+// is  docker run --rm -v <repo>/output:/workspace/output -e K=V -e ... \
+//          seed-search-worker <bin-in-image> [args...]. stdout/stderr are
+// attached (--rm -a) so the existing pipe/parse logic is unchanged; the binary
+// name is resolved to its /usr/local/bin path inside the image.
+const WORKER_IMAGE = process.env.SE_WORKER_IMAGE || "seed-search-worker";
+const WORKER_MODE = process.env.SE_WORKER_MODE === "docker" ? "docker" : "host";
+
+// Map a host binary path/name to its name inside the worker image.
+const IMAGE_BIN = { seedgen: "seedgen", segen: "segen", gpu_terrain: "gpu_terrain", gpu_biome: "gpu_biome", gpu_ore: "gpu_ore", gpu_stitch: "gpu_stitch" };
+function imageBinName(hostBin) {
+  return IMAGE_BIN[path.basename(hostBin)] || path.basename(hostBin);
+}
+
+// Spawn a worker process either directly (host) or via docker run (container).
+// Returns a child_process.ChildProcess. In docker mode the command is
+// `docker run ... seed-search-worker <name> [args...]` with env passed as -e.
+//
+// Tuning knobs (all env-overridable, sensible defaults):
+//   SE_WORKER_MEM    per-container memory cap, e.g. "2g" (seedgen is CPU-bound;
+//                    a cap guards against a runaway worker without hurting it)
+//   SE_WORKER_CPUS   CPU quota per container, e.g. "1" (prevents one worker
+//                    starving its siblings on the shared pool)
+//   IF SE_WORKER_SHARES cpu-shares weight (relative nice), e.g. 256
+//
+// Disk footprint per worker is ~0 beyond the image (writable layer stays empty,
+// output goes to the bind-mounted volume, --rm removes the container on exit);
+// the seed-search-worker image itself is ~47 MiB one-time per host. The only
+// real disk usage is the generated data in the mounted output volume.
+// Kill a worker process, container-aware. In docker mode `child` is the
+// `docker run` CLI process; SIGTERM-ing just that CLI detaches and orphans the
+// container (the --rm cleanup never runs because the CLI died without stopping
+// the container). So we first `docker stop` the container by its assigned name
+// (which is what actually terminates + auto-removes it via --rm), then SIGTERM
+// the CLI as a fallback for the host-mode case. `force` uses `docker kill`
+// (SIGKILL) for a frozen/unresponsive worker.
+function killWorker(child, force=false) {
+  const name = child && child.se_workerName;
+  if (name && WORKER_MODE === "docker") {
+    const stop = spawn("docker", [force ? "kill" : "stop", name], { stdio: ["ignore", "ignore", "ignore"] });
+    stop.on("error", () => {});
+    stop.unref();
+  }
+  try { child && child.kill("SIGTERM"); } catch (_) {}
+}
+
+function spawnWorker(bin, args, { env, cwd, gpu } = {}) {
+  if (WORKER_MODE !== "docker") return spawn(bin, args, { env, cwd: cwd || undefined, stdio: ["ignore", "pipe", "pipe"] });
+  const dockerArgs = ["run", "--rm"];
+  dockerArgs.push("-v", `${PROJECT_ROOT}/output:/workspace/output`);
+  // Unique container name so killWorker can `docker stop` by name; --rm removes
+  // it on exit and docker kill/stop auto-removes with --rm.
+  const name = `seed-w-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  dockerArgs.push("--name", name);
+  // Run as the server user so the bind-mounted output volume (owned by the
+  // server user) stays writable/readable consistently. The UID/GID match the
+  // server process (SE_WORKER_UID/SET_WORKER_GID override if needed).
+  const uid = process.env.SE_WORKER_UID || String(process.getuid());
+  const gid = process.env.SE_WORKER_GID || String(process.getgid());
+  dockerArgs.push("--user", `${uid}:${gid}`);
+  // GPU workers need the host GPU device visible (they dlopen drivers at
+  // runtime). Pass through the DRI render node when present, best-effort.
+  if (gpu) {
+    dockerArgs.push("--device=/dev/dri:/dev/dri");
+  }
+  const mem = process.env.SE_WORKER_MEM;
+  if (mem) { dockerArgs.push("--memory", mem); dockerArgs.push("--memory-swap", mem); }
+  const cpus = process.env.SE_WORKER_CPUS;
+  if (cpus) dockerArgs.push("--cpus", cpus);
+  const shares = process.env.SE_WORKER_SHARES;
+  if (shares) dockerArgs.push("--cpu-shares", shares);
+  // Hardening: workers are CPU-only writers — they need no Linux capabilities,
+  // cannot gain privileges, and write only to the mounted output volume (so the
+  // container rootfs can be read-only). Env-overridable to relax if needed.
+  if (process.env.SE_WORKER_HARDEN === "0") {
+    // opt-out: skip the security profile
+  } else {
+    dockerArgs.push("--cap-drop=ALL");
+    dockerArgs.push("--security-opt", "no-new-privileges");
+    dockerArgs.push("--read-only");
+    dockerArgs.push("--tmpfs", "/tmp:rw,size=8m"); // small writable /tmp for tools
+  }
+  // --attach keeps stdout/stderr piped to us so progress parsing still works.
+  dockerArgs.push("-a", "stdout", "-a", "stderr");
+  if (env) {
+    for (const [k, v] of Object.entries(env)) {
+      if (v !== undefined && v !== null) dockerArgs.push("-e", `${k}=${v}`);
+    }
+  }
+  dockerArgs.push(WORKER_IMAGE, imageBinName(bin), ...args);
+  const child = spawn("docker", dockerArgs, { stdio: ["ignore", "pipe", "pipe"] });
+  child.se_workerName = name;
+  return child;
+}
+
 function requireSeedgen() {
   const bin = findSeedgenBinary();
   if (!bin) throw new Error(
@@ -286,8 +386,8 @@ function cancelAllJobs() {
   const s = d.prepare(
     "UPDATE surface_jobs SET status='cancelled', finished_at=? WHERE status IN ('queued','running')"
   ).run(now);
-  for (const child of universeChildren.values()) { try { child.kill("SIGTERM"); } catch (_) {} }
-  for (const child of surfaceChildren.values()) { try { child.kill("SIGTERM"); } catch (_) {} }
+  for (const child of universeChildren.values()) { killWorker(child); }
+  for (const child of surfaceChildren.values()) { killWorker(child); }
   console.log(`[cancel-all] cancelled ${u.changes} universe + ${s.changes} surface jobs`);
   return { universe: u.changes, surface: s.changes };
 }
@@ -357,8 +457,23 @@ function clearCancelledJobs() {
       console.log(`[clear-cancelled] kept universe job ${j.id} (${j.bucket}): ${e.message}`);
     }
   }
-  console.log(`[clear-cancelled] removed ${uCount} universe + ${s.changes} surface entries, ${dirsRemoved} bucket dir(s)`);
-  return { universe: uCount, surface: s.changes, dirsRemoved };
+
+  // Sweep leftover .trash-* dirs in the output root. Cancellation can leave
+  // partial seeds.jsonl debris staged under a .trash-* folder (e.g. when a
+  // cancel races the worker's output move, or a smoke test stages it there).
+  // No repo code otherwise removes these, so clear-cancelled owns the sweep.
+  let trashRemoved = 0;
+  try {
+    for (const e of fs.readdirSync(OUTPUT_DIR)) {
+      if (e.startsWith(".trash-")) {
+        fs.rmSync(path.join(OUTPUT_DIR, e), { recursive: true, force: true });
+        trashRemoved++;
+      }
+    }
+  } catch (e) { console.log(`[clear-cancelled] trash sweep: ${e.message}`); }
+
+  console.log(`[clear-cancelled] removed ${uCount} universe + ${s.changes} surface entries, ${dirsRemoved} bucket dir(s), ${trashRemoved} trash dir(s)`);
+  return { universe: uCount, surface: s.changes, dirsRemoved, trashRemoved };
 }
 
 const clampInt = (n, lo, hi) => Math.max(lo, Math.min(hi, n | 0));
@@ -442,9 +557,9 @@ function recoverJobs() {
     return r && r.started_at ? Date.parse(r.started_at) : Date.now();
   };
   for (const [id, child] of universeChildren)
-    if (startedMs("universe_jobs", id) < cutoff) { console.log(`[recover] killing hung universe job ${id}`); try { child.kill("SIGTERM"); } catch (_) {} }
+    if (startedMs("universe_jobs", id) < cutoff) { console.log(`[recover] killing hung universe job ${id}`); killWorker(child); }
   for (const [id, child] of surfaceChildren)
-    if (startedMs("surface_jobs", id) < cutoff) { console.log(`[recover] killing hung surface job ${id}`); try { child.kill("SIGTERM"); } catch (_) {} }
+    if (startedMs("surface_jobs", id) < cutoff) { console.log(`[recover] killing hung surface job ${id}`); killWorker(child); }
 
   // 3. Retry failed jobs (bounded), after a short backoff to avoid thrashing.
   const backoff = new Date(Date.now() - RETRY_BACKOFF_MS).toISOString();
@@ -531,7 +646,7 @@ function runUniverseBucket(job) {
     console.log(`[universe ${label}] seeds ${job.seed_start.toLocaleString()} → ${job.seed_end.toLocaleString()}`);
     db.addJobLog("universe", job.id, `Bucket ${label}: scanning ${formatBucketSize(BUCKET_SIZE)} seeds`);
 
-    const child = spawn(binPath, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnWorker(binPath, [], { env });
     universeChildren.set(job.id, child);
     const outStream = fs.createWriteStream(outFile);
     child.stdout.pipe(outStream);
@@ -793,7 +908,7 @@ function expandSeed(seed) {
     ALL_ZONES: "1",
     MIN_NAQ_DV: "0", MIN_PROD_MODULES: "0", NAQ_SCAN: "0",
   };
-  const child = spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawnWorker(bin, [], { env });
   let out = "", err = "";
   child.stdout.on("data", d => out += d);
   child.stderr.on("data", d => err += d);
@@ -849,7 +964,7 @@ function generateSeed(seed, k2 = false) {
       WATER_PCT_LOW: "0", WATER_PCT_HIGH: "0",
       ENEMY_PCT_LOW: "0", ENEMY_PCT_HIGH: "0",
     };
-    const child = spawn(bin, [], { env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnWorker(bin, [], { env });
     let out = "", err = "";
     child.stdout.on("data", d => out += d);
     child.stderr.on("data", d => err += d);
@@ -1026,7 +1141,7 @@ async function stitchSurfaceCells(zDir, prefix, radius, n) {
     // one step. Cells are removed only after the stitched image exists.
     const bin = requireGpuBin("gpu_stitch");
     await new Promise((resolve, reject) => {
-      const ch = spawn(bin, ["--dir", zDir, "--prefix", prefix, "--grid", String(n), "--radius", String(radius)], { stdio: ["ignore", "ignore", "pipe"] });
+      const ch = spawnWorker(bin, ["--dir", zDir, "--prefix", prefix, "--grid", String(n), "--radius", String(radius)], { env: process.env, gpu: true });
       let e = "";
       ch.stderr.on("data", d => e += d);
       ch.on("close", code => code === 0 ? resolve() : reject(new Error(`gpu_stitch exit ${code}: ${e.slice(-200)}`)));
@@ -1195,7 +1310,15 @@ function runSurfaceJob(job) {
     }
 
     console.log(`[surface ${job.id}] ${path.basename(binPath)} ${args.join(" ")}`);
-    const child = spawn(binPath, args, { cwd: useGpu ? GPU_COMPUTE_DIR : SURFACE_GEN_DIR, stdio: ["ignore", "pipe", "pipe"] });
+    // The surface/GPU worker needs the GPU device when rendering. In docker
+    // mode we pass --device for the renderer (best-effort; the GPU binaries
+    // dlopen host drivers, so the device must be visible). The output dir is
+    // bind-mounted handle-bucket output.
+    const child = spawnWorker(binPath, args, {
+      env: process.env,
+      cwd: useGpu ? GPU_COMPUTE_DIR : SURFACE_GEN_DIR,
+      gpu: useGpu,
+    });
     surfaceChildren.set(job.id, child);
 
     let stderr = "";

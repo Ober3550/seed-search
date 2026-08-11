@@ -43,14 +43,20 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "zigimg", .module = zigimg }},
     });
 
-    // Links wgpu-native (dylib install_name is @rpath/..., so bake an rpath) onto
-    // whichever exe we build.
+    // Links wgpu-native onto whichever exe we build. Preferred static so the
+    // vendor libwgpu_native.a is baked in (removes the runtime .so dependency
+    // and the rpath dance). libwgpu_native.a is a Rust archive that needs the
+    // GCC DWARF2 unwinder (the _Unwind_* symbols) — pull in the static libgcc
+    // unwinder archive on Linux so a fully-static link resolves them.
     const linkWgpu = struct {
         fn apply(e: *std.Build.Step.Compile, bb: *std.Build, i: []const u8, l: []const u8) void {
             e.root_module.addIncludePath(bb.path(i));
             e.root_module.addLibraryPath(bb.path(l));
-            e.root_module.linkSystemLibrary("wgpu_native", .{});
-            e.root_module.addRPath(bb.path(l));
+            e.root_module.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
+            if (bb.graph.host.result.os.tag != .windows and bb.graph.host.result.os.tag != .macos) {
+                // Static libgcc unwind (libgcc_eh.a) provides _Unwind_* on Linux.
+                e.root_module.linkSystemLibrary("gcc_eh", .{});
+            }
         }
     }.apply;
 

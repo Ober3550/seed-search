@@ -258,42 +258,6 @@ async function fetchHtmx() {
 // ---------------------------------------------------------------------------
 // Build steps
 // ---------------------------------------------------------------------------
-// Locate the directory containing libpq-fe.h.  On Debian/Ubuntu this is
-// /usr/include/postgresql; on macOS (Homebrew/MacPorts) it's under
-// /opt/homebrew/include/postgresql or /opt/local/include/postgresql.  Prefer
-// `pg_config --includedir` because it is guaranteed to match the installed
-// libpq whenever the headers are present.
-function getPgIncludeDir() {
-  const r = spawnSync("pg_config", ["--includedir"], { encoding: "utf8" });
-  if (!r.error && r.status === 0) {
-    const inc = r.stdout.trim();
-    if (inc && fs.existsSync(inc)) return inc;
-  }
-  // Common fallback locations for Linux / macOS
-  const candidates = [
-    "/usr/include/postgresql",
-    "/usr/local/include/postgresql",
-    "/opt/homebrew/include/postgresql",
-    "/opt/local/include/postgresql",
-  ];
-  for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, "libpq-fe.h"))) return dir;
-  }
-  return null;
-}
-
-// The matching library dir. Keg-only Homebrew installs (postgresql@15, libpq)
-// put libpq outside the default linker search path, so -lpq alone fails even
-// though the headers were found; pass -L alongside -I.
-function getPgLibDir() {
-  const r = spawnSync("pg_config", ["--libdir"], { encoding: "utf8" });
-  if (!r.error && r.status === 0) {
-    const lib = r.stdout.trim();
-    if (lib && fs.existsSync(lib)) return lib;
-  }
-  return null;
-}
-
 function isAptSystem() {
   if (process.platform !== "linux") return false;
   const r = spawnSync("apt-get", ["--version"], { encoding: "utf8" });
@@ -318,28 +282,6 @@ function buildSeedgen() {
   const dir = path.join(ROOT, "universe_generator", "zig");
   const out = "seedgen" + (IS_WIN ? ".exe" : "");
   const args = ["build-exe", "main.zig", "-O", "ReleaseFast", `-femit-bin=${out}`, "-lc"];
-  // libpq headers are not in the default include path on many Linux
-  // distributions.  `-I` and `-lpq` make the C import and linking work.
-  const pgInc = getPgIncludeDir();
-  if (!pgInc) {
-    if (isAptSystem()) {
-      fail(
-        "libpq-fe.h not found.\n" +
-          "  On Debian/Ubuntu run:  sudo apt install libpq-dev\n" +
-          "  Then re-run this installer."
-      );
-    } else {
-      fail(
-        "libpq-fe.h not found.\n" +
-          "  Install the PostgreSQL client development headers for your OS\n" +
-          "  (or set the include path manually) and re-run this installer."
-      );
-    }
-  }
-  args.push(`-I${pgInc}`);
-  const pgLib = getPgLibDir();
-  if (pgLib) args.push(`-L${pgLib}`);
-  args.push("-lpq");
   run("zig", args, dir);
   ok(`seedgen → universe_generator/zig/${out}`);
 }
