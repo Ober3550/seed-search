@@ -32,6 +32,16 @@ struct Shared {
     gw : u32,          // grid width/height in bins
     gh : u32,
     nbins_p1 : u32,    // gw*gh + 1 (per-resource stride into bin_offsets)
+    // Placement-model constants (SE by default; the vanilla/Nauvis dump overrides
+    // them). One kernel serves both tunings — see GpuOreHeader in se_ore_placement.zig.
+    is_vanilla : u32,
+    double_density : f32,
+    regular_fade_in : f32,
+    starting_radius : f32,
+    spot_enlarge_max : f32,
+    reg_vein_w : f32,     // regular vein weight (SE 0.8, vanilla 0)
+    start_blob_c : f32,   // starting (blobs0-0.25) coefficient (SE 0.4, vanilla 1.0)
+    start_vein_w : f32,   // starting vein weight (SE 0.2, vanilla 0)
     pad0 : u32,
     pad1 : u32,
 };
@@ -76,10 +86,9 @@ struct Res {
 const PI : f32 = 3.14159265358979;
 const MAX_BASEMENT_RADIUS : f32 = 128.0;
 const START_MAX_BASEMENT_RADIUS : f32 = 64.0;
-const STARTING_RADIUS : f32 = 140.0;
-const REGULAR_FADE_IN : f32 = 320.0;
-const DOUBLE_DENSITY : f32 = 5000.0;
-const SPOT_ENLARGE_MAX : f32 = 5320.0; // DOUBLE_DENSITY + REGULAR_FADE_IN
+// STARTING_RADIUS / REGULAR_FADE_IN / DOUBLE_DENSITY / SPOT_ENLARGE_MAX now come
+// from the P uniform (P.starting_radius, P.regular_fade_in, P.double_density,
+// P.spot_enlarge_max) so one kernel serves both SE and vanilla tunings.
 
 fn clamp01(v : f32) -> f32 { return clamp(v, 0.0, 1.0); }
 fn cbrtf(v : f32) -> f32 { return pow(max(v, 0.0), 1.0 / 3.0); }
@@ -176,9 +185,16 @@ fn spotConeBinned(bin_base : u32, basement : f32, x : f32, y : f32) -> f32 {
 }
 
 fn regularDensityAt(r : Res, dist : f32) -> f32 {
-    let fade = clamp01((dist - STARTING_RADIUS) / REGULAR_FADE_IN);
-    let size_eff = dist - REGULAR_FADE_IN;
-    let doubling = 1.0 + clamp01(size_eff / DOUBLE_DENSITY);
+    // has_starting resources fade in from the starting radius; those without
+    // (vanilla `has_starting_area_placement=false`) place at full density with
+    // no fade and no fade-in subtraction. SE resources always take the fade path.
+    var fade : f32 = 1.0;
+    var size_eff : f32 = dist;
+    if (P.is_vanilla == 0u || r.has_starting == 1u) {
+        fade = clamp01((dist - P.starting_radius) / P.regular_fade_in);
+        size_eff = dist - P.regular_fade_in;
+    }
+    let doubling = 1.0 + clamp01(size_eff / P.double_density);
     return r.base_density * r.freq_mult * r.size_mult * fade * doubling;
 }
 fn typicalHeightAt(r : Res, dist : f32) -> f32 {
@@ -187,12 +203,16 @@ fn typicalHeightAt(r : Res, dist : f32) -> f32 {
 }
 fn blobAmplitudeAt(r : Res, x : f32, y : f32) -> f32 {
     let dist = sqrt(x * x + y * y);
-    return (1.0 / 8.0) * min(typicalHeightAt(r, SPOT_ENLARGE_MAX), typicalHeightAt(r, dist));
+    return (1.0 / 8.0) * min(typicalHeightAt(r, P.spot_enlarge_max), typicalHeightAt(r, dist));
 }
-fn richnessDistance(x : f32, y : f32) -> f32 {
-    let dist = min(sqrt(x * x + y * y), DOUBLE_DENSITY);
-    let sed = dist - REGULAR_FADE_IN;
-    return max(1.0, (DOUBLE_DENSITY + sed) / (DOUBLE_DENSITY + DOUBLE_DENSITY));
+// richness_distance = max(1, (dd - sub + capped_dist) / (2*dd)). SE caps distance
+// at dd; vanilla does not. `sub` is the fade-in for has_starting resources, else 0.
+fn richnessDistance(r : Res, x : f32, y : f32) -> f32 {
+    var dist = sqrt(x * x + y * y);
+    if (P.is_vanilla == 0u) { dist = min(dist, P.double_density); }
+    var sub : f32 = P.regular_fade_in;
+    if (P.is_vanilla == 1u && r.has_starting == 0u) { sub = 0.0; }
+    return max(1.0, (P.double_density - sub + dist) / (P.double_density + P.double_density));
 }
 
 // triple-LFSR placement roll (position-hashed) -> uniform f32 in [0,1)
@@ -250,11 +270,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
         let blob_amp = blobAmplitudeAt(rp, x, y);
         let spot_v = spotConeBinned(r * P.nbins_p1, rp.basement_value, x, y);
-        let regular = spot_v + (blob + 0.8 * vein) * blob_amp;
+        let regular = spot_v + (blob + P.reg_vein_w * vein) * blob_amp;
         var value = regular;
         if (rp.has_starting == 1u) {
             let ssv = startCone(rp.start_off, rp.nstart, rp.basement_value, START_MAX_BASEMENT_RADIUS, x, y);
-            let starting = ssv + (0.4 * (blobs0 - 0.25) + 0.2 * start_vein) * rp.starting_blob_amplitude;
+            let starting = ssv + (P.start_blob_c * (blobs0 - 0.25) + P.start_vein_w * start_vein) * rp.starting_blob_amplitude;
             value = max(regular, starting);
         }
         let p = clamp01(value);
@@ -264,7 +284,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
         var richness = value;
         if (rp.additional_richness > 0.0) { richness = richness + rp.additional_richness; }
-        richness = richness * richnessDistance(x, y) * rp.richness_mult;
+        richness = richness * richnessDistance(rp, x, y) * rp.richness_mult;
         if (floor(richness) < 1.0) { continue; } // amount 0 → no ore
 
         if (!have || p > best_p || (p == best_p && richness > best_rich)) {

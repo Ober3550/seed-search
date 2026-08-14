@@ -25,12 +25,12 @@ const rng = @import("rng.zig");
 const pi = std.math.pi;
 
 // ---- constants from resource_autoplace_all_patches local_expressions ----
-const DOUBLE_DENSITY_DISTANCE: f64 = 1300.0;
-const REGULAR_PATCH_FADE_IN_DISTANCE: f64 = 300.0;
-const STARTING_RESOURCE_PLACEMENT_RADIUS: f64 = 120.0;
+pub const DOUBLE_DENSITY_DISTANCE: f64 = 1300.0;
+pub const REGULAR_PATCH_FADE_IN_DISTANCE: f64 = 300.0;
+pub const STARTING_RESOURCE_PLACEMENT_RADIUS: f64 = 120.0;
 const STARTING_PATCHES_SPLIT: f64 = 0.5;
-const MAXIMUM_SPOT_BASEMENT_RADIUS: f64 = 128.0;
-const REGULAR_REGION_SIZE: f64 = 1024.0;
+pub const MAXIMUM_SPOT_BASEMENT_RADIUS: f64 = 128.0;
+pub const REGULAR_REGION_SIZE: f64 = 1024.0;
 // suggested_minimum_candidate_point_spacing for regular patches (noise-functions.lua:246).
 const REGULAR_MIN_CANDIDATE_SPACING: f64 = 45.254833995939045;
 
@@ -143,10 +143,10 @@ pub const Field = struct {
     fn sizeMul(self: Field) f64 {
         return self.controls.size;
     }
-    fn has(self: Field) i8 {
+    pub fn has(self: Field) i8 {
         return @intFromEnum(self.config.has_starting_area_placement);
     }
-    fn regularRqFactor(self: Field) f64 {
+    pub fn regularRqFactor(self: Field) f64 {
         return self.config.regular_rq_factor_multiplier / 10.0;
     }
     fn startingRqFactor(self: Field) f64 {
@@ -199,14 +199,14 @@ pub const Field = struct {
     fn startingAreaSpotQuantity(self: Field) f64 {
         return self.startingAmount() / STARTING_PATCHES_SPLIT / self.freq();
     }
-    fn startingBlobAmplitude(self: Field) f64 {
+    pub fn startingBlobAmplitude(self: Field) f64 {
         const rq = self.startingRqFactor();
         return self.startingBlobAmpMult() / (pi / 3.0 * rq * rq) *
             cbrt(self.startingAreaSpotQuantity());
     }
 
     // basement_value = -6 * max(regular_blob_amplitude_at(max_dist), starting_blob_amplitude)
-    fn basementValue(self: Field) f64 {
+    pub fn basementValue(self: Field) f64 {
         return -6.0 * @max(
             self.regularBlobAmplitudeAt(self.regularBlobAmplitudeMaximumDistance()),
             self.startingBlobAmplitude(),
@@ -255,10 +255,10 @@ fn blobs0(basis: *const noise.BasisNoiseGen, x: f64, y: f64) f64 {
 }
 
 /// The cached SpotNoiseField specialized for our Field evaluator.
-const RegularSpotField = noise.SpotNoiseField(Field);
+pub const RegularSpotField = noise.SpotNoiseField(Field);
 
 /// Build the regular-patch spot field for a resource (noise-functions.lua:236).
-fn makeRegularSpotField(alloc: std.mem.Allocator, field: Field) RegularSpotField {
+pub fn makeRegularSpotField(alloc: std.mem.Allocator, field: Field) RegularSpotField {
     return .{
         .alloc = alloc,
         .field = field,
@@ -335,7 +335,7 @@ pub const StartingSpotField = noise.SpotNoiseField(StartingField);
 
 /// Build the starting-patch spot field (noise-functions.lua:211-229): seed1+1,
 /// region 240, hard target, candidate_spot_count 32, spacing 32, starting set stride.
-fn makeStartingSpotField(alloc: std.mem.Allocator, field: Field, lakes: ?*const terrain.ElevationLakes) StartingSpotField {
+pub fn makeStartingSpotField(alloc: std.mem.Allocator, field: Field, lakes: ?*const terrain.ElevationLakes) StartingSpotField {
     return .{
         .alloc = alloc,
         .field = StartingField{ .field = field, .lakes = lakes },
@@ -481,6 +481,11 @@ pub fn computeOresInRect(
     resource_names: []const []const u8,
     controls: AutoplaceControls,
     ctx: TerrainCtx,
+    // Optional per-resource FSR override, parallel to `resources`. When non-null,
+    // per_controls[i] replaces the shared `controls` for resource i — used by the
+    // GUI's FSR test bench to drive each ore's frequency/size/richness
+    // independently. null (or a length mismatch) falls back to `controls`.
+    per_controls: ?[]const AutoplaceControls,
 ) !std.ArrayList(OreEntity) {
     var results: std.ArrayList(OreEntity) = .empty;
 
@@ -489,7 +494,8 @@ pub fn computeOresInRect(
     const rstates = try alloc.alloc(RState, resources.len);
     defer alloc.free(rstates);
     for (resources, resource_names, 0..) |config, name, i| {
-        const field = Field{ .config = config, .controls = controls, .map_seed = map_seed };
+        const ctrl = if (per_controls) |pc| (if (i < pc.len) pc[i] else controls) else controls;
+        const field = Field{ .config = config, .controls = ctrl, .map_seed = map_seed };
         const sspot: ?StartingSpotField = if (field.has() == 1) makeStartingSpotField(alloc, field, ctx.lakes) else null;
         rstates[i] = .{ .field = field, .spot = makeRegularSpotField(alloc, field), .sspot = sspot, .basis = noise.BasisNoiseGen.init(map_seed, config.seed1), .name = name };
     }

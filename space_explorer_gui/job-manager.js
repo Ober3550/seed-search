@@ -392,6 +392,24 @@ function cancelAllJobs() {
   return { universe: u.changes, surface: s.changes };
 }
 
+// Cancel specific surface jobs by id: mark them 'cancelled' (so pickNext skips
+// the queued ones and the close handler's guard skips any running one) and kill
+// its live child if present. Used to purge stale/obsolete jobs before re-queueing
+// a zone. Returns how many rows changed.
+function cancelSurfaceJobs(ids) {
+  if (!ids || !ids.length) return 0;
+  const d = db.getDb();
+  const now = new Date().toISOString();
+  const stmt = d.prepare("UPDATE surface_jobs SET status='cancelled', finished_at=? WHERE id=? AND status IN ('queued','running')");
+  let n = 0;
+  for (const id of ids) {
+    n += stmt.run(now, id).changes;
+    const child = surfaceChildren.get(id);
+    if (child) killWorker(child);
+  }
+  return n;
+}
+
 // FULL RESET for testing: kill running work, wipe all generated data (jobs,
 // seeds, zones, filtered sets) from the DB, and empty the output/ directory.
 // Config is kept: filter presets (filter_defs) and settings (worker limits).
@@ -1034,13 +1052,35 @@ function createFilteredSet(bucket, name, rules, loot) {
 // Write output/<bucket>/seed_<n>/zones.jsonl — the world line with z filtered
 // to `zoneNames` (or all zones when null). This file feeds segen --zones and
 // records "which zones exist" at this depth of the drill-down.
-function writeSeedZonesFile(seedRow, zoneNames) {
+// `fsr`, when given, is an FSR test-bench override of the shape
+//   { zone: "<zone name>", controls: { "iron-ore": [freq, size, rich], ... } }
+// It is attached to the matching zone entry as an `fsr` field, which segen reads
+// (see se_main.zig fsrOverride) to drive each resource's autoplace controls. It
+// only touches the named zone; every other zone entry is written untouched, so a
+// default (no-override) render of a sibling zone is unaffected.
+function writeSeedZonesFile(seedRow, zoneNames, fsr) {
   const dir = seedDir(seedRow.bucket, seedRow.seed);
   fs.mkdirSync(dir, { recursive: true });
   const world = JSON.parse(seedRow.line);
+  // Synthetic Nauvis entry: the universe generator never emits Nauvis (it uses
+  // the game's map-gen defaults, not universe zone controls). segen/gpu_terrain
+  // key off the `nauvis` flag: vanilla autoplace at default FSR, map seed =
+  // world seed, default water size 1.0. temperature "balanced" = cold/hot 1/1
+  // (the vanilla default) and r=5000 makes the SE frequency multiplier
+  // (5000/r) exactly 1, so the rest of the zone pipeline needs no special case.
+  if (!(world.z || []).some(z => z.n === "Nauvis")) {
+    world.z = [
+      { i: 0, n: "Nauvis", t: "planet", s: seedRow.seed, c: 1, r: 5000, temperature: "balanced", nauvis: true },
+      ...(world.z || []),
+    ];
+  }
   const filtered = zoneNames
     ? { ...world, z: (world.z || []).filter(z => zoneNames.includes(z.n)) }
     : world;
+  if (fsr && fsr.zone && fsr.controls) {
+    filtered.z = (filtered.z || []).map(z =>
+      z.n === fsr.zone ? { ...z, fsr: fsr.controls } : z);
+  }
   const file = path.join(dir, "zones.jsonl");
   fs.writeFileSync(file, JSON.stringify(filtered) + "\n");
   return file;
@@ -1301,6 +1341,11 @@ function runSurfaceJob(job) {
       args = ["--zones", zonesFile, "--world-seed", String(job.seed), "--zone", job.zone_name, "--out", bucketDir(label), "--radius", String(job.radius), "--ores-only"];
       if (isRender) {
         if (isCell) args.push("--surface-grid", String(job.grid_n), "--surface-cell", String(job.grid_cell));
+        // Whole-disk render that tiles INTERNALLY (grid_cell < 0, grid_n > 1):
+        // one process renders every cell of the grid center-outward and stitches,
+        // mirroring the GPU path — used for Nauvis ore so its layer is one job, not
+        // one-per-cell. grid_n <= 1 falls through to a plain whole-disk render.
+        else if (job.grid_n > 1) args.push("--render-surface", "--surface-grid", String(job.grid_n));
         else args.push("--render-surface");
         if (rk.layer) args.push("--surface-layer", rk.layer);
         // Render from the cached ore.jsonl (written by the zone's ore-prep job)
@@ -1376,18 +1421,21 @@ function runSurfaceJob(job) {
       // internally (grid = surfaceGridFor): for grid>1 it writes all cells, so
       // success = every disk-intersecting cell landed, then stitch. grid<=1 →
       // whole render already writes <prefix>.png directly.
-      if (useGpu) {
-        const gpuN = surfaceGridFor(job.radius);
-        if (gpuN > 1) {
-          const expected = planSurfaceCells(job.radius, gpuN).length;
-          const got = fs.readdirSync(zDir).filter(f => f.startsWith(`${prefix}_${gpuN}_`) && f.endsWith(".png")).length;
-          if (got < expected) return fail(`gpu ${prefix}: ${got}/${expected} cells (${stderr.slice(-200)})`);
-          const stitched = await stitchSurfaceCells(zDir, prefix, job.radius, gpuN).catch(e => { console.log(`[stitch ${prefix}] ${e.message}`); return false; });
-          const pngRel = stitched ? path.relative(OUTPUT_DIR, path.join(zDir, `${prefix}.png`)) : null;
-          db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
-          db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (gpu ${got} cells${stitched ? ", stitched" : ""})`);
-          return resolve();
-        }
+      // One process that tiles the disk internally then stitches: GPU renders
+      // always do this, and the CPU path does it for a whole-disk render with
+      // grid_n>1 (Nauvis ore — one job, not one-per-cell). Either way it writes
+      // every cell PNG, so success = all disk-intersecting cells landed → stitch.
+      const tiledN = surfaceGridFor(job.radius);
+      if ((useGpu || (isRender && job.grid_cell < 0)) && tiledN > 1) {
+        const eng = useGpu ? "gpu" : "cpu";
+        const expected = planSurfaceCells(job.radius, tiledN).length;
+        const got = fs.readdirSync(zDir).filter(f => f.startsWith(`${prefix}_${tiledN}_`) && f.endsWith(".png")).length;
+        if (got < expected) return fail(`${eng} ${prefix}: ${got}/${expected} cells (${stderr.slice(-200)})`);
+        const stitched = await stitchSurfaceCells(zDir, prefix, job.radius, tiledN).catch(e => { console.log(`[stitch ${prefix}] ${e.message}`); return false; });
+        const pngRel = stitched ? path.relative(OUTPUT_DIR, path.join(zDir, `${prefix}.png`)) : null;
+        db.updateSurfaceJob(job.id, { status: "done", ore_count: oreCount, bucket: label, summary, png_file: pngRel, finished_at: new Date().toISOString() });
+        db.addJobLog("surface", job.id, `Done: ${job.zone_name} ${prefix} (${eng} ${got} cells${stitched ? ", stitched" : ""})`);
+        return resolve();
       }
 
       const stitchedFile = path.join(zDir, `${prefix}.png`);
@@ -1455,6 +1503,7 @@ module.exports = {
   setWorkerLimits,
   workerStatus,
   cancelAllJobs,
+  cancelSurfaceJobs,
   clearCancelledJobs,
   wipeSystem,
   createFilteredSet,

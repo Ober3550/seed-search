@@ -541,6 +541,25 @@ tr.zone-info:hover { opacity: 1; }
 .dim-slider { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: var(--muted); margin: 10px 0; }
 .dim-slider input[type=range] { width: 100%; }
 
+/* FSR test-bench panel (Nauvis surface view) */
+.fsr-panel { border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 12px 14px; margin: 16px 0; max-width: 760px; }
+.fsr-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.fsr-panel h3 { margin: 0; }
+.fsr-panel h3 .hint { font-weight: normal; font-size: 0.72rem; color: var(--muted); }
+.fsr-toggle { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--muted); cursor: pointer; }
+.fsr-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; transition: opacity 0.15s; }
+.fsr-table[data-on="0"] { opacity: 0.4; }
+.fsr-table th { text-align: center; font-weight: 600; color: var(--muted); padding: 3px 6px; border-bottom: 1px solid var(--border); }
+.fsr-table th:first-child { text-align: left; }
+.fsr-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); }
+.fsr-table tr:last-child td { border-bottom: none; }
+.fsr-name { white-space: nowrap; }
+.fsr-name .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+.fsr-cell { display: flex; align-items: center; gap: 6px; }
+.fsr-cell input[type=range] { flex: 1; min-width: 54px; }
+.fsr-cell output { color: var(--muted); width: 3.1em; text-align: right; font-variant-numeric: tabular-nums; }
+.fsr-panel > button { margin-top: 10px; }
+
 /* clickable zone rows (navigate to surface detail) */
 .data-table tr.clickable { cursor: pointer; }
 .data-table tr.clickable:hover td { background: rgba(88,166,255,0.09); }

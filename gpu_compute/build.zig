@@ -53,7 +53,19 @@ pub fn build(b: *std.Build) void {
             e.root_module.addIncludePath(bb.path(i));
             e.root_module.addLibraryPath(bb.path(l));
             e.root_module.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
-            if (bb.graph.host.result.os.tag != .windows and bb.graph.host.result.os.tag != .macos) {
+            if (bb.graph.host.result.os.tag == .macos) {
+                // libwgpu_native.a (Rust) references Metal/objc symbols; Zig 0.16's
+                // linker no longer auto-honors the archive's LC_LINKER_OPTION
+                // framework directives, so request them explicitly.
+                e.root_module.linkFramework("Metal", .{});
+                e.root_module.linkFramework("Foundation", .{});
+                e.root_module.linkFramework("QuartzCore", .{});
+                e.root_module.linkFramework("CoreFoundation", .{});
+                e.root_module.linkFramework("IOKit", .{});
+                e.root_module.linkFramework("IOSurface", .{});
+                e.root_module.linkFramework("CoreGraphics", .{});
+                e.root_module.linkSystemLibrary("objc", .{});
+            } else if (bb.graph.host.result.os.tag != .windows) {
                 // Static libgcc unwind (libgcc_eh.a) provides _Unwind_* on Linux.
                 e.root_module.linkSystemLibrary("gcc_eh", .{});
             }

@@ -201,7 +201,7 @@ pub fn main(init: std.process.Init) !void {
     }
     const tctx = surfacegen.ore.TerrainCtx{ .elev = &elev_gate, .lakes = &lakes_gate, .water_threshold = water_threshold, .extras = &extras_map };
 
-    var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls, tctx);
+    var ores = try surfacegen.ore.computeOresInRect(a, seed, -r, -r, r, r, configs.items, names.items, controls, tctx, null);
     defer ores.deinit(a);
 
     std.debug.print("# Found {} ore entities\n", .{ores.items.len});

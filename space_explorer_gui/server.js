@@ -633,7 +633,7 @@ function renderSeedsPage(seeds, defs, f, genCounts = {}) {
           const score = s.score; // stored (score.js), computed at insert
           return `
         <tr class="clickable" data-seed="${s.seed}" data-zones="${s.zone_count || 0}" data-gen="${gen}" data-matches="${s._matches || 0}" data-npm="${s.npm ?? 0}" data-npl="${s.npl ?? 0}" data-naqdv="${s.naqdv ?? 0}" data-fdv="${s.fdv ?? 0}" data-ef="${s.ef ?? 0}" data-wp="${s.wp ?? 0}" data-score="${score ?? 0}"
-          hx-get="/seed/${s.seed}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
+          hx-get="/seed/${s.seed}${f.defId ? `?filter=${f.defId}` : ""}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" style="cursor:pointer">
           <td><strong>${s.seed}</strong></td><td>${s.bucket}</td><td>${s.k2 ? "✅" : "—"}</td><td><code>${s.loot}</code></td>
           ${f.count ? `<td><strong>${s._matches || 0}</strong>/${f.ruleCount}</td>` : ""}
           <td>${s.npl ?? "—"}</td>
@@ -701,6 +701,106 @@ const ORE_COLORS = (() => {
   } catch (_) { return {}; }
 })();
 
+// Nauvis' vanilla resources (game map-gen order). The FSR test panel exposes a
+// frequency/size/richness slider per resource; segen keys the override off the
+// exact resource name (see se_main.zig fsrOverride).
+const NAUVIS_ORES = ["iron-ore", "copper-ore", "stone", "coal", "uranium-ore", "crude-oil"];
+const ORE_LABEL = {
+  "iron-ore": "Iron ore", "copper-ore": "Copper ore", "stone": "Stone",
+  "coal": "Coal", "uranium-ore": "Uranium ore", "crude-oil": "Crude oil",
+};
+// Fallback swatch colours (authoritative map_color from gpu_ore.zig), used when
+// the live-dumped calibration/mod-dump/ore-colors.json is absent so the panel
+// swatches still read as the right resource.
+const NAUVIS_ORE_COLORS = {
+  "iron-ore": [105, 133, 147], "copper-ore": [204, 98, 54], "coal": [40, 40, 40],
+  "stone": [175, 155, 108], "uranium-ore": [0, 178, 0], "crude-oil": [255, 153, 0],
+};
+// Factorio's discrete FSR steps (same set for frequency/size/richness). The
+// slider is an INDEX into these; a hidden input carries the matching multiplier
+// so the posted value is exactly the game's stepped multiplier, not an arbitrary
+// float. Index 5 (100%) is the in-game default.
+const FSR_STEP_LABELS = [17, 25, 33, 50, 75, 100, 133, 150, 200, 300, 400, 600];
+const FSR_STEP_MULS = [1 / 6, 1 / 4, 1 / 3, 1 / 2, 3 / 4, 1, 4 / 3, 3 / 2, 2, 3, 4, 6];
+const FSR_DEFAULT_IDX = 5;
+
+// Parse the FSR test-bench form into an override object { "iron-ore": [f,s,r], ... }
+// or undefined when the caller asked for in-game defaults (fsr_mode !== "custom").
+// A resource is only included when all three of its values parse; missing ones
+// fall back to the game default (1.0) on the Zig side, so a partial post is safe.
+function parseFsrBody(body) {
+  if (!body || body.fsr_mode !== "custom") return undefined;
+  const controls = {};
+  for (const r of NAUVIS_ORES) {
+    const f = parseFloat(body[`f_${r}`]);
+    const s = parseFloat(body[`s_${r}`]);
+    const ri = parseFloat(body[`r_${r}`]);
+    if ([f, s, ri].every(Number.isFinite)) controls[r] = [f, s, ri];
+  }
+  return Object.keys(controls).length ? controls : undefined;
+}
+
+// FSR test-bench panel for the Nauvis surface view: a frequency/size/richness
+// slider per vanilla resource, plus a toggle between the game's default controls
+// and the custom slider values. Wrapped in <form id="fsr-form"> so the existing
+// ⛏ ore / 🗺️ surface buttons pick it up via hx-include. Empty for non-Nauvis
+// zones (their resources are SE-derived, not this vanilla set).
+function renderFsrPanel(zone) {
+  if (zone.name !== "Nauvis") return "";
+  const di = FSR_DEFAULT_IDX;
+  // One axis cell: a stepped range (index into FSR_STEP_*), a % readout, and the
+  // hidden input that actually posts the multiplier (name = <axis>_<resource>).
+  const cell = (res, axis) =>
+    `<td><div class="fsr-cell">
+      <input type="range" min="0" max="${FSR_STEP_LABELS.length - 1}" step="1" value="${di}" oninput="fsrStep(this)">
+      <output>${FSR_STEP_LABELS[di]}%</output>
+      <input type="hidden" name="${axis}_${res}" value="${FSR_STEP_MULS[di]}">
+    </div></td>`;
+  const rows = NAUVIS_ORES.map((r) => {
+    const c = ORE_COLORS[r] || NAUVIS_ORE_COLORS[r] || [140, 140, 140];
+    return `<tr>
+      <td class="fsr-name"><i class="sw" style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${ORE_LABEL[r] || r}</td>
+      ${cell(r, "f")}${cell(r, "s")}${cell(r, "r")}
+    </tr>`;
+  }).join("");
+  return `
+      <form id="fsr-form" class="fsr-panel">
+        <input type="hidden" name="fsr_mode" value="default">
+        <div class="fsr-panel-head">
+          <h3>FSR test bench <span class="hint">Nauvis · vanilla ore</span></h3>
+          <label class="fsr-toggle"><input type="checkbox" onchange="fsrToggle(this.checked)"> Custom values <span class="hint">(off = in-game defaults)</span></label>
+        </div>
+        <table class="fsr-table" data-on="0">
+          <thead><tr><th>Resource</th><th>Frequency</th><th>Size</th><th>Richness</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <button type="button" class="btn-sm" onclick="fsrReset()" title="reset every slider to 100% (the in-game default)">↺ reset to 100%</button>
+        <script>
+          window.FSR_STEP_LABELS = ${JSON.stringify(FSR_STEP_LABELS)};
+          window.FSR_STEP_MULS = ${JSON.stringify(FSR_STEP_MULS)};
+          // Snap a slider to its step: update the % readout and the posted multiplier.
+          window.fsrStep = function (r) {
+            var i = +r.value;
+            var out = r.nextElementSibling;      // <output>
+            var hid = out.nextElementSibling;    // hidden multiplier input
+            out.textContent = window.FSR_STEP_LABELS[i] + "%";
+            hid.value = window.FSR_STEP_MULS[i];
+          };
+          window.fsrToggle = function (on) {
+            var f = document.getElementById("fsr-form"); if (!f) return;
+            f.querySelector("input[name=fsr_mode]").value = on ? "custom" : "default";
+            f.querySelector(".fsr-table").setAttribute("data-on", on ? "1" : "0");
+          };
+          window.fsrReset = function () {
+            var f = document.getElementById("fsr-form"); if (!f) return;
+            f.querySelectorAll(".fsr-table input[type=range]").forEach(function (s) {
+              s.value = ${di}; window.fsrStep(s);
+            });
+          };
+        </script>
+      </form>`;
+}
+
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
   if (!s) return res.status(404).send(htmxPage("Not Found", "<h2>Seed not found</h2>"));
@@ -708,11 +808,39 @@ app.get("/seed/:seed", (req, res) => {
   // kicks off a background job to fill in the rest of the universe (all star
   // systems + asteroid fields). The banner (renderSeedDetail) polls until done.
   if (!s.expanded) jobs.expandSeed(s.seed);
-  const c = seedCriteria(s) || { selectedZones: [], specials: {}, pairs: {} };
-  const filterId = req.query.filter || null;
+  // Recompute the criteria live from the stored raw world line when we have it,
+  // instead of trusting the criteria snapshot taken at ingest/expand time — the
+  // snapshot goes stale when analyze.js evolves (e.g. expanded seeds stored
+  // bodies with primary:null after yield estimates were dropped, which made
+  // every resource rule unmatchable). One seed per page view — cheap.
+  let c = null;
+  if (s.line) {
+    try { c = analyze.evaluateWorld(JSON.parse(s.line)); } catch (_) {}
+  }
+  c = c || seedCriteria(s) || { selectedZones: [], specials: {}, pairs: {} };
 
-  // Show ALL zones; criteria-relevant ones are pinned to the top and pre-checked.
-  const sel = new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
+  // Optional custom filter (same presets as the Seeds page, carried over via
+  // ?filter=<id> when a row is clicked there, or picked in the dropdown here).
+  // With a filter active, the SELECTION is the zones that satisfy its rules —
+  // the concrete surfaces the filter matched for this seed — instead of the
+  // generation-time criteria zones.
+  const filterId = req.query.filter ? parseInt(req.query.filter) : null;
+  const filterDef = filterId ? db.getFilterDef(filterId) : null;
+  let fmatch = null;
+  if (filterDef) {
+    try { fmatch = analyze.filterZoneMatches(c, JSON.parse(filterDef.rules)); }
+    catch (e) { console.error("filterZoneMatches:", e.message); }
+  }
+
+  // Nauvis is never emitted by the universe generator — synthesize its zone row
+  // so the home planet is listed and generatable (game-default map settings; see
+  // writeSeedZonesFile, which adds the matching zones.jsonl entry).
+  db.ensureNauvisZone(s.seed);
+
+  // Show ALL zones; selected ones are pinned to the top and pre-checked.
+  const sel = fmatch
+    ? new Set(fmatch.zones)
+    : new Set([...(c.selectedZones || []), ...(c.naqField ? [c.naqField] : [])]);
   const zones = db.getZonesForSeed(s.seed).sort((a, b) => {
     const ra = sel.has(a.name) ? 0 : 1, rb = sel.has(b.name) ? 0 : 1;
     return ra - rb || (a.name || "").localeCompare(b.name || "");
@@ -728,7 +856,9 @@ app.get("/seed/:seed", (req, res) => {
   try { jobs.writeSeedZonesFile(s, null); }
   catch (e) { console.error("writeSeedZonesFile:", e.message); }
 
-  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, filterId, req.query.all === "1"));
+  page(req, res, `Seed ${s.seed}`, renderSeedDetail(s, c, zones, {
+    sel, defs: db.getFilterDefs(), filterDef, fmatch,
+  }, req.query.all === "1"));
 });
 
 // Poll target for the "generating full universe" banner. While expanding it
@@ -740,8 +870,10 @@ app.get("/api/seed/:seed/expand", (req, res) => {
   const s = db.getSeed(seed);
   if (!s) return res.status(404).send("");
   if (s.expanded) {
+    // Reload with the same view params (filter/all) the detail page passed in.
+    const qs = [req.query.all === "1" ? "all=1" : "", req.query.filter ? `filter=${parseInt(req.query.filter)}` : ""].filter(Boolean).join("&");
     return res.status(286).send(
-      `<span class="expand-done" hx-get="/seed/${seed}" hx-trigger="load" hx-target="#main" hx-swap="innerHTML">✅ Full universe loaded (${s.zone_count} zones)</span>`);
+      `<span class="expand-done" hx-get="/seed/${seed}${qs ? `?${qs}` : ""}" hx-trigger="load" hx-target="#main" hx-swap="innerHTML">✅ Full universe loaded (${s.zone_count} zones)</span>`);
   }
   if (!jobs.isExpanding(seed)) jobs.expandSeed(seed); // resume if it was dropped
   res.send(`<span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span>`);
@@ -758,14 +890,12 @@ function zoneSearchText(bucket, seed, zone) {
   return parts.join(" ").toLowerCase().replace(/"/g, "");
 }
 
-function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
+function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAllSystems = false) {
   const back = { label: "Seeds", href: `/seeds?bucket=${s.bucket}` };
-  const reload = `/seed/${s.seed}`;
-  // The naquium-primary field is already IN `sel`, so it is pinned to the top and
-  // pre-checked like any criteria zone. It is called out separately below because
-  // being merely starred gave no way to tell it apart from the others.
+  // Keep the active filter (and all-systems toggle) across self-navigations.
+  const qs = [showAllSystems ? "all=1" : "", filterDef ? `filter=${filterDef.id}` : ""].filter(Boolean).join("&");
+  const reload = `/seed/${s.seed}${qs ? `?${qs}` : ""}`;
   const naq = c.naqField || null;
-  const sel = new Set([...(c.selectedZones || []), ...(naq ? [naq] : [])]);
   const th = (label, key) => `<th class="sortable" data-key="${key}" onclick="sortZones('${key}')">${label} <span class="sort-ind"></span></th>`;
   // Display filter only — `zones` stays whole for the caller (reconcile, etc.).
   //
@@ -792,17 +922,27 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
   <div class="page">
     ${crumbs([{ label: "Buckets", href: "/universe" }, back, { label: `Seed ${s.seed}` }])}
     <h2>🌱 Seed ${s.seed} <span class="badge zone-type">${s.bucket}</span> <code>${s.loot}</code>
-      ${naq ? `<span class="badge zone-type" title="nearest asteroid field whose PRIMARY yield is naquium — pinned to the top of the table and pre-selected${s.naqdv != null && s.naqdv < 10000000 ? `, Δv ${s.naqdv.toLocaleString()}` : ""}">☄ naq: ${naq}</span>` : `<span class="hint" title="no asteroid field in this universe has naquium as its primary yield">☄ no naq-primary field</span>`}</h2>
-    ${s.expanded ? "" : `<div id="expand-wrap" class="expand-banner" hx-get="/api/seed/${s.seed}/expand" hx-trigger="load delay:800ms, every 2s" hx-target="#expand-wrap" hx-swap="innerHTML"><span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span></div>`}
+      ${naq ? `<span class="badge zone-type" title="nearest asteroid field whose PRIMARY yield is naquium${fmatch ? "" : " — pinned to the top of the table and pre-selected"}${s.naqdv != null && s.naqdv < 10000000 ? `, Δv ${s.naqdv.toLocaleString()}` : ""}">☄ naq: ${naq}</span>` : `<span class="hint" title="no asteroid field in this universe has naquium as its primary yield">☄ no naq-primary field</span>`}</h2>
+    ${s.expanded ? "" : `<div id="expand-wrap" class="expand-banner" hx-get="/api/seed/${s.seed}/expand${qs ? `?${qs}` : ""}" hx-trigger="load delay:800ms, every 2s" hx-target="#expand-wrap" hx-swap="innerHTML"><span class="hint">⏳ Generating the full universe (all star systems + asteroid fields)…</span></div>`}
     <div class="filter-bar">
       <input type="text" id="zone-search" placeholder="🔍 Search name or resource…" oninput="filterZones()" autocomplete="off">
+      <label title="Apply a Seeds-page filter preset to THIS seed: the zones satisfying its rules are marked ✓, pre-selected, and pinned to the top. No filter = the generation-time criteria zones.">Filter:
+        <select name="filter" hx-get="/seed/${s.seed}${showAllSystems ? "?all=1" : ""}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true" hx-trigger="change">
+          <option value="">— none —</option>
+          ${defs.map(d => `<option value="${d.id}" ${filterDef && filterDef.id === d.id ? "selected" : ""}>${d.name}${d.builtin ? "" : " *"}</option>`).join("")}
+        </select></label>
+      ${fmatch ? `<span class="hint" title="${filterRulesLabel(filterDef)}">${
+        fmatch.matched >= fmatch.total
+          ? `✅ passes — ${fmatch.zones.length} surface(s) match`
+          : `⚠️ ${fmatch.matched}/${fmatch.total} rule(s) satisfied${fmatch.zones.length ? ` — ${fmatch.zones.length} surface(s) match` : " — no surfaces match"}`
+      }</span>` : ""}
       ${maxRadiusInput()}
       <label class="hint" title="Off: only Calidus planets and moons, plus every asteroid field (fields all orbit other stars, including the naq-primary one). On: also list planets and moons from every other star system.">
         <input type="checkbox" ${showAllSystems ? "checked" : ""}
-               hx-get="/seed/${s.seed}${showAllSystems ? "" : "?all=1"}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true">
+               hx-get="/seed/${s.seed}${(showAllSystems ? [] : ["all=1"]).concat(filterDef ? [`filter=${filterDef.id}`] : []).map((p, i) => (i ? "&" : "?") + p).join("")}" hx-target="#main" hx-swap="innerHTML" hx-push-url="true">
         Other star systems${hiddenBySystem && !showAllSystems ? ` <strong>(${hiddenBySystem} hidden)</strong>` : ""}
       </label>
-      <span class="hint">Asteroid belts and anomalies hidden (nothing generatable); selected zones are pinned to the top (⭐ = criteria-relevant, ☄ = naquium-primary field — both pre-selected). Click a header to sort.</span>
+      <span class="hint">Asteroid belts and anomalies hidden (nothing generatable); selected zones are pinned to the top and pre-selected (${fmatch ? "✓ = matches the filter" : "criteria-relevant + the naquium-primary field"}). Click a header to sort.</span>
     </div>
     <form id="zone-batch">
       <input type="hidden" name="seed" value="${s.seed}">
@@ -811,6 +951,10 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
           title="tick every Calidus home-system planet and moon (ignores asteroid fields and other star systems)">
           ✅ Select Calidus planets &amp; moons
         </button>
+        ${fmatch ? `<button type="button" class="btn btn-secondary" onclick="selectFiltered()"
+          title="set the selection to exactly the ✓ surfaces the filter matched (unchecks everything else)">
+          ✓ Select filtered (${fmatch.zones.length})
+        </button>` : ""}
         <button type="button" class="btn"
           hx-post="/api/surface/batch?kind=oremap" hx-include="#zone-batch input[name=seed], #zone-batch input[name=zone]:checked" hx-swap="none"
           hx-disabled-elt="this" hx-on::after-request="htmx.ajax('GET','${reload}',{target:'#main'})">
@@ -826,7 +970,6 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
         <thead><tr>
           <th><input type="checkbox" onclick="selectAllVisible(this)"></th>
           ${th("Zone", "zone")}${th("Type", "type")}${th("Radius", "radius")}${th("Δv", "dv")}${th("Water", "water")}${th("Enemy", "enemy")}
-          <th>★</th>
           <th>Resources <small>(measured once generated)</small></th><th></th>
         </tr></thead>
         <tbody>
@@ -835,7 +978,7 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
             const gen = GEN_TYPES.includes(z.zone_type);
             const water = (z.water || "none").replace(/^water[_-]?/, "") || "none";
             const enemy = (z.enemy || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none";
-            const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-calidus="${z.in_calidus === 0 ? 0 : 1}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
+            const data = `data-zone="${(z.name || "").replace(/"/g, "")}" data-type="${z.zone_type}" data-radius="${z.radius || 0}" data-dv="${z.delta_v || 0}" data-water="${water}" data-enemy="${enemy}" data-relevant="${relevant ? 1 : 0}" data-fmatch="${fmatch && relevant ? 1 : 0}" data-calidus="${z.in_calidus === 0 ? 0 : 1}" data-search="${zoneSearchText(s.bucket, s.seed, z)}"`;
             // generatable rows navigate to the surface detail on click via native
             // htmx (hx-push-url snapshots history so Chrome's Back restores the seed
             // page instantly); the trigger filter ignores clicks on buttons/inputs so
@@ -846,17 +989,16 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
             return `
           <tr class="${gen ? "clickable" : "zone-info"}" ${data} ${nav}>
             <td>${gen ? `<input type="checkbox" name="zone" value="${z.name}" ${relevant ? "checked" : ""}>` : ""}</td>
-            <td><strong>${z.name}</strong></td>
+            <td><strong>${z.name}</strong>${fmatch && relevant ? ` <span title="satisfies the selected filter's rules">✓</span>` : ""}</td>
             <td><span class="badge zone-type">${z.zone_type}</span></td>
             <td>${z.radius ? Math.round(z.radius) : "—"}</td>
             <td class="num">${z.delta_v ? Math.round(z.delta_v) : "—"}</td>
             <td>${water}</td>
             <td>${enemy}</td>
-            <td>${z.name === naq ? `<span title="naquium-primary asteroid field">☄</span>` : relevant ? "⭐" : ""}</td>
             <td class="yields-cell"><div id="zres-${z.id}">${renderZoneResources(s.bucket, s.seed, z)}</div></td>
             ${gen ? renderZoneCell(s.bucket, s.seed, z) : `<td class="row-actions muted">—</td>`}
           </tr>`;}).join("")}
-          ${rows.length === 0 ? `<tr><td colspan="10">No zones.</td></tr>` : ""}
+          ${rows.length === 0 ? `<tr><td colspan="9">No zones.</td></tr>` : ""}
         </tbody>
       </table>
     </form>
@@ -959,6 +1101,16 @@ function renderSeedDetail(s, c, zones, filterId, showAllSystems = false) {
           });
           if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
+        // Set the selection to EXACTLY the surfaces the active filter matched
+        // (data-fmatch=1, the ✓ rows) — checks them and unchecks everything
+        // else, restoring the state the page loaded with under this filter.
+        window.selectFiltered = function () {
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            var cb = r.querySelector('input[name=zone]');
+            if (cb) cb.checked = r.dataset.fmatch === "1";
+          });
+          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
+        };
         // Row click → surface detail, unless the click was on an interactive
         // control (button/input/link) — those keep their own behaviour.
         // htmx trigger filter: only let a row's hx-get fire when the click didn't
@@ -1043,7 +1195,7 @@ function buildSurfaceGrid(seed, zoneId) {
   }
 
   // status head: per-layer done counts
-  const cnt = (...ks) => { const g = ks.flatMap(grp); return { done: g.filter(j => j.status === "done").length, tot: g.length, fail: g.filter(j => j.status === "failed").length }; };
+  const cnt = (...ks) => { const g = ks.flatMap(grp); return { done: g.filter(j => j.status === "done").length, tot: g.filter(j => j.status !== "cancelled").length, fail: g.filter(j => j.status === "failed").length }; };
   const t = cnt("terrain", "gputerrain"), o = cnt("oremap", "gpuoremap", "oredump"), s = cnt("surface");
   const line = (label, c) => c.tot ? `${label} <span class="gen-status ${c.done + c.fail >= c.tot ? "" : "running"}">${c.fail ? "⚠️" : (c.done >= c.tot ? "✅" : "⏳")} ${c.done}/${c.tot}</span>` : "";
   const head = [line("terrain", t), line("ore", o), line("surface", s)].filter(Boolean).join(" · ") +
@@ -1131,12 +1283,13 @@ app.get("/seed/:seed/surface/:zoneId", (req, res) => {
           <input type="range" min="0" max="100" value="45" oninput="setTerrB(this.value)">
         </label>
         <div class="preset-actions">
-          <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-swap="none" ${reload} title="ore patches">⛏ ore</button>
-          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} hx-swap="none" ${reload} title="biome + water">🗺️ surface</button>
+          <button type="button" class="btn-sm" hx-post="/api/surface/create?kind=oremap" ${genArgs} hx-include="#fsr-form" hx-swap="none" ${reload} title="ore patches">⛏ ore</button>
+          <button type="button" class="btn-sm btn-secondary" hx-post="/api/surface/create?kind=gputerrain" ${genArgs} hx-include="#fsr-form" hx-swap="none" ${reload} title="biome + water">🗺️ surface</button>
         </div>
       </aside>
       <div class="watch-grid-col">${g.grid}</div>
     </div>
+    ${renderFsrPanel(zone)}
     <script>
       window.setTerrB = function (v) {
         document.querySelectorAll(".surf-grid").forEach(function (el) { el.style.setProperty("--terr-b", v / 100); });
@@ -1616,11 +1769,21 @@ app.delete("/api/preset/:id", (req, res) => { db.deleteFilterDef(parseInt(req.pa
 // per grid cell that intersects the disk (parallel tiles, stitched on complete).
 // kind: 'ore' (amounts only), 'terrain' (biome layer), 'oremap' (ore layer,
 // needs the ore pass), or 'surface' (both layers = terrain + oremap).
-function queueZone(zone, seed, kind) {
+function queueZone(zone, seed, kind, fsr) {
   const radius = effRadius(zone);
   const base = { zone_id: zone.id, seed, zone_name: zone.name, radius };
   const n = jobs.surfaceGridFor(radius);
   const cellIdx = jobs.planSurfaceCells(radius, n);
+
+  // (Re)write the seed's zones.jsonl so this render picks up exactly the FSR the
+  // caller asked for — or clears any prior override when fsr is absent. That file
+  // is the sole config channel to segen, so rewriting it here keeps it in lockstep
+  // with the request (see job-manager writeSeedZonesFile / se_main fsrOverride).
+  const seedRow = db.getSeed(seed);
+  if (seedRow) {
+    try { jobs.writeSeedZonesFile(seedRow, null, fsr ? { zone: zone.name, controls: fsr } : undefined); }
+    catch (e) { console.error("writeSeedZonesFile:", e.message); }
+  }
 
   // Clear any stale stitched image(s) for the layers we're about to regenerate,
   // up front — so the surface view drops straight to the live cell grid instead
@@ -1640,6 +1803,14 @@ function queueZone(zone, seed, kind) {
 
   if (kind === "ore") return [db.createSurfaceJob({ ...base, kind: "ore" })];
   if (kind === "terrain") return renderCells("terrain", null, false); // CPU terrain, no GPU mask
+
+  // Purge stale ore-layer jobs still queued/running for this zone before re-queueing
+  // so a leftover job from an earlier attempt (e.g. an orphaned gpuoremap whose
+  // oredump was pruned) can't linger forever and inflate the "0/N" progress count.
+  const staleOre = db.getSurfaceJobsForZone(zone.id)
+    .filter(j => ["oredump", "gpuoremap", "oremap", "ore"].includes(j.kind) && (j.status === "queued" || j.status === "running"))
+    .map(j => j.id);
+  if (staleOre.length) jobs.cancelSurfaceJobs(staleOre);
 
   // Shared classify: the biome/water/asteroid gate (biome_<n>_<cell>.bin) is
   // computed once and reused by BOTH the terrain (gpu_segen --mask) and ore
@@ -1685,7 +1856,7 @@ app.post("/api/surface/create", (req, res) => {
   const seed = parseInt(req.body.seed);
   const zone = db.getZonesForSeed(seed).find(z => z.id === parseInt(req.body.zone_id));
   if (!zone) return res.status(404).json({ ok: false, error: "zone not found" });
-  const ids = queueZone(zone, seed, kind);
+  const ids = queueZone(zone, seed, kind, parseFsrBody(req.body));
   // Row button targets #zcell-<id>: hand back the live cell so it immediately
   // shows "generating…" and starts polling. Non-htmx callers get JSON.
   if (req.headers["hx-request"]) {

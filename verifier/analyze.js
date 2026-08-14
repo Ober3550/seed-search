@@ -450,18 +450,27 @@ function evaluateWorld(seedRaw) {
   const nf = bestNaqField(old);
   // Per-viable-body detail so tag/rule filters can query primary + present
   // (secondary) resources. present = resources with a nonzero score.
-  const bodyInfo = bodies.map((b) => ({
-    name: b.name,
-    type: (b.zone_type && b.zone_type[0]) || "?",
-    radius: Math.round(b.radius || 0),
-    dv: Math.round(b.delta_v || 0),
-    primary: primaryResource(b),
-    enemy: enemyOrd(b.tags && b.tags.enemy),  // 0..6 danger ordinal (0 = none)
-    water: waterOrd(b.tags && b.tags.water),  // 0..4 amount ordinal (0 = none)
-    present: Object.entries(b.resource || {})
+  // primary/present: prefer the explicit primary field (z.p) — the generator no
+  // longer emits per-body yield estimates (z.y/z.rs), so the score-derived path
+  // returns nothing for new data. Where yields DO exist (old data) they still
+  // provide the full secondary list; otherwise `present` degrades to just the
+  // primary, which is all the new format knows per body.
+  const bodyInfo = bodies.map((b) => {
+    const fromYields = Object.entries(b.resource || {})
       .filter(([, v]) => v > 0)
-      .map(([k]) => noColor(k)),
-  }));
+      .map(([k]) => noColor(k));
+    const primary = b.primary || primaryResource(b);
+    return {
+      name: b.name,
+      type: (b.zone_type && b.zone_type[0]) || "?",
+      radius: Math.round(b.radius || 0),
+      dv: Math.round(b.delta_v || 0),
+      primary,
+      enemy: enemyOrd(b.tags && b.tags.enemy),  // 0..6 danger ordinal (0 = none)
+      water: waterOrd(b.tags && b.tags.water),  // 0..4 amount ordinal (0 = none)
+      present: fromYields.length ? fromYields : (primary ? [primary] : []),
+    };
+  });
   return {
     seed: seedRaw.s,
     loot: (seedRaw.l || ""),
@@ -627,6 +636,54 @@ function countMatches(crit, rules) {
   return n;
 }
 
+// Like countMatches, but also reports WHICH zones satisfied each rule — for the
+// seed detail page, which pins/pre-selects exactly the surfaces a filter picked.
+// No short-circuit: a seed failing one rule still shows what the others found.
+// `total` counts only the rules that actually evaluate (empty/malformed resource
+// rules are skipped, as in matchFilter), so matched === total ⇔ the seed passes.
+function filterZoneMatches(crit, rules) {
+  const out = { matched: 0, total: 0, zones: [] };
+  if (!rules || rules.length === 0) return out;
+  const bodies = crit.bodies || [];
+  const used = new Set();
+  const zones = new Set();
+  for (const rule of rules) {
+    if (rule.kind === "specials") {
+      out.total++;
+      if ((crit.numSpecials || 0) >= (rule.n || 0)) {
+        out.matched++;
+        for (const z of Object.values(crit.specials || {})) zones.add(z);
+      }
+      continue;
+    }
+    if (rule.kind === "pairs") {
+      out.total++;
+      if ((crit.numPairs || 0) >= (rule.n || 0)) {
+        out.matched++;
+        for (const z of Object.values(crit.pairs || {})) zones.add(z);
+      }
+      continue;
+    }
+    const nr = normalizeRule(rule);
+    if (!nr || nr.res.length === 0) continue;
+    out.total++;
+    if (isNaqPrimary(nr)) {
+      if (crit.naqField) { out.matched++; zones.add(crit.naqField); }
+      continue;
+    }
+    const b = bodies.find((x) =>
+      !used.has(x.name) &&
+      nr.res.every((r) => (x.present || []).includes(r)) &&
+      (!nr.primary || x.primary === nr.res[0]) &&
+      (nr.enemyMax == null || (x.enemy || 0) <= nr.enemyMax) &&
+      (nr.waterMin == null || (x.water || 0) >= nr.waterMin) &&
+      (nr.radiusMin == null || (x.radius || 0) >= nr.radiusMin));
+    if (b) { used.add(b.name); zones.add(b.name); out.matched++; }
+  }
+  out.zones = [...zones];
+  return out;
+}
+
 // A short human label for a rule (UI + preset descriptions).
 function ruleLabel(rule) {
   const nm = (r) => (r || "").replace("se-", "").replace("kr-", "").replace("-ore", "");
@@ -644,7 +701,7 @@ function ruleLabel(rule) {
   return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em + wm + rm;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
+module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, filterZoneMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below

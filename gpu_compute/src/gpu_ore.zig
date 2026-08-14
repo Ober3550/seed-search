@@ -106,6 +106,15 @@ const Shared = extern struct {
     gw: u32,
     gh: u32,
     nbins_p1: u32,
+    // Placement-model constants forwarded from the dump header (SE vs vanilla).
+    is_vanilla: u32,
+    double_density: f32,
+    regular_fade_in: f32,
+    starting_radius: f32,
+    spot_enlarge_max: f32,
+    reg_vein_w: f32,
+    start_blob_c: f32,
+    start_vein_w: f32,
     pad0: u32 = 0,
     pad1: u32 = 0,
 };
@@ -655,6 +664,14 @@ pub fn main(init: std.process.Init) !void {
                 .gw = gw,
                 .gh = gh,
                 .nbins_p1 = @intCast(nbins_p1),
+                .is_vanilla = if (H.mode_vanilla != 0.0) 1 else 0,
+                .double_density = @floatCast(H.double_density),
+                .regular_fade_in = @floatCast(H.regular_fade_in),
+                .starting_radius = @floatCast(H.starting_radius),
+                .spot_enlarge_max = @floatCast(H.spot_enlarge_max),
+                .reg_vein_w = @floatCast(H.reg_vein_w),
+                .start_blob_c = @floatCast(H.start_blob_c),
+                .start_vein_w = @floatCast(H.start_vein_w),
             };
             const bP = ctx.uploadBuffer(Shared, &.{P}, c.WGPUBufferUsage_Uniform);
             var e = [_]c.WGPUBindGroupEntry{

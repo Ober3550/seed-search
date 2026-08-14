@@ -270,6 +270,7 @@ pub fn run(init: std.process.Init, force_classify: bool) !void {
     var radius: f64 = 0;
     var has_water = false;
     var is_field = false;
+    var is_nauvis = false;
     var found = false;
     // Per-zone control labels (SE tags without the property prefix). Defaults
     // reproduce the previous behaviour if a zone omits them.
@@ -301,6 +302,12 @@ pub fn run(init: std.process.Init, force_classify: bool) !void {
             if (z.object.get("water")) |w| {
                 has_water = (w == .string) and !std.mem.eql(u8, w.string, "none");
             }
+            // Synthetic Nauvis entry (GUI): game-default map-gen — always has
+            // water, at the DEFAULT size 1.0 rather than the SE-calibrated 1.5.
+            // Temperature rides in as the "balanced" tag (cold/hot 1/1) and the
+            // entry's r=5000 makes fm = 5000/r = 1, so everything else is the
+            // vanilla default already.
+            if (z.object.get("nauvis")) |v| is_nauvis = (v == .bool and v.bool);
             if (z.object.get("temperature")) |v| if (v == .string) {
                 temp_label = try a.dupe(u8, v.string);
             };
@@ -315,6 +322,7 @@ pub fn run(init: std.process.Init, force_classify: bool) !void {
         }
     }
     if (!found) return err("zone not found in jsonl");
+    if (is_nauvis) has_water = true; // game default: Nauvis always has water
     // Render EXTENT (half-size of the rendered disk): --radius caps it, else the
     // zone's true radius. CRITICAL: the zone's TRUE radius stays for the
     // control/frequency math (fm = 5000/radius) below — capping the render
@@ -344,7 +352,7 @@ pub fn run(init: std.process.Init, force_classify: bool) !void {
     // origin/width/height are placeholders here — renderTerrain overrides them
     // per cell; the rest are geometry-independent.
     const water_freq: f64 = 1.0;
-    const water_size: f64 = if (has_water) 1.5 else 1.0;
+    const water_size: f64 = if (is_nauvis) 1.0 else if (has_water) 1.5 else 1.0;
     const fm: f64 = 5000.0 / radius; // universe.zoneFrequencyMultiplier
     const nsm: f64 = 1.5 * water_freq;
     // Per-zone temperature/moisture/aux controls from the SE tag tables.

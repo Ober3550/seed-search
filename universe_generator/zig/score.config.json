@@ -1,0 +1,11 @@
+{
+  "_comment": "Union-of-extremes capture (no composite score). A seed is KEPT if it lands in ANY enabled per-metric tail: value <= lo (low tail) OR value >= hi (high tail). A null bound disables that tail. Thresholds are raw metric values, set from each distribution's percentiles (~0.05%/tail unless noted). The stored `score` column is the tail-match COUNT — how many metrics the seed is extreme in — for sorting. `moons` is derived (npm − npl). Read by score.js, score.zig, scripts/plot_distributions.py; the generator picks it up via SCORE_CONFIG.",
+  "filters": [
+    { "key": "hostility_pct", "label": "Hostility %",         "lo": 42,    "hi": 87,     "bucket": 1 },
+    { "key": "water_pct",     "label": "Water %",              "lo": 40,    "hi": 94,     "bucket": 1 },
+    { "key": "naquium_dv",    "label": "Naquium-primary Δv", "lo": 17500, "hi": 134000, "bucket": 5000 },
+    { "key": "field_dv",      "label": "Nearest field Δv",  "lo": null,  "hi": 37000,  "bucket": 5000 },
+    { "key": "planets",       "label": "Planets",              "lo": null,  "hi": 12,     "bucket": 1 },
+    { "key": "moons",         "label": "Moons (npm−npl)",      "lo": 8,     "hi": 38,     "bucket": 1 }
+  ]
+}
