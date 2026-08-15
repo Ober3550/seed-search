@@ -1185,11 +1185,14 @@ function buildSurfaceGrid(seed, zoneId) {
   const terrainLayer = layer("terrain", "terrain", "terrain");
   const oreLayer = layer("oremap", "ore", "oremap");
 
+  // Origin (0,0) marker: the disk spans [-r,r]², so surface spawn is dead-center
+  // of the grid. Handy for lining up spawn against the in-game map.
+  const originDot = `<span class="origin-dot" title="origin (0,0) — spawn"></span>`;
   let body;
   if (terrainLayer || oreLayer) {
-    body = `<div class="surf-grid layered">${terrainLayer}${oreLayer}</div>`;
+    body = `<div class="surf-grid layered">${terrainLayer}${oreLayer}${originDot}</div>`;
   } else if (legacy) {
-    body = `<div class="surf-grid"><img class="surf-full" src="${legacy}" alt="${zone.name}"></div>`;
+    body = `<div class="surf-grid"><img class="surf-full" src="${legacy}" alt="${zone.name}">${originDot}</div>`;
   } else {
     body = `<div class="surf-grid"><p class="hint" style="padding:20px">Not generated yet — use the buttons.</p></div>`;
   }
