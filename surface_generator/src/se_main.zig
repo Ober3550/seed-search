@@ -7,6 +7,15 @@ const universe = @import("universe_gen");
 // params + precomputed spots for gpu_ore instead of computing ore on the CPU.
 var g_gpu_ore_dump: ?[]const u8 = null;
 
+// --zone-field-probe <points> <out>: for each zone resource, evaluate the RAW
+// all_patches noise value (pre-thinning) at the "x y" points in <points> and
+// write JSONL {"n":res,"x":x,"y":y,"v":value} to <out>. Uses the zone's real
+// seed + computed controls — the dynamic equivalent of the game's
+// calculate_tile_properties('default-<res>-patches') oracle, so we can compare
+// the value FIELD (not just placed entities) against the live game.
+var g_field_probe_pts: ?[]const u8 = null;
+var g_field_probe_out: ?[]const u8 = null;
+
 /// Factorio/SE/K2 map colors (RGB), matching the ground-truth renderer
 /// calibration/mod-dump/convert_jsonl.py so generated images are directly
 /// comparable to Horaerratum.png. Unknown -> grey; se-core-fragment-* inherits
@@ -167,6 +176,28 @@ fn staticResName(n: []const u8) ?[]const u8 {
     return null;
 }
 
+/// FSR test-bench override. The GUI may attach an optional per-resource control
+/// object to a zone entry:  "fsr": { "iron-ore": [freq, size, rich], ... }.
+/// Look one resource up; returns null when the zone carries no override for it
+/// (the caller then keeps the game/universe-derived control). Absent / malformed
+/// values fall back to the in-game default of 1.0 so a partial object is safe.
+fn fsrOverride(z: std.json.ObjectMap, name: []const u8) ?[3]f64 {
+    const fsr = z.get("fsr") orelse return null;
+    if (fsr != .object) return null;
+    const arr = fsr.object.get(name) orelse return null;
+    if (arr != .array or arr.array.items.len < 3) return null;
+    const num = struct {
+        fn v(x: std.json.Value) f64 {
+            return switch (x) {
+                .float => |f| f,
+                .integer => |i| @floatFromInt(i),
+                else => 1.0,
+            };
+        }
+    }.v;
+    return .{ num(arr.array.items[0]), num(arr.array.items[1]), num(arr.array.items[2]) };
+}
+
 /// Zone driver: read a seeds jsonl (universe summary), pick a world by seed and
 /// zones by name, compute each zone's surface autoplace controls via the
 /// universe generator port, generate ore, and write results into
@@ -305,6 +336,14 @@ fn runZoneDriver(
         };
         const primary: ?[]const u8 = if (z.get("p")) |pv| (if (pv == .string) pv.string else null) else null;
 
+        // Synthetic Nauvis entry (GUI writeSeedZonesFile): the home planet is
+        // generated with the GAME's default map-gen settings, not SE zone
+        // controls — vanilla autoplace at default freq/size/richness, map seed =
+        // world seed, default water (size 1.0, not the SE-calibrated 1.5). The
+        // entry carries temperature "balanced" (cold/hot 1/1 = the vanilla
+        // default) and r=5000 so the SE frequency multiplier (5000/r) is 1.
+        const is_nauvis = if (z.get("nauvis")) |v| (v == .bool and v.bool) else false;
+
         // tags (strings, optional)
         const tags = universe.Tags{
             .temperature = tagOf(universe.data.Temperature, z, "temperature"),
@@ -315,43 +354,113 @@ fn runZoneDriver(
             .cliff = tagOf(universe.data.Cliff, z, "cliff"),
             .enemy = tagOf(universe.data.Enemy, z, "enemy"),
         };
-        const controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
-        for (universe.resource_order, 0..) |rn, ri| {
-            const c = controls[ri];
-            if (c.present) std.debug.print("   ctrl {s}: f={d:.4} s={d:.4} r={d:.4}\n", .{ rn, c.frequency, c.size, c.richness });
-        }
-
-        // build resource inputs: our config table + the zone's controls
+        // build resource inputs: our config table + the zone's controls.
         var inputs_buf: [RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
         var ninputs: usize = 0;
-        for (RESOURCE_ENTRIES) |e| {
-            if (!has_k2 and std.mem.startsWith(u8, e.name, "kr-")) continue;
-            // K2 resources carry SE field controls (kr-rare-metal-ore can even be
-            // a field's boosted PRIMARY) but K2 never places them in space — the
-            // live game has 0 kr-* entities on asteroid fields. Skip them there.
-            if (is_field and std.mem.startsWith(u8, e.name, "kr-")) continue;
-            if (ores_only and e.cfg.random_probability < 1.0) continue;
-            var ctrl = se.Controls{ .frequency = 0, .size = 0, .richness = 0 };
-            for (universe.resource_order, 0..) |rn, ri| {
-                if (std.mem.eql(u8, rn, e.name)) {
-                    const c = controls[ri];
-                    if (c.present) ctrl = .{ .frequency = c.frequency, .size = c.size, .richness = c.richness };
-                    break;
+        if (is_nauvis) {
+            // Nauvis under SE: SE's data stage re-derives EVERY base ore with the
+            // SE autoplace function (verified in-game — the field matches SE, not
+            // vanilla). So the home planet uses the SE spot-noise path too, over
+            // just the base ores (iron/copper/coal/stone/uranium — no SE space
+            // resources on Nauvis), with the base-game DEFAULT 1/1/1 controls (not
+            // universe zone controls). r=5000 makes the SE frequency multiplier 1.
+            const nauvis_ores = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" };
+            for (RESOURCE_ENTRIES) |e| {
+                var is_base = false;
+                for (nauvis_ores) |nm| {
+                    if (std.mem.eql(u8, e.name, nm)) {
+                        is_base = true;
+                        break;
+                    }
                 }
+                if (!is_base) continue;
+                if (ores_only and e.cfg.random_probability < 1.0) continue;
+                var ctrl = se.Controls{ .frequency = 1.0, .size = 1.0, .richness = 1.0 };
+                if (fsrOverride(z, e.name)) |ov| ctrl = .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] };
+                inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
+                ninputs += 1;
             }
-            if (ctrl.size <= 0) continue;
-            inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
-            ninputs += 1;
+        } else {
+            const controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
+            for (universe.resource_order, 0..) |rn, ri| {
+                const c = controls[ri];
+                if (c.present) std.debug.print("   ctrl {s}: f={d:.4} s={d:.4} r={d:.4}\n", .{ rn, c.frequency, c.size, c.richness });
+            }
+            for (RESOURCE_ENTRIES) |e| {
+                if (!has_k2 and std.mem.startsWith(u8, e.name, "kr-")) continue;
+                // K2 resources carry SE field controls (kr-rare-metal-ore can even be
+                // a field's boosted PRIMARY) but K2 never places them in space — the
+                // live game has 0 kr-* entities on asteroid fields. Skip them there.
+                if (is_field and std.mem.startsWith(u8, e.name, "kr-")) continue;
+                if (ores_only and e.cfg.random_probability < 1.0) continue;
+                var ctrl = se.Controls{ .frequency = 0, .size = 0, .richness = 0 };
+                for (universe.resource_order, 0..) |rn, ri| {
+                    if (std.mem.eql(u8, rn, e.name)) {
+                        const c = controls[ri];
+                        if (c.present) ctrl = .{ .frequency = c.frequency, .size = c.size, .richness = c.richness };
+                        break;
+                    }
+                }
+                // FSR test-bench override: if the zone entry pins this resource's
+                // freq/size/richness, use it verbatim (so a size the universe left
+                // at 0 can be dialed in from the GUI).
+                if (fsrOverride(z, e.name)) |ov| ctrl = .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] };
+                if (ctrl.size <= 0) continue;
+                inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
+                ninputs += 1;
+            }
         }
         const inputs = inputs_buf[0..ninputs];
 
         // terrain: water tag "none" => no water gate; otherwise approximate the
         // SE water control (freq 1, size 1.5 — the calibrated Horaerratum point).
-        const has_water = if (tags.water) |wt| wt != .none else false;
+        // Nauvis always has water at the game DEFAULT size 1.0.
+        const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
+        const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
         var elev: ?surfacegen.terrain.Elevation = null;
         var zt: ?surfacegen.terrain.ZoneTerrain = null;
         var classifier: ?surfacegen.biome.Classifier = null;
-        if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, 1.5);
+        if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, water_size);
+
+        // --zone-field-probe: raw all_patches value per resource at the given points
+        // (the value-field oracle vs the game's calculate_tile_properties). Uses the
+        // zone's real seed + the controls built above (SE path only; not Nauvis).
+        if (g_field_probe_out) |probe_out| {
+            const praw = try std.Io.Dir.readFileAlloc(.cwd(), init.io, g_field_probe_pts.?, a, .unlimited);
+            var xs: std.ArrayList(f64) = .empty;
+            var ys: std.ArrayList(f64) = .empty;
+            var lit = std.mem.tokenizeAny(u8, praw, "\r\n");
+            while (lit.next()) |ln| {
+                var ft = std.mem.tokenizeAny(u8, ln, " \t,");
+                const sx = ft.next() orelse continue;
+                const sy = ft.next() orelse continue;
+                try xs.append(a, try std.fmt.parseFloat(f64, sx));
+                try ys.append(a, try std.fmt.parseFloat(f64, sy));
+            }
+            var buf: std.ArrayList(u8) = .empty;
+            const vals = try a.alloc(f64, xs.items.len);
+            const emit = struct {
+                fn f(bf: *std.ArrayList(u8), al: std.mem.Allocator, nm: []const u8, xa: []const f64, ya: []const f64, va: []const f64) !void {
+                    for (xa, ya, va) |px, py, v| {
+                        var line: [128]u8 = undefined;
+                        const sl = try std.fmt.bufPrint(&line, "{{\"n\":\"{s}\",\"x\":{d:.0},\"y\":{d:.0},\"v\":{d:.9}}}\n", .{ nm, px, py, v });
+                        try bf.appendSlice(al, sl);
+                    }
+                }
+            }.f;
+            // SE all_patches field per input resource (Nauvis included now — its
+            // base ores use the SE path, so `inputs` carries them).
+            const elevptr: ?*const surfacegen.terrain.Elevation = if (elev) |*e| e else null;
+            for (inputs) |inp| {
+                try se.probeSEAllPatches(a, zone_seed, inp.name, inp.config, inp.controls, elevptr, xs.items, ys.items, vals);
+                try emit(&buf, a, inp.name, xs.items, ys.items, vals);
+            }
+            const f = try std.Io.Dir.createFile(.cwd(), init.io, probe_out, .{});
+            defer f.close(init.io);
+            try f.writePositionalAll(init.io, buf.items, 0);
+            std.debug.print("wrote zone-field-probe {s} ({d} points)\n", .{ probe_out, xs.items.len });
+            continue;
+        }
         const fm = universe.zoneFrequencyMultiplier(radius);
         // Per-zone temperature control from the SE tag (verified vs the game:
         // midrange→0.65, extreme→6). Was hardcoded to Horaerratum's 6.0, which
@@ -371,7 +480,7 @@ fn runZoneDriver(
             .cold_frequency = tc.cold_freq * fm,
             .hot_frequency = tc.hot_freq * fm,
             .water_frequency = 1.0,
-            .water_size = if (has_water) 1.5 else 0.0,
+            .water_size = if (has_water) water_size else 0.0,
         });
         classifier = surfacegen.biome.Classifier.init(zone_seed);
 
@@ -430,6 +539,8 @@ fn runZoneDriver(
         } else if (g_gpu_ore_dump) |dp| {
             // GPU ore path: serialize per-resource params + spots for gpu_ore
             // (which does the per-tile eval on the GPU) instead of computing here.
+            // Nauvis uses the SE inputs built above (SE autoplace on the base ores),
+            // exactly like every other zone.
             const bytes = try se.serializeGpuInput(a, zone_seed, radius, -r, -r, r, r, inputs, is_field);
             defer a.free(bytes);
             const f = try std.Io.Dir.createFile(.cwd(), init.io, dp, .{});
@@ -438,6 +549,8 @@ fn runZoneDriver(
             std.debug.print("wrote gpu-ore-dump {s} ({d} bytes)\n", .{ dp, bytes.len });
             continue;
         } else if (need_ores) {
+            // Every generatable zone — including Nauvis (whose base ores now use SE
+            // autoplace, matching the live game) — runs the SE spot-noise path.
             std.debug.print("== zone {s} (seed {d}, r {d}, {d} resources)\n", .{ name, zone_seed, r, ninputs });
             ores = try se.computeSEOresInRect(
                 a,
@@ -478,12 +591,19 @@ fn runZoneDriver(
             try summary.appendSlice(a, "{");
             try appendFmt(a, &summary, "\"zone\":\"{s}\",\"zone_seed\":{d},\"radius\":{d},\"resources\":{{", .{ name, zone_seed, r });
             {
-                var first = true;
+                // Names to total: the zone's SE inputs (Nauvis included now).
+                var sum_names: [RESOURCE_ENTRIES.len][]const u8 = undefined;
+                var nsum: usize = 0;
                 for (inputs) |inp| {
+                    sum_names[nsum] = inp.name;
+                    nsum += 1;
+                }
+                var first = true;
+                for (sum_names[0..nsum]) |rname| {
                     var cnt: u64 = 0;
                     var amount: u64 = 0;
                     for (ores.items) |o| {
-                        if (std.mem.eql(u8, o.resource_name, inp.name)) {
+                        if (std.mem.eql(u8, o.resource_name, rname)) {
                             cnt += 1;
                             amount += o.amount;
                         }
@@ -491,10 +611,10 @@ fn runZoneDriver(
                     if (cnt == 0) continue;
                     var abuf: [32]u8 = undefined;
                     const disp = fmtAmount(&abuf, amount);
-                    std.debug.print("   {s}: {s} ore ({d} tiles)\n", .{ inp.name, disp, cnt });
+                    std.debug.print("   {s}: {s} ore ({d} tiles)\n", .{ rname, disp, cnt });
                     if (!first) try summary.appendSlice(a, ",");
                     first = false;
-                    try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ inp.name, amount, disp, cnt });
+                    try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ rname, amount, disp, cnt });
                 }
             }
             try summary.appendSlice(a, "}}");
@@ -556,7 +676,7 @@ fn runZoneDriver(
             const grid: i32 = if (surface_grid > 0) surface_grid else 1;
             const full: i32 = r * 2;
             const cellW: i32 = @divTrunc(full + grid - 1, grid); // ceil
-            var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, if (has_water) 1.5 else 1.0);
+            var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
             const zt_s = zt.?;
             const cls_s = classifier.?;
 
@@ -754,6 +874,11 @@ pub fn main(init: std.process.Init) !void {
         } else if (std.mem.eql(u8, args[i], "--gpu-ore-dump")) {
             i += 1;
             if (i < args.len) g_gpu_ore_dump = args[i];
+        } else if (std.mem.eql(u8, args[i], "--zone-field-probe")) {
+            i += 1;
+            if (i < args.len) g_field_probe_pts = args[i];
+            i += 1;
+            if (i < args.len) g_field_probe_out = args[i];
         } else if (std.mem.eql(u8, args[i], "--spot-stats")) {
             spot_stats = true;
         } else if (std.mem.eql(u8, args[i], "--probe")) {

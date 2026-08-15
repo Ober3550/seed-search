@@ -374,6 +374,19 @@ function insertZone(zone) {
   );
 }
 
+// Nauvis isn't emitted by the universe generator (it uses the game's map-gen
+// defaults, not universe zone controls), so the seed detail page synthesizes a
+// row for it: generatable planet, home system, radius 5000 (the window the
+// surface pipeline renders; it also makes the SE frequency multiplier 5000/r
+// exactly 1 = vanilla). INSERT OR IGNORE keeps any existing row's id stable so
+// surface_jobs.zone_id references never break.
+function ensureNauvisZone(seed) {
+  getDb().prepare(`
+    INSERT OR IGNORE INTO zones (seed, name, zone_type, radius, temperature, delta_v, in_calidus)
+    VALUES (?, 'Nauvis', 'planet', 5000, 'balanced', 0, 1)
+  `).run(seed);
+}
+
 function getZones(filter = {}) {
   const d = getDb();
   let sql = "SELECT * FROM zones WHERE 1=1";
@@ -771,6 +784,7 @@ module.exports = {
   deleteFilterDef,
   getSetting,
   setSetting,
+  ensureNauvisZone,
   createSeedFilter,
   setFilterMembers,
   getSeedFilters,

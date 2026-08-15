@@ -957,6 +957,18 @@ pub const GpuOreHeader = extern struct {
     x1: i32,
     y1: i32,
     zone_radius: f64,
+    // Placement-model constants. Defaults are the SE values, so the SE serializer
+    // (which leaves these unset) reproduces the original hardcoded shader exactly.
+    // The vanilla (Nauvis) serializer overrides them — same GPU kernel, base-game
+    // resource_autoplace tuning: no vein, different fade/starting/double-density.
+    mode_vanilla: f64 = 0.0, // 0 = SE, 1 = vanilla (base game)
+    double_density: f64 = 5000.0, // double_density_distance (vanilla 1300)
+    regular_fade_in: f64 = 320.0, // regular_patch_fade_in_distance (vanilla 300)
+    starting_radius: f64 = 140.0, // starting_resource_placement_radius (vanilla 120)
+    spot_enlarge_max: f64 = 5320.0, // regular_blob_amplitude_maximum_distance (vanilla 1600)
+    reg_vein_w: f64 = 0.8, // regular vein weight (vanilla 0 — no vein)
+    start_blob_c: f64 = 0.4, // starting (blobs0-0.25) coefficient (vanilla 1.0)
+    start_vein_w: f64 = 0.2, // starting vein weight (vanilla 0 — no vein)
 };
 pub const GpuResHeader = extern struct {
     base_density: f64,
@@ -1072,6 +1084,150 @@ pub fn serializeGpuInput(
             .seed1 = st.config.seed1,
             .roll_salt = st.roll_salt,
             .has_starting = if (st.starting_spot != null) 1 else 0,
+            .name_len = @intCast(st.name.len),
+            .nspots = @intCast(st.all_spots.len),
+            .nstart = @intCast(st.all_start_spots.len),
+        };
+        try buf.appendSlice(alloc, std.mem.asBytes(&rh));
+        try buf.appendSlice(alloc, st.name);
+        try buf.appendSlice(alloc, std.mem.sliceAsBytes(st.all_spots));
+        try buf.appendSlice(alloc, std.mem.sliceAsBytes(st.all_start_spots));
+    }
+    return buf.toOwnedSlice(alloc);
+}
+
+// Same wire format as serializeGpuInput, but built from the base-game (vanilla)
+// resource_autoplace path (ore_placement.zig) instead of the SE one — for Nauvis.
+// The GpuOreHeader carries mode_vanilla=1 plus the vanilla placement constants, so
+// gpu_ore's shared kernel evaluates these spots with base-game tuning (no vein,
+// fade-in 300, starting radius 120, double-density 1300). Fluids (random_probability
+// < 1: crude-oil) are excluded, exactly as the SE dump and the CPU --ores-only path.
+pub fn serializeVanillaGpuInput(
+    alloc: std.mem.Allocator,
+    map_seed: u32,
+    zone_radius: f64,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    configs: []const ore.ResourceAutoplaceConfig,
+    names: []const []const u8,
+    controls: []const ore.AutoplaceControls,
+    lakes: ?*const terrain.ElevationLakes,
+) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    const VState = struct {
+        name: []const u8,
+        field: ore.Field,
+        spot: ore.RegularSpotField,
+        sspot: ?ore.StartingSpotField,
+        all_spots: []noise.Spot = &.{},
+        all_start_spots: []noise.Spot = &.{},
+    };
+    var states: std.ArrayList(VState) = .empty;
+    defer {
+        for (states.items) |*st| {
+            st.spot.deinit();
+            if (st.sspot) |*ss| ss.deinit();
+            alloc.free(st.all_spots);
+            alloc.free(st.all_start_spots);
+        }
+        states.deinit(alloc);
+    }
+    for (configs, names, controls) |cfg, name, ctrl| {
+        // Fluids place via a per-chunk penalty the GPU kernel doesn't do (and the
+        // CPU --ores-only oracle drops them too) — exclude from the dump.
+        if (cfg.random_probability < 1.0) continue;
+        const field = ore.Field{
+            .config = cfg,
+            .controls = .{ .frequency = ctrl.frequency, .size = ctrl.size, .richness = ctrl.richness },
+            .map_seed = map_seed,
+        };
+        const has_start = field.has() == 1;
+        try states.append(alloc, .{
+            .name = name,
+            .field = field,
+            .spot = ore.makeRegularSpotField(alloc, field),
+            .sspot = if (has_start) ore.makeStartingSpotField(alloc, field, lakes) else null,
+        });
+    }
+
+    // Gather each resource's spots covering the rect (region pre-pass warms the
+    // spot cache, then allSpotsInRect collects those whose cones reach the rect).
+    const fx0: f64 = @floatFromInt(x0);
+    const fx1: f64 = @floatFromInt(x1);
+    const fy0: f64 = @floatFromInt(y0);
+    const fy1: f64 = @floatFromInt(y1);
+    for (states.items) |*st| {
+        const rs = ore.REGULAR_REGION_SIZE;
+        const rminx: i32 = @as(i32, @intFromFloat(@round(fx0 / rs))) - 1;
+        const rmaxx: i32 = @as(i32, @intFromFloat(@round((fx1 - 1) / rs))) + 1;
+        const rminy: i32 = @as(i32, @intFromFloat(@round(fy0 / rs))) - 1;
+        const rmaxy: i32 = @as(i32, @intFromFloat(@round((fy1 - 1) / rs))) + 1;
+        var rx: i32 = rminx;
+        while (rx <= rmaxx) : (rx += 1) {
+            var ry: i32 = rminy;
+            while (ry <= rmaxy) : (ry += 1) _ = try st.spot.spotsForRegion(rx, ry);
+        }
+        if (st.sspot) |*ss| {
+            const srs = ore.STARTING_RESOURCE_PLACEMENT_RADIUS * 2.0;
+            const sminx: i32 = @as(i32, @intFromFloat(@round(fx0 / srs))) - 1;
+            const smaxx: i32 = @as(i32, @intFromFloat(@round((fx1 - 1) / srs))) + 1;
+            const sminy: i32 = @as(i32, @intFromFloat(@round(fy0 / srs))) - 1;
+            const smaxy: i32 = @as(i32, @intFromFloat(@round((fy1 - 1) / srs))) + 1;
+            var srx: i32 = sminx;
+            while (srx <= smaxx) : (srx += 1) {
+                var sry: i32 = sminy;
+                while (sry <= smaxy) : (sry += 1) _ = try ss.spotsForRegion(srx, sry);
+            }
+        }
+        st.all_spots = try st.spot.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+        if (st.sspot) |*ss| st.all_start_spots = try ss.allSpotsInRect(alloc, fx0, fx1, fy0, fy1);
+    }
+
+    const hdr = GpuOreHeader{
+        .nres = @intCast(states.items.len),
+        .map_seed = map_seed,
+        .is_field = 0,
+        .x0 = x0,
+        .y0 = y0,
+        .x1 = x1,
+        .y1 = y1,
+        .zone_radius = zone_radius,
+        .mode_vanilla = 1.0,
+        .double_density = ore.DOUBLE_DENSITY_DISTANCE,
+        .regular_fade_in = ore.REGULAR_PATCH_FADE_IN_DISTANCE,
+        .starting_radius = ore.STARTING_RESOURCE_PLACEMENT_RADIUS,
+        .spot_enlarge_max = ore.DOUBLE_DENSITY_DISTANCE + ore.REGULAR_PATCH_FADE_IN_DISTANCE,
+        .reg_vein_w = 0.0, // base game has no vein term
+        .start_blob_c = 1.0, // starting_patches = spots + (blobs0 - 0.25) * amp
+        .start_vein_w = 0.0,
+    };
+    try buf.appendSlice(alloc, std.mem.asBytes(&hdr));
+    for (states.items) |*st| {
+        const f = st.field;
+        // FNV-1a of the name → independent placement-roll stream (matches the SE
+        // dump and the CPU vanilla path, which salt the per-tile roll the same way).
+        var salt: u32 = 2166136261;
+        for (st.name) |ch| salt = (salt ^ ch) *% 16777619;
+        const rh = GpuResHeader{
+            .base_density = f.config.base_density,
+            .freq_mult = f.controls.frequency, // vanilla uses raw sliders (no ^0.8)
+            .size_mult = f.controls.size,
+            .base_spots_per_km2 = f.config.base_spots_per_km2,
+            .rq = f.regularRqFactor(),
+            .smin = f.config.random_spot_size_minimum,
+            .smax = f.config.random_spot_size_maximum,
+            .basement_value = f.basementValue(),
+            .richness_mult = f.config.richness_post_multiplier * f.controls.richness,
+            .additional_richness = f.config.additional_richness,
+            .random_probability = f.config.random_probability,
+            .starting_blob_amplitude = f.startingBlobAmplitude(),
+            .seed1 = f.config.seed1,
+            .roll_salt = salt,
+            .has_starting = if (st.sspot != null) 1 else 0,
             .name_len = @intCast(st.name.len),
             .nspots = @intCast(st.all_spots.len),
             .nstart = @intCast(st.all_start_spots.len),
