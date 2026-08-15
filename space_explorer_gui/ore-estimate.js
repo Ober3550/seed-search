@@ -1,46 +1,35 @@
 // Calibrated ore-count estimator for un-generated surfaces.
 //
-// Model (deliberately simple, per project direction — see resource-estimation-
-// direction / storage memory):
+// MOON / PLANET model (hybrid — see ore-model.json, fit from 465 real full-radius
+// surfaces across 9 seeds). For each resource in a zone:
 //
-//     amount(res) ≈ score(res) · K[res][water] · (π · R²)
+//   scored (FSR score + score coeff) ...... est = KS[res][water] · score · R^B
+//   unscored but always-present ........... est = PMED[primary][water][res] · R^B
+//   scored AND always-present ............. est = max(scoreEst, PLO[...] · R^B)
 //
-// where score = zone.resource_scores[res] (normalised FSR, primary = 1), R is the
-// zone radius capped at 5000, and water is a binary none/has-water split.
+// Why the profile floor matters: the surface generator places the base ores
+// (iron/copper/coal/stone/uranium) — and kr-rare-metal — on EVERY surface, but
+// the universe generator only assigns FSR scores to a few resources per zone. So
+// a pure score model misses ~every unscored base ore (the "estimated 3, actually
+// 7" bug). The per-(primary,water) PMED profile fills those in; PLO (a low
+// percentile) floors severely under-predicted low-score resources without
+// inflating well-scored ones. Only resources that generate >=1M in >=half a
+// primary's zones enter the profile, so it rarely invents a resource a zone lacks.
 //
-// K was calibrated from REAL generated ore on the LARGEST SE surfaces (law of
-// large numbers), excluding Nauvis (a bad SE sample — world seed, starting
-// patches, always r5000). Anchoring on big surfaces means small ones under-
-// predict slightly (ore concentrates near spawn and fades outward), which is the
-// accepted trade-off: "the larger the surface, the more accurate the estimate."
+// R^B (B≈1.49) captures that ore does NOT scale with area (r^2): it concentrates
+// near spawn and thins outward, so density falls with radius.
 //
-// Calibration: 36 moons/planets from seed 3403311347, K = median of
-// amount/(score·area) over surfaces with R ≥ 3000. Validation over all 213
-// (zone,resource) pairs: median predicted/actual ≈ 1.0, 71% within 2×, 86%
-// within 3×. Regenerate with scratchpad fit_final.js if the generator changes.
-
-// Per-resource K (ore units per unit-score per tile of disk area), none vs water.
-const K_TABLE = {
-  "iron-ore":         { none: 325, water: 121 },
-  "copper-ore":       { none: 256, water: 130 },
-  "coal":             { none: 117, water: 78 },
-  "stone":            { none: 390, water: 62 },
-  "uranium-ore":      { none: 26,  water: 12 },
-  "se-iridium-ore":   { none: 52,  water: 40 },
-  "se-holmium-ore":   { none: 60,  water: 37 },
-  "se-beryllium-ore": { none: 53,  water: 12 },
-  "se-cryonite":      { none: 78,  water: 112 },
-  "se-vulcanite":     { none: 37,  water: 51 },
-  "se-vitamelange":   { none: 38,  water: 24 },
-};
+// Validation over 2774 (zone,resource) pairs: 95% resource completeness, median
+// predicted/actual ≈ 1.06, 72% within 2×, 87% within 3×. Also works for score-
+// less zones (no resource_scores) via the profile alone. Nauvis excluded from
+// calibration (bad SE sample). Regenerate with scratchpad calib2.js + fit5.js.
+const MODEL = require("./ore-model.json"); // { B, KS, PMED, PLO }
 
 // Asteroid fields carry no FSR scores or radius — only a primary_resource — but
 // they generate from a fixed-size field, so their yields depend almost entirely
 // on which resource is primary (the primary amount is very stable, cv 0.04–0.12;
-// delta-v / distance has no measurable effect). This is the per-primary median
-// resource amount (at the r=5000 render), calibrated from 72 real fields across
-// 3 seeds. naquium is present in every field but only substantial when primary.
-// K2 primaries (kr-*) don't render their own ore, so those tables omit it.
+// delta-v / distance has no measurable effect). Per-primary median resource
+// amount (at the r=5000 render), calibrated from 72 real fields across 3 seeds.
 const FIELD_TABLE = {
   "iron-ore":         { "iron-ore": 4404894871, "copper-ore": 31755627, "uranium-ore": 25666816, "stone": 39003574, "se-water-ice": 107276695, "se-methane-ice": 26686499, "se-naquium-ore": 2255302 },
   "copper-ore":       { "iron-ore": 83401512, "copper-ore": 3546134734, "uranium-ore": 6964197, "stone": 45140736, "se-water-ice": 32676733, "se-methane-ice": 26861364, "se-naquium-ore": 1899967 },
@@ -52,42 +41,52 @@ const FIELD_TABLE = {
   "kr-rare-metal-ore":{ "iron-ore": 28763922, "copper-ore": 52206181, "uranium-ore": 19344573, "stone": 73357469, "se-water-ice": 37940902, "se-methane-ice": 139188278, "se-naquium-ore": 4269053 },
 };
 
-const MAX_RADIUS = 5000;      // density model is anchored within this disk
-const DISPLAY_MIN = 1e6;      // hide sub-1M estimates (noise at low scores)
+const MAX_RADIUS = 5000;      // matches GUI generation cap (effRadius) so est ≈ measured
+const DISPLAY_MIN = 1e6;      // hide sub-1M estimates (noise)
 
-// Estimate per-resource ore amounts for a zone that has FSR scores but no
-// generated surface yet. Returns { resource: amount } (raw numbers), or {} when
-// the zone lacks scores/radius (e.g. asteroid fields/belts, which carry neither).
-//
-// Only resources with a CALIBRATED K are estimated. This deliberately excludes
-// resources that carry an FSR score but never render as ore under the current
-// surface generator — K2 ores (kr-*), fluids (crude-oil, kr-mineral-water) —
-// which would otherwise produce phantom estimates for patches that never appear.
+// water-bucket helpers with a fallback to the other bucket when a coeff is absent.
+const otherW = w => (w === "none" ? "water" : "none");
+const ksOf = (res, w) => (MODEL.KS[res] || {})[w] ?? (MODEL.KS[res] || {})[otherW(w)];
+const profOf = (T, p, w) => (T[p] || {})[w] || (T[p] || {})[otherW(w)] || {};
+
+// Estimate per-resource ore amounts for a zone with no generated surface yet.
+// Returns { resource: amount }. {} when there's nothing to key off (no primary
+// and no scores — e.g. asteroid belts / anomalies, which carry neither).
 function estimateZoneOre(zone) {
   if (!zone) return {};
-  // Asteroid fields: yields are a fixed function of the primary resource (no
-  // scores / radius to scale by). Look up the calibrated per-primary table.
+  // Asteroid fields: yields are a fixed function of the primary resource.
   if (zone.zone_type === "asteroid-field") {
     const t = FIELD_TABLE[zone.primary_resource];
     const out = {};
     if (t) for (const [res, amt] of Object.entries(t)) if (amt >= DISPLAY_MIN) out[res] = amt;
     return out;
   }
-  let scores;
-  try { scores = JSON.parse(zone.resource_scores || "{}"); } catch (_) { return {}; }
+  // Moons / planets: hybrid score + per-primary profile model.
   const R = Math.min(Math.round(zone.radius || 0), MAX_RADIUS);
-  if (!R || !scores || typeof scores !== "object") return {};
-  const area = Math.PI * R * R;
-  const water = (!zone.water || zone.water === "none") ? "none" : "water";
+  if (!R) return {};
+  const rB = Math.pow(R, MODEL.B);
+  const w = (!zone.water || zone.water === "none") ? "none" : "water";
+  let scores = null;
+  try { scores = JSON.parse(zone.resource_scores || "null"); } catch (_) {}
   const out = {};
-  for (const [res, score] of Object.entries(scores)) {
-    if (!(score > 0)) continue;
-    const k = K_TABLE[res];            // calibrated ores only — no __default__
-    if (!k) continue;
-    const amount = score * k[water] * area;
-    if (amount >= DISPLAY_MIN) out[res] = amount;
+  // 1) score-based estimate for every scored resource we have a coefficient for.
+  if (scores && typeof scores === "object") {
+    for (const [res, sc] of Object.entries(scores)) {
+      if (!(sc > 0)) continue;
+      const k = ksOf(res, w);
+      if (k) out[res] = k * sc * rB;
+    }
   }
-  return out;
+  // 2) profile: add always-present resources (unscored), floor the under-predicted.
+  const pmed = profOf(MODEL.PMED, zone.primary_resource, w);
+  const plo = profOf(MODEL.PLO, zone.primary_resource, w);
+  for (const res in pmed) {
+    if (out[res] == null) out[res] = pmed[res] * rB;            // unscored → profile median
+    else out[res] = Math.max(out[res], (plo[res] || 0) * rB);  // scored → low-percentile floor
+  }
+  const f = {};
+  for (const [res, v] of Object.entries(out)) if (v >= DISPLAY_MIN) f[res] = Math.round(v);
+  return f;
 }
 
-module.exports = { estimateZoneOre, K_TABLE, FIELD_TABLE };
+module.exports = { estimateZoneOre, FIELD_TABLE, MODEL };
