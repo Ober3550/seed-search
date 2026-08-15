@@ -22,6 +22,7 @@ const path = require("path");
 const fs = require("fs");
 const db = require("./db");
 const { seedScore } = require("./score");
+const { estimateZoneOre } = require("./ore-estimate");
 const jobs = require("./job-manager");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
@@ -196,9 +197,9 @@ function resChips(prefix, chips) {
 }
 
 // Inner HTML of the Resources cell: measured amounts if a surface summary
-// exists, otherwise "—" (no estimates — the universe generator no longer emits
-// them; see resource-estimation-direction). Highest quantity first, with the
-// long tail collapsed behind a chevron.
+// exists, otherwise a CALIBRATED estimate from the zone's FSR scores + radius +
+// water (see ore-estimate.js). Estimates are marked (~) and use the "est" chip
+// style; they vanish once real ore is generated. Highest quantity first.
 function renderZoneResources(bucket, seed, zone) {
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
   const summary = zoneSurfaceSummary(bucket, seed, zone.name);
@@ -208,16 +209,9 @@ function renderZoneResources(bucket, seed, zone) {
       .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`);
     return resChips("✅ ", chips);
   }
-  let y = {};
-  try { y = JSON.parse(zone.resource_yields || "{}"); } catch (_) {}
-  const mag = (v) => {
-    const m = String(v).match(/([\d.]+)\s*([BMK]?)/i);
-    if (!m) return 0;
-    const s = { b: 1e9, m: 1e6, k: 1e3 }[(m[2] || "").toLowerCase()] || 1;
-    return parseFloat(m[1]) * s;
-  };
-  const chips = Object.entries(y).sort((a, b) => mag(b[1]) - mag(a[1]))
-    .map(([r, v]) => `<span class="res-chip est">${nm(r)} <strong>${v}</strong></span>`);
+  const est = estimateZoneOre(zone);
+  const chips = Object.entries(est).sort((a, b) => b[1] - a[1])
+    .map(([r, v]) => `<span class="res-chip est" title="calibrated estimate — generate the surface for the real value">${nm(r)} <strong>~${fmtAmount(Math.round(v))}</strong></span>`);
   return resChips("", chips);
 }
 
