@@ -883,8 +883,14 @@ function upsertWorldZones(data, jobId) {
       temperature=excluded.temperature, water=excluded.water,
       moisture=excluded.moisture, trees=excluded.trees, aux=excluded.aux,
       cliff=excluded.cliff, enemy=excluded.enemy, delta_v=excluded.delta_v,
-      resource_scores=excluded.resource_scores,
-      resource_yields=excluded.resource_yields,
+      -- COALESCE the score/yield fields: the ALL_ZONES expansion output no longer
+      -- carries "rs"/"y" (dropped from universe gen for perf — see the resource-
+      -- estimation-direction memory), so a plain assignment would wipe the
+      -- resource_scores the bucket import populated, and with them the calibrated
+      -- ore estimates (ore-estimate.js). Keep the existing value when the expand
+      -- omits it. Same rationale as in_calidus below.
+      resource_scores=COALESCE(excluded.resource_scores, zones.resource_scores),
+      resource_yields=COALESCE(excluded.resource_yields, zones.resource_yields),
       -- COALESCE so a re-ingest from an older seedgen (no "c") cannot wipe a
       -- flag an ALL_ZONES expansion already established.
       in_calidus=COALESCE(excluded.in_calidus, zones.in_calidus)`);
