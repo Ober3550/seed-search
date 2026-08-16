@@ -945,7 +945,7 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           title="tick every Calidus home-system planet and moon (ignores asteroid fields and other star systems)">
           ✅ Select Calidus planets &amp; moons
         </button>
-        <span class="select-by-type" title="add every shown zone of this type to the selection (respects the search filter)">
+        <span class="select-by-type" title="toggle every shown zone of this type — selects all, or deselects all if they're already selected (respects the search filter)">
           <button type="button" class="btn btn-secondary" onclick="selectByType('planet')">🪐 Planets</button>
           <button type="button" class="btn btn-secondary" onclick="selectByType('moon')">🌙 Moons</button>
           <button type="button" class="btn btn-secondary" onclick="selectByType('asteroid-field')">☄ Fields</button>
@@ -1077,15 +1077,19 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
             if (cb) cb.checked = master.checked;
           });
         };
-        // Add every SHOWN zone of one type (planet / moon / asteroid-field) to the
-        // selection. Additive (never unchecks), and respects the search filter.
+        // Toggle every SHOWN zone of one type (planet / moon / asteroid-field):
+        // if they are all already checked, uncheck them; otherwise check them all.
+        // Respects the search filter (skips hidden rows).
         window.selectByType = function (type) {
+          var boxes = [];
           document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
-            if (r.style.display === "none") return;
-            if (r.dataset.type !== type) return;
+            if (r.style.display === "none" || r.dataset.type !== type) return;
             var cb = r.querySelector('input[name=zone]');
-            if (cb) cb.checked = true;
+            if (cb) boxes.push(cb);
           });
+          if (!boxes.length) return;
+          var allChecked = boxes.every(function (cb) { return cb.checked; });
+          boxes.forEach(function (cb) { cb.checked = !allChecked; });
         };
         // Tick every Calidus home-system planet/moon (skips asteroid fields and
         // other star systems), regardless of the search filter.
