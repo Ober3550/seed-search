@@ -945,6 +945,11 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           title="tick every Calidus home-system planet and moon (ignores asteroid fields and other star systems)">
           ✅ Select Calidus planets &amp; moons
         </button>
+        <span class="select-by-type" title="add every shown zone of this type to the selection (respects the search filter)">
+          <button type="button" class="btn btn-secondary" onclick="selectByType('planet')">🪐 Planets</button>
+          <button type="button" class="btn btn-secondary" onclick="selectByType('moon')">🌙 Moons</button>
+          <button type="button" class="btn btn-secondary" onclick="selectByType('asteroid-field')">☄ Fields</button>
+        </span>
         ${fmatch ? `<button type="button" class="btn btn-secondary" onclick="selectFiltered()"
           title="set the selection to exactly the ✓ surfaces the filter matched (unchecks everything else)">
           ✓ Select filtered (${fmatch.zones.length})
@@ -1022,22 +1027,16 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           if (i < 0) i = levels.indexOf(String(v).replace("very_", "v"));
           return i; // -1 for unknown/missing, which sorts below "none"
         }
-        function isSel(r) {
-          var cb = r.querySelector('input[type=checkbox][name=zone]');
-          return cb && cb.checked ? 1 : 0;
-        }
-        // Re-order rows: selected (checked) zones pinned to the top, then the
-        // active sort key. Runs on load, on sort, and whenever a checkbox toggles,
-        // so manually-selected zones jump up beside the criteria-relevant ones.
+        // Re-order rows by the active sort key. Runs on load and on column-header
+        // sort only — NOT on checkbox toggle: selecting a zone must not reorder the
+        // table (that yanked the page back to the top as the row jumped position).
         function reflow() {
           var tb = document.querySelector("#zone-table tbody");
           if (!tb) return;
           var rows = [].slice.call(tb.querySelectorAll("tr[data-zone]"));
           var key = sortState.key;
           rows.sort(function (a, b) {
-            var ra = isSel(a), rb = isSel(b);
-            if (ra !== rb) return rb - ra;            // selected pinned to top
-            if (!key) return 0;                        // else keep DOM order (stable sort)
+            if (!key) return 0;                        // keep DOM order (stable sort)
             if (TAGLESS_FOR_FIELDS[key]) {             // fields last, either direction
               var fa = isField(a), fb = isField(b);
               if (fa !== fb) return fa - fb;
@@ -1060,11 +1059,7 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           var thh = document.querySelector('#zone-table th[data-key="' + key + '"] .sort-ind');
           if (thh) thh.textContent = sortState.dir === "asc" ? "▲" : "▼";
         };
-        // Re-pin whenever a zone checkbox toggles (delegated; survives htmx swaps).
-        document.addEventListener("change", function (e) {
-          if (e.target && e.target.matches && e.target.matches('#zone-table input[type=checkbox][name=zone]')) reflow();
-        });
-        reflow();  // default Δv-ascending sort (selected zones still pinned on top)
+        reflow();  // default Δv-ascending sort
         (function () {
           var ind = document.querySelector('#zone-table th[data-key="dv"] .sort-ind');
           if (ind) ind.textContent = "▲";
@@ -1081,7 +1076,16 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = master.checked;
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
+        };
+        // Add every SHOWN zone of one type (planet / moon / asteroid-field) to the
+        // selection. Additive (never unchecks), and respects the search filter.
+        window.selectByType = function (type) {
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            if (r.style.display === "none") return;
+            if (r.dataset.type !== type) return;
+            var cb = r.querySelector('input[name=zone]');
+            if (cb) cb.checked = true;
+          });
         };
         // Tick every Calidus home-system planet/moon (skips asteroid fields and
         // other star systems), regardless of the search filter.
@@ -1093,7 +1097,6 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
               if (cb) cb.checked = true;
             }
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
         // Set the selection to EXACTLY the surfaces the active filter matched
         // (data-fmatch=1, the ✓ rows) — checks them and unchecks everything
@@ -1103,7 +1106,6 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = r.dataset.fmatch === "1";
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
         // Row click → surface detail, unless the click was on an interactive
         // control (button/input/link) — those keep their own behaviour.
