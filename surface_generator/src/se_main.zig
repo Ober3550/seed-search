@@ -373,6 +373,10 @@ fn runZoneDriver(
                         break;
                     }
                 }
+                // Under K2, Nauvis also carries rare-metal-ore (default 1/1/1
+                // controls, like the base ores). K2's other Nauvis addition,
+                // mineral-water, is a FLUID — the solid-ore path doesn't place it.
+                if (has_k2 and std.mem.eql(u8, e.name, "kr-rare-metal-ore")) is_base = true;
                 if (!is_base) continue;
                 if (ores_only and e.cfg.random_probability < 1.0) continue;
                 var ctrl = se.Controls{ .frequency = 1.0, .size = 1.0, .richness = 1.0 };

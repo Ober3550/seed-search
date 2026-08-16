@@ -41,6 +41,14 @@ const FIELD_TABLE = {
   "kr-rare-metal-ore":{ "iron-ore": 28763922, "copper-ore": 52206181, "uranium-ore": 19344573, "stone": 73357469, "se-water-ice": 37940902, "se-methane-ice": 139188278, "se-naquium-ore": 4269053 },
 };
 
+// Nauvis is synthetic (not universe-generated): fixed r5000, default 1/1/1 FSR,
+// SE autoplace over the base ores only — no per-zone scores or primary. Amounts
+// are very stable across seeds (calibrated from 6 seeds). Under K2, Nauvis also
+// carries rare-metal-ore (median below); its other K2 addition, mineral-water,
+// is a FLUID the ore path doesn't count (like crude-oil), so it isn't listed.
+const NAUVIS_BASE = { "iron-ore": 720891788, "copper-ore": 645692931, "coal": 502851057, "stone": 643189231, "uranium-ore": 61560588 };
+const NAUVIS_K2 = { "kr-rare-metal-ore": 430267684 };
+
 const MAX_RADIUS = 5000;      // matches GUI generation cap (effRadius) so est ≈ measured
 const DISPLAY_MIN = 1e6;      // hide sub-1M estimates (noise)
 
@@ -52,8 +60,15 @@ const profOf = (T, p, w) => (T[p] || {})[w] || (T[p] || {})[otherW(w)] || {};
 // Estimate per-resource ore amounts for a zone with no generated surface yet.
 // Returns { resource: amount }. {} when there's nothing to key off (no primary
 // and no scores — e.g. asteroid belts / anomalies, which carry neither).
-function estimateZoneOre(zone) {
+function estimateZoneOre(zone, opts) {
   if (!zone) return {};
+  // Nauvis: fixed default-FSR base ores; + rare-metal-ore when the seed is K2.
+  if (zone.name === "Nauvis") {
+    const out = {};
+    for (const [res, amt] of Object.entries(NAUVIS_BASE)) if (amt >= DISPLAY_MIN) out[res] = amt;
+    if (opts && opts.k2) for (const [res, amt] of Object.entries(NAUVIS_K2)) if (amt >= DISPLAY_MIN) out[res] = amt;
+    return out;
+  }
   // Asteroid fields: yields are a fixed function of the primary resource.
   if (zone.zone_type === "asteroid-field") {
     const t = FIELD_TABLE[zone.primary_resource];

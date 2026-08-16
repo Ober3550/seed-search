@@ -209,7 +209,9 @@ function renderZoneResources(bucket, seed, zone) {
       .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`);
     return resChips("✅ ", chips);
   }
-  const est = estimateZoneOre(zone);
+  // Nauvis needs the seed's K2 flag (its rare-metal-ore only under K2); other
+  // zones get kr from their real scores, so no flag needed there.
+  const est = estimateZoneOre(zone, zone.name === "Nauvis" ? { k2: !!(db.getSeed(seed) || {}).k2 } : undefined);
   const chips = Object.entries(est).sort((a, b) => b[1] - a[1])
     .map(([r, v]) => `<span class="res-chip est" title="calibrated estimate — generate the surface for the real value">${nm(r)} <strong>~${fmtAmount(Math.round(v))}</strong></span>`);
   return resChips("", chips);
