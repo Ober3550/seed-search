@@ -139,6 +139,7 @@ function htmxPage(title, content) {
       <ul class="nav-links">
         <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Universe Buckets</a></li>
         <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
+        <li><a href="/analyze" title="Analyze any seed entirely in your browser — no backend">🔬 Analyze seed</a></li>
         <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
         <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Surface Jobs</a></li>
         <li><a href="/workers" hx-get="/workers" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Workers</a></li>
@@ -796,6 +797,47 @@ function renderFsrPanel(zone) {
         </script>
       </form>`;
 }
+
+// Client-side seed analysis page. Serves ONLY a static shell — the seed's zones
+// and estimates are generated in the browser (universe.wasm + estimate-core.js),
+// so this route touches no DB and does no per-seed work. The optional :seed and
+// ?k2 seed it; otherwise the user types a seed in.
+app.get("/analyze/:seed?", (req, res) => {
+  const seed = /^\d+$/.test(req.params.seed || "") ? parseInt(req.params.seed) : null;
+  const k2 = req.query.k2 == null ? true : req.query.k2 === "1" || req.query.k2 === "true";
+  const content = `
+  <div class="page">
+    <div class="crumbs"><span>Analyze seed (client-side)</span></div>
+    <h2>🔬 Analyze seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+    <div class="filter-bar">
+      <label>Seed <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
+      <label class="hint" title="Krastorio 2 resources (rare-metal, etc.)"><input type="checkbox" id="k2-input" ${k2 ? "checked" : ""}> K2</label>
+      <button type="button" class="btn" id="gen-btn">Generate</button>
+      <span id="gen-status" class="hint"></span>
+    </div>
+    <div class="filter-bar">
+      <input type="text" id="zt-search" placeholder="🔍 Search name / type / resource…" autocomplete="off">
+      <span id="zt-count" class="hint"></span>
+      <span class="hint">Estimates are calibrated (~); FSR is bit-equivalent to the backend generator.</span>
+    </div>
+    <table class="data-table" id="zone-table">
+      <thead id="zt-head"><tr>
+        <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="type" style="cursor:pointer">Type <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="radius" style="cursor:pointer">Radius <span class="sort-ind"></span></th>
+        <th>Water</th><th>Enemy</th>
+        <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
+        <th>Estimated resources</th>
+      </tr></thead>
+      <tbody id="zt-body"><tr><td colspan="7" class="hint">Enter a seed and press Generate.</td></tr></tbody>
+    </table>
+  </div>
+  <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed};</script>
+  <script src="/static/universe-wasm.js"></script>
+  <script src="/static/estimate-core.js"></script>
+  <script src="/static/analyze.js"></script>`;
+  page(req, res, "Analyze seed", content);
+});
 
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));
