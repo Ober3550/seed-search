@@ -18,6 +18,29 @@ const UNIVERSE_GEN_DIR = path.join(PROJECT_ROOT, "universe_generator", "zig");
 const OUTPUT_DIR = process.env.SE_GUI_OUTPUT || path.join(PROJECT_ROOT, "output");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+// The universe generator emits primary ("p") and FSR scores ("rs") in short
+// camelCase names (iron, holmium, rareMetal — gen.zig resource_name_output), but
+// the DB / GUI / estimator use the full Factorio/SE ids (iron-ore, se-holmium-ore
+// — gen.zig resource_order). Map short→full at the import boundary. The two Zig
+// arrays are 1:1 in order; this must stay in sync with them. Pass-through for any
+// name not in the map, so already-full-named data (older imports) is untouched
+// and coal/stone (identical in both) map to themselves.
+const RESOURCE_SHORT_TO_FULL = {
+  iron: "iron-ore", copper: "copper-ore", uranium: "uranium-ore", coal: "coal", crudeOil: "crude-oil", stone: "stone",
+  vulcanite: "se-vulcanite", cryonite: "se-cryonite", vitamelange: "se-vitamelange", naquium: "se-naquium-ore", methaneIce: "se-methane-ice", waterIce: "se-water-ice",
+  beryllium: "se-beryllium-ore", iridium: "se-iridium-ore", holmium: "se-holmium-ore",
+  imersite: "kr-imersite", mineralWater: "kr-mineral-water", rareMetal: "kr-rare-metal-ore",
+};
+const fullResourceName = (n) => (n == null ? n : (RESOURCE_SHORT_TO_FULL[n] || n));
+// Remap an "rs" score map to full names, dropping zero/absent scores (the
+// generator emits 0.0 for every unplaced resource). Returns null when empty.
+function fullResourceScores(rs) {
+  if (!rs || typeof rs !== "object") return rs || null;
+  const out = {};
+  for (const [k, v] of Object.entries(rs)) if (v > 0) out[fullResourceName(k)] = v;
+  return Object.keys(out).length ? out : null;
+}
+
 // Every universe job is exactly one fixed-size bucket. Override with
 // UNIVERSE_BUCKET_SIZE (e.g. 10000 for a faster demo).
 const BUCKET_SIZE = parseInt(process.env.UNIVERSE_BUCKET_SIZE || "1048576");
@@ -822,7 +845,7 @@ async function importBucket(filePath, jobId, label) {
         name: z.n,
         zone_type: z.t,
         radius: z.r || null,
-        primary_resource: z.p || null,
+        primary_resource: fullResourceName(z.p) || null,
         temperature: z.temperature || null,
         water: z.water || null,
         moisture: z.moisture || null,
@@ -833,7 +856,7 @@ async function importBucket(filePath, jobId, label) {
         delta_v: z.dv || null,
         star_gravity_well: null,
         planet_gravity_well: null,
-        resource_scores: z.rs || null,
+        resource_scores: fullResourceScores(z.rs),
         resource_yields: z.y || null,
         stellar_x: null,
         stellar_y: null,
@@ -883,18 +906,24 @@ function upsertWorldZones(data, jobId) {
       temperature=excluded.temperature, water=excluded.water,
       moisture=excluded.moisture, trees=excluded.trees, aux=excluded.aux,
       cliff=excluded.cliff, enemy=excluded.enemy, delta_v=excluded.delta_v,
-      resource_scores=excluded.resource_scores,
-      resource_yields=excluded.resource_yields,
+      -- COALESCE the score/yield fields: the ALL_ZONES expansion output no longer
+      -- carries the per-zone "rs" scores (real FSR), a plain assignment is fine —
+      -- but COALESCE keeps the existing value if an OLD seedgen (no "rs") is ever
+      -- used, so it can't wipe scores the bucket import populated. Same rationale
+      -- as in_calidus below. ("y" yields are still not emitted.)
+      resource_scores=COALESCE(excluded.resource_scores, zones.resource_scores),
+      resource_yields=COALESCE(excluded.resource_yields, zones.resource_yields),
       -- COALESCE so a re-ingest from an older seedgen (no "c") cannot wipe a
       -- flag an ALL_ZONES expansion already established.
       in_calidus=COALESCE(excluded.in_calidus, zones.in_calidus)`);
   const tx = d.transaction(() => {
     for (const z of data.z) {
+      const rs = fullResourceScores(z.rs);
       stmt.run(
-        jobId, data.s, z.n, z.t, z.r || null, z.p || null,
+        jobId, data.s, z.n, z.t, z.r || null, fullResourceName(z.p) || null,
         z.temperature || null, z.water || null, z.moisture || null, z.trees || null,
         z.aux || null, z.cliff || null, z.enemy || null, z.dv || null, null, null,
-        z.rs ? JSON.stringify(z.rs) : null, z.y ? JSON.stringify(z.y) : null, null, null,
+        rs ? JSON.stringify(rs) : null, z.y ? JSON.stringify(z.y) : null, null, null,
         z.c == null ? null : (z.c ? 1 : 0),
       );
     }

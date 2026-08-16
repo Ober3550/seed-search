@@ -22,6 +22,7 @@ const path = require("path");
 const fs = require("fs");
 const db = require("./db");
 const { seedScore } = require("./score");
+const { estimateZoneOre } = require("./ore-estimate");
 const jobs = require("./job-manager");
 const analyze = require(path.join(__dirname, "..", "verifier", "analyze.js"));
 
@@ -196,9 +197,9 @@ function resChips(prefix, chips) {
 }
 
 // Inner HTML of the Resources cell: measured amounts if a surface summary
-// exists, otherwise "—" (no estimates — the universe generator no longer emits
-// them; see resource-estimation-direction). Highest quantity first, with the
-// long tail collapsed behind a chevron.
+// exists, otherwise a CALIBRATED estimate from the zone's FSR scores + radius +
+// water (see ore-estimate.js). Estimates are marked (~) and use the "est" chip
+// style; they vanish once real ore is generated. Highest quantity first.
 function renderZoneResources(bucket, seed, zone) {
   const nm = (r) => r.replace("se-", "").replace("kr-", "").replace("-ore", "");
   const summary = zoneSurfaceSummary(bucket, seed, zone.name);
@@ -208,16 +209,11 @@ function renderZoneResources(bucket, seed, zone) {
       .map(([r, v]) => `<span class="res-chip">${nm(r)} <strong>${v.display || fmtAmount(v.amount)}</strong></span>`);
     return resChips("✅ ", chips);
   }
-  let y = {};
-  try { y = JSON.parse(zone.resource_yields || "{}"); } catch (_) {}
-  const mag = (v) => {
-    const m = String(v).match(/([\d.]+)\s*([BMK]?)/i);
-    if (!m) return 0;
-    const s = { b: 1e9, m: 1e6, k: 1e3 }[(m[2] || "").toLowerCase()] || 1;
-    return parseFloat(m[1]) * s;
-  };
-  const chips = Object.entries(y).sort((a, b) => mag(b[1]) - mag(a[1]))
-    .map(([r, v]) => `<span class="res-chip est">${nm(r)} <strong>${v}</strong></span>`);
+  // Nauvis needs the seed's K2 flag (its rare-metal-ore only under K2); other
+  // zones get kr from their real scores, so no flag needed there.
+  const est = estimateZoneOre(zone, zone.name === "Nauvis" ? { k2: !!(db.getSeed(seed) || {}).k2 } : undefined);
+  const chips = Object.entries(est).sort((a, b) => b[1] - a[1])
+    .map(([r, v]) => `<span class="res-chip est" title="calibrated estimate — generate the surface for the real value">${nm(r)} <strong>~${fmtAmount(Math.round(v))}</strong></span>`);
   return resChips("", chips);
 }
 
@@ -951,6 +947,11 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           title="tick every Calidus home-system planet and moon (ignores asteroid fields and other star systems)">
           ✅ Select Calidus planets &amp; moons
         </button>
+        <span class="select-by-type" title="toggle every shown zone of this type — selects all, or deselects all if they're already selected (respects the search filter)">
+          <button type="button" class="btn btn-secondary" onclick="selectByType('planet')">🪐 Planets</button>
+          <button type="button" class="btn btn-secondary" onclick="selectByType('moon')">🌙 Moons</button>
+          <button type="button" class="btn btn-secondary" onclick="selectByType('asteroid-field')">☄ Fields</button>
+        </span>
         ${fmatch ? `<button type="button" class="btn btn-secondary" onclick="selectFiltered()"
           title="set the selection to exactly the ✓ surfaces the filter matched (unchecks everything else)">
           ✓ Select filtered (${fmatch.zones.length})
@@ -1028,22 +1029,16 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           if (i < 0) i = levels.indexOf(String(v).replace("very_", "v"));
           return i; // -1 for unknown/missing, which sorts below "none"
         }
-        function isSel(r) {
-          var cb = r.querySelector('input[type=checkbox][name=zone]');
-          return cb && cb.checked ? 1 : 0;
-        }
-        // Re-order rows: selected (checked) zones pinned to the top, then the
-        // active sort key. Runs on load, on sort, and whenever a checkbox toggles,
-        // so manually-selected zones jump up beside the criteria-relevant ones.
+        // Re-order rows by the active sort key. Runs on load and on column-header
+        // sort only — NOT on checkbox toggle: selecting a zone must not reorder the
+        // table (that yanked the page back to the top as the row jumped position).
         function reflow() {
           var tb = document.querySelector("#zone-table tbody");
           if (!tb) return;
           var rows = [].slice.call(tb.querySelectorAll("tr[data-zone]"));
           var key = sortState.key;
           rows.sort(function (a, b) {
-            var ra = isSel(a), rb = isSel(b);
-            if (ra !== rb) return rb - ra;            // selected pinned to top
-            if (!key) return 0;                        // else keep DOM order (stable sort)
+            if (!key) return 0;                        // keep DOM order (stable sort)
             if (TAGLESS_FOR_FIELDS[key]) {             // fields last, either direction
               var fa = isField(a), fb = isField(b);
               if (fa !== fb) return fa - fb;
@@ -1066,11 +1061,7 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
           var thh = document.querySelector('#zone-table th[data-key="' + key + '"] .sort-ind');
           if (thh) thh.textContent = sortState.dir === "asc" ? "▲" : "▼";
         };
-        // Re-pin whenever a zone checkbox toggles (delegated; survives htmx swaps).
-        document.addEventListener("change", function (e) {
-          if (e.target && e.target.matches && e.target.matches('#zone-table input[type=checkbox][name=zone]')) reflow();
-        });
-        reflow();  // default Δv-ascending sort (selected zones still pinned on top)
+        reflow();  // default Δv-ascending sort
         (function () {
           var ind = document.querySelector('#zone-table th[data-key="dv"] .sort-ind');
           if (ind) ind.textContent = "▲";
@@ -1087,7 +1078,20 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = master.checked;
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
+        };
+        // Toggle every SHOWN zone of one type (planet / moon / asteroid-field):
+        // if they are all already checked, uncheck them; otherwise check them all.
+        // Respects the search filter (skips hidden rows).
+        window.selectByType = function (type) {
+          var boxes = [];
+          document.querySelectorAll("#zone-table tbody tr[data-zone]").forEach(function (r) {
+            if (r.style.display === "none" || r.dataset.type !== type) return;
+            var cb = r.querySelector('input[name=zone]');
+            if (cb) boxes.push(cb);
+          });
+          if (!boxes.length) return;
+          var allChecked = boxes.every(function (cb) { return cb.checked; });
+          boxes.forEach(function (cb) { cb.checked = !allChecked; });
         };
         // Tick every Calidus home-system planet/moon (skips asteroid fields and
         // other star systems), regardless of the search filter.
@@ -1099,7 +1103,6 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
               if (cb) cb.checked = true;
             }
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
         // Set the selection to EXACTLY the surfaces the active filter matched
         // (data-fmatch=1, the ✓ rows) — checks them and unchecks everything
@@ -1109,7 +1112,6 @@ function renderSeedDetail(s, c, zones, { sel, defs, filterDef, fmatch }, showAll
             var cb = r.querySelector('input[name=zone]');
             if (cb) cb.checked = r.dataset.fmatch === "1";
           });
-          if (window.reflowZones) window.reflowZones();  // re-pin the new selection
         };
         // Row click → surface detail, unless the click was on an interactive
         // control (button/input/link) — those keep their own behaviour.
