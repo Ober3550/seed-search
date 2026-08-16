@@ -286,6 +286,20 @@ function buildSeedgen() {
   ok(`seedgen → universe_generator/zig/${out}`);
 }
 
+function buildUniverseWasm() {
+  // The universe generator, compiled to WebAssembly so the web GUI can generate
+  // a seed's zones + FSR entirely client-side (no backend). Reuses gen.zig via
+  // wasm.zig's exported generate()/resultPtr()/resultLen(). Emitted straight
+  // into the GUI's static dir. freestanding + no libc (the wasm path doesn't use
+  // getenv/stdout), -fno-entry (no main), -rdynamic to keep the exports.
+  const dir = path.join(ROOT, "universe_generator", "zig");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "universe.wasm");
+  const args = ["build-exe", "wasm.zig", "-target", "wasm32-freestanding",
+    "-O", "ReleaseSmall", "-fno-entry", "-rdynamic", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("universe.wasm → space_explorer_gui/public/universe.wasm");
+}
+
 function buildSegen() {
   const dir = path.join(ROOT, "surface_generator");
   run("zig", ["build", "-Doptimize=ReleaseFast"], dir);
@@ -366,6 +380,9 @@ async function main() {
 
   step("Building seedgen (universe generator)");
   buildSeedgen();
+
+  step("Building universe.wasm (client-side seed analysis)");
+  buildUniverseWasm();
 
   step("Building segen (surface generator)");
   buildSegen();

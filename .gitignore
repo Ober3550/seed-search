@@ -51,6 +51,7 @@ space_explorer_gui/node_modules/
 space_explorer_gui/data.sqlite*
 space_explorer_gui/output/
 space_explorer_gui/public/htmx.min.js
+space_explorer_gui/public/universe.wasm
 calibration/vanilla-sweep/mods-empty/mod-list.json
 
 # gpu_compute: large wgpu-native prebuilts (re-fetch via gpu_compute/fetch-wgpu.sh)
