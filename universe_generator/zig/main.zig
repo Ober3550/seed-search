@@ -500,15 +500,19 @@ pub fn main(init: std.process.Init) !void {
                 // boolean.
                 const primary = primaries.get(z.name) orelse field_primaries.get(z.name);
                 if (primary) |prim| {
-                    const prim_out = gen.resourceOutputName(prim);
-                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim_out}) catch unreachable;
+                    // Emit p/rs with the FULL Factorio/SE ids (resource_order),
+                    // not the camelCase short names — the surface generator,
+                    // GUI, DB and estimator all key on full names (segen matches
+                    // "se-vulcanite", etc.). The short resource_name_output form
+                    // stays internal to the Filter DSL (filter.zig).
+                    const pp = std.fmt.bufPrint(buf[pos..], ",\"p\":\"{s}\"", .{prim}) catch unreachable;
                     pos += pp.len;
                     const controls = gen.computeZoneResources(z.seed, z.ztype, prim, tags);
                     var first_res = true;
                     buf[pos] = ','; pos += 1;
                     const rsO = std.fmt.bufPrint(buf[pos..], "\"rs\":{{", .{}) catch unreachable;
                     pos += rsO.len;
-                    for (gen.resource_name_output, controls) |rname, score| {
+                    for (gen.resource_order, controls) |rname, score| {
                         if (!first_res) { buf[pos] = ','; pos += 1; }
                         first_res = false;
                         // Missing resources (score <= 0) are emitted as 0.0, so
