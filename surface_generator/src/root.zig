@@ -17,6 +17,10 @@ pub const chunk = @import("chunk.zig");
 pub const autoplace = @import("autoplace.zig");
 pub const ore = @import("ore_placement.zig");
 pub const se_ore = @import("se_ore_placement.zig");
+// SE surface generation calibration (resource configs, map colors, FSR
+// overrides) — shared between the native segen CLI and the browser WASM
+// surface generator (se_wasm.zig).
+pub const se_resources = @import("se_resources.zig");
 pub const terrain = @import("terrain.zig");
 pub const biome = @import("biome.zig");
 pub const asteroid = @import("asteroid.zig");

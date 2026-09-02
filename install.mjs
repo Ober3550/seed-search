@@ -300,6 +300,26 @@ function buildUniverseWasm() {
   ok("universe.wasm → space_explorer_gui/public/universe.wasm");
 }
 
+function buildSurfaceWasm() {
+  // The SE surface generator, compiled to WebAssembly so the web GUI can render
+  // a zone's surface (terrain/biome/water + ore) entirely client-side — the
+  // same pure modules (se_ore_placement/terrain/biome/asteroid + universe
+  // gen.zig) and shared calibration (se_resources.zig) as native segen, so spot
+  // positions/amounts and colors match segen bit-for-bit. se_wasm.zig imports
+  // the universe generator as a separate module (gen.zig). The surface pipeline
+  // has deep worker/noise frames, so the wasm stack is raised to 8 MiB (virtual
+  // memory — pages are only committed on use). Emitted into the GUI's static
+  // dir; freestanding + no libc, -fno-entry (no main), -rdynamic for exports.
+  const dir = path.join(ROOT, "surface_generator", "src");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "surface.wasm");
+  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
+    "--dep", "universe_gen", "-Mroot=se_wasm.zig",
+    "-Muniverse_gen=../../universe_generator/zig/gen.zig",
+    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("surface.wasm → space_explorer_gui/public/surface.wasm");
+}
+
 function buildSegen() {
   const dir = path.join(ROOT, "surface_generator");
   run("zig", ["build", "-Doptimize=ReleaseFast"], dir);
@@ -383,6 +403,9 @@ async function main() {
 
   step("Building universe.wasm (client-side seed analysis)");
   buildUniverseWasm();
+
+  step("Building surface.wasm (client-side zone surface render)");
+  buildSurfaceWasm();
 
   step("Building segen (surface generator)");
   buildSegen();
