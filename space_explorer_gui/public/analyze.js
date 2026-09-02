@@ -1,6 +1,9 @@
 // Client-side seed analysis. Generates a seed's universe in the browser (WASM),
 // estimates each zone's ore client-side, and renders the zone table — with NO
-// backend per-seed calls (only static assets: universe.wasm, ore-model.json).
+// backend per-seed calls (only static assets: universe.wasm, surface.wasm,
+// ore-model.json). Clicking a generatable zone's "🗺️ surface" button generates
+// that zone's surface (terrain + ore) in the browser too and draws it to a
+// canvas — again no backend.
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var state = { seed: null, k2: true, zones: [], sortKey: "radius", sortDir: "desc", q: "" };
@@ -68,9 +71,12 @@
         "<td>" + ce(z.enemy) + "</td>" +
         "<td>" + (z.p ? nm(z.p) : "—") + "</td>" +
         '<td class="yields-cell">' + resChips(est) + "</td>" +
+        // data-surf must be the zone's index in state.zones (openSurface looks
+        // it up there), NOT the position in the sorted/filtered rows.
+        '<td><button type="button" class="btn-sm" data-surf="' + state.zones.indexOf(z) + '" title="Generate this zone\'s surface in your browser">🗺️</button></td>' +
         "</tr>";
     }).join("");
-    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="7" class="hint">No generatable zones.</td></tr>';
+    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="8" class="hint">No generatable zones.</td></tr>';
     document.getElementById("zt-count").textContent = rows.length + " zones";
     document.querySelectorAll("#zt-head .sort-ind").forEach(function (s) { s.textContent = ""; });
     var active = document.querySelector('#zt-head th[data-key="' + state.sortKey + '"] .sort-ind');
@@ -89,14 +95,81 @@
         var uni = res[0];
         var zones = uni.z.slice();
         // Synthetic Nauvis (the universe generator never emits it): default-FSR
-        // planet, r5000. Estimated client-side (base ores + K2 rare-metal).
-        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1 });
+        // planet, r5000. Estimated client-side (base ores + K2 rare-metal);
+        // surface generation uses the game's default map-gen settings (nauvis).
+        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, nauvis: true });
         state.zones = zones;
         history.replaceState(null, "", "/analyze/" + seedVal + (state.k2 ? "?k2=1" : ""));
         status.textContent = uni.z.length + " zones · generated client-side";
         renderTable();
       })
       .catch(function (e) { status.textContent = "error: " + e.message; console.error(e); });
+  }
+
+  // ── Surface panel (client-side zone surface render) ──────────────────────
+  var surf = { zone: null, busy: false };
+
+  function surfStatus(msg) {
+    document.getElementById("surf-status").textContent = msg || "";
+  }
+
+  // Draw the WASM RGBA buffer into the canvas at 1:1 (CSS scales it down).
+  function drawSurface(summary, pixels) {
+    var canvas = document.getElementById("surf-canvas");
+    canvas.width = summary.width;
+    canvas.height = summary.height;
+    var ctx = canvas.getContext("2d");
+    var img = ctx.createImageData(summary.width, summary.height);
+    img.data.set(pixels);
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function surfSummaryChips(resources) {
+    var keys = Object.keys(resources).sort(function (a, b) { return resources[b].amount - resources[a].amount; });
+    if (!keys.length) return '<span class="hint">No resources placed in this disk (try a larger radius).</span>';
+    return keys.map(function (r) {
+      return '<span class="res-chip surf" title="exact — generated in your browser">' + nm(r) + " <strong>" + resources[r].display + "</strong></span>";
+    }).join(" ");
+  }
+
+  function renderSurface() {
+    if (!surf.zone || surf.busy) return;
+    surf.busy = true;
+    surfStatus("generating surface…");
+    var radius = parseInt(document.getElementById("surf-radius").value, 10);
+    if (!Number.isFinite(radius) || radius < 10) radius = 10;
+    if (radius > 2000) radius = 2000;
+    document.getElementById("surf-radius").value = radius;
+    var layer = parseInt(document.getElementById("surf-layer").value, 10) || 0;
+    window.generateSurface({ seed: state.seed, k2: state.k2, zone: surf.zone, radius: radius, layer: layer })
+      .then(function (r) {
+        surf.busy = false;
+        drawSurface(r.summary, r.pixels);
+        window.__LAST_SURF__ = r.summary; // test hook: exact per-resource amounts
+        window.__LAST_SURF_AT__ = Date.now(); // test hook: completion time (worker)
+        document.getElementById("surf-res").innerHTML = surfSummaryChips(r.summary.resources) +
+          ' <span class="hint">· ' + r.summary.width + "×" + r.summary.height + " · generated client-side</span>";
+        surfStatus("zone " + r.summary.zone + " · " + r.summary.type + " · r" + radius);
+      })
+      .catch(function (e) {
+        surf.busy = false;
+        surfStatus("error: " + e.message);
+        console.error(e);
+      });
+  }
+
+  function openSurface(idx) {
+    var z = state.zones[idx];
+    if (!z) return;
+    surf.zone = z;
+    document.getElementById("surf-title").textContent = "🗺️ " + z.n + " (" + z.t + ")";
+    document.getElementById("surf-panel").hidden = false;
+    renderSurface();
+  }
+
+  function closeSurface() {
+    document.getElementById("surf-panel").hidden = true;
+    surf.zone = null;
   }
 
   function bind() {
@@ -109,7 +182,19 @@
       state.sortDir = state.sortKey === k && state.sortDir === "asc" ? "desc" : "asc";
       state.sortKey = k; renderTable();
     });
+    document.getElementById("zt-body").addEventListener("click", function (e) {
+      var btn = e.target.closest("button[data-surf]"); if (!btn) return;
+      openSurface(parseInt(btn.dataset.surf, 10));
+    });
+    document.getElementById("surf-gen").addEventListener("click", renderSurface);
+    document.getElementById("surf-close").addEventListener("click", closeSurface);
+    document.getElementById("surf-radius").addEventListener("change", renderSurface);
+    document.getElementById("surf-layer").addEventListener("change", renderSurface);
+    document.getElementById("surf-panel").addEventListener("click", function (e) {
+      if (e.target === this) closeSurface();   // backdrop click
+    });
     window.preloadUniverseWasm && window.preloadUniverseWasm();
+    window.preloadSurfaceWasm && window.preloadSurfaceWasm();
     // Auto-generate if a seed was in the URL (/analyze/:seed).
     var pre = window.__ANALYZE_SEED__;
     if (pre != null) { document.getElementById("seed-input").value = pre; generate(); }

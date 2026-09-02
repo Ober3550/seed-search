@@ -828,12 +828,35 @@ app.get("/analyze/:seed?", (req, res) => {
         <th>Water</th><th>Enemy</th>
         <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
         <th>Estimated resources</th>
+        <th title="Generate this zone's surface in your browser (no backend)">Surface</th>
       </tr></thead>
-      <tbody id="zt-body"><tr><td colspan="7" class="hint">Enter a seed and press Generate.</td></tr></tbody>
+      <tbody id="zt-body"><tr><td colspan="8" class="hint">Enter a seed and press Generate.</td></tr></tbody>
     </table>
+    <div id="surf-panel" class="surf-panel" hidden>
+      <div class="surf-box">
+        <div class="surf-head">
+          <strong id="surf-title">🗺️ Surface</strong>
+          <span id="surf-status" class="hint"></span>
+          <button type="button" class="btn-sm" id="surf-close" title="Close">✕</button>
+        </div>
+        <div class="filter-bar">
+          <label>Preview radius <input type="number" id="surf-radius" min="10" max="2000" step="50" value="200" style="width:7em"></label>
+          <label>Layer <select id="surf-layer">
+            <option value="0">Terrain + ore</option>
+            <option value="1">Terrain only</option>
+            <option value="2">Ore only</option>
+          </select></label>
+          <button type="button" class="btn" id="surf-gen">Generate</button>
+        </div>
+        <canvas id="surf-canvas" width="600" height="600"></canvas>
+        <div id="surf-res" class="hint"></div>
+      </div>
+    </div>
   </div>
   <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed};</script>
+  <script src="/static/gen-bridge.js"></script>
   <script src="/static/universe-wasm.js"></script>
+  <script src="/static/surface-wasm.js"></script>
   <script src="/static/estimate-core.js"></script>
   <script src="/static/analyze.js"></script>`;
   page(req, res, "Analyze seed", content);
