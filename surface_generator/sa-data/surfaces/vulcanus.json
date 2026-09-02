@@ -1,0 +1,640 @@
+{
+ "planet": "vulcanus",
+ "property_expressions": [
+  "cliff_elevation_from_elevation",
+  "cliffiness_basic",
+  "vulcanus_aux",
+  "vulcanus_calcite_probability",
+  "vulcanus_calcite_richness",
+  "vulcanus_coal_probability",
+  "vulcanus_coal_richness",
+  "vulcanus_elevation",
+  "vulcanus_moisture",
+  "vulcanus_sulfuric_acid_geyser_probability",
+  "vulcanus_sulfuric_acid_geyser_richness",
+  "vulcanus_temperature",
+  "vulcanus_tungsten_ore_probability",
+  "vulcanus_tungsten_ore_richness"
+ ],
+ "functions": {
+  "random_penalty_between": {
+   "expression": "random_penalty{x = x, y = y, seed = seed, source = to, amplitude = to - from}",
+   "name": "random_penalty_between",
+   "parameters": [
+    "from",
+    "to",
+    "seed"
+   ],
+   "type": "noise-function"
+  },
+  "slider_rescale": {
+   "expression": "2^(log2(slider_value)/log2(6)*log2(n))",
+   "name": "slider_rescale",
+   "parameters": [
+    "slider_value",
+    "n"
+   ],
+   "type": "noise-function"
+  },
+  "starting_spot_at_angle": {
+   "expression": "1 - (delta_x * delta_x + delta_y * delta_y) ^ 0.5 / radius",
+   "local_expressions": {
+    "angle_rad": "angle / 180 * pi",
+    "delta_x": "distance * sin(angle_rad) - x_from_start + x_distortion",
+    "delta_y": "-distance * cos(angle_rad) - y_from_start + y_distortion"
+   },
+   "name": "starting_spot_at_angle",
+   "parameters": [
+    "angle",
+    "distance",
+    "radius",
+    "x_distortion",
+    "y_distortion"
+   ],
+   "type": "noise-function"
+  },
+  "volcano_inverted_peak": {
+   "expression": "(inversion_point - abs(spot - inversion_point)) / inversion_point",
+   "name": "volcano_inverted_peak",
+   "parameters": [
+    "spot",
+    "inversion_point"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_biome_multiscale": {
+   "expression": "bias + lerp(vulcanus_biome_noise(seed1, scale * 0.5),vulcanus_biome_noise(seed1 + 1000, scale),clamp(distance / 10000, 0, 1))",
+   "name": "vulcanus_biome_multiscale",
+   "parameters": [
+    "seed1",
+    "scale",
+    "bias"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_biome_noise": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.65,seed0 = map_seed,seed1 = seed1,octaves = 5,input_scale = vulcanus_scale_multiplier / scale}",
+   "name": "vulcanus_biome_noise",
+   "parameters": [
+    "seed1",
+    "scale"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_contrast": {
+   "expression": "clamp(value, c, 1) - c",
+   "name": "vulcanus_contrast",
+   "parameters": [
+    "value",
+    "c"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_detail_noise": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = seed1 + 12243,octaves = octaves,persistence = 0.6,input_scale = 1 / 50 / scale,output_scale = magnitude}",
+   "name": "vulcanus_detail_noise",
+   "parameters": [
+    "seed1",
+    "scale",
+    "octaves",
+    "magnitude"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_place_metal_spots": {
+   "expression": "min(clamp(-1 + 4 * favor_biome, -1, 1), metal_spot_noise - vulcanus_hairline_cracks / 30000)",
+   "local_expressions": {
+    "metal_spot_noise": "vulcanus_spot_noise{seed = seed,count = count,spacing = vulcanus_ore_spacing,span = 3,offset = offset,region_size = 500 + 500 / freq,density = favor_biome * 4,quantity = size * size,radius = size,favorability = favor_biome > 0.9}"
+   },
+   "name": "vulcanus_place_metal_spots",
+   "parameters": [
+    "seed",
+    "count",
+    "offset",
+    "size",
+    "freq",
+    "favor_biome"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_place_non_metal_spots": {
+   "expression": "min(2 * favor_biome - 1, vulcanus_spot_noise{seed = seed,count = count,spacing = vulcanus_ore_spacing,span = 3,offset = offset,region_size = 400 + 400 / freq,density = favor_biome * 4,quantity = size * size,radius = size,favorability = favor_biome > 0.9})",
+   "name": "vulcanus_place_non_metal_spots",
+   "parameters": [
+    "seed",
+    "count",
+    "offset",
+    "size",
+    "freq",
+    "favor_biome"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_place_sulfur_spots": {
+   "expression": "min(2 * favor_biome - 1, vulcanus_spot_noise{seed = seed,count = count,spacing = vulcanus_ore_spacing,span = 3,offset = offset,region_size = 450 + 450 / freq,density = favor_biome * 4,quantity = size * size,radius = size,favorability = favor_biome > 0.9})",
+   "name": "vulcanus_place_sulfur_spots",
+   "parameters": [
+    "seed",
+    "count",
+    "offset",
+    "size",
+    "freq",
+    "favor_biome"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_plasma": {
+   "expression": "abs(basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 12643,input_scale = 1 / 50 / scale,output_scale = magnitude1}- basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 13423 + seed,input_scale = 1 / 50 / scale2,output_scale = magnitude2})",
+   "name": "vulcanus_plasma",
+   "parameters": [
+    "seed",
+    "scale",
+    "scale2",
+    "magnitude1",
+    "magnitude2"
+   ],
+   "type": "noise-function"
+  },
+  "vulcanus_spot_noise": {
+   "expression": "spot_noise{x = x + vulcanus_resource_wobble_x,y = y + vulcanus_resource_wobble_y,seed0 = map_seed,seed1 = seed,candidate_spot_count = count,suggested_minimum_candidate_point_spacing = 128,skip_span = span,skip_offset = offset,region_size = region_size,density_expression = density,spot_quantity_expression = quantity,spot_radius_expression = radius,hard_region_target_quantity = 0,spot_favorability_expression = favorability,basement_value = -1,maximum_spot_basement_radius = 128}",
+   "name": "vulcanus_spot_noise",
+   "parameters": [
+    "seed",
+    "favorability",
+    "count",
+    "spacing",
+    "span",
+    "offset",
+    "region_size",
+    "density",
+    "quantity",
+    "radius"
+   ],
+   "type": "noise-function"
+  }
+ },
+ "expressions": {
+  "mountain_basis_noise": {
+   "expression": "basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 13423,input_scale = 1 / 500,output_scale = 250}",
+   "name": "mountain_basis_noise",
+   "type": "noise-expression"
+  },
+  "mountain_elevation": {
+   "expression": "lerp(max(clamp(mountain_plasma, -100, 10000), mountain_basis_noise),mountain_plasma,clamp(0.7 * mountain_basis_noise, 0, 1))* (1 - clamp(vulcanus_plasma(13, 2.5, 10, 0.15, 0.75), 0, 1))",
+   "name": "mountain_elevation",
+   "type": "noise-expression"
+  },
+  "mountain_plasma": {
+   "expression": "vulcanus_plasma(102, 2.5, 10, 125, 625)",
+   "name": "mountain_plasma",
+   "type": "noise-expression"
+  },
+  "mountain_volcano_spots": {
+   "expression": "max(vulcanus_starting_volcano_spot, raw_spots - starting_protector)",
+   "local_expressions": {
+    "raw_spots": "spot_noise{x = x + vulcanus_wobble_x/2 + vulcanus_wobble_large_x/12 + vulcanus_wobble_huge_x/80,y = y + vulcanus_wobble_y/2 + vulcanus_wobble_large_y/12 + vulcanus_wobble_huge_y/80,seed0 = map_seed,seed1 = 1,candidate_spot_count = 1,suggested_minimum_candidate_point_spacing = volcano_spot_spacing,skip_span = 1,skip_offset = 0,region_size = 256,density_expression = volcano_area / volcanism_sq,spot_quantity_expression = volcano_spot_radius * volcano_spot_radius,spot_radius_expression = volcano_spot_radius,hard_region_target_quantity = 0,spot_favorability_expression = volcano_area,basement_value = 0,maximum_spot_basement_radius = volcano_spot_radius}",
+    "starting_protector": "clamp(starting_spot_at_angle{ angle = vulcanus_mountains_angle + 180 * vulcanus_starting_direction,distance = (400 * vulcanus_starting_area_radius) / 2,radius = 800 * vulcanus_starting_area_radius,x_distortion = vulcanus_wobble_x/2 + vulcanus_wobble_large_x/12 + vulcanus_wobble_huge_x/80,y_distortion = vulcanus_wobble_y/2 + vulcanus_wobble_large_y/12 + vulcanus_wobble_huge_y/80}, 0, 1)",
+    "volcanism": "0.3 + 0.7 * slider_rescale(control:vulcanus_volcanism:size, 3) / slider_rescale(vulcanus_scale_multiplier, 3)",
+    "volcanism_sq": "volcanism * volcanism",
+    "volcano_area": "lerp(vulcanus_mountains_biome_full_pre_volcano, 0, vulcanus_starting_area)",
+    "volcano_spot_radius": "200 * volcanism",
+    "volcano_spot_spacing": "1500 * volcanism"
+   },
+   "name": "mountain_volcano_spots",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_angle": {
+   "expression": "map_seed_normalized * 3600",
+   "name": "vulcanus_ashlands_angle",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_biome": {
+   "expression": "clamp(vulcanus_ashlands_biome_full * vulcanus_biome_contrast, 0, 1)",
+   "name": "vulcanus_ashlands_biome",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_biome_full": {
+   "expression": "vulcanus_ashlands_raw - max(vulcanus_mountains_raw_volcano, vulcanus_basalts_raw)",
+   "name": "vulcanus_ashlands_biome_full",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_biome_noise": {
+   "expression": "vulcanus_biome_multiscale{seed1 = 12416,scale = 40,bias = 0}",
+   "name": "vulcanus_ashlands_biome_noise",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_func": {
+   "expression": "300 + 0.001 * min(basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 12643,input_scale = vulcanus_scale_multiplier / 50 / scale,output_scale = 150},basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 12643,input_scale = vulcanus_scale_multiplier / 50 / scale,output_scale = 150})",
+   "local_expressions": {
+    "scale": 3
+   },
+   "name": "vulcanus_ashlands_func",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_raw": {
+   "expression": "lerp(vulcanus_ashlands_biome_noise, starting_weights, clamp(2 * vulcanus_starting_area, 0, 1))",
+   "local_expressions": {
+    "starting_weights": "-vulcanus_mountains_start + vulcanus_ashlands_start - vulcanus_basalts_start"
+   },
+   "name": "vulcanus_ashlands_raw",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_resource_favorability": {
+   "expression": "clamp(((vulcanus_ashlands_biome_full * (vulcanus_starting_area < 0.01)) - buffer) * contrast, 0, 1)",
+   "local_expressions": {
+    "buffer": 0.3,
+    "contrast": 2
+   },
+   "name": "vulcanus_ashlands_resource_favorability",
+   "type": "noise-expression"
+  },
+  "vulcanus_ashlands_start": {
+   "expression": "4 * starting_spot_at_angle{ angle = vulcanus_ashlands_angle,distance = 170 * vulcanus_starting_area_radius,radius = 350 * vulcanus_starting_area_radius,x_distortion = 0.1 * vulcanus_starting_area_radius * (vulcanus_wobble_x + vulcanus_wobble_large_x + vulcanus_wobble_huge_x),y_distortion = 0.1 * vulcanus_starting_area_radius * (vulcanus_wobble_y + vulcanus_wobble_large_y + vulcanus_wobble_huge_y)}",
+   "name": "vulcanus_ashlands_start",
+   "type": "noise-expression"
+  },
+  "vulcanus_aux": {
+   "expression": "clamp(min(abs(multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 2,octaves = 5,persistence = 0.6,input_scale = 0.2,output_scale = 0.6}),0.3 - 0.6 * vulcanus_flood_paths), 0, 1)",
+   "name": "vulcanus_aux",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalt_lakes": {
+   "expression": "min(1,-0.2 + vulcanus_flood_basalts_func- 0.35 * clamp(vulcanus_contrast(vulcanus_detail_noise(837, 1/40, 4, 1.25), 0.95)* vulcanus_contrast(vulcanus_detail_noise(234, 1/50, 4, 1), 0.95)* vulcanus_detail_noise(643, 1/70, 4, 0.7),0, 3))",
+   "name": "vulcanus_basalt_lakes",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_angle": {
+   "expression": "vulcanus_ashlands_angle + 240 * vulcanus_starting_direction",
+   "name": "vulcanus_basalts_angle",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_biome_full": {
+   "expression": "vulcanus_basalts_raw - max(vulcanus_mountains_raw_volcano, vulcanus_ashlands_raw)",
+   "name": "vulcanus_basalts_biome_full",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_biome_noise": {
+   "expression": "vulcanus_biome_multiscale{seed1 = 42416,scale = 80,bias = 0}",
+   "name": "vulcanus_basalts_biome_noise",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_raw": {
+   "expression": "lerp(vulcanus_basalts_biome_noise, starting_weights, clamp(2 * vulcanus_starting_area, 0, 1))",
+   "local_expressions": {
+    "starting_weights": "-vulcanus_mountains_start - vulcanus_ashlands_start + vulcanus_basalts_start"
+   },
+   "name": "vulcanus_basalts_raw",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_resource_favorability": {
+   "expression": "clamp(((vulcanus_basalts_biome_full * (vulcanus_starting_area < 0.01)) - buffer) * contrast, 0, 1)",
+   "local_expressions": {
+    "buffer": 0.3,
+    "contrast": 2
+   },
+   "name": "vulcanus_basalts_resource_favorability",
+   "type": "noise-expression"
+  },
+  "vulcanus_basalts_start": {
+   "expression": "2 * starting_spot_at_angle{ angle = vulcanus_basalts_angle,distance = 250,radius = 550 * vulcanus_starting_area_radius,x_distortion = 0.1 * vulcanus_starting_area_radius * (vulcanus_wobble_x + vulcanus_wobble_large_x + vulcanus_wobble_huge_x),y_distortion = 0.1 * vulcanus_starting_area_radius * (vulcanus_wobble_y + vulcanus_wobble_large_y + vulcanus_wobble_huge_y)}",
+   "name": "vulcanus_basalts_start",
+   "type": "noise-expression"
+  },
+  "vulcanus_biome_contrast": {
+   "expression": 2,
+   "name": "vulcanus_biome_contrast",
+   "type": "noise-expression"
+  },
+  "vulcanus_calcite_probability": {
+   "expression": "(control:calcite:size > 0) * (1000 * ((1 + vulcanus_calcite_region) * random_penalty_between(0.9, 1, 1) - 1))",
+   "name": "vulcanus_calcite_probability",
+   "type": "noise-expression"
+  },
+  "vulcanus_calcite_region": {
+   "expression": "max(vulcanus_starting_calcite,min(1 - vulcanus_starting_circle,vulcanus_place_non_metal_spots(749, 12, 1,vulcanus_calcite_size * min(1.2, vulcanus_ore_dist) * 25,control:calcite:frequency,vulcanus_mountains_resource_favorability)))",
+   "name": "vulcanus_calcite_region",
+   "type": "noise-expression"
+  },
+  "vulcanus_calcite_richness": {
+   "expression": "vulcanus_calcite_region * random_penalty_between(0.9, 1, 1)* 24000 * vulcanus_starting_area_multiplier* control:calcite:richness / vulcanus_calcite_size",
+   "name": "vulcanus_calcite_richness",
+   "type": "noise-expression"
+  },
+  "vulcanus_calcite_size": {
+   "expression": "slider_rescale(control:calcite:size, 2)",
+   "name": "vulcanus_calcite_size",
+   "type": "noise-expression"
+  },
+  "vulcanus_coal_probability": {
+   "expression": "(control:vulcanus_coal:size > 0) * (1000 * ((1 + vulcanus_coal_region) * random_penalty_between(0.9, 1, 1) - 1))",
+   "name": "vulcanus_coal_probability",
+   "type": "noise-expression"
+  },
+  "vulcanus_coal_region": {
+   "expression": "max(vulcanus_starting_coal,min(1 - vulcanus_starting_circle,vulcanus_place_non_metal_spots(782349, 12, 1,vulcanus_coal_size * min(1.2, vulcanus_ore_dist) * 25,control:vulcanus_coal:frequency,vulcanus_ashlands_resource_favorability)))",
+   "name": "vulcanus_coal_region",
+   "type": "noise-expression"
+  },
+  "vulcanus_coal_richness": {
+   "expression": "vulcanus_coal_region * random_penalty_between(0.9, 1, 1)* 18000 * vulcanus_starting_area_multiplier* control:vulcanus_coal:richness / vulcanus_coal_size",
+   "name": "vulcanus_coal_richness",
+   "type": "noise-expression"
+  },
+  "vulcanus_coal_size": {
+   "expression": "slider_rescale(control:vulcanus_coal:size, 2)",
+   "name": "vulcanus_coal_size",
+   "type": "noise-expression"
+  },
+  "vulcanus_cracks_scale": {
+   "expression": 0.325,
+   "name": "vulcanus_cracks_scale",
+   "type": "noise-expression"
+  },
+  "vulcanus_elev": {
+   "expression": "vulcanus_elevation_offset+ lerp(lerp(120 * vulcanus_basalt_lakes_multisample,20 + vulcanus_mountains_func * vulcanus_mountains_elevation_multiplier,vulcanus_mountains_biome),vulcanus_ashlands_func,vulcanus_ashlands_biome)",
+   "local_expressions": {
+    "vulcanus_basalt_lakes_multisample": "min(multisample(vulcanus_basalt_lakes, 0, 0),multisample(vulcanus_basalt_lakes, 1, 0),multisample(vulcanus_basalt_lakes, 0, 1),multisample(vulcanus_basalt_lakes, 1, 1))"
+   },
+   "name": "vulcanus_elev",
+   "type": "noise-expression"
+  },
+  "vulcanus_elevation": {
+   "expression": "max(-500, vulcanus_elev)",
+   "name": "vulcanus_elevation",
+   "type": "noise-expression"
+  },
+  "vulcanus_elevation_offset": {
+   "expression": "0",
+   "name": "vulcanus_elevation_offset",
+   "type": "noise-expression"
+  },
+  "vulcanus_flood_basalts_func": {
+   "expression": "min(max(vulcanus_flood_cracks_a - 0.125, vulcanus_flood_paths), vulcanus_flood_cracks_b) + 0.3 * min(0.5, vulcanus_hairline_cracks)",
+   "name": "vulcanus_flood_basalts_func",
+   "type": "noise-expression"
+  },
+  "vulcanus_flood_cracks_a": {
+   "expression": "lerp(min(vulcanus_plasma(7543, 2.5 * vulcanus_cracks_scale, 4 * vulcanus_cracks_scale, 0.5, 1),vulcanus_plasma(7443, 1.5 * vulcanus_cracks_scale, 3.5 * vulcanus_cracks_scale, 0.5, 1)),1,clamp(vulcanus_detail_noise(241, 2 * vulcanus_cracks_scale, 2, 0.25), 0, 1))",
+   "name": "vulcanus_flood_cracks_a",
+   "type": "noise-expression"
+  },
+  "vulcanus_flood_cracks_b": {
+   "expression": "lerp(1,min(vulcanus_plasma(12223, 2 * vulcanus_cracks_scale, 3 * vulcanus_cracks_scale, 0.5, 1),vulcanus_plasma(152, 1 * vulcanus_cracks_scale, 1.5 * vulcanus_cracks_scale, 0.25, 0.5)) - 0.5,clamp(0.2 + vulcanus_detail_noise(821, 6 * vulcanus_cracks_scale, 2, 0.5), 0, 1))",
+   "name": "vulcanus_flood_cracks_b",
+   "type": "noise-expression"
+  },
+  "vulcanus_flood_paths": {
+   "expression": "0.4- vulcanus_plasma(1543, 1.5 * vulcanus_cracks_scale, 3 * vulcanus_cracks_scale, 0.5, 1)+ min(0, vulcanus_detail_noise(121, vulcanus_cracks_scale * 4, 2, 0.5))",
+   "name": "vulcanus_flood_paths",
+   "type": "noise-expression"
+  },
+  "vulcanus_hairline_cracks": {
+   "expression": "vulcanus_plasma(15223, 0.3 * vulcanus_cracks_scale, 0.6 * vulcanus_cracks_scale, 0.6, 1)",
+   "name": "vulcanus_hairline_cracks",
+   "type": "noise-expression"
+  },
+  "vulcanus_moisture": {
+   "expression": "clamp(1- abs(multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 4,octaves = 2,persistence = 0.6,input_scale = 0.025,output_scale = 0.25})- abs(multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 400,octaves = 3,persistence = 0.62,input_scale = 0.051144353,output_scale = 0.25})- 0.2 * vulcanus_flood_cracks_a, 0, 1)",
+   "name": "vulcanus_moisture",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_angle": {
+   "expression": "vulcanus_ashlands_angle + 120 * vulcanus_starting_direction",
+   "name": "vulcanus_mountains_angle",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_biome": {
+   "expression": "clamp(vulcanus_mountains_biome_full * vulcanus_biome_contrast, 0, 1)",
+   "name": "vulcanus_mountains_biome",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_biome_full": {
+   "expression": "vulcanus_mountains_raw_volcano - max(vulcanus_ashlands_raw, vulcanus_basalts_raw)",
+   "name": "vulcanus_mountains_biome_full",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_biome_full_pre_volcano": {
+   "expression": "vulcanus_mountains_raw_pre_volcano - max(vulcanus_ashlands_raw, vulcanus_basalts_raw)",
+   "name": "vulcanus_mountains_biome_full_pre_volcano",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_biome_noise": {
+   "expression": "vulcanus_biome_multiscale{seed1 = 342,scale = 60,bias = 0}",
+   "name": "vulcanus_mountains_biome_noise",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_elevation_multiplier": {
+   "expression": 1.5,
+   "name": "vulcanus_mountains_elevation_multiplier",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_func": {
+   "expression": "lerp(mountain_elevation, 700 * volcano_inverted_peak(mountain_volcano_spots, 0.65), clamp(mountain_volcano_spots * 3, 0, 1))+ 200 * (aux - 0.5) * (mountain_volcano_spots + 0.5)",
+   "name": "vulcanus_mountains_func",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_raw_pre_volcano": {
+   "expression": "lerp(vulcanus_mountains_biome_noise, starting_weights, clamp(2 * vulcanus_starting_area, 0, 1))",
+   "local_expressions": {
+    "starting_weights": "vulcanus_mountains_start - vulcanus_ashlands_start - vulcanus_basalts_start"
+   },
+   "name": "vulcanus_mountains_raw_pre_volcano",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_raw_volcano": {
+   "expression": "0.5 * vulcanus_mountains_raw_pre_volcano + max(2 * mountain_volcano_spots, 10 * clamp((mountain_volcano_spots - 0.33) * 3, 0, 1))",
+   "name": "vulcanus_mountains_raw_volcano",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_resource_favorability": {
+   "expression": "clamp(main_region - (mountain_volcano_spots > 0.78), 0, 1)",
+   "local_expressions": {
+    "buffer": 0.4,
+    "contrast": 2,
+    "main_region": "clamp(((vulcanus_mountains_biome_full * (vulcanus_starting_area < 0.01)) - buffer) * contrast, 0, 1)"
+   },
+   "name": "vulcanus_mountains_resource_favorability",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_start": {
+   "expression": "2 * starting_spot_at_angle{ angle = vulcanus_mountains_angle,distance = 250 * vulcanus_starting_area_radius,radius = 500 * vulcanus_starting_area_radius,x_distortion = 0.05 * vulcanus_starting_area_radius * (vulcanus_wobble_x + vulcanus_wobble_large_x + vulcanus_wobble_huge_x),y_distortion = 0.05 * vulcanus_starting_area_radius * (vulcanus_wobble_y + vulcanus_wobble_large_y + vulcanus_wobble_huge_y)}",
+   "name": "vulcanus_mountains_start",
+   "type": "noise-expression"
+  },
+  "vulcanus_mountains_sulfur_favorability": {
+   "expression": "clamp(((vulcanus_mountains_biome_full * (vulcanus_starting_area < 0.01)) - buffer) * contrast, 0, 1)",
+   "local_expressions": {
+    "buffer": 0.3,
+    "contrast": 2
+   },
+   "name": "vulcanus_mountains_sulfur_favorability",
+   "type": "noise-expression"
+  },
+  "vulcanus_ore_dist": {
+   "expression": "max(1, distance / 4000)",
+   "name": "vulcanus_ore_dist",
+   "type": "noise-expression"
+  },
+  "vulcanus_ore_spacing": {
+   "expression": 128,
+   "name": "vulcanus_ore_spacing",
+   "type": "noise-expression"
+  },
+  "vulcanus_resource_wobble_x": {
+   "expression": "vulcanus_wobble_x + 0.25 * vulcanus_wobble_large_x",
+   "name": "vulcanus_resource_wobble_x",
+   "type": "noise-expression"
+  },
+  "vulcanus_resource_wobble_y": {
+   "expression": "vulcanus_wobble_y + 0.25 * vulcanus_wobble_large_y",
+   "name": "vulcanus_resource_wobble_y",
+   "type": "noise-expression"
+  },
+  "vulcanus_richness_multiplier": {
+   "expression": "6 + distance / 10000",
+   "name": "vulcanus_richness_multiplier",
+   "type": "noise-expression"
+  },
+  "vulcanus_scale_multiplier": {
+   "expression": "slider_rescale(control:vulcanus_volcanism:frequency, 3)",
+   "name": "vulcanus_scale_multiplier",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_area": {
+   "expression": "clamp(max(vulcanus_basalts_start, vulcanus_mountains_start, vulcanus_ashlands_start), 0, 1)",
+   "name": "vulcanus_starting_area",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_area_multiplier": {
+   "expression": "lerp(1, 0.06, clamp(0.5 + vulcanus_starting_circle, 0, 1))",
+   "name": "vulcanus_starting_area_multiplier",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_area_radius": {
+   "expression": "0.7 * 0.75",
+   "name": "vulcanus_starting_area_radius",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_calcite": {
+   "expression": "starting_spot_at_angle{ angle = vulcanus_mountains_angle - 20 * vulcanus_starting_direction,distance = 350 * vulcanus_starting_area_radius,radius = 35 / 1.5 * vulcanus_calcite_size,x_distortion = 0.5 * vulcanus_resource_wobble_x,y_distortion = 0.5 * vulcanus_resource_wobble_y}",
+   "name": "vulcanus_starting_calcite",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_circle": {
+   "expression": "1 + vulcanus_starting_area_radius * (300 - distance) / 50",
+   "name": "vulcanus_starting_circle",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_coal": {
+   "expression": "starting_spot_at_angle{ angle = vulcanus_ashlands_angle + 15 * vulcanus_starting_direction,distance = 180 * vulcanus_starting_area_radius,radius = 30 * vulcanus_coal_size,x_distortion = 0.5 * vulcanus_resource_wobble_x,y_distortion = 0.5 * vulcanus_resource_wobble_y}",
+   "name": "vulcanus_starting_coal",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_direction": {
+   "expression": "-1 + 2 * (map_seed_small & 1)",
+   "name": "vulcanus_starting_direction",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_sulfur": {
+   "expression": "max(starting_spot_at_angle{ angle = vulcanus_mountains_angle + 10 * vulcanus_starting_direction,distance = 590 * vulcanus_starting_area_radius,radius = 30,x_distortion = 0.75 * vulcanus_resource_wobble_x,y_distortion = 0.75 * vulcanus_resource_wobble_y},starting_spot_at_angle{ angle = vulcanus_mountains_angle + 30 * vulcanus_starting_direction,distance = 200 * vulcanus_starting_area_radius,radius = 25 * vulcanus_sulfuric_acid_geyser_size,x_distortion = 0.75 * vulcanus_resource_wobble_x,y_distortion = 0.75 * vulcanus_resource_wobble_y})",
+   "name": "vulcanus_starting_sulfur",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_tungsten": {
+   "expression": "starting_spot_at_angle{ angle = vulcanus_basalts_angle - 10 * vulcanus_starting_direction,distance = 450 * vulcanus_starting_area_radius,radius = 30 / 1.5,x_distortion = 0.5 * vulcanus_resource_wobble_x,y_distortion = 0.5 * vulcanus_resource_wobble_y}",
+   "name": "vulcanus_starting_tungsten",
+   "type": "noise-expression"
+  },
+  "vulcanus_starting_volcano_spot": {
+   "expression": "clamp(starting_spot_at_angle{ angle = vulcanus_mountains_angle,distance = 400 * vulcanus_starting_area_radius,radius = 200,x_distortion = vulcanus_wobble_x/2 + vulcanus_wobble_large_x/12 + vulcanus_wobble_huge_x/80,y_distortion = vulcanus_wobble_y/2 + vulcanus_wobble_large_y/12 + vulcanus_wobble_huge_y/80}, 0, 1)",
+   "name": "vulcanus_starting_volcano_spot",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_geyser_probability": {
+   "expression": "(control:sulfuric_acid_geyser:size > 0) * (0.025 * ((vulcanus_sulfuric_acid_region_patchy > 0) + 2 * vulcanus_sulfuric_acid_region_patchy))",
+   "name": "vulcanus_sulfuric_acid_geyser_probability",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_geyser_richness": {
+   "expression": "(vulcanus_sulfuric_acid_region > 0) * random_penalty_between(0.5, 1, 1)* 80000 * 40 * vulcanus_richness_multiplier * vulcanus_starting_area_multiplier* control:sulfuric_acid_geyser:richness / vulcanus_sulfuric_acid_geyser_size",
+   "name": "vulcanus_sulfuric_acid_geyser_richness",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_geyser_size": {
+   "expression": "slider_rescale(control:sulfuric_acid_geyser:size, 2)",
+   "name": "vulcanus_sulfuric_acid_geyser_size",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_patches": {
+   "expression": "0.8 * abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 21000, octaves = 2, input_scale = 1/3})",
+   "name": "vulcanus_sulfuric_acid_patches",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_region": {
+   "expression": "max(vulcanus_starting_sulfur,min(1 - vulcanus_starting_circle,vulcanus_place_sulfur_spots(759, 9, 0,vulcanus_sulfuric_acid_geyser_size * min(1.2, vulcanus_ore_dist) * 25,control:sulfuric_acid_geyser:frequency,vulcanus_mountains_sulfur_favorability)))",
+   "name": "vulcanus_sulfuric_acid_region",
+   "type": "noise-expression"
+  },
+  "vulcanus_sulfuric_acid_region_patchy": {
+   "expression": "(1 + vulcanus_sulfuric_acid_region) * (0.5 + 0.5 * vulcanus_sulfuric_acid_patches) - 1",
+   "name": "vulcanus_sulfuric_acid_region_patchy",
+   "type": "noise-expression"
+  },
+  "vulcanus_temperature": {
+   "expression": "100+ 100 * var('control:temperature:bias')- min(vulcanus_elev, vulcanus_elev / 100)- 2 * vulcanus_moisture- 1 * vulcanus_aux- 20 * vulcanus_ashlands_biome+ 200 * max(0, mountain_volcano_spots - 0.6)",
+   "name": "vulcanus_temperature",
+   "type": "noise-expression"
+  },
+  "vulcanus_tungsten_ore_probability": {
+   "expression": "(control:tungsten_ore:size > 0) * (1000 * ((1 + vulcanus_tungsten_ore_region) * random_penalty_between(0.9, 1, 1) - 1))",
+   "name": "vulcanus_tungsten_ore_probability",
+   "type": "noise-expression"
+  },
+  "vulcanus_tungsten_ore_region": {
+   "expression": "max(vulcanus_starting_tungsten,min(1 - vulcanus_starting_circle,vulcanus_place_metal_spots(789, 15, 2,vulcanus_tungsten_ore_size * min(1.2, vulcanus_ore_dist) * 25,control:tungsten_ore:frequency,vulcanus_basalts_resource_favorability)))",
+   "name": "vulcanus_tungsten_ore_region",
+   "type": "noise-expression"
+  },
+  "vulcanus_tungsten_ore_richness": {
+   "expression": "vulcanus_tungsten_ore_region * random_penalty_between(0.9, 1, 1)* 10000 * vulcanus_starting_area_multiplier* control:tungsten_ore:richness / vulcanus_tungsten_ore_size",
+   "name": "vulcanus_tungsten_ore_richness",
+   "type": "noise-expression"
+  },
+  "vulcanus_tungsten_ore_size": {
+   "expression": "slider_rescale(control:tungsten_ore:size, 2)",
+   "name": "vulcanus_tungsten_ore_size",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_huge_x": {
+   "expression": "vulcanus_detail_noise{seed1 = 30, scale = 2, octaves = 2, magnitude = 800}",
+   "name": "vulcanus_wobble_huge_x",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_huge_y": {
+   "expression": "vulcanus_detail_noise{seed1 = 1030, scale = 2, octaves = 2, magnitude = 800}",
+   "name": "vulcanus_wobble_huge_y",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_large_x": {
+   "expression": "vulcanus_detail_noise{seed1 = 20, scale = 1/2, octaves = 2, magnitude = 50}",
+   "name": "vulcanus_wobble_large_x",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_large_y": {
+   "expression": "vulcanus_detail_noise{seed1 = 1020, scale = 1/2, octaves = 2, magnitude = 50}",
+   "name": "vulcanus_wobble_large_y",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_x": {
+   "expression": "vulcanus_detail_noise{seed1 = 10, scale = 1/8, octaves = 2, magnitude = 4}",
+   "name": "vulcanus_wobble_x",
+   "type": "noise-expression"
+  },
+  "vulcanus_wobble_y": {
+   "expression": "vulcanus_detail_noise{seed1 = 1010, scale = 1/8, octaves = 2, magnitude = 4}",
+   "name": "vulcanus_wobble_y",
+   "type": "noise-expression"
+  }
+ },
+ "resource_autoplace_overrides": {}
+}

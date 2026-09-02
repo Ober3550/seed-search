@@ -1,0 +1,578 @@
+{
+ "planet": "gleba",
+ "property_expressions": [
+  "cliff_elevation_from_elevation",
+  "gleba_aux",
+  "gleba_carpet_shroom_probability",
+  "gleba_cliffiness",
+  "gleba_cracked_mud_probability",
+  "gleba_dark_mud_probability",
+  "gleba_elevation",
+  "gleba_enemy_base_frequency",
+  "gleba_enemy_base_radius",
+  "gleba_green_bush_probability",
+  "gleba_green_carpet_grass_probability",
+  "gleba_green_cronton_probability",
+  "gleba_green_hairy_grass_probability",
+  "gleba_green_pita_mini_probability",
+  "gleba_green_pita_probability",
+  "gleba_light_mud_probability",
+  "gleba_moisture",
+  "gleba_orange_lichen_probability",
+  "gleba_red_desert_bush_probability",
+  "gleba_red_pita_probability",
+  "gleba_stone_probability",
+  "gleba_stone_richness",
+  "gleba_temperature",
+  "gleba_white_desert_bush_probability"
+ ],
+ "functions": {
+  "gleba_pos_peak": {
+   "expression": "max(0, 1 - abs(input - point) / range)",
+   "name": "gleba_pos_peak",
+   "parameters": [
+    "input",
+    "point",
+    "range"
+   ],
+   "type": "noise-function"
+  },
+  "gleba_select": {
+   "expression": "clamp(min(input - (from - slope), to + slope - input) / slope, min, max)",
+   "name": "gleba_select",
+   "parameters": [
+    "input",
+    "from",
+    "to",
+    "slope",
+    "min",
+    "max"
+   ],
+   "type": "noise-function"
+  },
+  "gleba_simple_spot": {
+   "expression": "spot_noise{x = x + gleba_wobble_small_x * 0.5 * radius,y = y + gleba_wobble_small_y * 0.5 * radius,seed0 = map_seed,seed1 = seed1,skip_span = 1,skip_offset = 1,region_size = spacing * 5,density_expression = favorability,spot_favorability_expression = favorability,candidate_spot_count = 22,suggested_minimum_candidate_point_spacing = spacing,spot_quantity_expression = radius * radius,spot_radius_expression = radius,hard_region_target_quantity = 0,basement_value = -1,maximum_spot_basement_radius = radius * 2}",
+   "name": "gleba_simple_spot",
+   "parameters": [
+    "seed1",
+    "radius",
+    "spacing",
+    "favorability"
+   ],
+   "type": "noise-function"
+  },
+  "grpi": {
+   "expression": "random_penalty{x = x, y = y, seed = 1, source = 1, amplitude = 1/survival} - 1",
+   "name": "grpi",
+   "parameters": [
+    "survival"
+   ],
+   "type": "noise-function"
+  },
+  "rotate_x": {
+   "expression": "x * cos(angle_rad) + y * sin(angle_rad)",
+   "local_expressions": {
+    "angle_rad": "angle / 180 * pi"
+   },
+   "name": "rotate_x",
+   "parameters": [
+    "x",
+    "y",
+    "angle"
+   ],
+   "type": "noise-function"
+  },
+  "rotate_y": {
+   "expression": "y * cos(angle_rad) - x * sin(angle_rad)",
+   "local_expressions": {
+    "angle_rad": "angle / 180 * pi"
+   },
+   "name": "rotate_y",
+   "parameters": [
+    "x",
+    "y",
+    "angle"
+   ],
+   "type": "noise-function"
+  },
+  "slider_rescale": {
+   "expression": "2^(log2(slider_value)/log2(6)*log2(n))",
+   "name": "slider_rescale",
+   "parameters": [
+    "slider_value",
+    "n"
+   ],
+   "type": "noise-function"
+  },
+  "starting_spot_at_angle": {
+   "expression": "1 - (delta_x * delta_x + delta_y * delta_y) ^ 0.5 / radius",
+   "local_expressions": {
+    "angle_rad": "angle / 180 * pi",
+    "delta_x": "distance * sin(angle_rad) - x_from_start + x_distortion",
+    "delta_y": "-distance * cos(angle_rad) - y_from_start + y_distortion"
+   },
+   "name": "starting_spot_at_angle",
+   "parameters": [
+    "angle",
+    "distance",
+    "radius",
+    "x_distortion",
+    "y_distortion"
+   ],
+   "type": "noise-function"
+  }
+ },
+ "expressions": {
+  "enemy_base_intensity": {
+   "expression": "clamp(distance, 0, 2400) / 325",
+   "name": "enemy_base_intensity",
+   "type": "noise-expression"
+  },
+  "gleba_aux": {
+   "expression": "clamp(0.5 + 0.5 * lerp(aux_mutated, starting_aux, starting_radius) - min(0.2, gleba_rockpools), 0, 1)",
+   "local_expressions": {
+    "aux_angle": "gleba_starting_angle - gleba_starting_direction * (distance / 20 / gleba_starting_area_multiplier - 15)",
+    "aux_mutated": "clamp(aux_pattern * aux_mutator_multiplier, -3, 3)",
+    "aux_mutator": "aux_mutator_large + 0.1 * aux_mutator_small",
+    "aux_mutator_large": "multioctave_noise{x = x, y = y, persistence = 0.75, octaves = 4, input_scale = 1/30, seed0 = map_seed, seed1 = 8000}",
+    "aux_mutator_multiplier": "1 + 4 * gleba_select(aux_mutator, 1.4, 3, 0.5, 0, 1) - 0.9 * gleba_select(aux_mutator, -3, -1.4, 0.5, 0, 1)",
+    "aux_mutator_small": "gleba_cover_noise",
+    "aux_pattern": "multioctave_noise{x = x + gleba_wobble_x * 15 + gleba_wobble_small_x * 5, y = y + gleba_wobble_y * 15 + gleba_wobble_small_y * 5, persistence = 0.75, octaves = 7, input_scale = 1/70, seed0 = map_seed, seed1 = 7000}",
+    "starting_aux": "clamp(-starting_rotated_y / gleba_starting_area_multiplier / 200, -2, 2)",
+    "starting_radius": "clamp(1 - distance / gleba_starting_area_multiplier / 900, 0, 0.9)",
+    "starting_rotated_y": "rotate_y(x_from_start, y_from_start, aux_angle) + gleba_wobble_x * 10"
+   },
+   "name": "gleba_aux",
+   "type": "noise-expression"
+  },
+  "gleba_bush_noise": {
+   "expression": "0.6 * multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 5500, octaves = 2, input_scale = 1/12, output_scale = 0.5}+ 0.3 - abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 6500, octaves = 2, input_scale = 1/12})",
+   "name": "gleba_bush_noise",
+   "type": "noise-expression"
+  },
+  "gleba_carpet_shroom": {
+   "expression": "region_box - gleba_cover_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.85, 2, 0.05, -10, 1), gleba_select(gleba_moisture, 0.6, 0.75, 0.05, -10, 1)) - 1"
+   },
+   "name": "gleba_carpet_shroom",
+   "type": "noise-expression"
+  },
+  "gleba_carpet_shroom_probability": {
+   "expression": "grpi(0.25) + gleba_select(gleba_carpet_shroom - clamp(gleba_decorative_knockout, 0, 1), 0.1, 2, 0.1, 0, 1)",
+   "name": "gleba_carpet_shroom_probability",
+   "type": "noise-expression"
+  },
+  "gleba_cliffiness": {
+   "expression": "max(0.95 * cliffiness_basic, 0.99 * (gleba_rockpools > 0))",
+   "name": "gleba_cliffiness",
+   "type": "noise-expression"
+  },
+  "gleba_clubnub_grass": {
+   "expression": "region_box + gleba_plants_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0, 0.3, 0.15, -10, 1), gleba_water_plant_ramp, gleba_elevation < 2) - 1"
+   },
+   "name": "gleba_clubnub_grass",
+   "type": "noise-expression"
+  },
+  "gleba_cover_noise": {
+   "expression": "0.6 * multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 3500, octaves = 2, input_scale = 1/10, output_scale = 0.5}+ 0.3 - abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 4500, octaves = 2, input_scale = 1/16})",
+   "name": "gleba_cover_noise",
+   "type": "noise-expression"
+  },
+  "gleba_cracked_mud": {
+   "expression": "region_box - gleba_decal_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.7, 2, 0.1, -10, 1), gleba_select(gleba_moisture, 0.55, 0.6, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_cracked_mud",
+   "type": "noise-expression"
+  },
+  "gleba_cracked_mud_probability": {
+   "expression": "grpi(0.05) + gleba_select(gleba_cracked_mud - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_cracked_mud_probability",
+   "type": "noise-expression"
+  },
+  "gleba_dark_mud": {
+   "expression": "max(region_box_a, region_box_b) - gleba_decal_noise",
+   "local_expressions": {
+    "region_box_a": "min(gleba_select(gleba_aux, -1, 0.6, 0.05, -10, 1), gleba_select(gleba_moisture, 0.5, 0.75, 0.1, -10, 1)) - 1",
+    "region_box_b": "min(gleba_select(gleba_aux, 0.45, 0.55, 0.05, -10, 1), gleba_select(gleba_moisture, 0.3, 0.75, 0.05, -10, 1)) - 1"
+   },
+   "name": "gleba_dark_mud",
+   "type": "noise-expression"
+  },
+  "gleba_dark_mud_probability": {
+   "expression": "grpi(0.05) + gleba_select(gleba_dark_mud - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_dark_mud_probability",
+   "type": "noise-expression"
+  },
+  "gleba_decal_noise": {
+   "expression": "0.6 * multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1500, octaves = 2, input_scale = 1/16, output_scale = 0.5}+ 0.3 - abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 2500, octaves = 2, input_scale = 1/20})",
+   "name": "gleba_decal_noise",
+   "type": "noise-expression"
+  },
+  "gleba_decorative_knockout": {
+   "expression": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1300000, octaves = 2, input_scale = 1/3}",
+   "name": "gleba_decorative_knockout",
+   "type": "noise-expression"
+  },
+  "gleba_elevation": {
+   "expression": "lerp(gleba_elevation_common, lowland_elevation, lowland_mask)",
+   "local_expressions": {
+    "aux_adjustment_peak": "gleba_pos_peak(aux_high_contrast, 0.5, 0.5)",
+    "aux_high_contrast": "clamp(10 * (gleba_aux - 0.5) + 0.5, 0, 1)",
+    "lowland_elevation": "clamp(gleba_elevation_common * 0.5 + transition_adjusted_mud_noise, -1.5, 19.9) + 0.15 * transition_adjusted_mud_noise",
+    "lowland_mask": "gleba_select(gleba_elevation_common, -5, 20, 1, 0, 1)",
+    "mixed_mud_noise": "lerp(-8 + 16 * gleba_mud_basins, -12 + 16 * gleba_mud_channels, aux_high_contrast)",
+    "transition_adjusted_mud_noise": "mixed_mud_noise * (1 + 0.3 * aux_adjustment_peak) + 0.1 * aux_adjustment_peak"
+   },
+   "name": "gleba_elevation",
+   "type": "noise-expression"
+  },
+  "gleba_elevation_common": {
+   "expression": "lerp(starting_main_blend, -1, enemies_water_knockout)",
+   "local_expressions": {
+    "enemies_water_knockout": "clamp(max(gleba_starting_enemies_safe, gleba_starting_enemies) * 2, 0, 1)",
+    "high_frequency": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1, octaves = 3, input_scale = 1/18}",
+    "peaks": "multioctave_noise{x = x + gleba_wobble_x * 10, y = y + gleba_wobble_y * 10, persistence = 0.7, seed0 = map_seed, seed1 = 1000000, octaves = 3, input_scale = 1/60*slider_rescale(gleba_water_frequency, 3)} + ridges",
+    "peaks_terrace": "terrace{value = min(150, -25 + peaks * 250), offset = 40, width = 20, strength = 0.2}",
+    "ridge_terrace": "terrace{value = min(80, 110 + ridges * 500), offset = 40, width = 20, strength = 0.2}",
+    "ridges": "max(-gleba_tri_ridge * (0.6 + var('control:gleba_water:size') / 3), starting_bridges - 0.8) * 2.4 + 0.2 * ridges_small_noise",
+    "ridges_small_noise": "abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1000000, octaves = 3, input_scale = 1/60})",
+    "rockpool_elevation": "lerp(lerp(20, 80, gleba_rockpools < 0.3), 250, gleba_rockpools < 0.01)",
+    "spiral_angle": "gleba_starting_angle - gleba_starting_direction * (distance / gleba_starting_area_multiplier / 16 - 15)",
+    "spiral_angle_b": "gleba_starting_angle + gleba_starting_direction * (distance / gleba_starting_area_multiplier / 16 - 15)",
+    "starting_area": "max(-30 * clamp(starting_lakes * 2, 0, 1), 5 * min(gleba_starting_lowlands * 2, 1), 130 * min(starting_highlands * 2, 1), 80 * min(starting_midlands * 2, 1), 70 * min((starting_bridges - 0.5) * 3, 1)) + 6 * ridges_small_noise",
+    "starting_bridge": "min(1 - abs(starting_rotated_x / gleba_starting_area_multiplier - gleba_starting_direction * sin(starting_rotated_y / 64 / gleba_starting_area_multiplier) * 64 * gleba_starting_area_multiplier) / 110, 2 - distance / gleba_starting_area_multiplier / 700)",
+    "starting_bridge_b": "min(1 - abs(starting_rotated_b_x / gleba_starting_area_multiplier - gleba_starting_direction * sin(starting_rotated_b_y / 64 / gleba_starting_area_multiplier) * 64 * gleba_starting_area_multiplier) / 110, 2 - distance / gleba_starting_area_multiplier / 700)",
+    "starting_bridges": "max(starting_bridge, starting_bridge_b)",
+    "starting_highland_main": "starting_spot_at_angle{ angle = gleba_starting_angle + 95 * gleba_starting_direction,distance = 100 * gleba_starting_area_multiplier,radius = 130 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_highland_small": "starting_spot_at_angle{angle = gleba_starting_angle + 40 * gleba_starting_direction,distance = 130 * gleba_starting_area_multiplier,radius = 65 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_highlands": "max(starting_highland_main, starting_highland_small)",
+    "starting_lakes": "max(starting_stone_lake, starting_opposite_lake, starting_opposite_small_lake)",
+    "starting_main_blend": "min(rockpool_elevation, lerp(terraces_combined, starting_area, clamp(1.7 - (distance / gleba_starting_area_multiplier / 500), 0, 1))) + 3 * (0.5 - abs(high_frequency))",
+    "starting_midland_copper": "starting_spot_at_angle{angle = gleba_starting_angle + 340 * gleba_starting_direction,distance = 100 * gleba_starting_area_multiplier,radius = 80 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_midland_iron": "starting_spot_at_angle{angle = gleba_starting_angle + 180 * gleba_starting_direction,distance = 120 * gleba_starting_area_multiplier,radius = 130 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_midland_landing": "starting_spot_at_angle{ angle = gleba_starting_angle + 265 * gleba_starting_direction,distance = 10 * gleba_starting_area_multiplier,radius = 80 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_midlands": "max(starting_midland_landing, starting_midland_iron, starting_midland_copper)",
+    "starting_opposite_lake": "starting_spot_at_angle{ angle = gleba_starting_angle + 270 * gleba_starting_direction,distance = 500 * gleba_starting_area_multiplier,radius = 450 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_opposite_small_lake": "starting_spot_at_angle{ angle = gleba_starting_angle + 265 * gleba_starting_direction,distance = 50 * gleba_starting_area_multiplier,radius = 50 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_rotated_b_x": "rotate_x(x_from_start, y_from_start, spiral_angle_b) + gleba_wobble_x * 10",
+    "starting_rotated_b_y": "rotate_y(x_from_start, y_from_start, spiral_angle_b) + gleba_wobble_y * 10",
+    "starting_rotated_x": "rotate_x(x_from_start, y_from_start, spiral_angle) + gleba_wobble_x * 10",
+    "starting_rotated_y": "rotate_y(x_from_start, y_from_start, spiral_angle) + gleba_wobble_y * 10",
+    "starting_stone_lake": "starting_spot_at_angle{angle = gleba_starting_angle + 90 * gleba_starting_direction,distance = 500 * gleba_starting_area_multiplier,radius = 350 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "terraces_combined": "max(ridge_terrace, peaks_terrace, 25 + 22 * ridges)"
+   },
+   "name": "gleba_elevation_common",
+   "type": "noise-expression"
+  },
+  "gleba_enemy_base_frequency": {
+   "expression": "(0.00002 + 0.000006 * enemy_base_intensity) * control:gleba_enemy_base:frequency",
+   "name": "gleba_enemy_base_frequency",
+   "type": "noise-expression"
+  },
+  "gleba_enemy_base_radius": {
+   "expression": "sqrt(control:gleba_enemy_base:size) * (15 + 4 * enemy_base_intensity)",
+   "name": "gleba_enemy_base_radius",
+   "type": "noise-expression"
+  },
+  "gleba_fertile_spots_coastal_raw": {
+   "expression": "spot_noise{ x = x + wobble_noise_x * 15,y = y + wobble_noise_y * 15,seed0 = map_seed,seed1 = 1,candidate_spot_count = 80,suggested_minimum_candidate_point_spacing = 128,skip_span = 1,skip_offset = 0,region_size = 1024,density_expression = 80,spot_quantity_expression = 1000,spot_radius_expression = 32,hard_region_target_quantity = 0,spot_favorability_expression = 60,basement_value = -0.5,maximum_spot_basement_radius = 128}",
+   "local_expressions": {
+    "wobble_noise_x": "multioctave_noise{x = x, y = y, persistence = 0.5, seed0 = map_seed, seed1 = 3000000, octaves = 2, input_scale = 1/20}",
+    "wobble_noise_y": "multioctave_noise{x = x, y = y, persistence = 0.5, seed0 = map_seed, seed1 = 4000000, octaves = 2, input_scale = 1/20}"
+   },
+   "name": "gleba_fertile_spots_coastal_raw",
+   "type": "noise-expression"
+  },
+  "gleba_green_bush": {
+   "expression": "region_box + gleba_scrub_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, -1, 0.3, 0.1, -10, 1), gleba_select(gleba_moisture, 0.5, 0.75, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_green_bush",
+   "type": "noise-expression"
+  },
+  "gleba_green_bush_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_green_bush - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_green_bush_probability",
+   "type": "noise-expression"
+  },
+  "gleba_green_carpet_grass_probability": {
+   "expression": "grpi(0.3) + 0.3 * gleba_select(gleba_clubnub_grass, 0.7, 2, 0.2, 0, 1)",
+   "name": "gleba_green_carpet_grass_probability",
+   "type": "noise-expression"
+  },
+  "gleba_green_cronton": {
+   "expression": "region_box + gleba_scrub_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.25, 0.45, 0.1, -10, 1), gleba_select(gleba_moisture, 0.5, 0.75, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_green_cronton",
+   "type": "noise-expression"
+  },
+  "gleba_green_cronton_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_green_cronton - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_green_cronton_probability",
+   "type": "noise-expression"
+  },
+  "gleba_green_hairy_grass_probability": {
+   "expression": "grpi(0.5) + 0.8 * gleba_select(gleba_clubnub_grass, 0.8, 2, 0.2, 0, 1)",
+   "name": "gleba_green_hairy_grass_probability",
+   "type": "noise-expression"
+  },
+  "gleba_green_pita": {
+   "expression": "region_box + gleba_bush_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, -1, 0.5, 0.1, -10, 1), gleba_select(gleba_moisture, 0.35, 0.5, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_green_pita",
+   "type": "noise-expression"
+  },
+  "gleba_green_pita_mini": {
+   "expression": "region_box - gleba_scrub_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, -1, 0.5, 0.1, -10, 1), gleba_select(gleba_moisture, 0.2, 0.4, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_green_pita_mini",
+   "type": "noise-expression"
+  },
+  "gleba_green_pita_mini_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_green_pita_mini - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_green_pita_mini_probability",
+   "type": "noise-expression"
+  },
+  "gleba_green_pita_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_green_pita - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_green_pita_probability",
+   "type": "noise-expression"
+  },
+  "gleba_highland": {
+   "expression": "gleba_select(gleba_elevation, 120, 1000, 0.5, 0, 1)",
+   "name": "gleba_highland",
+   "type": "noise-expression"
+  },
+  "gleba_light_mud": {
+   "expression": "region_box - gleba_decal_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.6, 2, 0.05, -10, 1), gleba_select(gleba_moisture, 0.28, 0.47, 0.02, -10, 1)) - 1"
+   },
+   "name": "gleba_light_mud",
+   "type": "noise-expression"
+  },
+  "gleba_light_mud_probability": {
+   "expression": "grpi(0.05) + gleba_select(gleba_light_mud - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_light_mud_probability",
+   "type": "noise-expression"
+  },
+  "gleba_midland": {
+   "expression": "gleba_select(gleba_elevation, 20, 120, 0.5, 0, 1)",
+   "name": "gleba_midland",
+   "type": "noise-expression"
+  },
+  "gleba_midland_aux_2": {
+   "expression": "gleba_midland * gleba_select(gleba_aux, 0.45, 0.55, 0.0025, 0, 1)",
+   "name": "gleba_midland_aux_2",
+   "type": "noise-expression"
+  },
+  "gleba_moisture": {
+   "expression": "lerp(clamp(1 - min(0.25 + (gleba_elevation_common / 80), 0.5 + (gleba_elevation_common - 20) / 400), 0, 1), 0.35, min(1, gleba_rockpools_pitrock * 5))",
+   "name": "gleba_moisture",
+   "type": "noise-expression"
+  },
+  "gleba_mud_basins": {
+   "expression": "1 - abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1000000, octaves = 3, input_scale = 1/10})",
+   "name": "gleba_mud_basins",
+   "type": "noise-expression"
+  },
+  "gleba_mud_channels": {
+   "expression": "abs(multioctave_noise{x = x, y = y, persistence = 0.5, seed0 = map_seed, seed1 = 1000000, octaves = 3, input_scale = 1/9})",
+   "name": "gleba_mud_channels",
+   "type": "noise-expression"
+  },
+  "gleba_orange_lichen": {
+   "expression": "region_box - gleba_cover_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.8, 2, 0.05, -10, 1), gleba_select(gleba_moisture, 0.4, 0.55, 0.05, -10, 1)) - 1"
+   },
+   "name": "gleba_orange_lichen",
+   "type": "noise-expression"
+  },
+  "gleba_orange_lichen_probability": {
+   "expression": "grpi(0.25) + gleba_select(gleba_orange_lichen - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_orange_lichen_probability",
+   "type": "noise-expression"
+  },
+  "gleba_red_desert_bush": {
+   "expression": "region_box + gleba_scrub_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.4, 0.8, 0.1, -10, 1), gleba_select(gleba_moisture, 0.2, 0.45, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_red_desert_bush",
+   "type": "noise-expression"
+  },
+  "gleba_red_desert_bush_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_red_desert_bush - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_red_desert_bush_probability",
+   "type": "noise-expression"
+  },
+  "gleba_red_pita": {
+   "expression": "region_box - gleba_bush_noise",
+   "local_expressions": {
+    "region_box": "min(gleba_select(gleba_aux, 0.6, 0.7, 0.1, -10, 1), gleba_select(gleba_moisture, 0.25, 0.35, 0.1, -10, 1)) - 1"
+   },
+   "name": "gleba_red_pita",
+   "type": "noise-expression"
+  },
+  "gleba_red_pita_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_red_pita - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_red_pita_probability",
+   "type": "noise-expression"
+  },
+  "gleba_rockpools": {
+   "expression": "clamp(1 - 2 * abs(multioctave_noise{x = x, y = y, persistence = 0.75, seed0 = map_seed, seed1 = 1000000, octaves = 4, input_scale = 1/45}), 0, 1)* gleba_select(rockpools_mask_noise + min(0, distance / 150 - 2) - max(0, gleba_fertile_spots_coastal_raw), 1.4, 3, 0.4, 0, 1) * (1 + (rockpools_mask_noise - 1) / 10)",
+   "local_expressions": {
+    "rockpools_mask_noise": "abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 1000000, octaves = 3, input_scale = 1/75})"
+   },
+   "name": "gleba_rockpools",
+   "type": "noise-expression"
+  },
+  "gleba_rockpools_pitrock": {
+   "expression": "gleba_select(gleba_rockpools, 0.05, 0.6, 0.05, 0, 1) * (elevation > 20)",
+   "name": "gleba_rockpools_pitrock",
+   "type": "noise-expression"
+  },
+  "gleba_scrub_noise": {
+   "expression": "0.6 * multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 7500, octaves = 2, input_scale = 1/8, output_scale = 0.5}+ 0.3 - abs(multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 8500, octaves = 2, input_scale = 1/8})",
+   "name": "gleba_scrub_noise",
+   "type": "noise-expression"
+  },
+  "gleba_starting_angle": {
+   "expression": "map_seed_normalized * 3600",
+   "name": "gleba_starting_angle",
+   "type": "noise-expression"
+  },
+  "gleba_starting_area_multiplier": {
+   "expression": "0.7",
+   "name": "gleba_starting_area_multiplier",
+   "type": "noise-expression"
+  },
+  "gleba_starting_direction": {
+   "expression": "-1 + 2 * (map_seed_small & 1)",
+   "name": "gleba_starting_direction",
+   "type": "noise-expression"
+  },
+  "gleba_starting_enemies": {
+   "expression": "max(starting_lowland_yumako, starting_lowland_jellynut)",
+   "local_expressions": {
+    "starting_lowland_jellynut": "starting_spot_at_angle{angle = gleba_starting_angle + 30 * gleba_starting_direction,distance = 410 * gleba_starting_area_multiplier,radius = 30 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 20,y_distortion = gleba_wobble_x * 20}",
+    "starting_lowland_yumako": "starting_spot_at_angle{angle = gleba_starting_angle + 210 * gleba_starting_direction,distance = 410 * gleba_starting_area_multiplier,radius = 30 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 20,y_distortion = gleba_wobble_x * 20}"
+   },
+   "name": "gleba_starting_enemies",
+   "type": "noise-expression"
+  },
+  "gleba_starting_enemies_safe": {
+   "expression": "starting_spot_at_angle{ angle = gleba_starting_angle + 40 * gleba_starting_direction,distance = 210 * gleba_starting_area_multiplier,radius = 30 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 20,y_distortion = gleba_wobble_x * 20}",
+   "name": "gleba_starting_enemies_safe",
+   "type": "noise-expression"
+  },
+  "gleba_starting_lowlands": {
+   "expression": "max(starting_lowland_yumako, starting_lowland_jellynut)",
+   "local_expressions": {
+    "starting_lowland_jellynut": "starting_spot_at_angle{angle = gleba_starting_angle + 65 * gleba_starting_direction,distance = 290 * gleba_starting_area_multiplier,radius = 100 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}",
+    "starting_lowland_yumako": "starting_spot_at_angle{angle = gleba_starting_angle + 235 * gleba_starting_direction,distance = 300 * gleba_starting_area_multiplier,radius = 140 * gleba_starting_area_multiplier,x_distortion = gleba_wobble_x * 15,y_distortion = gleba_wobble_x * 15}"
+   },
+   "name": "gleba_starting_lowlands",
+   "type": "noise-expression"
+  },
+  "gleba_stone_probability": {
+   "expression": "(control:gleba_stone:size > 0) * (gleba_stone_richness > 1)",
+   "name": "gleba_stone_probability",
+   "type": "noise-expression"
+  },
+  "gleba_stone_richness": {
+   "expression": "4000 * max(starting, gleba_simple_spot(1000, 6 * size ^ 0.5, 80 / frequency ^ 0.5, gleba_highland) * max(gleba_highland, gleba_midland_aux_2)) * richness / size",
+   "local_expressions": {
+    "frequency": "control:gleba_stone:frequency",
+    "richness": "control:gleba_stone:richness",
+    "size": "control:gleba_stone:size",
+    "starting": "starting_spot_at_angle{ angle = gleba_starting_angle + 85 * gleba_starting_direction,distance = 80 * gleba_starting_area_multiplier,radius = 7 * size ^ 0.5,x_distortion = gleba_wobble_x * 8,y_distortion = gleba_wobble_x * 8}"
+   },
+   "name": "gleba_stone_richness",
+   "type": "noise-expression"
+  },
+  "gleba_temperature": {
+   "expression": "10 + gleba_temperature_normalised * 10",
+   "name": "gleba_temperature",
+   "type": "noise-expression"
+  },
+  "gleba_temperature_normalised": {
+   "expression": "clamp(0.8 * multioctave_noise{x = x + gleba_wobble_x * 6, y = y + gleba_wobble_y * 6, persistence = 0.65, octaves = 4, input_scale = 1/4, seed0 = map_seed, seed1 = 18000}, -1, 1)",
+   "name": "gleba_temperature_normalised",
+   "type": "noise-expression"
+  },
+  "gleba_tri_ridge": {
+   "expression": "0.5 * ((tri_bc < tri_a) * (tri_a - tri_bc) + (tri_ac < tri_b) * (tri_b - tri_ac) + (tri_ab < tri_c) * (tri_c - tri_ab))",
+   "local_expressions": {
+    "tri_a": "1 + multioctave_noise{x = wobble_x, y = wobble_y, persistence = 0.65, octaves = 3, input_scale = 1/300*control:gleba_water:frequency, seed0 = map_seed, seed1 = 10000}",
+    "tri_ab": "max(tri_a, tri_b)",
+    "tri_ac": "max(tri_a, tri_c)",
+    "tri_b": "1 + multioctave_noise{x = wobble_x, y = wobble_y, persistence = 0.65, octaves = 3, input_scale = 1/300*control:gleba_water:frequency, seed0 = map_seed, seed1 = 20000}",
+    "tri_bc": "max(tri_b, tri_c)",
+    "tri_c": "1 + multioctave_noise{x = wobble_x, y = wobble_y, persistence = 0.65, octaves = 3, input_scale = 1/300*control:gleba_water:frequency, seed0 = map_seed, seed1 = 30000}",
+    "wobble_x": "x + gleba_wobble_x * 6",
+    "wobble_y": "y + gleba_wobble_y * 6"
+   },
+   "name": "gleba_tri_ridge",
+   "type": "noise-expression"
+  },
+  "gleba_water_frequency": {
+   "expression": "slider_rescale(control:gleba_water:frequency, 2)",
+   "name": "gleba_water_frequency",
+   "type": "noise-expression"
+  },
+  "gleba_water_plant_ramp": {
+   "expression": "clamp((0.8 - gleba_moisture) * 20, 0, 1)",
+   "name": "gleba_water_plant_ramp",
+   "type": "noise-expression"
+  },
+  "gleba_white_desert_bush": {
+   "expression": "max(region_box_a, region_box_b) - gleba_scrub_noise",
+   "local_expressions": {
+    "region_box_a": "min(gleba_select(gleba_aux, 0.35, 2, 0.1, -10, 1), gleba_select(gleba_moisture, 0, 0.25, 0.05, -10, 1)) - 1",
+    "region_box_b": "min(gleba_select(gleba_aux, 0.35, 0.55, 0.1, -10, 1), gleba_select(gleba_moisture, 0.25, 0.55, 0.05, -10, 1)) - 1"
+   },
+   "name": "gleba_white_desert_bush",
+   "type": "noise-expression"
+  },
+  "gleba_white_desert_bush_probability": {
+   "expression": "grpi(0.5) + gleba_select(gleba_white_desert_bush - clamp(gleba_decorative_knockout, 0, 1), 0.2, 2, 0.1, 0, 1)",
+   "name": "gleba_white_desert_bush_probability",
+   "type": "noise-expression"
+  },
+  "gleba_wobble_small_x": {
+   "expression": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 2000, octaves = 2, input_scale = 1/6}",
+   "name": "gleba_wobble_small_x",
+   "type": "noise-expression"
+  },
+  "gleba_wobble_small_y": {
+   "expression": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 3000, octaves = 2, input_scale = 1/6}",
+   "name": "gleba_wobble_small_y",
+   "type": "noise-expression"
+  },
+  "gleba_wobble_x": {
+   "expression": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 2000, octaves = 3, input_scale = 1/20}",
+   "name": "gleba_wobble_x",
+   "type": "noise-expression"
+  },
+  "gleba_wobble_y": {
+   "expression": "multioctave_noise{x = x, y = y, persistence = 0.7, seed0 = map_seed, seed1 = 3000, octaves = 3, input_scale = 1/20}",
+   "name": "gleba_wobble_y",
+   "type": "noise-expression"
+  }
+ },
+ "resource_autoplace_overrides": {}
+}

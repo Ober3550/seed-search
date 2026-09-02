@@ -1,0 +1,309 @@
+{
+ "planet": "fulgora",
+ "property_expressions": [
+  "aux_basic",
+  "cliff_elevation_from_elevation",
+  "fulgora_cliffiness",
+  "fulgora_elevation",
+  "moisture_basic",
+  "temperature_basic"
+ ],
+ "functions": {
+  "slider_rescale": {
+   "expression": "2^(log2(slider_value)/log2(6)*log2(n))",
+   "name": "slider_rescale",
+   "parameters": [
+    "slider_value",
+    "n"
+   ],
+   "type": "noise-function"
+  },
+  "slider_to_linear": {
+   "expression": "min + 0.5 * (max - min) * (1 + log2(slider_value) / log2(6))",
+   "name": "slider_to_linear",
+   "parameters": [
+    "slider_value",
+    "min",
+    "max"
+   ],
+   "type": "noise-function"
+  },
+  "starting_spot_at_angle": {
+   "expression": "1 - (delta_x * delta_x + delta_y * delta_y) ^ 0.5 / radius",
+   "local_expressions": {
+    "angle_rad": "angle / 180 * pi",
+    "delta_x": "distance * sin(angle_rad) - x_from_start + x_distortion",
+    "delta_y": "-distance * cos(angle_rad) - y_from_start + y_distortion"
+   },
+   "name": "starting_spot_at_angle",
+   "parameters": [
+    "angle",
+    "distance",
+    "radius",
+    "x_distortion",
+    "y_distortion"
+   ],
+   "type": "noise-function"
+  }
+ },
+ "expressions": {
+  "fulgora_artificial_cap": {
+   "expression": "0.25",
+   "name": "fulgora_artificial_cap",
+   "type": "noise-expression"
+  },
+  "fulgora_basis": {
+   "expression": "multioctave_noise{x = fulgora_wx,y = fulgora_wy,persistence = 0.5,seed0 = map_seed,seed1 = 'fulgora_basis',octaves = 6,input_scale = 128 / fulgora_grid / 7.5,output_scale = 0.5}",
+   "name": "fulgora_basis",
+   "type": "noise-expression"
+  },
+  "fulgora_basis_oil": {
+   "expression": "multioctave_noise{x = x + 1.5 * fulgora_wobble_x,y = y + 1.5 * fulgora_wobble_y,persistence = 0.65,seed0 = map_seed,seed1 = 'fulgora_basis_oil',octaves = 4,input_scale = 1 / 10}",
+   "name": "fulgora_basis_oil",
+   "type": "noise-expression"
+  },
+  "fulgora_blanks": {
+   "expression": "fulgora_cells < 0.33",
+   "name": "fulgora_blanks",
+   "type": "noise-expression"
+  },
+  "fulgora_cells": {
+   "expression": "voronoi_cell_id{x = fulgora_wx,y = fulgora_wy,seed0 = map_seed,seed1 = 'fulgora_cells',grid_size = fulgora_grid,distance_type = 'manhattan',jitter = fulgora_jitter}",
+   "name": "fulgora_cells",
+   "type": "noise-expression"
+  },
+  "fulgora_cliffiness": {
+   "expression": "8 * slider_rescale(cliff_richness, 20)* (fulgora_road_pyramids - 0.1 + max(0, 1 - 10 * fulgora_wobble_mask))- 1000 * safe_start_excluder_h",
+   "local_expressions": {
+    "safe_start_excluder_h": "min(x_from_start < fulgora_grid, x_from_start > -fulgora_grid, y_from_start < 5, y_from_start > -5)"
+   },
+   "name": "fulgora_cliffiness",
+   "type": "noise-expression"
+  },
+  "fulgora_coastline": {
+   "expression": 80,
+   "name": "fulgora_coastline",
+   "type": "noise-expression"
+  },
+  "fulgora_coastline_drop": {
+   "expression": 20,
+   "name": "fulgora_coastline_drop",
+   "type": "noise-expression"
+  },
+  "fulgora_elevation": {
+   "expression": "fulgora_pre_elevation + ((fulgora_sand_basins > 0) - 0.5) * fulgora_coastline_drop",
+   "name": "fulgora_elevation",
+   "type": "noise-expression"
+  },
+  "fulgora_grid": {
+   "expression": "175 - slider_to_linear(control:fulgora_islands:frequency, -50, 50)",
+   "name": "fulgora_grid",
+   "type": "noise-expression"
+  },
+  "fulgora_jitter": {
+   "expression": "0.6",
+   "name": "fulgora_jitter",
+   "type": "noise-expression"
+  },
+  "fulgora_mesa": {
+   "expression": "fulgora_cells > 0.75",
+   "name": "fulgora_mesa",
+   "type": "noise-expression"
+  },
+  "fulgora_mix_moats": {
+   "expression": "lerp(fulgora_mix_natural, fulgora_moats, max(fulgora_vaults_and_starting_vault, fulgora_starting_mask))",
+   "name": "fulgora_mix_moats",
+   "type": "noise-expression"
+  },
+  "fulgora_mix_natural": {
+   "expression": "max(fulgora_natural, fulgora_mix_pyramids)",
+   "name": "fulgora_mix_natural",
+   "type": "noise-expression"
+  },
+  "fulgora_mix_oil": {
+   "expression": "lerp(fulgora_mix_spots, min(-0.01, fulgora_mix_spots - 0.4 + 0.6 * fulgora_basis_oil), fulgora_oil_mask)",
+   "name": "fulgora_mix_oil",
+   "type": "noise-expression"
+  },
+  "fulgora_mix_pyramids": {
+   "expression": "min(fulgora_artificial_cap, (fulgora_sprawl_pyramids - 0.185) * 4)",
+   "name": "fulgora_mix_pyramids",
+   "type": "noise-expression"
+  },
+  "fulgora_mix_spots": {
+   "expression": "max(fulgora_mix_moats, fulgora_vault_spots) + max(0, fulgora_starting_cone - 0.8)",
+   "name": "fulgora_mix_spots",
+   "type": "noise-expression"
+  },
+  "fulgora_moats": {
+   "expression": "min(fulgora_artificial_cap, 1.5 * max(-0.05 -fulgora_vault_pyramids_and_start * 2, (fulgora_vault_pyramids_and_start - 0.35) * 2))",
+   "name": "fulgora_moats",
+   "type": "noise-expression"
+  },
+  "fulgora_natural": {
+   "expression": "fulgora_basis * 2 * slider_rescale(control:fulgora_islands:size,  2) - 0.85",
+   "name": "fulgora_natural",
+   "type": "noise-expression"
+  },
+  "fulgora_oil_mask": {
+   "expression": "fulgora_mix_spots < 0",
+   "name": "fulgora_oil_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_ox": {
+   "expression": "x + fulgora_grid / 2",
+   "name": "fulgora_ox",
+   "type": "noise-expression"
+  },
+  "fulgora_oy": {
+   "expression": "y + fulgora_grid / 2",
+   "name": "fulgora_oy",
+   "type": "noise-expression"
+  },
+  "fulgora_pre_elevation": {
+   "expression": "fulgora_sand_basins * 60 + fulgora_coastline",
+   "name": "fulgora_pre_elevation",
+   "type": "noise-expression"
+  },
+  "fulgora_pyramids": {
+   "expression": "voronoi_pyramid_noise{x = fulgora_wx,y = fulgora_wy,seed0 = map_seed,seed1 = 'fulgora_cells',grid_size = fulgora_grid,distance_type = 'manhattan',jitter = fulgora_jitter}",
+   "name": "fulgora_pyramids",
+   "type": "noise-expression"
+  },
+  "fulgora_road_cells": {
+   "expression": "voronoi_cell_id{x = x,y = y,seed0 = map_seed,seed1 = 'fulgora_road_cells',grid_size = fulgora_grid / 3,distance_type = 'chebyshev',jitter = fulgora_road_jitter}",
+   "name": "fulgora_road_cells",
+   "type": "noise-expression"
+  },
+  "fulgora_road_jitter": {
+   "expression": 1,
+   "name": "fulgora_road_jitter",
+   "type": "noise-expression"
+  },
+  "fulgora_road_pyramids": {
+   "expression": "voronoi_pyramid_noise{x = x,y = y,seed0 = map_seed,seed1 = 'fulgora_road_cells',grid_size = fulgora_grid / 3,distance_type = 'chebyshev',jitter = fulgora_road_jitter}",
+   "name": "fulgora_road_pyramids",
+   "type": "noise-expression"
+  },
+  "fulgora_rock": {
+   "expression": "0.33 + abs(multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_rock',octaves = 4,input_scale = 1/3 })",
+   "name": "fulgora_rock",
+   "type": "noise-expression"
+  },
+  "fulgora_sand_basins": {
+   "expression": "min(fulgora_mix_oil, 0.6 - fulgora_mix_oil)",
+   "name": "fulgora_sand_basins",
+   "type": "noise-expression"
+  },
+  "fulgora_spots": {
+   "expression": "voronoi_spot_noise{x = fulgora_ox + fulgora_wobble_x / 2,y = fulgora_oy + fulgora_wobble_y / 2,seed0 = map_seed,seed1 = 'fulgora_cells',grid_size = fulgora_grid,distance_type = 'euclidean',jitter = fulgora_jitter}",
+   "name": "fulgora_spots",
+   "type": "noise-expression"
+  },
+  "fulgora_spots_inv": {
+   "expression": "1 - fulgora_spots",
+   "name": "fulgora_spots_inv",
+   "type": "noise-expression"
+  },
+  "fulgora_sprawl": {
+   "expression": "(fulgora_cells > 0.5) - fulgora_mesa",
+   "name": "fulgora_sprawl",
+   "type": "noise-expression"
+  },
+  "fulgora_sprawl_pyramids": {
+   "expression": "fulgora_pyramids* (fulgora_sprawl+ fulgora_mesa * min(1, abs(0.9 - 0.2 * fulgora_basis_oil + 0.05 * fulgora_rock)))",
+   "name": "fulgora_sprawl_pyramids",
+   "type": "noise-expression"
+  },
+  "fulgora_starting_cone": {
+   "expression": "max(0, starting_spot_at_angle{angle = map_seed / 360,distance = fulgora_grid / 30,radius = fulgora_grid / 1.8,x_distortion = 1 * fulgora_wobble_x,y_distortion = 1 * fulgora_wobble_y},starting_spot_at_angle{angle = map_seed / 360,distance = 1,radius = fulgora_grid / 4,x_distortion = 0.25 * fulgora_wobble_x,y_distortion = 0.25 * fulgora_wobble_y})",
+   "name": "fulgora_starting_cone",
+   "type": "noise-expression"
+  },
+  "fulgora_starting_mask": {
+   "expression": "(fulgora_starting_cone - fulgora_starting_vault_cone) > 0",
+   "name": "fulgora_starting_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_starting_vault_cone": {
+   "expression": "max(0, starting_spot_at_angle{angle = map_seed / 360 + 180,distance = fulgora_grid / 1.8,radius = fulgora_grid / 1.8,x_distortion = 1 * fulgora_wobble_x,y_distortion = 1 * fulgora_wobble_y})",
+   "name": "fulgora_starting_vault_cone",
+   "type": "noise-expression"
+  },
+  "fulgora_starting_vault_mask": {
+   "expression": "(fulgora_starting_vault_cone - fulgora_starting_cone) > 0",
+   "name": "fulgora_starting_vault_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_vault_pyramids": {
+   "expression": "max(fulgora_vaults * fulgora_pyramids, 0.5 * fulgora_starting_vault_cone)",
+   "name": "fulgora_vault_pyramids",
+   "type": "noise-expression"
+  },
+  "fulgora_vault_pyramids_and_start": {
+   "expression": "max(fulgora_vault_pyramids, 0.5 * fulgora_starting_cone)",
+   "name": "fulgora_vault_pyramids_and_start",
+   "type": "noise-expression"
+  },
+  "fulgora_vault_spots": {
+   "expression": "min(fulgora_artificial_cap,-10 + 11.5 * max(fulgora_vaults * fulgora_spots_inv,fulgora_starting_vault_mask * (0.5 + 0.5 * fulgora_starting_vault_cone),fulgora_starting_mask * (0.5 + 0.5 * fulgora_starting_cone)))",
+   "name": "fulgora_vault_spots",
+   "type": "noise-expression"
+  },
+  "fulgora_vaults": {
+   "expression": "1 - fulgora_blanks - fulgora_sprawl - fulgora_mesa",
+   "name": "fulgora_vaults",
+   "type": "noise-expression"
+  },
+  "fulgora_vaults_and_starting_vault": {
+   "expression": "max(fulgora_vaults, fulgora_starting_vault_mask)",
+   "name": "fulgora_vaults_and_starting_vault",
+   "type": "noise-expression"
+  },
+  "fulgora_wobble_influence": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 1,octaves = 3,input_scale = 128 / fulgora_grid / 20 ,output_scale = 3}",
+   "name": "fulgora_wobble_influence",
+   "type": "noise-expression"
+  },
+  "fulgora_wobble_mask": {
+   "expression": "clamp(fulgora_wobble_influence + 0.6, 0, 1)",
+   "name": "fulgora_wobble_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_wobble_x": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_wobble_x',octaves = 4,input_scale = 5 / fulgora_grid,output_scale = fulgora_grid * 0.07}",
+   "name": "fulgora_wobble_x",
+   "type": "noise-expression"
+  },
+  "fulgora_wobble_y": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_wobble_y',octaves = 4,input_scale = 5 / fulgora_grid,output_scale = fulgora_grid * 0.07}",
+   "name": "fulgora_wobble_y",
+   "type": "noise-expression"
+  },
+  "fulgora_wx": {
+   "expression": "fulgora_ox + fulgora_wobble_x * fulgora_wobble_mask",
+   "name": "fulgora_wx",
+   "type": "noise-expression"
+  },
+  "fulgora_wy": {
+   "expression": "fulgora_oy + fulgora_wobble_y * fulgora_wobble_mask",
+   "name": "fulgora_wy",
+   "type": "noise-expression"
+  }
+ },
+ "resource_autoplace_overrides": {
+  "scrap": {
+   "control": "scrap",
+   "local_expressions": {
+    "abs_mult_height_over": "fulgora_elevation > (fulgora_coastline + 10)",
+    "frequency": "control:scrap:frequency",
+    "linear_size": "slider_to_linear(size, -1, 1)",
+    "richness": "control:scrap:richness",
+    "size": "control:scrap:size"
+   },
+   "order": "b",
+   "probability_expression": "(control:scrap:size > 0)* (1 - fulgora_starting_mask)* (min((fulgora_structure_cells < min(0.1 * frequency, 0.05 + 0.05 * frequency))* (1 + fulgora_structure_subnoise) * abs_mult_height_over * fulgora_artificial_mask+ (fulgora_spots_prebanding < (1.2 + 0.4 * linear_size)) * fulgora_vaults_and_starting_vault * 10,0.5) * (1 - fulgora_road_paving_2c))",
+   "richness_expression": "(1 + fulgora_structure_subnoise) * 1000 * (7 / (6 + frequency) + 100 * fulgora_vaults_and_starting_vault) * richness"
+  }
+ }
+}

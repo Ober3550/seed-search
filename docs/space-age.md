@@ -93,10 +93,9 @@ the decompiler.
 | `expressions.json` | 351 named noise expressions (base + 4 planets) |
 | `planets.json` | 5 planet `map_gen_settings`: `property_expression_names`, `autoplace_controls`, `autoplace_settings` (tile/decorative/entity lists), `cliff_settings`, `territory_settings` (Vulcanus demolishers) |
 | `resource-autoplace.json` | direct `data.raw.resource.<name>.autoplace` overrides (fulgora scrap) |
+| `surfaces/<planet>.json` | per-surface config (split by `scripts/split-sa-surfaces.mjs`): map_gen_settings + the closure of noise functions/expressions the surface's property expressions reference |
 
-Regenerate with: `lua scripts/extract-sa-data.lua` (override the game dir /
-out dir as args). Files must be re-run when the game updates (add the version
-to the header comment).
+Regenerate with: `lua scripts/extract-sa-data.lua` then `node scripts/split-sa-surfaces.mjs` (override the game dir / out dir as args). Files must be re-run when the game updates (add the version to the header comment).
 
 ### Not yet extracted (needs the lualib helper environment)
 
@@ -205,3 +204,29 @@ the current segen cross-check).
 | `space-age/prototypes/planet/planet-{vulcanus,gleba,fulgora,aquilo}-map-gen.lua` | per-planet expressions + resource autoplace overrides |
 | `base/prototypes/tile/tiles.lua`, `space-age/prototypes/tile/tiles-*.lua` | tile prototypes (autoplace, layer, map_color) |
 | `base/prototypes/resource/*.lua` | resource prototypes |
+
+## RE status (2026-09-02)
+
+**Voronoi + Terrace are reverse-engineered** — the arm64 slice ships full C++
+symbols (that's why the prior SE work was so productive). Key findings (details
++ symbol addresses in `docs/noise-system.md`, decompiled C in
+`ghidra/export/voronoi.c` / `ghidra/export/terrace.c`, re-export script
+`ghidra/scripts/ExportVoronoiTerrace.java`):
+
+- `NoiseOperations::VoronoiNoise` is one op with 4 distance types
+  (chebyshev=0 manhattan=1 euclidean=2 minkowski3=3) and 4 outputs: nearest
+  distance, d1−d0, bisector (pyramid) distance, and the winning cell's hash id.
+  `voronoi_spot_noise`=out A, `voronoi_facet_noise`=out B,
+  `voronoi_pyramid_noise`=out C (throws for minkowski3), `voronoi_cell_id`=out D.
+- Cell points are jittered per cell via a 32-bit integer mix (constants
+  0x1001/0x7ed55d16/0xc761c23c/0x165667b1/0xe9f8cc1d/0xfd7046c5/0xb55a4f09):
+  x,y = hash·2⁻³²·jitter + (1−jitter)/2, id = hash·2⁻³². Exact u32 sequence
+  still to be pinned from the decompile's 64-bit register lowering.
+- `Terrace` (inputs value+blend, consts offset+step):
+  out = offset + step·(⌊(v−offset)/step⌋ + remap(frac, blend)); blend 0 =
+  identity, 1 = pure quantization to step boundaries.
+
+**Still to do**: pin the exact cell-hash u32 sequence; port the primitives to
+`noise.zig`; extract the tile/resource prototype autoplace + map colors (needs
+the lualib helper environment — P1 note above); in-game calibration probes for
+bit-exactness.
