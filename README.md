@@ -221,3 +221,15 @@ Compare Zig output against Lua (requires Docker):
 ```bash
 ./verifier/verify/compare-zig-lua.sh --count 5
 ```
+
+### Web e2e — analyze any seed fully in the browser
+
+`/analyze/<seed>` generates a seed's universe AND a zone's surface entirely in
+the browser (universe.wasm + surface.wasm — no backend per-seed work). The e2e
+test drives a real Chrome through that flow and cross-checks the browser's
+surface against the native `segen` binary (amounts must match exactly):
+
+```bash
+npm install -D playwright-core   # once (uses your system Chrome)
+npm run test:e2e                 # SEED=12345 RADIUS=150 to vary
+```

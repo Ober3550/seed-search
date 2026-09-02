@@ -18,7 +18,8 @@
     "start": "node space_explorer_gui/server.js",
     "dev": "node --watch space_explorer_gui/server.js",
     "build": "node install.mjs",
-    "postinstall": "node install.mjs --build-only"
+    "postinstall": "node install.mjs --build-only",
+    "test:e2e": "node e2e/analyze-surface.test.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -43,5 +44,8 @@
     "space_explorer_gui/package.json",
     "space_explorer_gui/public/",
     "verifier/analyze.js"
-  ]
+  ],
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
 }
