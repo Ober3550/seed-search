@@ -234,8 +234,20 @@ symbols (that's why the prior SE work was so productive). Key findings (details
   out = offset + step·(⌊(v−offset)/step⌋ + remap(frac, blend)); blend 0 =
   identity, 1 = pure quantization to step boundaries; integer part FLOORS.
 
-**Still to do**: extract the tile/resource prototype autoplace + map colors
-(needs the lualib helper environment — P1 note above); build `noise_expr.zig`
-(the expression parser/evaluator that composes these primitives per planet) +
-`sa_planet.zig`/`sa_wasm.zig`; full-surface in-game probes (tile identities +
-resource positions) per planet.
+**Expression engine WIP (2026-09-02, feat/universe-wasm)**: `noise_expr.zig`
+is in progress as `sa_expr.zig` (DSL lexer/parser/evaluator over the embedded
+per-planet closures) + `sa_json.zig` (tiny JSON reader) + `sa_data.zig`/
+`sa_embedded.zig` (per-planet closures regenerated from sa-data via
+`scripts/gen-sa-embed.mjs`) + `sa_main.zig` (native CLI) +
+`calibration/sa-probe/probe_planet.py` (live-game property probes). Verified
+bit-exact against the live game so far: lerp/slider/controls, multioctave
+wobble+basis, voronoi cells, coastline, wobble mask; **fulgora_elevation
+mismatches remain** — the engine's voronoi *pyramid* output for non-euclidean
+metrics (manhattan is what fulgora uses) is metric-specific and only the
+euclidean pyramid formula was pinned (see calibration/sa-probe + the
+`ghidra/export/manhattan-asm.txt` block @0x1016141a0 to decode next).
+
+**Still to do**: pin the non-euclidean (manhattan/chebyshev) pyramid in the
+runInternal templates; then evaluate each planet's elevation to bit-exactness;
+extract tile/resource prototypes + map colors (needs the lualib helper
+environment); `sa_wasm.zig` + GUI planet terrain panel.

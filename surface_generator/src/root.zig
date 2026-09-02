@@ -27,6 +27,10 @@ pub const asteroid = @import("asteroid.zig");
 pub const bmp = @import("bmp_writer.zig");
 pub const png = @import("png.zig");
 pub const sha1 = @import("sha1.zig");
+// Space Age (2.0) planet surface data + noise-expression DSL evaluator.
+pub const sa_json = @import("sa_json.zig");
+pub const sa_expr = @import("sa_expr.zig");
+pub const sa_data = @import("sa_data.zig");
 
 test {
     _ = rng;
@@ -37,4 +41,8 @@ test {
     _ = ore;
     _ = se_ore;
     _ = bmp;
+}
+
+test "sa expr basic + fulgora load" {
+    _ = @import("sa_expr_test.zig");
 }

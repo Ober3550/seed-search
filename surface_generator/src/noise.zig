@@ -720,8 +720,16 @@ fn fastExp2f(x_in: f32) f32 {
     return @bitCast(@as(u32, @truncate(@as(u64, @bitCast(i)))));
 }
 
+/// (float)Math::log2Precise((double)x) — the PRECISE double log2 used by the
+/// noise expression `log2` builtin (NoiseOperations::Functions::log2
+/// @0x1015fd4b8), distinct from the fast Math::log2 the minkowski3 distance
+/// uses.
+pub fn preciseLog2(x: f32) f32 {
+    return @floatCast(@log2(@as(f64, x)));
+}
+
 /// Engine's fast Math::log2 (approx, f32).
-fn fastLog2(x: f32) f32 {
+pub fn fastLog2(x: f32) f32 {
     const b: u32 = @bitCast(x);
     const mant: f32 = @bitCast((b & 0x7fffff) | 0x3f000000);
     var s: f32 = @as(f32, @floatFromInt(b)) * 1.1920929e-07 + (-124.22552);
