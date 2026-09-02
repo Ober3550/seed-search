@@ -28,9 +28,18 @@
 //! native ops — handled at eval time through an environment chain.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const json = @import("sa_json.zig");
 const noise = @import("noise.zig");
 const rng = @import("rng.zig");
+
+/// stderr debug output is unavailable (and pulls in std.Io.Threaded, which
+/// does not compile freestanding) on the wasm target — no-op there.
+const dbg = struct {
+    fn print(comptime fmt: []const u8, args: anytype) void {
+        if (builtin.os.tag != .freestanding) std.debug.print(fmt, args);
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Nodes
@@ -51,6 +60,7 @@ pub const Op = enum {
     ge,
     and_op,
     or_op,
+    bitand,
     neg,
     not_op,
 };
@@ -168,7 +178,7 @@ const Lexer = struct {
                     self.i += 1;
                     break :blk .{ .op = .and_op };
                 }
-                return error.LexError;
+                break :blk .{ .op = .bitand };
             },
             '|' => blk: {
                 if (self.peek() == '|') {
@@ -227,7 +237,7 @@ const Lexer = struct {
         self.i += 1;
         while (self.i < self.s.len) : (self.i += 1) {
             const c = self.s[self.i];
-            if (std.ascii.isAlphanumeric(c) or c == '_' or c == ':' or c == '-') continue;
+            if (std.ascii.isAlphanumeric(c) or c == '_' or c == ':') continue;
             break;
         }
         const ident = self.s[start..self.i];
@@ -267,7 +277,7 @@ const ParseContext = struct {
     }
 };
 
-const ParseError = error{ ParseError, OutOfMemory };
+pub const ParseError = error{ ParseError, OutOfMemory };
 
 pub const Compiled = struct {
     root: *Node,
@@ -283,12 +293,27 @@ pub fn makeLit(arena: std.mem.Allocator, v: f64) error{OutOfMemory}!*Node {
     return n;
 }
 
+fn pfail(self: *ParseContext) ParseError {
+    if (builtin.os.tag != .freestanding) {
+        const t = self.cur();
+        const tag: []const u8 = @tagName(t);
+        dbg.print("parse fail at tok {d}: {s}\n", .{ self.ti, tag });
+    }
+    return error.ParseError;
+}
+
+pub var debugTokens = false;
+
 pub fn parseExpr(arena: std.mem.Allocator, src: []const u8) ParseError!*Node {
     var lex = Lexer{ .s = src };
     var toks: std.ArrayList(Tok) = .empty;
     while (true) {
         const t = lex.next() catch return error.ParseError;
         if (t == .eof) break;
+        if (debugTokens and builtin.os.tag != .freestanding) {
+            const tag: []const u8 = @tagName(t);
+            dbg.print("tok {d}: {s}\n", .{ toks.items.len, tag });
+        }
         try toks.append(arena, t);
     }
     var p = ParseContext{ .a = arena, .tokens = toks };
@@ -358,7 +383,7 @@ fn parseAdd(self: *ParseContext) ParseError!*Node {
 
 fn parseMul(self: *ParseContext) ParseError!*Node {
     var l = try parsePow(self);
-    while (self.cur() == .op and (self.cur().op == .mul or self.cur().op == .div or self.cur().op == .mod)) {
+    while (self.cur() == .op and (self.cur().op == .mul or self.cur().op == .div or self.cur().op == .mod or self.cur().op == .bitand)) {
         const op = self.cur().op;
         self.bump();
         const r = try parsePow(self);
@@ -389,7 +414,7 @@ fn parseUnary(self: *ParseContext) ParseError!*Node {
 fn parsePostfix(self: *ParseContext) ParseError!*Node {
     const atom = try parseAtom(self);
     if (self.cur() == .lparen or self.cur() == .lbrace) {
-        if (atom.kind != .name) return error.ParseError;
+        if (atom.kind != .name) return pfail(self);
         const name = atom.kind.name;
         if (self.cur() == .lparen) {
             self.bump();
@@ -401,7 +426,7 @@ fn parsePostfix(self: *ParseContext) ParseError!*Node {
                     self.bump();
                 } else break;
             }
-            if (self.cur() != .rparen) return error.ParseError;
+            if (self.cur() != .rparen) return pfail(self);
             self.bump();
             return self.mk(.{ .call = .{ .name = name, .args = args.items } });
         } else {
@@ -423,7 +448,7 @@ fn parsePostfix(self: *ParseContext) ParseError!*Node {
                     self.bump();
                 } else break;
             }
-            if (self.cur() != .rbrace) return error.ParseError;
+            if (self.cur() != .rbrace) return pfail(self);
             self.bump();
             return self.mk(.{ .call = .{ .name = name, .args = args.items } });
         }
@@ -449,7 +474,7 @@ fn parseAtom(self: *ParseContext) ParseError!*Node {
         .lparen => {
             self.bump();
             const e = try parseOr(self);
-            if (self.cur() != .rparen) return error.ParseError;
+            if (self.cur() != .rparen) return pfail(self);
             self.bump();
             return e;
         },
@@ -486,9 +511,28 @@ pub const Controls = struct {
 
 /// A parsed closure (one planet surface). Entries are expressions (no
 /// parameters) and helper functions (parameterized).
+
+/// Assign each node in the tree a unique id from `next` (node ids are used as
+/// memoization keys during evaluation, so they must be unique per closure).
+pub fn renumber(node: *Node, next: *u32) void {
+    node.id = next.*;
+    next.* += 1;
+    switch (node.kind) {
+        .bin => |b| {
+            renumber(b.l, next);
+            renumber(b.r, next);
+        },
+        .un => |u| renumber(u.x, next),
+        .call => |c| {
+            for (c.args) |arg| renumber(arg.value, next);
+        },
+        else => {},
+    }
+}
 pub const Closure = struct {
     a: std.mem.Allocator,
     entries: []const Entry,
+    node_count: usize = 0,
 
     pub const Entry = struct {
         name: []const u8,
@@ -496,6 +540,9 @@ pub const Closure = struct {
         params: []const []const u8,
         locals: []const Local,
         root: *Node,
+        // precomputed from locals (stackless binding for zero-param entries)
+        loc_names: []const []const u8 = &.{},
+        loc_nodes: []const *Node = &.{},
     };
 
     pub const Local = struct { name: []const u8, node: *Node };
@@ -529,11 +576,50 @@ const Bindings = struct {
     }
 };
 
+/// Per-(seed0,seed1) basis-noise cache: perm-table construction dominates
+/// cost, and one planet render reuses the same seeds many times. Single
+/// worker thread, so a process-global hook is fine (set before a render).
+pub const GenCache = struct {
+    const N = 32;
+    keys: [N]u64 = undefined,
+    gens: [N]noise.BasisNoiseGen = undefined,
+    n: usize = 0,
+
+    pub fn get(self: *GenCache, s0: u32, s1: u32) *const noise.BasisNoiseGen {
+        const key = (@as(u64, s0) << 32) | s1;
+        for (0..self.n) |i| {
+            if (self.keys[i] == key) return &self.gens[i];
+        }
+        const i = if (self.n < N) blk: {
+            const k = self.n;
+            self.n += 1;
+            break :blk k;
+        } else blk: {
+            const k = self.n % N;
+            self.n +%= 1;
+            break :blk k;
+        };
+        self.keys[i] = key;
+        self.gens[i] = noise.BasisNoiseGen.init(s0, s1);
+        return &self.gens[i];
+    }
+};
+
+pub var globalGenCache: ?*GenCache = null;
+
+fn genOrArena(ctx: *EvalCtx, s0: u32, s1: u32) EvalError!*const noise.BasisNoiseGen {
+    if (globalGenCache) |c| return c.get(s0, s1);
+    const gen = try ctx.arena.create(noise.BasisNoiseGen);
+    gen.* = noise.BasisNoiseGen.init(s0, s1);
+    return gen;
+}
+
 const EvalCtx = struct {
     closure: *const Closure,
     scalars: Scalars,
     controls: Controls,
     arena: std.mem.Allocator,
+    memo: ?*Memo = null,
 };
 
 fn rf32(v: f64) f64 {
@@ -555,10 +641,54 @@ pub fn eval(closure: *const Closure, s: Scalars, controls: Controls, arena: std.
 pub fn evalRoot(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, name: []const u8) EvalError!f64 {
     const e = closure.find(name) orelse return error.UnknownName;
     if (e.is_function) return error.BadCall;
-    return eval(closure, s, controls, arena, e.root);
+    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena };
+    const frame = try bindEntry(e, &.{}, &ctx, null);
+    return evalNode(&ctx, frame, e.root);
+}
+
+/// Per-tile node memo. One instance lives for a whole render; each tile
+/// evaluation bumps `epoch` (evalRootMemoed). Safe because a node's value
+/// depends only on (x, y, seed, controls) which are fixed for the tile, and
+/// every node lives in exactly one entry frame.
+pub const Memo = struct {
+    vals: []f64,
+    epochs: []u64,
+    epoch: u64 = 1,
+
+    pub fn init(arena: std.mem.Allocator, node_count: usize) !Memo {
+        return .{
+            .vals = try arena.alloc(f64, node_count),
+            .epochs = try arena.alloc(u64, node_count),
+        };
+    }
+};
+
+fn evalMemoized(ctx: *EvalCtx, memo: *Memo, bindings: ?*const Bindings, node: *const Node) EvalError!f64 {
+    if (memo.epochs[node.id] == memo.epoch) return memo.vals[node.id];
+    const v = try evalNode(ctx, bindings, node);
+    memo.vals[node.id] = v;
+    memo.epochs[node.id] = memo.epoch;
+    return v;
+}
+
+pub fn evalRootMemoed(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
+    const e = closure.find(name) orelse return error.UnknownName;
+    if (e.is_function) return error.BadCall;
+    memo.epoch +%= 1;
+    if (memo.epoch == 0) memo.epoch = 1;
+    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo };
+    const frame = try bindEntry(e, &.{}, &ctx, null);
+    return evalNode(&ctx, frame, e.root);
 }
 
 fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx, bindings: ?*const Bindings) EvalError!?*const Bindings {
+    // parameterless entries (plain expressions): no allocation — the frame
+    // points at the closure's precomputed local tables.
+    if (entry.params.len == 0) {
+        const frame = try ctx.arena.create(Bindings);
+        frame.* = .{ .names = entry.loc_names, .nodes = entry.loc_nodes, .parent = bindings };
+        return frame;
+    }
     // bind params (by name or positionally) + locals
     const nParams = entry.params.len;
     var names = try ctx.arena.alloc([]const u8, nParams + entry.locals.len);
@@ -596,6 +726,17 @@ fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx,
 }
 
 fn evalNode(ctx: *EvalCtx, bindings: ?*const Bindings, node: *const Node) EvalError!f64 {
+    if (ctx.memo) |m| {
+        if (m.epochs[node.id] == m.epoch) return m.vals[node.id];
+        const v = try evalNodeInner(ctx, bindings, node);
+        m.vals[node.id] = v;
+        m.epochs[node.id] = m.epoch;
+        return v;
+    }
+    return evalNodeInner(ctx, bindings, node);
+}
+
+fn evalNodeInner(ctx: *EvalCtx, bindings: ?*const Bindings, node: *const Node) EvalError!f64 {
     switch (node.kind) {
         .lit => return rf32(node.kind.lit),
         .str => return error.BadCall, // bare string as value is invalid
@@ -617,6 +758,7 @@ fn evalNode(ctx: *EvalCtx, bindings: ?*const Bindings, node: *const Node) EvalEr
                 .le => if (l <= r) 1 else 0,
                 .ge => if (l >= r) 1 else 0,
                 .and_op => if ((l != 0) and (r != 0)) 1 else 0,
+                .bitand => @floatFromInt(@as(i64, @intFromFloat(l)) & @as(i64, @intFromFloat(r))),
                 .or_op => if ((l != 0) or (r != 0)) 1 else 0,
                 else => unreachable,
             };
@@ -654,18 +796,30 @@ fn resolveName(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8) Eval
     if (std.mem.eql(u8, name, "map_seed")) return @floatFromInt(ctx.scalars.seed);
     if (std.mem.eql(u8, name, "x_from_start")) return ctx.scalars.x_from_start;
     if (std.mem.eql(u8, name, "y_from_start")) return ctx.scalars.y_from_start;
-    if (std.mem.eql(u8, name, "map_seed_normalized")) return ctx.scalars.map_seed_normalized;
-    if (std.mem.eql(u8, name, "map_seed_small")) return ctx.scalars.map_seed_small;
+    if (std.mem.eql(u8, name, "map_seed_normalized")) {
+        // = f32(map_seed) * 2^-32 (probed: msn*2^32 == f32(seed))
+        return @as(f64, @as(f32, @floatFromInt(ctx.scalars.seed))) * 0x1p-32;
+    }
+    if (std.mem.eql(u8, name, "map_seed_small")) {
+        // = map_seed mod 2^16 (probed)
+        return @floatFromInt(ctx.scalars.seed & 0xffff);
+    }
+    if (std.mem.eql(u8, name, "distance")) {
+        // euclidean distance from the starting-area centre (probed)
+        const dx = ctx.scalars.x_from_start;
+        const dy = ctx.scalars.y_from_start;
+        return @sqrt(dx * dx + dy * dy);
+    }
     if (std.mem.eql(u8, name, "pi")) return std.math.pi;
     if (std.mem.eql(u8, name, "e")) return std.math.e;
-    // global closure reference (expression) — evaluate its root under its own
-    // frame; functions are only callable, but treat a bare ref to a function
-    // (zero args, parameterless bodies) defensively as its root too.
+    // global closure reference — evaluate its root under a frame binding its
+    // locals (+ parameters, if it is a parameterized function referenced
+    // without a call).
     if (ctx.closure.find(name)) |e| {
-        const frame = if (e.is_function) try bindEntry(e, &.{}, ctx, bindings) else null;
-        return evalNode(ctx, frame orelse bindings, e.root);
+        const frame = try bindEntry(e, &.{}, ctx, bindings);
+        return evalNode(ctx, frame, e.root);
     }
-    std.debug.print("unknown name: {s}\n", .{name});
+    dbg.print("unknown name: {s}\n", .{name});
     return error.UnknownName;
 }
 
@@ -674,18 +828,18 @@ fn evalCall(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: [
     if (ctx.closure.find(name)) |e| {
         if (e.is_function) {
             const frame = bindEntry(e, args, ctx, bindings) catch |err| {
-                std.debug.print("bind {s}: {s}\n", .{ name, @errorName(err) });
+                dbg.print("bind {s}: {s}\n", .{ name, @errorName(err) });
                 return err;
             };
             return evalNode(ctx, frame, e.root) catch |err| {
-                std.debug.print("datafn {s}: {s}\n", .{ name, @errorName(err) });
+                dbg.print("datafn {s}: {s}\n", .{ name, @errorName(err) });
                 return err;
             };
         }
     }
     // builtin math
     return callNative(ctx, bindings, name, args) catch |err| {
-        std.debug.print("native {s}: {s}\n", .{ name, @errorName(err) });
+        dbg.print("native {s}: {s}\n", .{ name, @errorName(err) });
         return err;
     };
 }
@@ -784,8 +938,7 @@ fn natives(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: []
         const s1 = try nativeSeed1(ctx, bindings, args);
         const is = try argN(ctx, bindings, args, "input_scale", 2);
         const os = try argOr(ctx, bindings, args, "output_scale", 3, 1.0);
-        const gen = try ctx.arena.create(noise.BasisNoiseGen);
-        gen.* = noise.BasisNoiseGen.init(s0, s1);
+        const gen = try genOrArena(ctx, s0, s1);
         const ox = try argOr(ctx, bindings, args, "offset_x", 4, 0.0);
         const oy = try argOr(ctx, bindings, args, "offset_y", 5, 0.0);
         return gen.evalOffset(x, y, is, os, ox, oy);
@@ -801,8 +954,7 @@ fn natives(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: []
         const os = try argOr(ctx, bindings, args, "output_scale", 5, 1.0);
         const ox = try argOr(ctx, bindings, args, "offset_x", 6, 0.0);
         const oy = try argOr(ctx, bindings, args, "offset_y", 7, 0.0);
-        const gen = try ctx.arena.create(noise.BasisNoiseGen);
-        gen.* = noise.BasisNoiseGen.init(s0, s1);
+        const gen = try genOrArena(ctx, s0, s1);
         return noise.multioctaveNoiseOffset(gen, x, y, @intFromFloat(@round(oct)), per, is, os, ox, oy);
     }
     if (std.mem.eql(u8, name, "quick_multioctave_noise")) {
@@ -825,8 +977,7 @@ fn natives(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: []
         const per = try argN(ctx, bindings, args, "persistence", 3);
         const is = try argN(ctx, bindings, args, "input_scale", 4);
         const os = try argN(ctx, bindings, args, "output_scale", 5);
-        const gen = try ctx.arena.create(noise.BasisNoiseGen);
-        gen.* = noise.BasisNoiseGen.init(s0, s1);
+        const gen = try genOrArena(ctx, s0, s1);
         return noise.variablePersistence(gen, x, y, @intFromFloat(@round(oct)), is, os, 0, 0, per);
     }
     // ---- random_penalty ----
@@ -872,7 +1023,7 @@ fn natives(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: []
         const strength = try argN(ctx, bindings, args, "strength", 3);
         return noise.terrace(value, @floatCast(off), @floatCast(width), @floatCast(strength));
     }
-    std.debug.print("unhandled native {s}\n", .{name});
+    dbg.print("unhandled native {s}\n", .{name});
     return error.UnknownNative;
 }
 
@@ -883,7 +1034,10 @@ fn quickMultioctave(ctx: *EvalCtx, x: f64, y: f64, s0: u32, s1: u32, octaves: f6
     // now: matches noise.zig's multioctave offset pattern but with the
     // octave_input/output scale multipliers the SA data passes are fixed at
     // the engine defaults (0.5/0.5) inside noise.zig multioctave.
-    _ = ctx;
-    const gen = noise.BasisNoiseGen.init(s0, s1);
-    return noise.multioctaveNoisePrebuilt(&gen, x, y, @intFromFloat(@round(octaves)), persistence, input_scale, output_scale);
+    const gen = if (globalGenCache) |c| c.get(s0, s1) else blk: {
+        const g = try ctx.arena.create(noise.BasisNoiseGen);
+        g.* = noise.BasisNoiseGen.init(s0, s1);
+        break :blk g;
+    };
+    return noise.multioctaveNoisePrebuilt(gen, x, y, @intFromFloat(@round(octaves)), persistence, input_scale, output_scale);
 }

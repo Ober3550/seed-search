@@ -61,3 +61,5 @@ gpu_compute/.zig-cache/
 gpu_compute/zig-out/
 gpu_compute/render-out.*
 zig-pkg/
+
+space_explorer_gui/public/sa.wasm

@@ -87,3 +87,15 @@ data:extend({
   {type = "noise-expression", name = "vx4_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 'aquilo-cracks', grid_size = 24, distance_type = 'euclidean', jitter = 1}"},
   {type = "noise-expression", name = "vx4_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'aquilo-cracks', grid_size = 24, distance_type = 'euclidean', jitter = 1}"},
 })
+
+data:extend({
+  {type = "noise-expression", name = "pp_msn", expression = "map_seed_normalized * 4294967296.0"},
+  {type = "noise-expression", name = "pp_mss", expression = "map_seed_small * 1.0"},
+  {type = "noise-expression", name = "pp_xfs", expression = "x_from_start - x"},
+  {type = "noise-expression", name = "pp_yfs", expression = "y_from_start - y"},
+  {type = "noise-expression", name = "pp_ds", expression = "map_seed_small * 4294967296.0"},
+})
+
+data:extend({
+  {type = "noise-expression", name = "pp_dist", expression = "distance * 1.0"},
+})

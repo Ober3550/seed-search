@@ -12,6 +12,7 @@
 //! evaluator at eval time.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const json = @import("sa_json.zig");
 const expr = @import("sa_expr.zig");
 const embedded = @import("sa_embedded.zig");
@@ -87,8 +88,10 @@ pub fn load(arena: std.mem.Allocator, name: PlanetName) LoadError!Planet {
     var entries: std.ArrayList(expr.Closure.Entry) = .empty;
     const exprs = objObj(rootObj, "expressions") orelse return error.BadData;
     const funcs = objObj(rootObj, "functions");
-    try collect(arena, exprs, false, &entries);
-    if (funcs) |f| try collect(arena, f, true, &entries);
+    var seq: u32 = 0;
+    try collect(arena, exprs, false, &entries, &seq);
+    if (funcs) |f| try collect(arena, f, true, &entries, &seq);
+    const node_count: usize = seq;
 
     // property-expression roots: list of entry names
     var properties: std.ArrayList(Planet.Property) = .empty;
@@ -103,7 +106,7 @@ pub fn load(arena: std.mem.Allocator, name: PlanetName) LoadError!Planet {
 
     return .{
         .name = name,
-        .closure = .{ .a = arena, .entries = entries.items },
+        .closure = .{ .a = arena, .entries = entries.items, .node_count = node_count },
         .properties = properties.items,
         .controls = controls.items,
         .arena = arena,
@@ -115,8 +118,9 @@ fn wirePlanetMeta(arena: std.mem.Allocator, name: PlanetName, props: *std.ArrayL
     if (root != .object) return error.BadData;
     const entry = json.get(root.object, name.asStr()) orelse return;
     if (entry != .object) return;
-    const mgs = objObj(entry.object, "map_gen_settings") orelse return;
-    // property_expression_names: { "elevation": "fulgora_elevation", ... }
+    // property_expression_names / autoplace_controls sit directly on the
+    // planet entry in the embedded planets.json (no map_gen_settings wrapper)
+    const mgs = entry.object;
     if (objObj(mgs, "property_expression_names")) |pen| {
         for (pen) |kv| {
             if (kv.value == .string) try props.append(arena, .{ .key = kv.key, .entry = kv.value.string });
@@ -128,11 +132,12 @@ fn wirePlanetMeta(arena: std.mem.Allocator, name: PlanetName, props: *std.ArrayL
     }
 }
 
-fn collect(arena: std.mem.Allocator, obj: json.Object, is_function: bool, out: *std.ArrayList(expr.Closure.Entry)) LoadError!void {
+fn collect(arena: std.mem.Allocator, obj: json.Object, is_function: bool, out: *std.ArrayList(expr.Closure.Entry), seq: *u32) LoadError!void {
     for (obj) |kv| {
         if (kv.value != .object) continue;
         const o = kv.value.object;
         const bodyVal = json.get(o, "expression") orelse continue;
+
         var params: std.ArrayList([]const u8) = .empty;
         if (json.get(o, "parameters")) |pv| {
             if (pv == .array) {
@@ -145,12 +150,23 @@ fn collect(arena: std.mem.Allocator, obj: json.Object, is_function: bool, out: *
         if (json.get(o, "local_expressions")) |lv| {
             if (lv == .object) {
                 for (lv.object) |loc| {
-                    const locNode = parseBody(arena, loc.value) catch return error.BadData;
+                    const locNode = parseBody(arena, loc.value) catch |e| {
+                        if (builtin.os.tag != .freestanding) {
+                            std.debug.print("local parse fail {s}.{s} ({s})\n", .{ kv.key, loc.key, @errorName(e) });
+                        }
+                        return error.BadData;
+                    };
                     try locals.append(arena, .{ .name = loc.key, .node = locNode });
                 }
             }
         }
-        const rootNode = parseBody(arena, bodyVal) catch return error.BadData;
+        const rootNode = parseBody(arena, bodyVal) catch |e| {
+            if (builtin.os.tag != .freestanding) {
+                std.debug.print("parse fail {s} ({s}): len {d}\n", .{ kv.key, @errorName(e), bodyVal.string.len });
+                std.debug.print("  expr: {s}\n", .{bodyVal.string});
+            }
+            return error.BadData;
+        };
         try out.append(arena, .{
             .name = kv.key,
             .is_function = is_function or params.items.len > 0,
@@ -159,16 +175,30 @@ fn collect(arena: std.mem.Allocator, obj: json.Object, is_function: bool, out: *
             .root = rootNode,
         });
     }
+    // unique node ids across the whole closure (memoization keys), and
+    // precompute the local name/node tables for stackless binding.
+    for (out.items) |*e| {
+        expr.renumber(e.root, seq);
+        var names: std.ArrayList([]const u8) = .empty;
+        var nodes: std.ArrayList(*expr.Node) = .empty;
+        for (e.locals) |loc| {
+            expr.renumber(loc.node, seq);
+            try names.append(arena, loc.name);
+            try nodes.append(arena, loc.node);
+        }
+        e.loc_names = names.items;
+        e.loc_nodes = nodes.items;
+    }
 }
 fn parseExprOr(arena: std.mem.Allocator, body: ?[]const u8) error{OutOfMemory}!*expr.Node {
     if (body) |b| return expr.parseExpr(arena, b) catch return error.OutOfMemory;
     return expr.makeLit(arena, 0);
 }
 
-fn parseBody(arena: std.mem.Allocator, v: json.Value) error{OutOfMemory}!*expr.Node {
+fn parseBody(arena: std.mem.Allocator, v: json.Value) (error{ ParseError, OutOfMemory } || expr.ParseError)!*expr.Node {
     switch (v) {
-        .string => |s| return expr.parseExpr(arena, s) catch return error.OutOfMemory,
+        .string => |s| return expr.parseExpr(arena, s),
         .number => |n| return expr.makeLit(arena, n),
-        else => return error.OutOfMemory,
+        else => return error.ParseError,
     }
 }

@@ -19,6 +19,7 @@
   // just await the same promise).
   var uniP = loadWasm("/static/universe.wasm");
   var surfP = loadWasm("/static/surface.wasm");
+  var saP = loadWasm("/static/sa.wasm");
 
   function generateUniverse(seed, k2) {
     return uniP.then(function (inst) {
@@ -26,6 +27,24 @@
       e.generate(seed >>> 0, k2 ? 1 : 0);
       var bytes = new Uint8Array(e.memory.buffer, e.resultPtr(), e.resultLen());
       return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+    });
+  }
+
+  function generateSA(req) {
+    return saP.then(function (inst) {
+      var e = inst.instance.exports;
+      var bytes = new TextEncoder().encode(JSON.stringify(req));
+      if (bytes.length > e.inputCap()) {
+        if (!e.growInput(bytes.length)) throw new Error("sa wasm: input buffer grow failed");
+      }
+      var mem = new Uint8Array(e.memory.buffer);
+      mem.set(bytes, e.inputPtr());
+      e.generate(bytes.length);
+      var summary = JSON.parse(new TextDecoder("utf-8").decode(
+        new Uint8Array(e.memory.buffer, e.resultPtr(), e.resultLen())));
+      if (!summary.ok) throw new Error(summary.error || "sa generation failed");
+      var pixels = new Uint8Array(e.memory.buffer, e.pixelsPtr(), e.pixelsLen());
+      return { summary: summary, pixels: new Uint8Array(pixels) };
     });
   }
 
@@ -58,6 +77,13 @@
     if (msg.type === "universe") {
       generateUniverse(msg.seed, msg.k2).then(
         function (u) { self.postMessage({ id: msg.id, ok: true, universe: u }); },
+        function (e) { self.postMessage({ id: msg.id, ok: false, error: errMsg(e) }); }
+      );
+    } else if (msg.type === "sa") {
+      generateSA(msg.req).then(
+        function (r) {
+          self.postMessage({ id: msg.id, ok: true, summary: r.summary, pixels: r.pixels }, [r.pixels.buffer]);
+        },
         function (e) { self.postMessage({ id: msg.id, ok: false, error: errMsg(e) }); }
       );
     } else if (msg.type === "surface") {

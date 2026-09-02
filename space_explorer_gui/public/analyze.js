@@ -172,6 +172,76 @@
     surf.zone = null;
   }
 
+
+  // ── Space Age planet terrain preview (client-side sa.wasm) ──────────────
+  var sa = { planet: null, busy: false };
+  var SA_PLANETS = { fulgora: "⚡ Fulgora", vulcanus: "🌋 Vulcanus", gleba: "🍄 Gleba", aquilo: "🧊 Aquilo" };
+
+  function saStatus(msg) {
+    var el = document.getElementById("sa-status");
+    if (el) el.textContent = msg || "";
+  }
+
+  function drawSA(summary, pixels) {
+    var canvas = document.getElementById("sa-canvas");
+    canvas.width = summary.width;
+    canvas.height = summary.height;
+    var ctx = canvas.getContext("2d");
+    var img = ctx.createImageData(summary.width, summary.height);
+    img.data.set(pixels);
+    ctx.putImageData(img, 0, 0);
+  }
+
+  function renderSA() {
+    if (!sa.planet || sa.busy) return;
+    if (!state.seed && !window.__ANALYZE_SEED__) {
+      saStatus("enter a seed first");
+      return;
+    }
+    sa.busy = true;
+    saStatus("generating planet terrain…");
+    var seed = state.seed != null ? state.seed : window.__ANALYZE_SEED__;
+    var radius = parseInt(document.getElementById("sa-radius").value, 10);
+    if (!Number.isFinite(radius) || radius < 16) radius = 96;
+    if (radius > 512) radius = 512;
+    document.getElementById("sa-radius").value = radius;
+    window.generateSA({ seed: seed, planet: sa.planet, radius: radius })
+      .then(function (r) {
+        sa.busy = false;
+        drawSA(r.summary, r.pixels);
+        document.getElementById("sa-res").textContent =
+          SA_PLANETS[sa.planet] + " · seed " + r.summary.seed + " · " + r.summary.width + "×" + r.summary.height +
+          " · elevation terrain preview (client-side wasm)";
+        saStatus("ok");
+      })
+      .catch(function (e) {
+        sa.busy = false;
+        saStatus("error: " + e.message);
+        console.error(e);
+      });
+  }
+
+  function openSA(planet) {
+    sa.planet = planet;
+    document.getElementById("sa-panel").hidden = false;
+    renderSA();
+  }
+
+  function bindSA() {
+    var gen = document.getElementById("sa-gen");
+    if (!gen) return;
+    gen.addEventListener("click", renderSA);
+    document.getElementById("sa-close").addEventListener("click", function () {
+      document.getElementById("sa-panel").hidden = true;
+    });
+    var els = document.querySelectorAll(".sa-planet");
+    for (var i = 0; i < els.length; i++) {
+      (function (el) {
+        el.addEventListener("click", function () { openSA(el.getAttribute("data-planet")); });
+      })(els[i]);
+    }
+  }
+
   function bind() {
     document.getElementById("gen-btn").addEventListener("click", generate);
     document.getElementById("seed-input").addEventListener("keydown", function (e) { if (e.key === "Enter") generate(); });
@@ -195,6 +265,7 @@
     });
     window.preloadUniverseWasm && window.preloadUniverseWasm();
     window.preloadSurfaceWasm && window.preloadSurfaceWasm();
+    bindSA();
     // Auto-generate if a seed was in the URL (/analyze/:seed).
     var pre = window.__ANALYZE_SEED__;
     if (pre != null) { document.getElementById("seed-input").value = pre; generate(); }

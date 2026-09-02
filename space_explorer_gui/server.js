@@ -852,11 +852,33 @@ app.get("/analyze/:seed?", (req, res) => {
         <div id="surf-res" class="hint"></div>
       </div>
     </div>
+    <div id="sa-panel" class="surf-panel" hidden>
+      <div class="surf-box">
+        <div class="surf-head">
+          <strong id="sa-title">🪐 Space Age planet terrain</strong>
+          <span id="sa-status" class="hint"></span>
+          <button type="button" class="btn-sm" id="sa-close" title="Close">✕</button>
+        </div>
+        <div class="filter-bar">
+          <span class="hint" style="margin-right:0.5em">Planet</span>
+          <button type="button" class="btn-sm sa-planet" data-planet="fulgora" title="Fulgora">⚡ Fulgora</button>
+          <button type="button" class="btn-sm sa-planet" data-planet="vulcanus" disabled title="Vulcanus — not yet (multisample op)">🌋 Vulcanus</button>
+          <button type="button" class="btn-sm sa-planet" data-planet="gleba" disabled title="Gleba — not yet (spot_noise sub-expressions)">🍄 Gleba</button>
+          <button type="button" class="btn-sm sa-planet" data-planet="aquilo" disabled title="Aquilo — not yet (spot_noise sub-expressions)">🧊 Aquilo</button>
+          <span style="flex:1"></span>
+          <label>Preview radius <input type="number" id="sa-radius" min="16" max="512" step="8" value="96" style="width:6em"></label>
+          <button type="button" class="btn" id="sa-gen">Generate</button>
+        </div>
+        <canvas id="sa-canvas" width="600" height="600"></canvas>
+        <div id="sa-res" class="hint"></div>
+      </div>
+    </div>
   </div>
   <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed};</script>
   <script src="/static/gen-bridge.js"></script>
   <script src="/static/universe-wasm.js"></script>
   <script src="/static/surface-wasm.js"></script>
+  <script src="/static/sa-wasm.js"></script>
   <script src="/static/estimate-core.js"></script>
   <script src="/static/analyze.js"></script>`;
   page(req, res, "Analyze seed", content);

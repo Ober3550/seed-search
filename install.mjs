@@ -320,6 +320,25 @@ function buildSurfaceWasm() {
   ok("surface.wasm → space_explorer_gui/public/surface.wasm");
 }
 
+function buildSAWasm() {
+  // The Space Age planet surface generator: renders a planet's elevation
+  // property via the SA expression engine (sa_expr/sa_data) compiled to WASM
+  // for the browser — same exported-buffer protocol as surface.wasm. Only
+  // fulgora's terrain is expression-exact right now; the other three planets
+  // are gated in the UI until their remaining engine ops are ported
+  // (spot_noise sub-expressions, multisample).
+  const dir = path.join(ROOT, "surface_generator", "src");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "sa.wasm");
+  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
+    "--dep", "sa_data", "--dep", "sa_expr", "--dep", "sa_json", "--dep", "noise", "--dep", "rng",
+    "-Mroot=sa_wasm.zig",
+    "-Msa_data=sa_data.zig", "-Msa_expr=sa_expr.zig", "-Msa_json=sa_json.zig",
+    "-Mnoise=noise.zig", "-Mrng=rng.zig",
+    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("sa.wasm → space_explorer_gui/public/sa.wasm");
+}
+
 function buildSegen() {
   const dir = path.join(ROOT, "surface_generator");
   run("zig", ["build", "-Doptimize=ReleaseFast"], dir);
@@ -406,6 +425,8 @@ async function main() {
 
   step("Building surface.wasm (client-side zone surface render)");
   buildSurfaceWasm();
+  step("Building sa.wasm (client-side Space Age planet terrain)");
+  buildSAWasm();
 
   step("Building segen (surface generator)");
   buildSegen();
