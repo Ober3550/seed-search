@@ -5,6 +5,8 @@
 //!   - multioctave_noise: Fractal octave sum
 //!   - spot_noise: Voronoi-like spot placement (the core of ore generation)
 //!   - random_penalty: Random thinning of values
+//!   - voronoi_cell_id/spot/facet/pyramid: 2.0 Space Age cellular noise
+//!   - terrace: step quantizer (2.0, Gleba terrain)
 //!
 //! Parameters match Factorio's data stage noise expressions exactly.
 
@@ -617,8 +619,306 @@ pub fn SpotNoiseField(comptime F: type) type {
         }
     };
 }// ============================================================
+// voronoi_cell_id / voronoi_spot_noise / voronoi_facet_noise /
+// voronoi_pyramid_noise — exact port of Factorio 2.0's VoronoiNoise op
+// ============================================================
+
+// Reverse-engineered + probe-verified against the live game (2.0.77 arm64):
+// hash pinned from the VoronoiPoints ctor disassembly (0x10226c098) and the
+// run semantics from the four runInternal<DistanceType> instantiations. See
+// ghidra/export/voronoi.c + calibration/sa-probe. Every output (nearest d0,
+// d1-d0, pyramid bisector distance, winner cell id) verified exact (f32) vs
+// calculate_tile_properties across grids 10..64, jitter 0..1, all four
+// distance types, numeric + crc32(name) seeds.
+
+const VORONOI_C: u32 = 0x7ed55d16; // salt base / fold add
+const VORONOI_C3: u32 = 0xc761c23c;
+const VORONOI_W21: u32 = 0x165667b1;
+const VORONOI_D: u32 = 0xd3a2646c;
+const VORONOI_C2: u32 = 0xfd7046c5;
+const VORONOI_B: u32 = 0xb55a4f09;
+// per-use salts sit at C + {0, 0x1001, 0x2002} (NOT +1/+2 — the ctor loads
+// movk #0x7ed5 with low halves 0x5d16/0x6d17/0x7d18):
+const VORONOI_SALT_X: u32 = 0x7ed55d16; // x jitter
+const VORONOI_SALT_Y: u32 = 0x7ed56d17; // y jitter
+const VORONOI_SALT_ID: u32 = 0x7ed57d18; // cell id
+
+/// One 32-bit mix round of the VoronoiPoints hash: takes the RAW coordinate
+/// (the ctor's row/column iterator value), folds it (v*0x1001 + C via
+/// v + C + v<<12) then runs the two rounds. Feed the coordinate directly — do
+/// NOT pre-fold (mix() folds for you).
+fn voronoiMix(v: u32) u32 {
+    var x: u32 = v +% VORONOI_C +% (v << 12);
+    x = x ^ (x >> 19) ^ VORONOI_C3;
+    const a: u32 = (x +% VORONOI_W21) +% (x << 5); // 33*x + W21
+    const y: u32 = (a +% VORONOI_D) ^ (a << 9);
+    return (y +% VORONOI_C2) +% (y << 3); // *9 + C2
+}
+
+fn ror16(v: u32) u32 {
+    return (v >> 16) | (v << 16);
+}
+
+/// The per-cell combined hash m (xor of the two axis mixes + seed). The
+/// ctor hashes the outer (row = y) axis through ror16 first, the inner
+/// (column = x) axis raw.
+fn voronoiCellM(cx: i32, cy: i32, seed: u32) u32 {
+    const hx = voronoiMix(@bitCast(cx));
+    const hy = voronoiMix(ror16(@bitCast(cy)));
+    return seed ^ (hy >> 16) ^ (hx >> 16) ^ hy ^ hx;
+}
+
+/// One salt output: rounds(4097*m + salt) then the h ^ h>>16 ^ 0xb55a4f09
+/// finish. Converts to the [0,1) f32 the engine stores (u32 * 2^-32 via f64).
+fn voronoiSaltF32(m: u32, salt: u32) f32 {
+    var v: u32 = m *% 0x1001 +% salt;
+    v = v ^ (v >> 19) ^ VORONOI_C3;
+    const a: u32 = (v +% VORONOI_W21) +% (v << 5);
+    const y: u32 = (a +% VORONOI_D) ^ (a << 9);
+    const h: u32 = (y +% VORONOI_C2) +% (y << 3);
+    const out: u32 = (h ^ (h >> 16) ^ VORONOI_B);
+    return @floatCast(@as(f64, @as(f64, @floatFromInt(out)) * 2.3283064365386963e-10));
+}
+
+pub const VoronoiPoint = struct { x: f32, y: f32, id: f32 };
+
+/// The jittered point of grid cell (cx, cy): returns relative coordinates in
+/// [0,1) plus the cell id fraction. px/py follow
+/// f32(u32/2^32)*jitter + (1-jitter)/2 with the engine's f32 op order; id is
+/// the raw f32(u32/2^32).
+pub fn voronoiPoint(cx: i32, cy: i32, seed: u32, jitter: f32) VoronoiPoint {
+    const m = voronoiCellM(cx, cy, seed);
+    const r = voronoiSaltF32(m, VORONOI_SALT_X);
+    const s = voronoiSaltF32(m, VORONOI_SALT_Y);
+    const t = voronoiSaltF32(m, VORONOI_SALT_ID);
+    const j = jitter;
+    // (px*j + (1-j)*0.5) in f32, matching the ctor's NEON fadd chain.
+    const off = @as(f32, 1.0 - j) * 0.5;
+    return .{ .x = r * j + off, .y = s * j + off, .id = t };
+}
+
+
+
+pub const VoronoiDistanceType = enum(u8) {
+    chebyshev = 0,
+    manhattan = 1,
+    euclidean = 2,
+    minkowski3 = 3,
+};
+
+/// Engine's fast Math::exp2f (bit-level approx, f32 arithmetic) used by the
+/// minkowski3 cube root: cbrt(s) = exp2f(log2(s) * 0.33333334).
+fn fastExp2f(x_in: f32) f32 {
+    var x = x_in;
+    var f: f32 = if (x < 0.0) 1.0 else 0.0;
+    if (x <= -126.0) x = -126.0;
+    f = f + (x - @as(f32, @floatFromInt(@as(i32, @intFromFloat(@trunc(x))))));
+    const total: f32 = ((x + 121.274055) + 27.728024 / (4.8425255 - f)) + f * -1.4901291;
+    // fcvtzs x8,s0,#0x17: (i64)(total * 2^23) truncated toward zero, then the
+    // integer bits are the result float.
+    const i: i64 = @intFromFloat(@as(f64, total) * 8388608.0);
+    return @bitCast(@as(u32, @truncate(@as(u64, @bitCast(i)))));
+}
+
+/// Engine's fast Math::log2 (approx, f32).
+fn fastLog2(x: f32) f32 {
+    const b: u32 = @bitCast(x);
+    const mant: f32 = @bitCast((b & 0x7fffff) | 0x3f000000);
+    var s: f32 = @as(f32, @floatFromInt(b)) * 1.1920929e-07 + (-124.22552);
+    s = s + mant * -1.4980303;
+    s = s + -1.72588 / (mant + 0.35208872);
+    return s;
+}
+
+/// Distance between sample position (xs, ys) and a point (px, py) in grid
+/// units, in the engine's exact f32 op order for the given metric.
+fn voronoiDist(metric: VoronoiDistanceType, xs: f32, ys: f32, px: f32, py: f32, offx: f32, offy: f32) f32 {
+    const dx: f32 = (px + offx) - xs; // engine: (point + cell offset) - sample frac
+    const dy: f32 = (py + offy) - ys;
+    const ax = @abs(dx);
+    const ay = @abs(dy);
+    return switch (metric) {
+        .euclidean => @sqrt((ax * ax) + (ay * ay)),
+        .manhattan => ax + ay,
+        .chebyshev => @max(ax, ay),
+        .minkowski3 => blk: {
+            const s: f32 = (ax * ax * ax) + (ay * ay * ay);
+            if (s == 0.0) break :blk 0.0;
+            break :blk fastExp2f(fastLog2(s) * 0.33333334);
+        },
+    };
+}
+
+pub const VoronoiNoise = struct {
+    seed: u32,
+    grid: u16,
+    distance_type: VoronoiDistanceType,
+    jitter: f32,
+
+    /// Evaluation result of one sample (in grid units; id in [0,1)).
+    pub const Result = struct {
+        nearest: f32, // out A: voronoi_spot_noise
+        gap: f32, // out B: d1 - d0 (voronoi_facet_noise)
+        pyramid: f32, // out C: bisector distance (voronoi_pyramid_noise)
+        cell_id: f32, // out D: winner cell id (voronoi_cell_id)
+    };
+
+    pub fn init(seed0: u32, seed1: u32, grid: u16, distance_type: VoronoiDistanceType, jitter: f32) VoronoiNoise {
+        // +0x20 = asNoiseLayerID(seed1) + (int)seed0: seed1 is the resolved
+        // name id (crc32(name) for string seeds, the number itself otherwise)
+        // added to seed0, mirroring the op ctor @0x1016126b8.
+        return .{ .seed = seed0 +% seed1, .grid = grid, .distance_type = distance_type, .jitter = jitter };
+    }
+
+    /// Evaluate at tile coordinates (x, y). The engine indexes cells by
+    /// floor(x/grid) and evaluates the 3x3 window around the sample cell
+    /// (empirically sufficient for every distance type/jitter the planets
+    /// use — the ring-2 point-list expansion only affects region edges).
+    pub fn evalAt(self: *const VoronoiNoise, x: f64, y: f64) Result {
+        const g: f32 = @floatFromInt(self.grid);
+        const sx = @floor(x / @as(f64, g));
+        const sy = @floor(y / @as(f64, g));
+        const sxi: i32 = @intFromFloat(sx);
+        const syi: i32 = @intFromFloat(sy);
+        const xg: f32 = @floatCast(x / @as(f64, g));
+        const yg: f32 = @floatCast(y / @as(f64, g));
+        const xfrac: f32 = xg - @as(f32, @floatFromInt(sxi));
+        const yfrac: f32 = yg - @as(f32, @floatFromInt(syi));
+
+        var d0: f32 = std.math.inf(f32);
+        var d1: f32 = std.math.inf(f32);
+        var win: [2]f32 = undefined; // winner point (grid units, abs cell + rel)
+        var wid: f32 = 0;
+        var dy: i32 = -1;
+        while (dy <= 1) : (dy += 1) {
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
+                const d = voronoiDist(self.distance_type, xfrac, yfrac, p.x, p.y,
+                    @floatFromInt(dx), @floatFromInt(dy));
+                if (d < d0) {
+                    d1 = d0;
+                    d0 = d;
+                    win = .{ @as(f32, @floatFromInt(sxi + dx)) + p.x, @as(f32, @floatFromInt(syi + dy)) + p.y };
+                    wid = p.id;
+                } else if (d < d1) {
+                    d1 = d;
+                }
+            }
+        }
+
+        // pyramid: min over the other 8 window points of the distance from the
+        // sample to the perpendicular bisector of (winner, that point).
+        var pyr: f32 = std.math.inf(f32);
+        dy = -1;
+        while (dy <= 1) : (dy += 1) {
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
+                const px: f32 = @as(f32, @floatFromInt(sxi + dx)) + p.x;
+                const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
+                if (px == win[0] and py == win[1]) continue;
+                const dab2 = (win[0] - px) * (win[0] - px) + (win[1] - py) * (win[1] - py);
+                if (dab2 == 0.0) continue;
+                const da2 = (xg - win[0]) * (xg - win[0]) + (yg - win[1]) * (yg - win[1]);
+                const db2 = (xg - px) * (xg - px) + (yg - py) * (yg - py);
+                const d: f32 = @abs(da2 - db2) / (2.0 * @sqrt(dab2));
+                if (d < pyr) pyr = d;
+            }
+        }
+        return .{ .nearest = d0, .gap = d1 - d0, .pyramid = pyr, .cell_id = wid };
+    }
+};
+
+// ============================================================
+// terrace — exact port of Factorio 2.0's Terrace op
+// ============================================================
+
+// NoiseOperations::Terrace::run @0x1015f1450. Data call:
+//   terrace{value = V, offset = O, width = W, strength = S}
+// with value & strength evaluated as registers; offset/width constants. Per
+// sample (engine scalar tail): q = (value - offset)/width;
+// qf = floor(q); frac = q - qf;
+// t = strength < frac ? (frac - strength)/(1 - strength) : 0;
+// out = offset + width * (qf + t).
+// strength = 0 -> identity; strength = 1 -> pure quantization. Uses FLOOR for
+// the integer part (verified on negative values where trunc would differ).
+pub fn terrace(value: f64, offset: f32, width: f32, strength: f32) f64 {
+    const v: f32 = @floatCast(value);
+    const q: f32 = (v - offset) / width;
+    const qf: f32 = @floatFromInt(@as(i32, @intFromFloat(@floor(q))));
+    const frac: f32 = q - qf;
+    var t: f32 = 0.0;
+    if (strength < frac) t = (frac - strength) / (1.0 - strength);
+    return @as(f64, offset + width * (qf + t));
+}
+
+// ============================================================
 // Tests
 // ============================================================
+
+// Vectors below are f32 values returned by the live game (2.0.77) via
+// calculate_tile_properties for the same expression configs — see
+// calibration/sa-probe (probe-runs 0-4). Columns: grid, jitter, metric, seed,
+// x, y, spot(d0), facet(d1-d0), cell id. Metric: 0=chebyshev 1=manhattan
+// 2=euclidean 3=minkowski3. seed = map seed 341 + seed1 (42 / crc32(name)).
+const VORONOI_VECS = [_][9]f64{
+    .{ 32, 0.0, 2, 383, 16, 16, 0.0, 1.0, 0.6794518232345581 },
+    .{ 32, 0.0, 2, 383, 0, 0, 0.7071067690849304, 0.0, 0.6794518232345581 },
+    .{ 32, 1.0, 2, 383, 120, -32, 0.622063279, 0.241138577, 0.674882889 },
+    .{ 24, 0.25, 1, 383, 10, 8, 0.258902639, 0.493976086, 0.6794518232345581 },
+    .{ 16, 0.5, 3, 383, -62, -64, 0.415092468, 0.138198853, 0.757491589 },
+    .{ 64, 0.35, 1, 1512814738, 64, 0, -1, 0.0563282371, 0.694923699 }, // tag i (seed1='fulgora_cells'); spot unprobed
+};
+
+// Seeds in the probes were map-seed 341 + seed1 value (42 or crc32(name)); the
+// op seed = seed0 + seed1. crc32("hxprobe") + 341 = 3543714748, crc32("aquilo-cracks") + 341 = 1475574598.
+
+test "voronoi point hash reproduces the game's per-cell ids" {
+    // seed 383 (seed1=42 + map 341), jitter 0: cell id of (cx,cy) must match.
+    // id(0,0) & id(-1,-1) share (ror16(-1) == -1 makes the axis mixes cancel);
+    // id(-1,0) == id(0,-1); other cells distinct.
+    const V = VoronoiNoise.init(341, 42, 32, .euclidean, 0.0);
+    const a = V.evalAt(16, 16).cell_id;
+    const b = V.evalAt(-16, -16).cell_id;
+    try std.testing.expectEqual(a, b);
+    try std.testing.expectEqual(V.evalAt(-16, 16).cell_id, V.evalAt(16, -16).cell_id);
+    try std.testing.expect(a != V.evalAt(48, 16).cell_id);
+}
+
+test "voronoi eval matches live-game vectors" {
+    for (VORONOI_VECS) |v| {
+        const grid: u16 = @intFromFloat(v[0]);
+        const jitter: f32 = @floatCast(v[1]);
+        const metric: VoronoiDistanceType = @enumFromInt(@as(u8, @intFromFloat(v[2])));
+        const s1: u32 = @intFromFloat(v[3]);
+        const x: f64 = v[4];
+        const y: f64 = v[5];
+        const V = VoronoiNoise.init(341, s1 -% 341, grid, metric, jitter);
+        const r = V.evalAt(x, y);
+        if (v[6] >= 0.0) try std.testing.expectApproxEqAbs(@as(f64, r.nearest), v[6], 1e-6);
+        try std.testing.expectApproxEqAbs(@as(f64, r.gap), v[7], 1e-6);
+        try std.testing.expectApproxEqAbs(@as(f64, r.cell_id), v[8], 1e-6);
+    }
+}
+
+test "voronoi pyramid (bisector) matches live game" {
+    // out C = distance from sample to the nearest perpendicular bisector of the
+    // nearest point and any other window point: 0.5 at a cell centre, 0 on the
+    // grid (bisector through the sample).
+    const A = VoronoiNoise.init(341, 42, 32, .euclidean, 0.0);
+    try std.testing.expectApproxEqAbs(@as(f64, A.evalAt(16, 16).pyramid), 0.5, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f64, A.evalAt(0, 0).pyramid), 0.0, 1e-6);
+    const B = VoronoiNoise.init(341, 42, 32, .euclidean, 0.5);
+    try std.testing.expectApproxEqAbs(@as(f64, B.evalAt(16, 16).pyramid), 0.39552483, 1e-6);
+}
+
+test "terrace matches live-game formula (floor semantics)" {
+    // terrace{value=-25+30x, offset=40, width=20, strength=0.2}: v(150) -> 147.5;
+    // negative quotients FLOOR: v(-1225) -> -1226.25 (trunc would give -1220).
+    try std.testing.expectApproxEqAbs(terrace(-1225.0, 40, 20, 0.2), -1226.25, 1e-3);
+    try std.testing.expectApproxEqAbs(terrace(150.0, 40, 20, 0.2), 147.5, 1e-3);
+}
 
 test "basisNoise is deterministic" {
     const a = basisNoise(100.0, 200.0, 341, 100, 1.0 / 8.0, 1.0);

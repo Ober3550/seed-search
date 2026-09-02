@@ -166,18 +166,56 @@ as a noise function value: type 0 = `voronoi_spot_noise` (output A), type 1 =
 0x102261f94 (the NativeNoiseFunctions registry table lives at ~0x102d57c40,
 VoronoiType entries are indices 10-13).
 
-**Per-cell point hash** (`VoronoiPoints::VoronoiPoints` @ 0x10226c098): 32-bit
-mixing with a per-use salt on top of `cell → (cx*0x1001+0x7ed55d16)`, then two
-mix rounds of `x = ((x ^ x>>0x13 ^ 0xc761c23c) * 0x21)` /
-`x = ((x + 0xe9f8cc1d ^ (x + 0x165667b1) << 9) * 9 + 0xfd7046c5)`, combined as
-`seed ^ (hcy>>16) ^ (hcx>>16) ^ hcy ^ hcx`, then re-mixed with salts
-0x7ed55d16/+1/+2 for x-jitter / y-jitter / id. Exact u32 sequence is still to
-be pinned from the decompile's 64-bit register lowering before porting.
+**Per-cell point hash** (`VoronoiPoints::VoronoiPoints` @ 0x10226c098) — PINNED and
+verified bit-exact against the live 2.0.77 game (calculate_tile_properties)
+for every config the SA planets use. The ctor hashes the raw row/column cell
+indexes (row = y through ror16, column = x raw), each via one fold + two mix
+rounds, then XOR-combines with the seed, then applies per-use salts:
+
+    mix(v)   = rounds(v*0x1001 + 0x7ed55d16)            // the *fold* is inside
+    r1(v)    = (x ^ x>>0x13 ^ 0xc761c23c); x = 33*x + 0x165667b1
+    r2(x)    = (x + 0xd3a2646c ^ x<<9); out = 9*x + 0xfd7046c5   // r1/r2 = mix
+    hx(cx)   = mix(cx)                                    // column, raw
+    hy(cy)   = mix(ror16(cy))                             // row, rotated
+    m        = seed ^ (hy>>16) ^ (hx>>16) ^ hy ^ hx
+    salt_k   = rounds(4097*m + SALT_k), then h ^ h>>16 ^ 0xb55a4f09
+    SALT_x   = 0x7ed55d16   (x jitter)   // NOTE the salts step by 0x1001
+    SALT_y   = 0x7ed56d17   (y jitter)   // (NOT +1/+2 — read off the ctor's
+    SALT_id  = 0x7ed57d18   (cell id)    //  movk immediates 0x5d16/0x6d17/0x7d18)
+    px,py,id = f32(u32 * 2^-32)           // via f64 multiply, then f32
+    x_rel    = px*jitter + (1-jitter)/2   // f32 chain; id stays u32/2^32
+
+Points: one per cell of the region, at the cell centre + jitter. (Note
+ror16(-1) == -1, so cells (-1,-1)/(0,0) and (-1,0)/(0,-1) share hashes — the
+"E1/E2" diagonal-identity pairs that first look like collisions.) ror16 must
+be applied to the raw coordinate BEFORE the fold.
+
+Port: `noise.zig` `voronoiMix/voronoiCellM/voronoiSaltF32/voronoiPoint` +
+`VoronoiNoise.evalAt`. Seed constant = asNoiseLayerID(seed1) + (int)seed0
+(string seed1 names resolve via crc32). Verified exact (f32) over ~200k
+in-game samples: all four distance types, jitter 0..1, grids 10..384,
+numeric + crc32 seeds, outputs d0/d1-d0/pyramid/winner-id.
+
+Distances (grid units, engine f32 op order): sample frac = f32(x/grid) -
+cell; per point dx = (px_rel + celloff) - frac;
+- euclidean sqrt(dx²+dy²) · manhattan |dx|+|dy| · chebyshev max(|dx|,|dy|)
+- minkowski3: s=|dx|³+|dy|³; d = 0 if s==0 else exp2f(log2f(s)·0.33333334)
+  where log2f/exp2f are the ENGINE'S FAST approximations (Math::log2
+  @0x1025eac10, Math::exp2f @0x1025ea988), NOT libm.
+The per-sample window is the sample's floor-cell ± 1 (9 points) for every
+metric/jitter the planets use (empirically confirmed — the ctor's ring-2
+point-list expansion only affects region edge coverage).
+
+Pyramid (out C): min over the other window points of the distance from the
+sample to the perpendicular bisector of (winner, that point)
+= |da² - db²| / (2·|a-b|).
 
 ### Terrace (`NoiseOperations::Terrace`, `ComplexExpression<Terrace,2,2,0>`)
 
 Object: inputs at +0x08/+0x0c, output +0x10, offset f32 at +0x14, step f32 at
 +0x18. Per sample with a second input `blend`:
-`q=(v-offset)/step; qf=(int)q; frac=q-qf; t = blend<frac ? (frac-blend)/(1-blend) : 0; out = offset+step*(qf+t)`.
+`q=(v-offset)/step; qf=floor(q); frac=q-qf; t = blend<frac ? (frac-blend)/(1-blend) : 0; out = offset+step*(qf+t)`.
 blend=0 → identity; blend=1 → pure quantization to `step` boundaries
-(used to make "terraced" height fields). `Terrace::run` @ 0x1015f1450.
+(used to make "terraced" height fields). `Terrace::run` @ 0x1015f1450. Uses
+FLOOR for the integer part (verified against the game on negative inputs, where
+C-style truncation would differ). Port: `noise.zig` `terrace`.

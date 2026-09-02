@@ -218,15 +218,24 @@ symbols (that's why the prior SE work was so productive). Key findings (details
   distance, d1−d0, bisector (pyramid) distance, and the winning cell's hash id.
   `voronoi_spot_noise`=out A, `voronoi_facet_noise`=out B,
   `voronoi_pyramid_noise`=out C (throws for minkowski3), `voronoi_cell_id`=out D.
-- Cell points are jittered per cell via a 32-bit integer mix (constants
-  0x1001/0x7ed55d16/0xc761c23c/0x165667b1/0xe9f8cc1d/0xfd7046c5/0xb55a4f09):
-  x,y = hash·2⁻³²·jitter + (1−jitter)/2, id = hash·2⁻³². Exact u32 sequence
-  still to be pinned from the decompile's 64-bit register lowering.
+- **Hash pinned + ported + verified** (2026-09-02, this branch): see
+  `surface_generator/docs/noise-system.md` for the exact u32 sequence (raw
+  coordinate into a fold+mix; row axis through ror16; per-use salts
+  0x7ed55d16/0x6d17/0x7d18 — the salts step by 0x1001, not +1/+2). Ported to
+  `noise.zig` (`voronoiMix/voronoiCellM/voronoiSaltF32/voronoiPoint` +
+  `VoronoiNoise.evalAt`, `terrace`). Verified **exact (f32)** against the live
+  2.0.77 game via `calibration/sa-probe` (registered-noise-expression probe
+  harness + calculate_tile_properties oracle): all four distance types (incl.
+  minkowski3's engine fast log2/exp2f), jitter 0..1, grids 10..384, numeric +
+  crc32(name) seeds, all four outputs — ~200k in-game samples across every
+  config the four SA planets use (fulgora islands/roads/structure, aquilo
+  cracks, vulcanus demolisher, gleba terraces).
 - `Terrace` (inputs value+blend, consts offset+step):
   out = offset + step·(⌊(v−offset)/step⌋ + remap(frac, blend)); blend 0 =
-  identity, 1 = pure quantization to step boundaries.
+  identity, 1 = pure quantization to step boundaries; integer part FLOORS.
 
-**Still to do**: pin the exact cell-hash u32 sequence; port the primitives to
-`noise.zig`; extract the tile/resource prototype autoplace + map colors (needs
-the lualib helper environment — P1 note above); in-game calibration probes for
-bit-exactness.
+**Still to do**: extract the tile/resource prototype autoplace + map colors
+(needs the lualib helper environment — P1 note above); build `noise_expr.zig`
+(the expression parser/evaluator that composes these primitives per planet) +
+`sa_planet.zig`/`sa_wasm.zig`; full-surface in-game probes (tile identities +
+resource positions) per planet.

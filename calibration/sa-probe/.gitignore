@@ -1,0 +1,5 @@
+# Space-Age op probe harness — regenerated/game-derived artifacts
+fdata/
+out/
+__pycache__/
+*.zip
