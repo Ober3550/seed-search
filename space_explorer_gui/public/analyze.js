@@ -8,7 +8,7 @@
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
   var modQ = new URLSearchParams(location.search).get("mod");
   if (modQ === "se+k2") modQ = "k2se"; // legacy alias
-  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "dv", sortDir: "desc", q: "", calidus: true };
+  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
