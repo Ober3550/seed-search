@@ -28,6 +28,14 @@ struct Params {
     is_pers : f32,
     os_pers : f32,
     offx_pers : f32,
+    moisture_freq : f32,
+    moisture_bias : f32,
+    aux_freq : f32,
+    aux_bias : f32,
+    cold_size : f32,
+    hot_size : f32,
+    cold_freq : f32,
+    hot_freq : f32,
     width : u32,
     height : u32,
     mode : u32,
@@ -48,6 +56,9 @@ const GI_MACRO1: u32 = 3u;
 const GI_MACRO2: u32 = 4u;
 const GI_PERS  : u32 = 5u;
 const GI_DET   : u32 = 6u;
+const GI_TQ    : u32 = 7u;   // temperature quick gens (map_seed+k, 5) x11
+const GI_MQ    : u32 = 18u;  // moisture quick gens (map_seed+k, 6) x8
+const GI_AQ    : u32 = 26u;  // aux quick gens      (map_seed+k, 7) x8
 
 fn basisG(gi : u32, x : f32, y : f32, scale : f32, offx : f32, offy : f32) -> f32 {
     let po = gi * 256u;
@@ -95,6 +106,19 @@ fn multioctaveG(gi : u32, x : f32, y : f32, octaves : u32, ampmul : f32, is : f3
     return value / sqrt(sumsq);
 }
 
+fn quickMO2(gi0 : u32, x : f32, y : f32, octaves : u32, is : f32, os : f32,
+             oism : f32, oosm : f32, offx : f32, offy : f32) -> f32 {
+    var acc : f32 = 0.0;
+    var ins = is;
+    var outs = os;
+    for (var k : u32 = 0u; k < octaves; k = k + 1u) {
+        acc = acc + basisG(gi0 + k, x, y, ins, offx, offy) * outs;
+        ins = ins * oism;
+        outs = outs * oosm;
+    }
+    return acc;
+}
+
 fn variablePersistenceG(gi : u32, x : f32, y : f32, octaves : u32, is : f32,
                         os : f32, offx : f32, persistence : f32) -> f32 {
     var is_k = is * 0.5;
@@ -125,6 +149,39 @@ fn elevationAt(x : f32, y : f32) -> f32 {
     return max(main - P.water_level * 2.0, island);
 }
 
+// ── ZoneTerrain fields (per-zone controls) ────────────────────────────────
+// Port of terrain.zig ZoneTerrain.temperature/moisture/aux (AB formulas).
+fn temperatureAt(x : f32, y : f32) -> f32 {
+    let cold = P.cold_size;
+    let hot = P.hot_size;
+    let cf = P.cold_freq;
+    let hf = P.hot_freq;
+    let average = 50.0 - 125.0 * cold / 6.0 + 125.0 * hot / 6.0;
+    let range = 50.0 * (clamp(cold, 0.0, 1.0) / 2.0 + cold / 10.0) + 50.0 * (clamp(hot, 0.0, 1.0) / 2.0 + hot / 10.0);
+    let bfreq = (cf + hf) / 2.0;
+    let mn = quickMO2(GI_TQ, x * bfreq, y * bfreq, 11u, 1.0 / 32.0, 1.0 / 20.0, 0.5, 1.4, 0.0, 40000.0);
+    let base = average + range * clamp(0.25 * mn, -1.0, 1.0);
+    let hn = quickMO2(GI_TQ, x * hf, y * hf, 10u, 1.0 / 8.0, 1.0 / 20.0, 0.5, 1.5, 40000.0, 0.0);
+    let hotspots = (clamp(hot, 0.0, 1.0) / 2.0 + hot / 10.0) * 40.0 * clamp(-0.45 + hot / 6.0 + hn, 0.0, 4.0);
+    let cn = quickMO2(GI_TQ, x * cf, y * cf, 10u, 1.0 / 30.0, 1.0 / 20.0, 0.5, 1.5, -40000.0, 0.0);
+    let coldspots = (clamp(cold, 0.0, 1.0) / 2.0 + cold / 10.0) * 40.0 * clamp(-0.45 + cold / 6.0 + cn, 0.0, 4.0);
+    let combined = clamp(base - coldspots + hotspots, -50.0, 110.0);
+    let va = clamp(combined - 100.0, 0.0, 10.0);
+    let vhn = quickMO2(GI_TQ, x, y, 6u, 1.0, 1.0 / 20.0, 0.5, 1.5, 0.0, 0.0);
+    let vh = clamp(0.5 + vhn, 0.0, 10.0) * va * 4.0;
+    return clamp(combined + vh, -20.0, 150.0);
+}
+fn moistureAt(x : f32, y : f32) -> f32 {
+    let f = P.moisture_freq;
+    let q = quickMO2(GI_MQ, x * f, y * f, 8u, 1.0 / 2000.0, 1.0 / 8.0, 3.0, 0.5, 30000.0, 0.0);
+    return clamp(0.5 + 2.2 * P.moisture_bias + 2.5 * q, 0.0, 1.0);
+}
+fn auxAt(x : f32, y : f32) -> f32 {
+    let f = P.aux_freq;
+    let q = quickMO2(GI_AQ, x * f, y * f, 8u, 1.0 / 5000.0, 1.0 / 4.0, 3.0, 0.5, 20000.0, 0.0);
+    return clamp(0.45 + 2.2 * P.aux_bias + 2.2 * q, 0.0, 1.0);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     if (gid.x >= P.width || gid.y >= P.height) { return; }
@@ -133,6 +190,9 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let i = gid.y * P.width + gid.x;
     let e = elevationAt(x, y);
     if (P.mode == 0u) { outF[i] = e; return; }
+    if (P.mode == 2u) { outF[i] = temperatureAt(x, y); return; }
+    if (P.mode == 3u) { outF[i] = moistureAt(x, y); return; }
+    if (P.mode == 4u) { outF[i] = auxAt(x, y); return; }
     var m : u32 = 0u;
     if (e < 0.0) { m = 1u; }
     if (e < -2.0) { m = 2u; }

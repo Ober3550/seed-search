@@ -272,6 +272,14 @@ async function cpuSurfaceParams(req) {
 
 // ── SE zone elevation (se_zone.wgsl) ───────────────────────────────────────
 const SE_ELEV_S1 = [900, 99584, 700, 1000, 1100, 500, 600];
+function seGenList(zoneSeed) {
+  const g = [];
+  for (const s1 of SE_ELEV_S1) g.push([zoneSeed, s1]);
+  for (let k = 0; k < 11; k++) g.push([(zoneSeed + k) >>> 0, 5]); // temperature quick
+  for (let k = 0; k < 8; k++) g.push([(zoneSeed + k) >>> 0, 6]);  // moisture quick
+  for (let k = 0; k < 8; k++) g.push([(zoneSeed + k) >>> 0, 7]);  // aux quick
+  return g;
+}
 let seP = null; // { pipeline, dev }
 let seTables = null; // { seed, bufs }
 
@@ -290,13 +298,14 @@ async function sePipeline() {
 
 function seTablesFor(dev, zoneSeed) {
   if (seTables && seTables.seed === zoneSeed) return seTables;
-  const n = SE_ELEV_S1.length;
+  const gl = seGenList(zoneSeed);
+  const n = gl.length;
   const perm1 = new Uint32Array(n * 256);
   const perm2 = new Uint32Array(n * 256);
   const grad = new Float32Array(n * 512);
   const sb = new Uint32Array(n);
   for (let gi = 0; gi < n; gi++) {
-    const g = buildGen(zoneSeed, SE_ELEV_S1[gi]);
+    const g = buildGen(gl[gi][0], gl[gi][1]);
     perm1.set(g.perm1, gi * 256);
     perm2.set(g.perm2, gi * 256);
     grad.set(g.grad, gi * 512);
@@ -323,16 +332,18 @@ async function runSEZone(mapSeed, zone, rect, mode) {
   const seg = cp.water_frequency;
   const waterLevel = 10 * Math.log2(cp.water_size);
   const osPers = ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5;
-  // uniform: 17 floats then width/height/mode u32s (80 bytes)
-  const arr = new ArrayBuffer(80);
+  // uniform: 25 floats then width/height/mode u32s (112 bytes)
+  const arr = new ArrayBuffer(112);
   const f = new Float32Array(arr);
   const v = [rect.x0, rect.y0, nsm, seg, waterLevel,
     nsm / 90, nsm / 500, 0.6, nsm / 150, nsm / 1600, nsm / 1600,
-    nsm / 14, 0.03, 10000 / nsm, nsm / 2, osPers, 10000 / nsm];
-  for (let i = 0; i < 17; i++) f[i] = v[i];
+    nsm / 14, 0.03, 10000 / nsm, nsm / 2, osPers, 10000 / nsm,
+    cp.moisture_frequency || 1, cp.moisture_bias || 0, cp.aux_frequency || 1, cp.aux_bias || 0,
+    cp.cold_size || 0, cp.hot_size || 0, cp.cold_frequency || 0, cp.hot_frequency || 0];
+  for (let i = 0; i < 25; i++) f[i] = v[i];
   const d = new DataView(arr);
-  d.setUint32(68, w, true); d.setUint32(72, h, true); d.setUint32(76, mode, true);
-  const uni = dev.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  d.setUint32(100, w, true); d.setUint32(104, h, true); d.setUint32(108, mode, true);
+  const uni = dev.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   dev.queue.writeBuffer(uni, 0, arr);
 
   const t = seTablesFor(dev, cp.zone_seed);
@@ -383,9 +394,10 @@ self.onmessage = async function (ev) {
       self.postMessage({ id: msg.id, ok: !!p.ok, summary: p, error: p.ok ? null : p.error });
       return;
     }
-    if (req.kind === "se" || req.kind === "se-elev") {
+    if (req.kind === "se" || req.kind === "se-elev" || req.kind === "se-temp" || req.kind === "se-moist" || req.kind === "se-aux") {
       const rect = req.rect;
-      const r = await runSEZone(req.seed >>> 0, req.zone, rect, req.kind === "se" ? 1 : 0);
+      const modeMap = { "se": 1, "se-elev": 0, "se-temp": 2, "se-moist": 3, "se-aux": 4 };
+      const r = await runSEZone(req.seed >>> 0, req.zone, rect, modeMap[req.kind]);
       let pixels;
       if (req.kind === "se") {
         const n = r.width * r.height;
