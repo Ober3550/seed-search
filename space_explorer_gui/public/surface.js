@@ -158,12 +158,12 @@
   } catch (e) {}
   var GRID_CAP = 512;   // allow up to a 512x512 grid at CELL_TILES=32
 
-  // disk radius the wasm clips to: min(preview R, zone radius) — disk-cropped
-  // maps so out-of-disk pixels/chunks are omitted instead of painting the
-  // whole square (zone radius; asteroid fields/Nauvis fall back to R).
+  // The rendered disk radius is the preview radius R for every ground type —
+  // base Nauvis is "infinite" in the game, but the page draws an R-disk, and SE
+  // moons are clipped to the same R (the game keeps generating ocean beyond the
+  // disk if you want to look further out).
   function zoneDiskRadius(zoneObj, R) {
-    var zr = zoneObj.r ? zoneObj.r : (zoneObj.t === "asteroid-field" ? 5000 : R);
-    return Math.min(R, zr);
+    return R;
   }
 
   function planSurfaceCells(R, diskR) {
@@ -245,6 +245,9 @@
           Object.keys(res).forEach(function (rn) {
             totals[rn] = { amount: res[rn].amount, display: res[rn].display };
           });
+          // ore fills the whole rect; clip to the disk (terrain cells already
+          // disk-crop, so unmasked ore would spill onto transparent corners).
+          diskClearOutside(r.pixels, r.summary.width, diskR);
           if (layer === 0) {
             oreCanvas = document.createElement("canvas");
             oreCanvas.width = r.summary.width;
@@ -334,6 +337,9 @@
       palette: palette, rect: { x0: -R, y0: -R, x1: R, y1: R }
     }).then(function (r) {
       var res = r.summary.resources || {};
+      // the wasm ore pass fills the whole rect; clip it to the disk so no ore
+      // leaks onto the transparent corners (terrain+ore and ore-only views).
+      diskClearOutside(r.pixels, r.summary.width, diskR);
       var ov = document.createElement("canvas");
       ov.width = r.summary.width;
       ov.height = r.summary.height;
@@ -376,7 +382,9 @@
 
   function radiusLimits() {
     if (kind === "sa") return { min: 16, max: 512, step: 8, value: 96 };
-    return { min: 10, max: 2000, step: 50, value: 200 };
+    // zone / base Nauvis: preview radius IS the disk radius (planets render an
+    // R-disk even though the real map is "infinite"). Allow up to 6000.
+    return { min: 10, max: 6000, step: 50, value: 200 };
   }
 
   function adaptForKind() {
@@ -384,10 +392,10 @@
     els.layerWrap.hidden = kind === "sa";
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
-    // Open at the zone's own radius when the seed page passed ?r= (disk-cropped
-    // so nothing renders outside the zone's disk).
+    // ?r=N drives the radius on this page directly (disk radius; the seed page
+    // rows pass the zone radius, base Nauvis presets pass an arbitrary preview).
     if (RADIUS_INIT != null) {
-      els.radius.value = Math.max(lim.min, Math.min(RADIUS_INIT, lim.max));
+      els.radius.value = Math.max(lim.min, RADIUS_INIT);
     }
   }
 
