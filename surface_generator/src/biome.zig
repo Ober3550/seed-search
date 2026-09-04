@@ -422,19 +422,21 @@ pub const BaseNauvis = struct {
     ///   B when finite, then min across dims (no lower clamp). The base tile
     ///   autoplace bands are expression_in_range(20, 1, aux, moisture,
     ///   aux_lo, m_lo, aux_hi, m_hi). Verified bit-exact vs live-game probes
-    ///   (mse 0 on 4 banded datasets).
-    fn peak(v: f64, lo: f64, hi: f64, mult: f64, cap: f64) f64 {
-        const half = (hi - lo) / 2.0;
-        const center = (lo + hi) / 2.0;
-        var p = (half - @abs(v - center)) * mult;
-        if (cap != std.math.inf(f64) and p > cap) p = cap;
+    ///   (mse 0 on 4 banded datasets). All f32: the engine evaluates the tile
+    //    competition in f32 noise registers (tile_gen.c reads float*), so the
+    //    peaks/water/noise compare in f32 like the game.
+    fn peak(v: f32, lo: f64, hi: f64, mult: f32, cap: f32) f32 {
+        const half: f32 = @floatCast((hi - lo) / 2.0);
+        const center: f32 = @floatCast((lo + hi) / 2.0);
+        var p: f32 = (half - @abs(v - center)) * mult;
+        if (cap != std.math.inf(f32) and p > cap) p = cap;
         return p;
     }
-    fn eirDim(aux: f64, m: f64, lo_aux: f64, hi_aux: f64, lo_m: f64, hi_m: f64) f64 {
+    fn eirDim(aux: f32, m: f32, lo_aux: f64, hi_aux: f64, lo_m: f64, hi_m: f64) f32 {
         // expression_in_range(20, 1, aux, moisture, lo_aux, lo_m, hi_aux, hi_m)
         return @min(peak(aux, lo_aux, hi_aux, 20.0, 1.0), peak(m, lo_m, hi_m, 20.0, 1.0));
     }
-    fn bandEir(aux: f64, m: f64, r: *const NauvisRule) f64 {
+    fn bandEir(aux: f32, m: f32, r: *const NauvisRule) f32 {
         var p = eirDim(aux, m, r.aux.lo, r.aux.hi, r.moist.lo, r.moist.hi);
         if (r.aux2 != null) {
             const alt = eirDim(aux, m, r.aux2.?.lo, r.aux2.?.hi, r.moist2.?.lo, r.moist2.?.hi);
@@ -449,9 +451,13 @@ pub const BaseNauvis = struct {
     /// (~100·-e) stops beating the land plateau, i.e. e ≈ −0.01 (the game
     /// calibrates ≈ −0.012).
     pub fn classify(self: *const BaseNauvis, x: f64, y: f64, e: f64, m: f64, aux: f64) u8 {
+        // engine evaluates properties + tile probs in f32 registers
+        const ef: f32 = @floatCast(e);
+        const mf: f32 = @floatCast(m);
+        const af: f32 = @floatCast(aux);
         // water_base(0,100) / water_base(-2,200): influence·min(max_elev-e,1)
-        const water_p: f64 = if (e < 0.0) 100.0 * @min(-e, 1.0) else -std.math.inf(f64);
-        const deep_p: f64 = if (e < -2.0) 200.0 * @min(-2.0 - e, 1.0) else -std.math.inf(f64);
+        const water_p: f32 = if (ef < 0.0) 100.0 * @min(-ef, 1.0) else -std.math.inf(f32);
+        const deep_p: f32 = if (ef < -2.0) 200.0 * @min(-2.0 - ef, 1.0) else -std.math.inf(f32);
         var best = water_p;
         var best_idx: u8 = NB_WATER;
         if (deep_p > best) {
@@ -459,17 +465,17 @@ pub const BaseNauvis = struct {
             best_idx = NB_DEEPWATER;
         }
         for (&nauvis_rules, 0..) |*r, i| {
-            var p = bandEir(aux, m, r);
+            var p = bandEir(af, mf, r);
             if (r.shore) {
                 // sand-1 shoreline: expression_in_range(5, inf, elevation,
                 // aux, -1.5, 0.5, 1.5, 1)
-                const shore = @min(peak(e, -1.5, 1.5, 5.0, std.math.inf(f64)),
-                    peak(aux, 0.5, 1.0, 5.0, std.math.inf(f64)));
+                const shore = @min(peak(ef, -1.5, 1.5, 5.0, std.math.inf(f32)),
+                    peak(af, 0.5, 1.0, 5.0, std.math.inf(f32)));
                 p = @max(p, shore);
             }
             // noise_layer_noise(seed) = multioctave, 4 octaves, 0.7 persist,
             // input_scale 1/6, output_scale 2/3 — makes patchy tile speckle.
-            p += @as(f64, @floatCast(noise.multioctaveNoisePrebuilt(&self.gens[i], x, y, 4, 0.7, 1.0 / 6.0, 2.0 / 3.0)));
+            p += @as(f32, @floatCast(noise.multioctaveNoisePrebuilt(&self.gens[i], x, y, 4, 0.7, 1.0 / 6.0, 2.0 / 3.0)));
             if (p > best) {
                 best = p;
                 best_idx = r.idx;
