@@ -344,6 +344,9 @@
     if (RADIUS_INIT != null) {
       els.radius.value = Math.max(lim.min, Math.min(RADIUS_INIT, lim.max));
     }
+    // ?gpu=1 drives the WebGPU kernels, which cover the terrain-only layer:
+    // preselect it so a plain Generate click actually uses the GPU.
+    if (USE_GPU && (kind === "nauvis" || kind === "zone")) els.layer.value = "1";
   }
 
   function run() {
@@ -351,12 +354,16 @@
     busy = true;
     els.go.disabled = true;
     setProgress(0);
-    status("starting…");
-    var t0 = Date.now();
     var radius = parseInt(els.radius.value, 10);
     if (!Number.isFinite(radius)) radius = 200;
     var layer = parseInt(els.layer.value, 10) || 0;
     var layerName = ["terrain + ore", "terrain only", "ore only"][layer];
+    if (USE_GPU && (kind === "nauvis" || kind === "zone")) {
+      status(layer === 1 ? "WebGPU kernel — generating…" : "WebGPU covers the terrain-only layer; layer " + layer + " runs the CPU wasm pipeline…");
+    } else {
+      status("starting…");
+    }
+    var t0 = Date.now();
 
     // WebGPU path (base Nauvis terrain only, single dispatch). ?gpu=1.
     if (USE_GPU && kind === "nauvis" && layer === 1) {
@@ -542,11 +549,13 @@
         (vanilla
           ? ", base-game Nauvis tiles (real 2.0 tile palette; tile selection approximated until expression_in_range is ported)."
           : ", SE ground (alien-biomes, exact).") + "</span>";
+      if (USE_GPU) els.meta.insertAdjacentHTML("beforeend", ' <span class="hint">· WebGPU gpu=1 — terrain-only layer preselected</span>');
     } else {
       els.meta.innerHTML = "SE zone of seed " + SEED + " <span class=\"hint\">· resolving universe…</span>";
       fetchZone().then(function (z) {
         zone = z;
         els.meta.innerHTML = zoneMeta(z) + ' <span class="hint">· seed ' + SEED + ", mod " + esc(MOD) + ".</span>";
+        if (USE_GPU) els.meta.insertAdjacentHTML("beforeend", ' <span class="hint">· WebGPU gpu=1 — terrain-only layer preselected</span>');
       }).catch(function (e) {
         status(e.message);
         console.error(e);
