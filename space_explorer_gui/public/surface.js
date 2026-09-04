@@ -383,8 +383,9 @@
   function radiusLimits() {
     if (kind === "sa") return { min: 16, max: 512, step: 8, value: 96 };
     // zone / base Nauvis: preview radius IS the disk radius (planets render an
-    // R-disk even though the real map is "infinite"). Allow up to 6000.
-    return { min: 10, max: 6000, step: 50, value: 200 };
+    // R-disk even though the real map is "infinite"). Allow up to 10000 — the
+    // max radius of an SE zone/planet.
+    return { min: 10, max: 10000, step: 50, value: 200 };
   }
 
   function adaptForKind() {
