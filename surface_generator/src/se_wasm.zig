@@ -102,9 +102,35 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
         };
     } else null;
     const z = (obj.get("zone") orelse return error.NoZone).object;
+    // palette: "vanilla" renders Nauvis ground with the base-game look for the
+    // base / Space Age configs (alien-biomes tiles are SE-only). Default "se".
+    const vanilla_ground = if (obj.get("palette")) |v| blk: {
+        break :blk (v == .string and std.mem.eql(u8, v.string, "vanilla"));
+    } else false;
+    // Optional absolute tile rectangle {x0,y0,x1,y1} (half-open). When given,
+    // render exactly that rect instead of the centered radius disk — used for
+    // chunked/parallel big-map rendering. Semantics are otherwise identical
+    // (same disk clip / ore pass), so a union of chunks == one whole call.
+    // terrainless: compute + return ore pixels only (inputs still the full
+    // terrain+ore set). Lets the JS chunk terrain into parallel bands while one
+    // worker does the whole-rect ore pass — ore placement is rect-dependent
+    // (starting-area enrichment), so ores can't be split across band calls.
+    const terrainless = if (obj.get("terrainless")) |v| (v == .bool and v.bool) else false;
+    const rect: ?[4]i32 = if (obj.get("rect")) |v| blk: {
+        const o = v.object;
+        const gv = struct { fn g(oo: std.json.ObjectMap, k: []const u8) !i32 {
+            const f = oo.get(k) orelse return error.BadRect;
+            return switch (f) {
+                .integer => |i| @intCast(i),
+                .float => |fl| @intFromFloat(fl),
+                else => error.BadRect,
+            };
+        } }.g;
+        break :blk .{ try gv(o, "x0"), try gv(o, "y0"), try gv(o, "x1"), try gv(o, "y1") };
+    } else null;
     const g_pixels_ptr: *[]u8 = &g_pixels;
 
-    return generateZone(a, seed, k2, z, override_radius, layer, g_pixels_ptr);
+    return generateZone(a, seed, k2, z, override_radius, rect, layer, terrainless, vanilla_ground, g_pixels_ptr);
 }
 
 /// The pure zone driver — same math as segen's runZoneDriver for one zone.
@@ -114,7 +140,10 @@ fn generateZone(
     has_k2: bool,
     z: std.json.ObjectMap,
     override_radius: ?i32,
+    rect: ?[4]i32,
     layer: i32,
+    terrainless: bool,
+    vanilla_ground: bool,
     out_pixels: *[]u8,
 ) ![]u8 {
     _ = world_seed; // output paths only in the native CLI
@@ -160,7 +189,7 @@ fn generateZone(
         .enemy = tagOf(data.Enemy, z, "enemy"),
     };
     // Build resource inputs: our shared config table + the zone's controls.
-    const ores_only = layer == 2; // ore-only layer skips fluids (matches --ores-only)
+    const ores_only = layer == 2 and !terrainless; // ore-only layer skips fluids (matches --ores-only)
     var inputs_buf: [res.RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
     var ninputs: usize = 0;
     if (is_nauvis) {
@@ -247,6 +276,15 @@ fn generateZone(
     // for the resource-control + frequency math.
     const r: i32 = if (override_radius) |o| o else @intFromFloat(radius);
 
+    // Render bounds: centered square [-r,r) by default, or an absolute rect for
+    // chunked/parallel renders. The disk clip below is identical either way so
+    // chunk unions match a single whole-image call bit-for-bit.
+    const bounds = rect orelse [_]i32{ -r, -r, r, r };
+    const xa = bounds[0];
+    const ya = bounds[1];
+    const xb = bounds[2];
+    const yb = bounds[3];
+
     var ores: std.ArrayList(se.OreEntity) = .empty;
     defer ores.deinit(a);
 
@@ -257,10 +295,10 @@ fn generateZone(
             a,
             zone_seed,
             radius,
-            -r,
-            -r,
-            r,
-            r,
+            xa,
+            ya,
+            xb,
+            yb,
             inputs,
             1,
             if (elev) |e| e else null,
@@ -283,29 +321,34 @@ fn generateZone(
         }
     }
 
-    // Render the whole disk (grid=1) into an RGBA buffer: terrain/biome/water
-    // tiles (opaque), ore overlay (opaque), everything outside the zone's disk
-    // fully transparent so the browser canvas shows just the disk.
-    const size: i32 = r * 2;
-    const cw: u32 = @intCast(size);
-    const ch: u32 = @intCast(size);
+    // Render a disk (grid=1) into an RGBA buffer: terrain/biome/water tiles
+    // (opaque), ore overlay (opaque), everything outside the zone's disk fully
+    // transparent so the browser canvas shows just the disk.
+    const cw: u32 = @intCast(xb - xa);
+    const ch: u32 = @intCast(yb - ya);
     const pixels = try a.alloc(u8, @as(usize, cw) * ch * 4);
     @memset(pixels, 0); // transparent
-    var el_s = terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);    if (layer != 2) {
-        var iy: i32 = -r;
-        while (iy < r) : (iy += 1) {
-            var ix: i32 = -r;
-            while (ix < r) : (ix += 1) {
+    var el_s = terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
+    if (!terrainless and layer != 2) {
+        var iy: i32 = ya;
+        while (iy < yb) : (iy += 1) {
+            var ix: i32 = xa;
+            while (ix < xb) : (ix += 1) {
                 const fx: f64 = @floatFromInt(ix);
                 const fy: f64 = @floatFromInt(iy);
                 if (fx * fx + fy * fy > radius * radius) continue;
                 const e = if (has_water) el_s.at(fx, fy) else 1.0;
                 const color: [3]u8 = if (has_water and e < 0.0)
-                    (if (e < -5.0) biome.deepwater else biome.water)
+                    (if (e < -5.0)
+                        (if (vanilla_ground) biome.vanilla_deepwater else biome.deepwater)
+                    else
+                        (if (vanilla_ground) biome.vanilla_water else biome.water))
+                else if (vanilla_ground)
+                    biome.vanillaNauvisLand(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e)
                 else
                     classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
-                const lpx: usize = @intCast(ix + r);
-                const lpy: usize = @intCast(iy + r);
+                const lpx: usize = @intCast(ix - xa);
+                const lpy: usize = @intCast(iy - ya);
                 const idx = (lpy * cw + lpx) * 4;
                 pixels[idx] = color[0];
                 pixels[idx + 1] = color[1];
@@ -316,9 +359,9 @@ fn generateZone(
     }
     if (layer != 1) {
         for (ores.items) |ore| {
-            if (ore.x < -r or ore.x >= r or ore.y < -r or ore.y >= r) continue;
-            const lpx: usize = @intCast(ore.x + r);
-            const lpy: usize = @intCast(ore.y + r);
+            if (ore.x < xa or ore.x >= xb or ore.y < ya or ore.y >= yb) continue;
+            const lpx: usize = @intCast(ore.x - xa);
+            const lpy: usize = @intCast(ore.y - ya);
             const oc = res.MapColors.get(ore.resource_name);
             const idx = (lpy * cw + lpx) * 4;
             pixels[idx] = oc[0];
@@ -334,7 +377,10 @@ fn generateZone(
     var summary: std.ArrayList(u8) = .empty;
     try summary.appendSlice(a, "{\"ok\":true");
     try appendFmt(a, &summary, ",\"zone\":\"{s}\",\"zone_seed\":{d},\"type\":\"{s}\"", .{ name, zone_seed, ztype_str });
-    try appendFmt(a, &summary, ",\"radius\":{d},\"width\":{d},\"height\":{d},\"layer\":{d},\"resources\":{{", .{ r, cw, ch, layer });
+    try appendFmt(a, &summary, ",\"radius\":{d},\"width\":{d},\"height\":{d},\"layer\":{d}", .{ r, cw, ch, layer });
+    if (rect != null)
+        try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
+    try summary.appendSlice(a, ",\"resources\":{");
     {
         var first = true;
         for (inputs) |inp| {

@@ -586,3 +586,51 @@ tr.zone-info:hover { opacity: 1; }
 .surf-panel canvas { display: block; max-width: 100%; margin: 8px auto 0; image-rendering: pixelated; background: #0a0d13; border: 1px solid var(--border); border-radius: 6px; }
 .surf-panel #surf-res { margin-top: 8px; }
 .res-chip.surf { background: #1e3a2b; }
+
+/* Mod config dropdown in the sidebar */
+.modcfg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.modcfg select {
+  background: var(--surface-2, #1b2532);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 0.85rem;
+}
+
+/* Zone table rows open a dedicated surface page */
+#zone-table tbody tr[data-href] { cursor: pointer; }
+#zone-table tbody tr[data-href]:hover td { background: rgba(88,166,255,0.07); }
+a.btn-sm {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+/* Dedicated /surface page canvas */
+#sf-canvas { width: 100%; max-width: 720px; height: auto; image-rendering: pixelated; }
+
+/* Chunked render progress bar (/surface page) */
+.progress-wrap {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin: 4px 0 10px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent, #58a6ff);
+  transition: width 0.15s ease-out;
+}

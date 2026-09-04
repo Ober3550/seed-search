@@ -80,6 +80,23 @@ pub fn build(b: *std.Build) void {
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
+
+    const sa_exe = b.addExecutable(.{
+        .name = "sa_main",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+            .root_source_file = b.path("src/sa_main.zig"),
+            .imports = &.{ .{ .name = "surface_generator", .module = mod } },
+        }),
+    });
+    b.installArtifact(sa_exe);
+    const sa_run_step = b.step("sa", "Run SA planet expression evaluator");
+    const sa_run_cmd = b.addRunArtifact(sa_exe);
+    sa_run_step.dependOn(&sa_run_cmd.step);
+    sa_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| sa_run_cmd.addArgs(args);
     const exe_tests = b.addTest(.{ .root_module = exe.root_module });
     const run_exe_tests = b.addRunArtifact(exe_tests);
 

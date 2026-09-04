@@ -120,34 +120,59 @@ const LIVERELOAD_SNIPPET = DEV ? `
   })();
   </script>` : "";
 
+// ── Mod configuration (base | sa | se | se+k2) ──────────────────────────
+const MODS = ["base", "sa", "se", "se+k2"];
+function navMod(req) {
+  const m = String(req.query.mod || "");
+  return MODS.includes(m) ? m : "se+k2"; // default matches the legacy default (K2 on)
+}
+function modHref(path, mod) { return path + (mod ? (path.includes("?") ? "&" : "?") + "mod=" + encodeURIComponent(mod) : ""); }
+
 // ── Layout ───────────────────────────────────────────────────────────────
 
-function htmxPage(title, content) {
+
+function htmxPage(title, content, mod, backSeed) {
+  mod = mod || "se+k2";
+  const seedHref = backSeed != null ? "/seed?seed=" + encodeURIComponent(backSeed) + "&mod=" + encodeURIComponent(mod) : modHref("/seed", mod);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — SE Explorer</title>
+  <title>${title} — Surface Explorer</title>
   <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">${LIVERELOAD_SNIPPET}
+  <script>
+  // Mod-config selector: navigate to the same page path with ?mod= preserved
+  // (and keep any other query params such as ?seed=).
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "mod-nav") {
+      var params = new URLSearchParams(location.search);
+      params.set("mod", e.target.value);
+      var q = params.toString();
+      location.href = location.pathname + (q ? "?" + q : "");
+    }
+  });
+  </script>
 </head>
 <body>
   <div class="app">
     <nav class="sidebar">
-      <h1>🌌 SE Explorer</h1>
+      <h1>🌌 Surface Explorer</h1>
+      <label class="modcfg">Mod config
+        <select id="mod-nav">
+          ${MODS.map(m => `<option value="${m}"${m === mod ? " selected" : ""}>${{ base: "Base", sa: "Space Age", se: "Space Exploration", "se+k2": "SE + K2" }[m]}</option>`).join("")}
+        </select>
+      </label>
       <ul class="nav-links">
-        <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Universe Buckets</a></li>
-        <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
-        <li><a href="/analyze" title="Analyze any seed entirely in your browser — no backend">🔬 Analyze seed</a></li>
-        <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
-        <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Surface Jobs</a></li>
-        <li><a href="/workers" hx-get="/workers" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Workers</a></li>
+        <li><a href="${seedHref}" title="Seed → universe → surface, entirely in your browser">🌍 Seed</a></li>
+        <li><a href="${modHref("/seeds", mod)}" hx-get="${modHref("/seeds", mod)}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
+        <li><a href="${modHref("/presets", mod)}" hx-get="${modHref("/presets", mod)}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
       </ul>
       <div class="sidebar-footer">
         <button type="button" class="btn danger wipe-btn" hx-post="/api/system/wipe" hx-swap="none"
           hx-confirm="⚠️ Wipe the whole system? This deletes ALL jobs, seeds, and generated surfaces (the database AND the output/ folder). This cannot be undone."
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           🗑 Wipe system
         </button>
         ${GIT_INFO ? `<small class="git-info" title="Commit ${GIT_INFO.short} · ${GIT_INFO.ts}">git: ${GIT_INFO.short}</small>` : ""}
@@ -161,12 +186,13 @@ function htmxPage(title, content) {
 </html>`;
 }
 
-function page(req, res, title, content) {
+function page(req, res, title, content, backSeed) {
   // htmx history restore (Back on a cache miss) sets hx-request too, but needs the
   // full page to rebuild the body — only serve the bare fragment for live swaps.
+  const mod = navMod(req);
   if (req.headers["hx-request"] && !req.headers["hx-history-restore-request"])
     res.send(content);
-  else res.send(htmxPage(title, content));
+  else res.send(htmxPage(title, content, mod, backSeed));
 }
 
 function fmtAmount(n) {
@@ -332,7 +358,7 @@ function crumbs(parts) {
   ).join(" ")}</div>`;
 }
 
-app.get("/", (req, res) => res.redirect("/universe"));
+app.get("/", (req, res) => res.redirect("/seed"));
 
 // ── Level 1: Universe buckets ──────────────────────────────────────────
 
@@ -360,12 +386,12 @@ function renderUniversePage(jobsList, statusFilter) {
       <div class="head-actions">
         <button type="button" class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
           hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           ✖ Cancel all jobs
         </button>
         <button type="button" class="btn" hx-post="/api/jobs/clear-cancelled" hx-swap="none"
           hx-confirm="Delete all CANCELLED job entries and their on-disk bucket data? (surviving buckets are kept)"
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           🧹 Clear cancelled
         </button>
       </div>
@@ -802,23 +828,29 @@ function renderFsrPanel(zone) {
 // and estimates are generated in the browser (universe.wasm + estimate-core.js),
 // so this route touches no DB and does no per-seed work. The optional :seed and
 // ?k2 seed it; otherwise the user types a seed in.
-app.get("/analyze/:seed?", (req, res) => {
-  const seed = /^\d+$/.test(req.params.seed || "") ? parseInt(req.params.seed) : null;
-  const k2 = req.query.k2 == null ? true : req.query.k2 === "1" || req.query.k2 === "true";
+// The client-side seed → universe → surface explorer. Lives at /seed so it is
+// the app's primary page; /analyze is kept as a redirect for old links.
+app.get("/analyze", (req, res) => res.redirect("/seed" + (req.url.includes("?") ? "?" + req.url.split("?")[1] : "")));
+app.get("/analyze/:seed", (req, res) => res.redirect("/seed?seed=" + encodeURIComponent(req.params.seed) + (req.url.split("?").length > 1 ? "&" + req.url.split("?")[1] : "")));
+
+app.get("/seed", (req, res) => {
+  const mod = navMod(req);
+  const seed = /^\d+$/.test(req.query.seed || "") ? parseInt(req.query.seed) : null;
+  const k2 = mod === "se+k2";
   const content = `
-  <div class="page">
-    <div class="crumbs"><span>Analyze seed (client-side)</span></div>
-    <h2>🔬 Analyze seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+  <div class="page" data-mod="${mod}">
+    <div class="crumbs"><span>Seed (client-side · ${{ base: "Base", sa: "Space Age", se: "Space Exploration", "se+k2": "SE + K2" }[mod]})</span></div>
+    <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
     <div class="filter-bar">
       <label>Seed <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
-      <label class="hint" title="Krastorio 2 resources (rare-metal, etc.)"><input type="checkbox" id="k2-input" ${k2 ? "checked" : ""}> K2</label>
       <button type="button" class="btn" id="gen-btn">Generate</button>
       <span id="gen-status" class="hint"></span>
     </div>
+    <div id="mod-mode" class="hint"></div>
     <div class="filter-bar">
       <input type="text" id="zt-search" placeholder="🔍 Search name / type / resource…" autocomplete="off">
       <span id="zt-count" class="hint"></span>
-      <span class="hint">Estimates are calibrated (~); FSR is bit-equivalent to the backend generator.</span>
+      <span class="hint">SE estimates are calibrated (~); all surfaces render client-side from the game's own expressions.</span>
     </div>
     <table class="data-table" id="zone-table">
       <thead id="zt-head"><tr>
@@ -828,60 +860,57 @@ app.get("/analyze/:seed?", (req, res) => {
         <th>Water</th><th>Enemy</th>
         <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
         <th>Estimated resources</th>
-        <th title="Generate this zone's surface in your browser (no backend)">Surface</th>
+        <th title="Open this surface on its own page (/surface/:seed/:name)">Open</th>
       </tr></thead>
       <tbody id="zt-body"><tr><td colspan="8" class="hint">Enter a seed and press Generate.</td></tr></tbody>
     </table>
-    <div id="surf-panel" class="surf-panel" hidden>
-      <div class="surf-box">
-        <div class="surf-head">
-          <strong id="surf-title">🗺️ Surface</strong>
-          <span id="surf-status" class="hint"></span>
-          <button type="button" class="btn-sm" id="surf-close" title="Close">✕</button>
-        </div>
-        <div class="filter-bar">
-          <label>Preview radius <input type="number" id="surf-radius" min="10" max="2000" step="50" value="200" style="width:7em"></label>
-          <label>Layer <select id="surf-layer">
-            <option value="0">Terrain + ore</option>
-            <option value="1">Terrain only</option>
-            <option value="2">Ore only</option>
-          </select></label>
-          <button type="button" class="btn" id="surf-gen">Generate</button>
-        </div>
-        <canvas id="surf-canvas" width="600" height="600"></canvas>
-        <div id="surf-res" class="hint"></div>
-      </div>
+  </div>
+  <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed}; window.__ANALYZE_MOD__ = "${mod}";</script>
+  <script src="/static/gen-bridge.js"></script>
+  <script src="/static/universe-wasm.js"></script>
+  <script src="/static/estimate-core.js"></script>
+  <script src="/static/analyze.js"></script>`;
+  page(req, res, "Seed", content);
+});
+
+// Dedicated surface page: generates ONE surface (SE zone, Nauvis, or SA
+// planet) on its own route instead of in a modal. Client-side only — the
+// worker runs the same WASM generators as the seed table.
+app.get("/surface/:seed/:target", (req, res) => {
+  const mod = navMod(req);
+  const seed = /^\d+$/.test(req.params.seed || "") ? parseInt(req.params.seed) : null;
+  const target = String(req.params.target || "").trim();
+  const escH = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  if (seed == null || !target)
+    return res.status(404).send(htmxPage("Not Found", "<h2>Surface not found</h2>", mod));
+  const content = `
+  <div class="page">
+    <div class="crumbs"><a href="/seed?seed=${seed}&mod=${encodeURIComponent(mod)}">🌍 Seed ${seed}</a> <span>→</span> <span>${escH(target)}</span></div>
+    <h2>🗺️ <span id="sf-name">${escH(target)}</span> <span id="sf-badge" class="badge zone-type">…</span> <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+    <div id="sf-meta" class="hint"></div>
+    <div class="filter-bar">
+      <label>Preview radius <input type="number" id="sf-radius" min="10" max="2000" step="50" value="200" style="width:7em"></label>
+      <label id="sf-layer-wrap">Layer <select id="sf-layer">
+        <option value="0">Terrain + ore</option>
+        <option value="1">Terrain only</option>
+        <option value="2">Ore only</option>
+      </select></label>
+      <button type="button" class="btn" id="sf-go">Generate</button>
+      <span id="sf-status" class="hint"></span>
     </div>
-    <div id="sa-panel" class="surf-panel" hidden>
-      <div class="surf-box">
-        <div class="surf-head">
-          <strong id="sa-title">🪐 Space Age planet terrain</strong>
-          <span id="sa-status" class="hint"></span>
-          <button type="button" class="btn-sm" id="sa-close" title="Close">✕</button>
-        </div>
-        <div class="filter-bar">
-          <span class="hint" style="margin-right:0.5em">Planet</span>
-          <button type="button" class="btn-sm sa-planet" data-planet="fulgora" title="Fulgora">⚡ Fulgora</button>
-          <button type="button" class="btn-sm sa-planet" data-planet="vulcanus" disabled title="Vulcanus — not yet (multisample op)">🌋 Vulcanus</button>
-          <button type="button" class="btn-sm sa-planet" data-planet="gleba" disabled title="Gleba — not yet (spot_noise sub-expressions)">🍄 Gleba</button>
-          <button type="button" class="btn-sm sa-planet" data-planet="aquilo" disabled title="Aquilo — not yet (spot_noise sub-expressions)">🧊 Aquilo</button>
-          <span style="flex:1"></span>
-          <label>Preview radius <input type="number" id="sa-radius" min="16" max="512" step="8" value="96" style="width:6em"></label>
-          <button type="button" class="btn" id="sa-gen">Generate</button>
-        </div>
-        <canvas id="sa-canvas" width="600" height="600"></canvas>
-        <div id="sa-res" class="hint"></div>
-      </div>
+    <div class="progress-wrap" id="sf-progress-wrap"><div id="sf-progress" class="progress-fill"></div></div>
+    <div class="surf-box">
+      <canvas id="sf-canvas" width="600" height="600"></canvas>
+      <div id="sf-res" class="hint"></div>
     </div>
   </div>
-  <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed};</script>
+  <script>window.__SURF_SEED__ = ${seed}; window.__SURF_TARGET__ = ${JSON.stringify(target)}; window.__SURF_MOD__ = "${mod}";</script>
   <script src="/static/gen-bridge.js"></script>
   <script src="/static/universe-wasm.js"></script>
   <script src="/static/surface-wasm.js"></script>
   <script src="/static/sa-wasm.js"></script>
-  <script src="/static/estimate-core.js"></script>
-  <script src="/static/analyze.js"></script>`;
-  page(req, res, "Analyze seed", content);
+  <script src="/static/surface.js"></script>`;
+  page(req, res, `Seed ${seed} · ${target}`, content, seed);
 });
 
 app.get("/seed/:seed", (req, res) => {

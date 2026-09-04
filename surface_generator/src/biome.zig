@@ -304,6 +304,86 @@ pub const water: [3]u8 = .{ 51, 83, 95 };
 pub const water_shallow: [3]u8 = .{ 53, 97, 110 };
 pub const water_mud: [3]u8 = .{ 54, 88, 90 };
 
+/// Base-game water palette — used for Nauvis under the base / Space Age configs
+/// (SE water is the Horaerratum teal above).
+pub const vanilla_water: [3]u8 = .{ 62, 120, 176 };
+pub const vanilla_deepwater: [3]u8 = .{ 34, 70, 118 };
+
+// ── Vanilla Nauvis ground (approximate) ────────────────────────────────────
+// The alien-biomes tiles above are Space-Exploration-only. Rendering Nauvis in
+// the base / Space Age configs with them leaks SE biomes into non-SE previews.
+// The base 2.0 tile-autoplace expressions aren't exported yet, so this is a
+// visual approximation of the vanilla look: temperature bands (snow cold →
+// green temperate → dry/hot), moisture (grass ↔ dry grass ↔ dirt/sand), aux
+// dusting, sandy shores near water, plus a gentle per-pixel texture. It keeps
+// the alien palette (and the exact SE ground truth) exclusively for SE configs.
+fn vclamp(v: f64, lo: f64, hi: f64) f64 {
+    return @max(lo, @min(hi, v));
+}
+fn vramp(v: f64, a: f64, b: f64) f64 {
+    // linear 0→1 as v goes a→b
+    return vclamp((v - a) / (b - a), 0.0, 1.0);
+}
+fn vmix(c1: [3]u8, c2: [3]u8, t: f64) [3]u8 {
+    const s = t * t * (3.0 - 2.0 * t); // smoothstep
+    return .{
+        @intFromFloat(@as(f64, @floatFromInt(c1[0])) + (@as(f64, @floatFromInt(c2[0])) - @as(f64, @floatFromInt(c1[0]))) * s),
+        @intFromFloat(@as(f64, @floatFromInt(c1[1])) + (@as(f64, @floatFromInt(c2[1])) - @as(f64, @floatFromInt(c1[1]))) * s),
+        @intFromFloat(@as(f64, @floatFromInt(c1[2])) + (@as(f64, @floatFromInt(c2[2])) - @as(f64, @floatFromInt(c1[2]))) * s),
+    };
+}
+fn vshade(c: [3]u8, f: f64) [3]u8 {
+    return .{
+        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[0])) * f, 0.0, 255.0)),
+        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[1])) * f, 0.0, 255.0)),
+        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[2])) * f, 0.0, 255.0)),
+    };
+}
+
+/// Vanilla Nauvis land colour for a tile at (x,y) with the zone's temperature /
+/// moisture / aux / elevation. Only called with e >= 0 (water handled by the
+/// caller). Approximation — see note above.
+pub fn vanillaNauvisLand(x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) [3]u8 {
+    const snow_col: [3]u8 = .{ 236, 240, 244 };
+    const grass_col: [3]u8 = .{ 99, 137, 60 };
+    const lush_col: [3]u8 = .{ 71, 112, 51 };
+    const dead_col: [3]u8 = .{ 171, 156, 102 };
+    const dirt_col: [3]u8 = .{ 127, 103, 76 };
+    const sand_col: [3]u8 = .{ 199, 177, 122 };
+
+    // snow appears only in genuinely cold regions (t < ~0-8, e.g. map poles).
+    const snow = vramp(t, 18.0, 2.0); // 1 when t<=2, 0 when t>=18
+
+    // temperate moisture: wet → grass, dry → dead grass / dirt.
+    var c: [3]u8 = grass_col;
+    if (m < 0.55) {
+        c = vmix(grass_col, dead_col, vramp(m, 0.45, 0.12));
+        c = vmix(c, dirt_col, 0.35 * vramp(m, 0.25, 0.0));
+    } else {
+        c = vmix(grass_col, lush_col, vramp(m, 0.6, 0.92));
+    }
+    // low aux = dustier ground.
+    c = vmix(c, dirt_col, 0.55 * vramp(a, 0.34, 0.1));
+
+    // hot desert fringe (rare on Nauvis, dominant only at very high t).
+    const hot = vramp(t, 68.0, 88.0);
+    const desert = vmix(dirt_col, sand_col, vramp(m, 0.55, 0.05));
+    c = vmix(c, desert, hot);
+
+    // sandy shores near water: strongest right at the coastline, only on dry
+    // ground (moisture low), suppressed in the snow.
+    const shore = @exp(-e * 0.9);
+    c = vmix(c, vmix(dirt_col, sand_col, 0.85), 0.6 * shore * (1.0 - snow) * (1.0 - vramp(m, 0.5, 0.15)));
+
+    // snow overrides everything in cold areas (soft band overlap).
+    c = vmix(c, snow_col, snow);
+
+    // gentle texture: tiny per-tile brightness wobble from a fixed gradient
+    // noise (approximation of the vanilla tile variants).
+    const j = vclamp(noise.basisNoise(x, y, 0x51F4AE, 0x6A09E667, 1.0 / 26.0, 1.0), -1.0, 1.0);
+    return vshade(c, 1.0 + 0.055 * j);
+}
+
 // Unified tile-index space for the tile-correction pass: 0..biomes.len-1 are land
 // biomes; the following are the water/wetland tiles; BG = outside the disk.
 pub const IDX_WATER: u16 = 60000;
