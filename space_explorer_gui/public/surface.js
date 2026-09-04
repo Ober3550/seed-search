@@ -310,11 +310,11 @@
   }
 
   // ── GPU-terrain helpers (default backend; ore always from CPU wasm) ──────
-  // SE zones and vanilla Nauvis (MOD != se/k2se) can render terrain on the
-  // GPU; SE-config Nauvis ground (alien palette) and Space Age planets stay on
-  // the CPU wasm pipeline.
+  // SE zones (alien biomes + asteroid fields) and Nauvis (base 21-tile
+  // competition) render terrain on the GPU; Space Age planets stay on the CPU
+  // wasm pipeline.
   function gpuTerrainSupported() {
-    return USE_GPU && (kind === "zone" || (kind === "nauvis" && MOD !== "se" && MOD !== "k2se"));
+    return USE_GPU && (kind === "zone" || kind === "nauvis");
   }
 
   // Clear pixels outside the disk radius (GPU kernels fill the whole square).
@@ -534,7 +534,7 @@
     }
 
     // SE zone / Nauvis: WebGPU terrain by default; CPU wasm for ore-only
-    // layers and any ground WebGPU can't produce (SE-config Nauvis palette).
+    // layers and any ground WebGPU can't produce.
     if (layer === 2 || !gpu) { runCpu(); return; }
 
     runGpu().then(function (res) {
