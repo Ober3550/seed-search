@@ -136,11 +136,16 @@
   // cells is pixel-identical to one whole call (every tile depends only on its
   // own coords), so the partition never changes the image — only the order it
   // appears in.
-  var CELL_TILES = 180; // ~1 s/cell at the measured ~31 µs/tile (sqrt(1s/31µs)≈180).
-  //    The backend's SURFACE_CELL_TILES=320 assumed 9.6 µs/tile; the current
-  //    code measures ~31 µs/tile (wasm and native alike), so 320-tile cells
-  //    take ~3.2 s each. 180 keeps the streaming animation ~1 s per cell.
-  var GRID_CAP = 64;    // job-manager SURFACE_GRID_CAP
+  var CELL_TILES = 32; // one Factorio chunk (32x32 tiles) per cell — per-cell
+  //    time is then directly comparable to in-game chunk generation. NOTE: a
+  //    2000-tile radius needs a 125x125 grid; the per-call wasm setup (~ms)
+  //    is paid once per cell, so this trades per-cell granularity for overhead.
+  //    ?cells=N overrides the cell edge (tuning/benchmarks).
+  try {
+    var _qc = new URLSearchParams(location.search).get("cells");
+    if (_qc) CELL_TILES = Math.max(1, Math.min(512, parseInt(_qc, 10) || 32));
+  } catch (e) {}
+  var GRID_CAP = 512;   // allow up to a 512x512 grid at CELL_TILES=32
 
   // disk radius the wasm clips to: zone radius (asteroid fields/Nauvis have no
   // zone radius — SE uses the field effective radius 5000; fall back to R).
@@ -187,7 +192,10 @@
     els.canvas.width = npx;
     els.canvas.height = npx;
     var fullRect = { x0: -R, y0: -R, x1: R, y1: R };
-    var cells = planSurfaceCells(R, zoneDiskRadius(zoneObj, R)).cells;
+    var plan = planSurfaceCells(R, zoneDiskRadius(zoneObj, R));
+    var cells = plan.cells;
+    // tuning/bench hook: cell edge, grid N and the number of planned cells
+    window.__SURF_CELLS__ = { cellTiles: CELL_TILES, n: plan.n, cells: cells.length };
 
     var totals = {};
     return new Promise(function (resolve, reject) {
