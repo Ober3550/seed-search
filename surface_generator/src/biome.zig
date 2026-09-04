@@ -338,6 +338,10 @@ pub const NB_GRASS1: u8 = 13;
 pub const NB_GRASS2: u8 = 14;
 pub const NB_GRASS3: u8 = 15;
 pub const NB_GRASS4: u8 = 16;
+pub const NB_REDDESERT0: u8 = 17;
+pub const NB_REDDESERT1: u8 = 18;
+pub const NB_REDDESERT2: u8 = 19;
+pub const NB_REDDESERT3: u8 = 20;
 
 pub const nauvis_base_palette = [_]NauvisTile{
     .{ .name = "water", .color = .{ 51, 83, 95 } },
@@ -357,6 +361,10 @@ pub const nauvis_base_palette = [_]NauvisTile{
     .{ .name = "grass-2", .color = .{ 66, 57, 15 } },
     .{ .name = "grass-3", .color = .{ 65, 52, 28 } },
     .{ .name = "grass-4", .color = .{ 59, 40, 18 } },
+    .{ .name = "red-desert-0", .color = .{ 103, 70, 32 } },
+    .{ .name = "red-desert-1", .color = .{ 116, 81, 39 } },
+    .{ .name = "red-desert-2", .color = .{ 116, 84, 43 } },
+    .{ .name = "red-desert-3", .color = .{ 128, 93, 52 } },
 };
 
 const NB_Band = struct { lo: f64, hi: f64 };
@@ -392,6 +400,10 @@ const nauvis_rules = [_]NauvisRule{
     .{ .idx = NB_GRASS2, .aux = .{ .lo = 0.45, .hi = 11 }, .moist = .{ .lo = 0.45, .hi = 0.8 }, .noise_seed = 20 },
     .{ .idx = NB_GRASS3, .aux = .{ .lo = -10, .hi = 0.65 }, .moist = .{ .lo = 0.6, .hi = 0.9 }, .noise_seed = 21 },
     .{ .idx = NB_GRASS4, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.5, .hi = 0.7 }, .noise_seed = 22 },
+    .{ .idx = NB_REDDESERT0, .aux = .{ .lo = 0.55, .hi = 11 }, .moist = .{ .lo = 0.35, .hi = 0.5 }, .noise_seed = 30 },
+    .{ .idx = NB_REDDESERT1, .aux = .{ .lo = 0.6, .hi = 0.7 }, .moist = .{ .lo = -10, .hi = 0.3 }, .aux2 = .{ .lo = 0.7, .hi = 11 }, .moist2 = .{ .lo = 0.25, .hi = 0.3 }, .noise_seed = 31 },
+    .{ .idx = NB_REDDESERT2, .aux = .{ .lo = 0.7, .hi = 0.8 }, .moist = .{ .lo = -10, .hi = 0.25 }, .aux2 = .{ .lo = 0.8, .hi = 11 }, .moist2 = .{ .lo = 0.2, .hi = 0.25 }, .noise_seed = 32 },
+    .{ .idx = NB_REDDESERT3, .aux = .{ .lo = 0.8, .hi = 11 }, .moist = .{ .lo = -10, .hi = 0.2 }, .noise_seed = 33 },
 };
 
 /// Base-Nauvis tile competition. One basis-noise gen per land rule (the
@@ -405,19 +417,30 @@ pub const BaseNauvis = struct {
         return c;
     }
 
-    /// soft band plateau: 1 deep inside, linear falloff at the edges (the
-    /// alien-biomes plateauPeak shape — stands in for expression_in_range).
-    fn band(v: f64, lo: f64, hi: f64) f64 {
+    /// ExpressionInRange (engine op, RE'd 2.0.77): per-dim linear tent
+    ///   peak(v, lo, hi) = (hi-lo)/2 - |v - (lo+hi)/2|   scaled by A, capped at
+    ///   B when finite, then min across dims (no lower clamp). The base tile
+    ///   autoplace bands are expression_in_range(20, 1, aux, moisture,
+    ///   aux_lo, m_lo, aux_hi, m_hi). Verified bit-exact vs live-game probes
+    ///   (mse 0 on 4 banded datasets).
+    fn peak(v: f64, lo: f64, hi: f64, mult: f64, cap: f64) f64 {
+        const half = (hi - lo) / 2.0;
         const center = (lo + hi) / 2.0;
-        const range = @abs(lo - hi) / 2.0;
-        if (range <= 0.0) return if (v == center) 1.0 else 0.0;
-        const d = @max(0.0, (range - @abs(v - center)) * 20.0);
-        return @min(d, 1.0);
+        var p = (half - @abs(v - center)) * mult;
+        if (cap != std.math.inf(f64) and p > cap) p = cap;
+        return p;
     }
-    fn bandRange(aux: f64, m: f64, r: *const NauvisRule, which: u1) f64 {
-        const a = if (which == 0) r.aux else r.aux2.?;
-        const mo = if (which == 0) r.moist else r.moist2.?;
-        return band(aux, a.lo, a.hi) * band(m, mo.lo, mo.hi);
+    fn eirDim(aux: f64, m: f64, lo_aux: f64, hi_aux: f64, lo_m: f64, hi_m: f64) f64 {
+        // expression_in_range(20, 1, aux, moisture, lo_aux, lo_m, hi_aux, hi_m)
+        return @min(peak(aux, lo_aux, hi_aux, 20.0, 1.0), peak(m, lo_m, hi_m, 20.0, 1.0));
+    }
+    fn bandEir(aux: f64, m: f64, r: *const NauvisRule) f64 {
+        var p = eirDim(aux, m, r.aux.lo, r.aux.hi, r.moist.lo, r.moist.hi);
+        if (r.aux2 != null) {
+            const alt = eirDim(aux, m, r.aux2.?.lo, r.aux2.?.hi, r.moist2.?.lo, r.moist2.?.hi);
+            p = @max(p, alt);
+        }
+        return p;
     }
 
     /// Winning tile index into nauvis_base_palette at (x, y) given elevation,
@@ -436,9 +459,14 @@ pub const BaseNauvis = struct {
             best_idx = NB_DEEPWATER;
         }
         for (&nauvis_rules, 0..) |*r, i| {
-            var p = bandRange(aux, m, r, 0);
-            if (r.aux2 != null) p = @max(p, bandRange(aux, m, r, 1));
-            if (r.shore) p = @max(p, band(e, -1.5, 1.5) * band(aux, 0.5, 1.0));
+            var p = bandEir(aux, m, r);
+            if (r.shore) {
+                // sand-1 shoreline: expression_in_range(5, inf, elevation,
+                // aux, -1.5, 0.5, 1.5, 1)
+                const shore = @min(peak(e, -1.5, 1.5, 5.0, std.math.inf(f64)),
+                    peak(aux, 0.5, 1.0, 5.0, std.math.inf(f64)));
+                p = @max(p, shore);
+            }
             // noise_layer_noise(seed) = multioctave, 4 octaves, 0.7 persist,
             // input_scale 1/6, output_scale 2/3 — makes patchy tile speckle.
             p += @as(f64, @floatCast(noise.multioctaveNoisePrebuilt(&self.gens[i], x, y, 4, 0.7, 1.0 / 6.0, 2.0 / 3.0)));
