@@ -958,15 +958,40 @@ fn natives(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: []
         return noise.multioctaveNoiseOffset(gen, x, y, @intFromFloat(@round(oct)), per, is, os, ox, oy);
     }
     if (std.mem.eql(u8, name, "quick_multioctave_noise")) {
+        // Engine QuickMultioctaveNoise op (see terrain.zig quickMultioctave —
+        // verified exact vs base moisture_noise/aux_noise/temperature). Data
+        // calls either pass octave_input/output_scale_multiplier + offset_x/y
+        // directly (base property noise, e.g. moisture_noise) or come from the
+        // quick_multioctave_noise_persistence wrapper (persistence folded into
+        // octave_output_scale_multiplier). persistence is never an op param.
         const x = try argN(ctx, bindings, args, "x", 0);
         const y = try argN(ctx, bindings, args, "y", 1);
         const s0 = try nativeSeed0(ctx, bindings, args);
         const s1 = try nativeSeed1(ctx, bindings, args);
         const oct = try argN(ctx, bindings, args, "octaves", 2);
-        const per = try argN(ctx, bindings, args, "persistence", 3);
-        const is = try argN(ctx, bindings, args, "input_scale", 4);
-        const os = try argN(ctx, bindings, args, "output_scale", 5);
-        return quickMultioctave(ctx, x, y, s0, s1, oct, per, is, os);
+        const is = try argN(ctx, bindings, args, "input_scale", 3);
+        const os = try argN(ctx, bindings, args, "output_scale", 4);
+        // octave scale multipliers (engine defaults 0.5); also accept the
+        // wrapper's octave_output_scale_multiplier spelling.
+        const oism = argOr(ctx, bindings, args, "octave_input_scale_multiplier", 5, 0.5) catch 0.5;
+        const oosm = argOr(ctx, bindings, args, "octave_output_scale_multiplier", 6, 0.5) catch 0.5;
+        const ox = argOr(ctx, bindings, args, "offset_x", 7, 0.0) catch 0.0;
+        const oy = argOr(ctx, bindings, args, "offset_y", 8, 0.0) catch 0.0;
+        // octave_seed0_shift = 1: octave k uses a fresh gen (seed0+k, seed1).
+        const n: usize = @intFromFloat(@round(oct));
+        var gens: [64]noise.BasisNoiseGen = undefined;
+        if (n > gens.len) return error.BadCall;
+        for (0..n) |k| gens[k] = noise.BasisNoiseGen.init(s0 +% @as(u32, @intCast(k)), s1);
+        var acc: f32 = 0.0;
+        var ins = is;
+        var outs = os;
+        var k: usize = 0;
+        while (k < n) : (k += 1) {
+            acc += @as(f32, @floatCast(gens[k].evalOffset(x, y, ins, outs, ox, oy)));
+            ins *= oism;
+            outs *= oosm;
+        }
+        return acc;
     }
     if (std.mem.eql(u8, name, "variable_persistence_multioctave_noise")) {
         const x = try argN(ctx, bindings, args, "x", 0);

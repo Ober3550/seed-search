@@ -17,6 +17,57 @@
   "vulcanus_tungsten_ore_richness"
  ],
  "functions": {
+  "amplitude_corrected_multioctave_noise": {
+   "expression": "variable_persistence_multioctave_noise{x = x,y = y,seed0 = seed0,seed1 = seed1,input_scale = input_scale,output_scale = (1 - persistence) / 2 ^ octaves / (1 - persistence ^ octaves) * amplitude,offset_x = offset_x,octaves = octaves,persistence = persistence}",
+   "name": "amplitude_corrected_multioctave_noise",
+   "parameters": [
+    "x",
+    "y",
+    "seed0",
+    "seed1",
+    "input_scale",
+    "offset_x",
+    "octaves",
+    "persistence",
+    "amplitude"
+   ],
+   "type": "noise-function"
+  },
+  "elevation_nauvis_function": {
+   "expression": "min(wlc_elevation, starting_lake)",
+   "local_expressions": {
+    "elevation_magnitude": 20,
+    "nauvis_main": "elevation_magnitude * (lerp(0.5 * added_cliff_elevation - 0.6,1.9 * added_cliff_elevation + 1.6,0.1 + 0.5 * nauvis_bridges)+ 0.25 * nauvis_detail+ 3 * nauvis_macro * starting_macro_multiplier)",
+    "starting_island": "nauvis_main + elevation_magnitude * (2.5 - distance * segmentation_multiplier / 200)",
+    "starting_lake": "elevation_magnitude * (-3 + (starting_lake_distance + starting_lake_noise) / 8) / 8",
+    "starting_lake_distance": "distance_from_nearest_point{x = x, y = y, points = starting_lake_positions, maximum_distance = 1024}",
+    "starting_lake_noise": "quick_multioctave_noise_persistence{x = x,y = y,seed0 = map_seed,seed1 = 14,input_scale = 1/8,output_scale = 0.8,octaves = 4,octave_input_scale_multiplier = 0.5,persistence = 0.68}",
+    "starting_macro_multiplier": "clamp(distance * nauvis_segmentation_multiplier / 2000, 0, 1)",
+    "wlc_amplitude": 2,
+    "wlc_elevation": "max(nauvis_main - water_level * wlc_amplitude, starting_island)"
+   },
+   "name": "elevation_nauvis_function",
+   "parameters": [
+    "added_cliff_elevation"
+   ],
+   "type": "noise-function"
+  },
+  "quick_multioctave_noise_persistence": {
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = seed0,seed1 = seed1,input_scale = input_scale * octave_input_scale_multiplier ^ (octaves - 1),output_scale = output_scale * 2 ^ (octaves - 1),octaves = octaves,octave_output_scale_multiplier = persistence,octave_input_scale_multiplier = 1 / octave_input_scale_multiplier}",
+   "name": "quick_multioctave_noise_persistence",
+   "parameters": [
+    "x",
+    "y",
+    "seed0",
+    "seed1",
+    "input_scale",
+    "output_scale",
+    "octaves",
+    "octave_input_scale_multiplier",
+    "persistence"
+   ],
+   "type": "noise-function"
+  },
   "random_penalty_between": {
    "expression": "random_penalty{x = x, y = y, seed = seed, source = to, amplitude = to - from}",
    "name": "random_penalty_between",
@@ -174,6 +225,53 @@
   }
  },
  "expressions": {
+  "aux": {
+   "expression": "aux_nauvis",
+   "localised_name": [
+    "noise-expression.aux_nauvis"
+   ],
+   "name": "aux",
+   "type": "noise-expression"
+  },
+  "aux_nauvis": {
+   "expression": "clamp(0.5 + var('control:aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
+   "name": "aux_nauvis",
+   "type": "noise-expression"
+  },
+  "aux_noise": {
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
+   "name": "aux_noise",
+   "type": "noise-expression"
+  },
+  "cliff_elevation_from_elevation": {
+   "expression": "elevation",
+   "name": "cliff_elevation_from_elevation",
+   "type": "noise-expression"
+  },
+  "cliffiness_basic": {
+   "expression": "clamp(0.5 * log2(cliff_richness) + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 123,input_scale = 1/32,output_scale = 1,octaves = 2,octave_output_scale_multiplier = 1,octave_input_scale_multiplier = 1/3},0, 1) + 0.5",
+   "name": "cliffiness_basic",
+   "type": "noise-expression"
+  },
+  "distance": {
+   "expression": "distance_from_nearest_point{x = x, y = y, points = starting_positions}",
+   "name": "distance",
+   "type": "noise-expression"
+  },
+  "elevation": {
+   "expression": "elevation_nauvis",
+   "intended_property": "elevation",
+   "localised_name": [
+    "noise-expression.elevation_nauvis"
+   ],
+   "name": "elevation",
+   "type": "noise-expression"
+  },
+  "elevation_nauvis": {
+   "expression": "elevation_nauvis_function(nauvis_hills_plateaus)",
+   "name": "elevation_nauvis",
+   "type": "noise-expression"
+  },
   "mountain_basis_noise": {
    "expression": "basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 13423,input_scale = 1 / 500,output_scale = 250}",
    "name": "mountain_basis_noise",
@@ -201,6 +299,77 @@
     "volcano_spot_spacing": "1500 * volcanism"
    },
    "name": "mountain_volcano_spots",
+   "type": "noise-expression"
+  },
+  "nauvis_bridge_billows": {
+   "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 700,octaves = 4,input_scale = nauvis_segmentation_multiplier / 150})",
+   "name": "nauvis_bridge_billows",
+   "type": "noise-expression"
+  },
+  "nauvis_bridges": {
+   "expression": "1 - 0.1 * nauvis_bridge_billows - 0.9 * max(0, -0.1 + nauvis_bridge_billows)",
+   "name": "nauvis_bridges",
+   "type": "noise-expression"
+  },
+  "nauvis_detail": {
+   "expression": "variable_persistence_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 600,input_scale = nauvis_segmentation_multiplier / 14,output_scale = 0.03,offset_x = 10000 / nauvis_segmentation_multiplier,octaves = 5,persistence = nauvis_persistance}",
+   "name": "nauvis_detail",
+   "type": "noise-expression"
+  },
+  "nauvis_hills": {
+   "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 900,octaves = 4,input_scale = nauvis_segmentation_multiplier / 90})",
+   "name": "nauvis_hills",
+   "type": "noise-expression"
+  },
+  "nauvis_hills_cliff_level": {
+   "expression": "clamp(0.65 + basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 99584,input_scale = nauvis_segmentation_multiplier/500,output_scale = 0.6}, 0.15, 1.15)",
+   "name": "nauvis_hills_cliff_level",
+   "type": "noise-expression"
+  },
+  "nauvis_hills_plateaus": {
+   "expression": "0.1 * nauvis_hills + 0.8 * nauvis_plateaus",
+   "name": "nauvis_hills_plateaus",
+   "type": "noise-expression"
+  },
+  "nauvis_macro": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.6,seed0 = map_seed,seed1 = 1000,octaves = 2,input_scale = nauvis_segmentation_multiplier / 1600}* max(0, multioctave_noise{x = x,y = y,persistence = 0.6,seed0 = map_seed,seed1 = 1100,octaves = 1,input_scale = nauvis_segmentation_multiplier / 1600})",
+   "name": "nauvis_macro",
+   "type": "noise-expression"
+  },
+  "nauvis_persistance": {
+   "expression": "clamp(amplitude_corrected_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 500,octaves = 5,input_scale = nauvis_segmentation_multiplier / 2,offset_x = 10000 / nauvis_segmentation_multiplier,persistence = 0.7,amplitude = 0.5} + 0.55,0.5, 0.65)",
+   "name": "nauvis_persistance",
+   "type": "noise-expression"
+  },
+  "nauvis_plateaus": {
+   "expression": "0.5 + clamp((nauvis_hills - nauvis_hills_cliff_level) * 10, -0.5, 0.5)",
+   "name": "nauvis_plateaus",
+   "type": "noise-expression"
+  },
+  "nauvis_segmentation_multiplier": {
+   "expression": "1.5 * control:water:frequency",
+   "name": "nauvis_segmentation_multiplier",
+   "type": "noise-expression"
+  },
+  "segmentation_multiplier": {
+   "expression": "control:water:frequency",
+   "name": "segmentation_multiplier",
+   "type": "noise-expression"
+  },
+  "temperature": {
+   "expression": "temperature_basic",
+   "localised_name": [
+    "noise-expression.temperature_basic"
+   ],
+   "name": "temperature",
+   "type": "noise-expression"
+  },
+  "temperature_basic": {
+   "expression": "clamp(sea_level_temperature + var('control:temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
+   "local_expressions": {
+    "sea_level_temperature": 15
+   },
+   "name": "temperature_basic",
    "type": "noise-expression"
   },
   "vulcanus_ashlands_angle": {
@@ -633,6 +802,11 @@
   "vulcanus_wobble_y": {
    "expression": "vulcanus_detail_noise{seed1 = 1010, scale = 1/8, octaves = 2, magnitude = 4}",
    "name": "vulcanus_wobble_y",
+   "type": "noise-expression"
+  },
+  "water_level": {
+   "expression": "10 * log2(control:water:size)",
+   "name": "water_level",
    "type": "noise-expression"
   }
  },

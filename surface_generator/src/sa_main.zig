@@ -13,8 +13,9 @@ const std = @import("std");
 const sa_data = @import("sa_data.zig");
 const sa_expr = @import("sa_expr.zig");
 
-fn ctrlLookup(_: *const anyopaque, _: []const u8, _: []const u8) f64 {
-    return 1.0; // default autoplace controls (frequency/size/richness = 1)
+fn ctrlLookup(_: *const anyopaque, _: []const u8, field: []const u8) f64 {
+    // Default map-gen autoplace controls: frequency/size/richness = 1, bias = 0.
+    return if (std.mem.eql(u8, field, "bias")) 0.0 else 1.0;
 }
 const defaultControls = sa_expr.Controls{ .lookup = ctrlLookup };
 

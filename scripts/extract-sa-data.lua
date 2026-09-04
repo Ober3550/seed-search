@@ -202,6 +202,11 @@ end
 -- ── Load the game data ─────────────────────────────────────────────────────
 -- 1. core engine helper functions
 dofile_capture(GAME .. "/core/prototypes/noise-functions.lua", "core noise-functions")
+-- 1b. core noise programs — the engine's default property expressions for the
+--     basic surface (temperature/moisture/aux/elevation/cliffiness + the whole
+--     *_nauvis dependency web). Without this, vanilla Nauvis has no evaluable
+--     terrain.
+dofile_capture(GAME .. "/core/prototypes/noise-programs.lua", "core noise-programs")
 -- 2. vanilla (Nauvis) expressions
 dofile_capture(GAME .. "/base/prototypes/noise-expressions.lua", "base noise-expressions")
 -- 3. planet map_gen_settings (base defines nauvis; space-age adds the four)

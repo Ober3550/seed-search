@@ -64,8 +64,15 @@ function closeOver(roots, owningName) {
 }
 
 for (const [planet, mg] of Object.entries(planets)) {
+  // root expressions the surface's properties need. SA planets map each
+  // property key -> a named expression (property_expression_names values).
+  // Nauvis leaves the map EMPTY = engine defaults, whose root expression names
+  // are the core noise-programs aliases (elevation/moisture/aux/temperature/…).
   const roots = new Set();
   for (const v of Object.values(mg.property_expression_names || {})) roots.add(v);
+  if (planet === "nauvis" && roots.size === 0) {
+    for (const n of ["elevation", "moisture", "aux", "temperature"]) roots.add(n);
+  }
   // entity autoplace expressions from property_expression_names are already roots;
   // also add any autoplace settings name lists we know are expressions? no — tiles later.
   const want = closeOver([...roots]);
