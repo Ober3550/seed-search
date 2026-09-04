@@ -26,8 +26,9 @@
   var TARGET = window.__SURF_TARGET__ || "";
   var MOD = window.__SURF_MOD__ || "k2se";
   var K2 = MOD === "k2se";
-  // ?gpu=1 -> render base-Nauvis terrain with the WebGPU kernel (single dispatch)
-  var USE_GPU = /[?&]gpu=1\b/.test(location.search);
+  // WebGPU is the DEFAULT terrain backend when the browser supports it;
+  // ?cpu=1 forces the CPU wasm pipeline (ore always comes from CPU wasm).
+  var USE_GPU = !/[?&]cpu=1\b/.test(location.search) && !!(window.navigator && navigator.gpu);
   var GPU_MS = null;
   // ?r=N -> initialise the preview radius to the zone's radius (passed by the
   // seed page rows) so the surface opens disk-cropped to the zone.
@@ -305,6 +306,50 @@
     });
   }
 
+  // ── GPU-terrain helpers (default backend; ore always from CPU wasm) ──────
+  // SE zones and vanilla Nauvis (MOD != se/k2se) can render terrain on the
+  // GPU; SE-config Nauvis ground (alien palette) and Space Age planets stay on
+  // the CPU wasm pipeline.
+  function gpuTerrainSupported() {
+    return USE_GPU && (kind === "zone" || (kind === "nauvis" && MOD !== "se" && MOD !== "k2se"));
+  }
+
+  // Clear pixels outside the disk radius (GPU kernels fill the whole square).
+  function diskClearOutside(rgba, W, diskR) {
+    var c = W >> 1, R2 = diskR * diskR;
+    for (var y = 0; y < W; y++) {
+      var dy = y - c;
+      for (var x = 0; x < W; x++) {
+        var dx = x - c;
+        if (dx * dx + dy * dy > R2) rgba[(y * W + x) * 4 + 3] = 0;
+      }
+    }
+  }
+
+  // Single whole-rect CPU ore pass, source-over onto the GPU terrain canvas.
+  // Mirrors the layer-0 ore pass in renderSurfaceMap (layer 0, terrainless).
+  function cpuOre(z, R, diskR, palette) {
+    return sendToPool({
+      seed: SEED, k2: K2, zone: z, layer: 0, radius: diskR, terrainless: true,
+      palette: palette, rect: { x0: -R, y0: -R, x1: R, y1: R }
+    }).then(function (r) {
+      var res = r.summary.resources || {};
+      var ov = document.createElement("canvas");
+      ov.width = r.summary.width;
+      ov.height = r.summary.height;
+      var octx = ov.getContext("2d");
+      var oi = octx.createImageData(r.summary.width, r.summary.height);
+      oi.data.set(r.pixels);
+      octx.putImageData(oi, 0, 0);
+      els.canvas.getContext("2d").drawImage(ov, 0, 0);
+      var totals = {};
+      Object.keys(res).forEach(function (rn) {
+        totals[rn] = { amount: res[rn].amount, display: res[rn].display };
+      });
+      return totals;
+    });
+  }
+
   function resolveKind() {
     if (TARGET === "Nauvis") return { kind: "nauvis" };
     var lower = TARGET.toLowerCase();
@@ -344,9 +389,6 @@
     if (RADIUS_INIT != null) {
       els.radius.value = Math.max(lim.min, Math.min(RADIUS_INIT, lim.max));
     }
-    // ?gpu=1 drives the WebGPU kernels, which cover the terrain-only layer:
-    // preselect it so a plain Generate click actually uses the GPU.
-    if (USE_GPU && (kind === "nauvis" || kind === "zone")) els.layer.value = "1";
   }
 
   function run() {
@@ -354,108 +396,108 @@
     busy = true;
     els.go.disabled = true;
     setProgress(0);
+    var t0 = Date.now();
     var radius = parseInt(els.radius.value, 10);
     if (!Number.isFinite(radius)) radius = 200;
     var layer = parseInt(els.layer.value, 10) || 0;
     var layerName = ["terrain + ore", "terrain only", "ore only"][layer];
-    if (USE_GPU && (kind === "nauvis" || kind === "zone")) {
-      status(layer === 1 ? "WebGPU kernel — generating…" : "WebGPU covers the terrain-only layer; layer " + layer + " runs the CPU wasm pipeline…");
-    } else {
-      status("starting…");
-    }
-    var t0 = Date.now();
+    var palette = "se"; // alien-biomes ground is Space-Exploration-only
+    if (kind === "nauvis" && MOD !== "se" && MOD !== "k2se") palette = "vanilla";
+    var gpu = gpuTerrainSupported();
+    if ((kind === "zone" || kind === "nauvis") && !pool) spawnPool();
 
-    // WebGPU path (base Nauvis terrain only, single dispatch). ?gpu=1.
-    if (USE_GPU && kind === "nauvis" && layer === 1) {
-      els.canvas.width = 2 * radius;
-      els.canvas.height = 2 * radius;
-      status("gpu: dispatching nauvis tile kernel…");
-      window.generateSurfaceGPU({
-        seed: SEED, kind: "tiles",
-        rect: { x0: -radius, y0: -radius, x1: radius, y1: radius }
-      }).then(function (r) {
-        var s = r.summary;
-        var ctx = els.canvas.getContext("2d");
-        var img = ctx.createImageData(s.width, s.height);
-        img.data.set(window.gpuIndicesToRgba(r.pixels, s.width, s.height));
-        ctx.putImageData(img, 0, 0);
-        var ms = Date.now() - t0;
-        GPU_MS = ms;
-        window.__SURF_MS__ = ms;
-        window.__LAST_SURF_AT__ = Date.now();
-        window.__LAST_SURF__ = { zone: "Nauvis", type: "planet", resources: {}, layer: layer, gpu: true };
-        busy = false;
-        els.go.disabled = false;
-        setProgress(1);
-        status("zone Nauvis · planet · r" + radius + " (WebGPU)");
-        var px = s.width * s.height;
-        var cpu1 = Math.round(px * 0.08); // ~80 us/px single-thread wasm -> ms
-        els.res.innerHTML = '<span class="hint">· ' + s.width + "×" + s.height + " · WebGPU kernel, 1 dispatch · " +
-          ms + " ms (CPU-wasm 1-thread ~" + cpu1 + " ms ≈ " + (cpu1 / 1000).toFixed(1) + " s) · " +
-          (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
-      }).catch(function (e) {
-        busy = false;
-        els.go.disabled = false;
-        status("gpu error: " + e.message);
-        console.error(e);
-      });
-      return;
-    }
+    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); }
+    function fail(e, tag) { busy = false; els.go.disabled = false; status(tag + ": " + e.message); console.error(e); }
 
-    // WebGPU path for SE zones (alien-biomes classifier, terrain layer only).
-    // Chunked se_zone kernel; ?gpu=1.
-    if (USE_GPU && kind === "zone" && layer === 1) {
-      els.canvas.width = 2 * radius;
-      els.canvas.height = 2 * radius;
-      status("gpu: dispatching se alien-biomes classifier…");
-      Promise.resolve(fetchZone()).then(function (z) {
-        return window.generateSEZoneGPU({
-          seed: SEED, zone: z, radius: radius,
-          onProgress: function (done, total) {
-            status("gpu: classifier " + done + "/" + total + " cells…");
+    // CPU wasm pipeline (default for ore-only layers & SA planets; also the
+    // fallback whenever WebGPU terrain is unavailable or fails).
+    function runCpu() {
+      var needZone = kind === "zone";
+      if (!pool) spawnPool();
+      Promise.resolve(needZone ? fetchZone() : nauvisZone())
+        .then(function (z) {
+          return renderSurfaceMap(z, radius, layer, palette, function (done, total) {
+            status("rendering terrain " + done + "/" + total + " cells…");
             setProgress(total ? done / total : 0);
-          }
-        }).then(function (out) {
+          }).then(function (totals) {
+            doneUI();
+            window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: totals, layer: layer }; // test hook
+            window.__LAST_SURF_AT__ = Date.now();
+            window.__SURF_MS__ = window.__LAST_SURF_AT__ - t0;
+            var width = 2 * radius;
+            var nres = Object.keys(totals).length;
+            els.res.innerHTML =
+              (layer !== 1 ? surfChips(totals) + " " : "") +
+              '<span class="hint">· ' + width + "×" + width + " · " + layerName +
+              (nres ? " · " + nres + " resources" : "") +
+              " · generated client-side (" + pool.length + " workers) · " + window.__SURF_MS__ + " ms</span>";
+            status("zone " + z.n + " · " + z.t + " · r" + radius + (USE_GPU ? " (CPU wasm)" : ""));
+          });
+        })
+        .catch(function (e) { fail(e, "error"); });
+    }
+
+    // WebGPU terrain, with the CPU ore overlay when layer = terrain + ore.
+    function runGpu() {
+      window.__GPU_STAGE__ = "terrain";
+      return Promise.resolve(kind === "zone" ? fetchZone() : nauvisZone()).then(function (z) {
+        var R = radius;
+        var diskR = zoneDiskRadius(z, R);
+        els.canvas.width = 2 * R;
+        els.canvas.height = 2 * R;
+        var terrain;
+        if (kind === "nauvis") {
+          status("gpu: dispatching nauvis tile kernel…");
+          terrain = window.generateSurfaceGPU({
+            seed: SEED, kind: "tiles",
+            rect: { x0: -R, y0: -R, x1: R, y1: R }
+          }).then(function (r) {
+            var W = r.summary.width;
+            var H = r.summary.height;
+            var rgba = window.gpuIndicesToRgba(r.pixels, W, H);
+            diskClearOutside(rgba, W, diskR);
+            return { rgba: rgba, width: W, height: H, cells: 1, backend: "nauvis-tiles" };
+          });
+        } else {
+          status("gpu: dispatching se alien-biomes classifier…");
+          terrain = window.generateSEZoneGPU({
+            seed: SEED, zone: z, radius: R, diskR: diskR,
+            onProgress: function (done, total) {
+              status("gpu: classifier " + done + "/" + total + " cells…");
+              setProgress(total ? done / total : 0);
+            }
+          });
+        }
+        return terrain.then(function (out) {
           var ctx = els.canvas.getContext("2d");
           var img = ctx.createImageData(out.width, out.height);
           img.data.set(out.rgba);
           ctx.putImageData(img, 0, 0);
-          var ms = Date.now() - t0;
-          GPU_MS = ms;
-          window.__SURF_MS__ = ms;
-          window.__LAST_SURF_AT__ = Date.now();
-          window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: {}, layer: layer, gpu: true };
-          busy = false;
-          els.go.disabled = false;
-          setProgress(1);
-          status("zone " + z.n + " · " + z.t + " · r" + radius + " (WebGPU)");
-          var px = out.width * out.height;
-          els.res.innerHTML = '<span class="hint">· ' + out.width + "×" + out.height + " · WebGPU alien-biomes classifier (" +
-            out.cells + " cell dispatches) · " + ms + " ms · " +
-            (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
+          if (layer === 0) {
+            window.__GPU_STAGE__ = "ore";
+            status("gpu terrain ready — placing ore (CPU wasm)…");
+            return cpuOre(z, R, diskR, palette).then(function (totals) {
+              window.__GPU_STAGE__ = "done";
+              return { out: out, z: z, totals: totals };
+            });
+          }
+          window.__GPU_STAGE__ = "done";
+          return { out: out, z: z, totals: {} };
         });
-      }).catch(function (e) {
-        busy = false;
-        els.go.disabled = false;
-        status("gpu error: " + e.message);
-        console.error(e);
       });
-      return;
     }
 
     if (kind === "sa") {
       var p = PLANETS[planetKey];
       if (!p.ok) {
-        busy = false;
-        els.go.disabled = false;
+        doneUI();
         els.res.innerHTML = '<span class="hint">' + esc(p.why) + "</span>";
         status("not supported yet");
         return;
       }
       window.generateSA({ seed: SEED, planet: planetKey, radius: radius })
         .then(function (r) {
-          busy = false;
-          els.go.disabled = false;
+          doneUI();
           var canvas = els.canvas;
           canvas.width = r.summary.width;
           canvas.height = r.summary.height;
@@ -469,44 +511,39 @@
             " · elevation height-map (the planet's tile layer isn't modelled yet) · " + window.__SURF_MS__ + " ms";
           status("ok");
         })
-        .catch(function (e) { busy = false; els.go.disabled = false; status("error: " + e.message); console.error(e); });
+        .catch(function (e) { fail(e, "error"); });
       return;
     }
 
-    // zone / nauvis → chunked surface.wasm pipeline.
-    var palette = "se"; // alien-biomes ground is Space-Exploration-only
-    if (kind === "nauvis" && MOD !== "se" && MOD !== "k2se") palette = "vanilla";
-    var needZone = kind === "zone";
-    if (!pool) spawnPool();
-    Promise.resolve(needZone ? fetchZone() : nauvisZone())
-      .then(function (z) {
-        var R = radius;
-        return renderSurfaceMap(z, R, layer, palette, function (done, total) {
-          status("rendering terrain " + done + "/" + total + " cells…");
-          setProgress(total ? done / total : 0);
-        }).then(function (totals) {
-          busy = false;
-          els.go.disabled = false;
-          setProgress(1);
-          window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: totals, layer: layer }; // test hook
-          window.__LAST_SURF_AT__ = Date.now();
-          window.__SURF_MS__ = window.__LAST_SURF_AT__ - t0;
-          var width = 2 * R;
-          var nres = Object.keys(totals).length;
-          els.res.innerHTML =
-            (layer !== 1 ? surfChips(totals) + " " : "") +
-            '<span class="hint">· ' + width + "×" + width + " · " + layerName +
-            (nres ? " · " + nres + " resources" : "") +
-            " · generated client-side (" + pool.length + " workers) · " + window.__SURF_MS__ + " ms</span>";
-          status("zone " + z.n + " · " + z.t + " · r" + radius);
-        });
-      })
-      .catch(function (e) {
-        busy = false;
-        els.go.disabled = false;
-        status("error: " + e.message);
-        console.error(e);
-      });
+    // SE zone / Nauvis: WebGPU terrain by default; CPU wasm for ore-only
+    // layers and any ground WebGPU can't produce (SE-config Nauvis palette).
+    if (layer === 2 || !gpu) { runCpu(); return; }
+
+    runGpu().then(function (res) {
+      var out = res.out;
+      var z = res.z;
+      var totals = res.totals;
+      doneUI();
+      var ms = Date.now() - t0;
+      GPU_MS = ms;
+      window.__SURF_MS__ = ms;
+      window.__LAST_SURF_AT__ = Date.now();
+      window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: totals, layer: layer, gpu: true, ore: layer === 0 ? "cpu" : null };
+      var px = out.width * out.height;
+      var modeTxt = layer === 0 ? "WebGPU terrain + CPU ore" : "WebGPU " + (out.backend || "kernel");
+      els.res.innerHTML =
+        (layer === 0 && surfChips(totals) ? surfChips(totals) + " " : "") +
+        '<span class="hint">· ' + out.width + "×" + out.height + " · " + modeTxt + " (" +
+        out.cells + (out.cells === 1 ? " cell dispatch" : " cell dispatches") + ") · " + ms + " ms · " +
+        (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
+      status("zone " + z.n + " · " + z.t + " · r" + radius + (layer === 0 ? " (WebGPU terrain + CPU ore)" : " (WebGPU)"));
+    }, function (e) {
+      // WebGPU unavailable / failure -> CPU wasm pipeline for the same request.
+      console.error("WebGPU terrain failed, falling back to wasm:", e);
+      window.__GPU_FAIL__ = String((e && e.message) || e);
+      status("WebGPU error (" + window.__GPU_FAIL__ + ") — falling back to CPU wasm…");
+      runCpu();
+    });
   }
 
   function fetchZone() {
@@ -549,13 +586,11 @@
         (vanilla
           ? ", base-game Nauvis tiles (real 2.0 tile palette; tile selection approximated until expression_in_range is ported)."
           : ", SE ground (alien-biomes, exact).") + "</span>";
-      if (USE_GPU) els.meta.insertAdjacentHTML("beforeend", ' <span class="hint">· WebGPU gpu=1 — terrain-only layer preselected</span>');
     } else {
       els.meta.innerHTML = "SE zone of seed " + SEED + " <span class=\"hint\">· resolving universe…</span>";
       fetchZone().then(function (z) {
         zone = z;
         els.meta.innerHTML = zoneMeta(z) + ' <span class="hint">· seed ' + SEED + ", mod " + esc(MOD) + ".</span>";
-        if (USE_GPU) els.meta.insertAdjacentHTML("beforeend", ' <span class="hint">· WebGPU gpu=1 — terrain-only layer preselected</span>');
       }).catch(function (e) {
         status(e.message);
         console.error(e);

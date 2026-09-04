@@ -34,6 +34,7 @@
       else p.reject(new Error(m.error || "gpu surface failed"));
     };
     worker.onerror = function (e) {
+      try { window.__GPU_WORKER_ERR__ = String((e && e.message) || e); } catch (e2) {}
       var err = new Error("gpu worker crashed: " + (e.message || "unknown"));
       Object.keys(pending).forEach(function (id) { pending[id].reject(err); });
       pending = {};
@@ -71,13 +72,14 @@
   // onProgress?, cell? } -> { rgba: Uint8Array(2R*2R*4), width, height }
   window.generateSEZoneGPU = function (req) {
     var seed = req.seed, zone = req.zone, R = req.radius;
+    var diskR = req.diskR || R;      // disk crop radius (<= R)
     var cell = req.cell || 512;
     var onProgress = req.onProgress || null;
     var size = 2 * R;
     var rgba = new Uint8Array(size * size * 4); // transparent background
 
     // cell squares over [-R, R) in absolute map coords; skip cells fully out
-    // of the disk (CPU renders transparent there).
+    // of the rendered disk (CPU renders transparent there).
     var cells = [];
     for (var ya = -R; ya < R; ya += cell) {
       var yb = Math.min(ya + cell, R);
@@ -85,7 +87,7 @@
         var xb = Math.min(xa + cell, R);
         var cdx = Math.max(xa, Math.min(0, xb - 1));
         var cdy = Math.max(ya, Math.min(0, yb - 1));
-        if (cdx * cdx + cdy * cdy > R * R) continue; // fully outside disk
+        if (cdx * cdx + cdy * cdy > diskR * diskR) continue; // fully outside disk
         cells.push({ xa: xa, ya: ya, xb: xb, yb: yb });
       }
     }
@@ -98,7 +100,7 @@
           var cw = c.xb - c.xa, ch = c.yb - c.ya;
           for (var i = 0; i < packed.length; i++) {
             var x = c.xa + (i % cw), y = c.ya + ((i / cw) | 0);
-            if (x * x + y * y > R * R) continue;
+            if (x * x + y * y > diskR * diskR) continue;
             var o = ((y + R) * size + (x + R)) * 4;
             rgba[o] = (packed[i] >> 16) & 255;
             rgba[o + 1] = (packed[i] >> 8) & 255;
