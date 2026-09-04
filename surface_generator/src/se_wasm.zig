@@ -33,11 +33,21 @@ const asteroid = @import("asteroid.zig");
 const universe = @import("universe_gen");
 const data = universe.data;
 const res = @import("se_resources.zig");
+// Vanilla-Nauvis ground: the base property expressions (moisture_nauvis /
+// aux_nauvis, oracle-exact) are evaluated from the embedded nauvis closure.
+const sa_data = @import("sa_data.zig");
+const sa_expr = @import("sa_expr.zig");
 
 var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_result: []u8 = &.{};
 var g_pixels: []u8 = &.{};
 var input_buf: []u8 = &.{};
+// shared basis-gen cache for the vanilla closure evaluator (sa_expr)
+var g_van_gen_cache: sa_expr.GenCache = .{};
+
+fn vanillaCtrlLookup(_: *const anyopaque, _: []const u8, field: []const u8) f64 {
+    return if (std.mem.eql(u8, field, "bias")) 0.0 else 1.0;
+}
 
 export fn inputPtr() [*]u8 {
     return input_buf.ptr;
@@ -68,6 +78,7 @@ export fn generateSurface(len: usize) void {
     _ = arena_state.reset(.retain_capacity);
     const a = arena_state.allocator();
     g_pixels = &.{};
+    sa_expr.globalGenCache = &g_van_gen_cache;
     const req = if (len <= input_buf.len) input_buf[0..len] else &.{};
     g_result = run(a, req) catch |e| blk: {
         g_pixels = &.{};
@@ -250,6 +261,12 @@ fn generateZone(
         e.* = terrain.Elevation.init(zone_seed, 1.0, water_size);
         elev = e;
     }
+    // Nauvis (base and SE configs alike) has the engine's starting-area lake;
+    // register its centre so the elevation carves the spawn lake like the game.
+    if (is_nauvis) {
+        const c = terrain.startingLakeCenter(zone_seed);
+        if (elev) |e| e.addStartingLake(c[0], c[1]);
+    }
 
     // Per-zone temperature control from the SE tag (midrange→0.65, extreme→6).
     const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
@@ -273,10 +290,18 @@ fn generateZone(
     // Base (vanilla) Nauvis ground for the base/Space Age configs — a separate
     // tile competition + palette from the SE alien-biomes classifier above.
     var base_nauvis: ?*biome.BaseNauvis = null;
+    // Vanilla property evaluator (moisture/aux from the embedded base closure).
+    const van_controls = sa_expr.Controls{ .lookup = vanillaCtrlLookup };
+    var van_planet: ?*sa_data.Planet = null;
+    var van_memo: ?sa_expr.Memo = null;
     if (vanilla_ground) {
         const bc = try a.create(biome.BaseNauvis);
         bc.* = biome.BaseNauvis.init(zone_seed);
         base_nauvis = bc;
+        const p = try a.create(sa_data.Planet);
+        p.* = try sa_data.load(a, .nauvis);
+        van_planet = p;
+        van_memo = try sa_expr.Memo.init(a, p.closure.node_count);
     }
 
     // The render/ore RECT half-extent. --radius caps it (so we can generate
@@ -337,6 +362,10 @@ fn generateZone(
     const pixels = try a.alloc(u8, @as(usize, cw) * ch * 4);
     @memset(pixels, 0); // transparent
     var el_s = terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
+    if (is_nauvis) {
+        const c = terrain.startingLakeCenter(zone_seed);
+        el_s.addStartingLake(c[0], c[1]);
+    }
     if (!terrainless and layer != 2) {
         var iy: i32 = ya;
         while (iy < yb) : (iy += 1) {
@@ -346,8 +375,16 @@ fn generateZone(
                 const fy: f64 = @floatFromInt(iy);
                 if (fx * fx + fy * fy > radius * radius) continue;
                 const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                var mo_van: f64 = 0.0;
+                var aux_van: f64 = 0.0;
+                if (vanilla_ground) {
+                    // base moisture/aux (oracle-exact) from the embedded closure
+                    const s = sa_expr.Scalars{ .x = fx, .y = fy, .seed = zone_seed, .x_from_start = fx, .y_from_start = fy };
+                    mo_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "moisture");
+                    aux_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "aux");
+                }
                 const color: [3]u8 = if (vanilla_ground)
-                    biome.nauvis_base_palette[base_nauvis.?.classify(fx, fy, e, zt.moisture(fx, fy), zt.aux(fx, fy))].color
+                    biome.nauvis_base_palette[base_nauvis.?.classify(fx, fy, e, mo_van, aux_van)].color
                 else if (has_water and e < 0.0)
                     (if (e < -5.0) biome.deepwater else biome.water)
                 else

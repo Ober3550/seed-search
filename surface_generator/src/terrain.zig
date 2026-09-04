@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const noise = @import("noise.zig");
+const rngm = @import("rng.zig");
 
 fn clamp(v: anytype, lo: @TypeOf(v), hi: @TypeOf(v)) @TypeOf(v) {
     return std.math.clamp(v, lo, hi);
@@ -186,6 +187,20 @@ fn lerp(a: anytype, b: @TypeOf(a), t: @TypeOf(a)) @TypeOf(a) {
 /// Nauvis elevation generator (SE moons use the default `elevation` =
 /// `elevation_nauvis`). Ported from core/prototypes/noise-programs.lua.
 /// water tile <=> elevation < 0.
+/// Engine-chosen starting-lake centre for a Nauvis map seed. The starting lake
+/// sits on a fixed ring R≈74.25 tiles from spawn, at the angle of the map
+/// RNG's FIRST draw (validated vs the live game waterline: seed 341 →
+/// (74.1, 4.9), 123456 → (45.3, −58.8), 32094082 → (64.9, −37.0); waterline
+/// IoU 0.94–0.996).
+pub const STARTING_LAKE_RADIUS: f64 = 74.25;
+
+pub fn startingLakeCenter(map_seed: u32) [2]f64 {
+    var r = rngm.Rng.init(map_seed);
+    const f = r.float(); // first draw
+    const theta = f * 2.0 * std.math.pi;
+    return .{ STARTING_LAKE_RADIUS * @cos(theta), STARTING_LAKE_RADIUS * @sin(theta) };
+}
+
 pub const Elevation = struct {
     map_seed: u32,
     nsm: f64, // nauvis_segmentation_multiplier = 1.5 * control:water:frequency

@@ -300,6 +300,11 @@ fn runZoneDriver(
         var zt: ?surfacegen.terrain.ZoneTerrain = null;
         var classifier: ?surfacegen.biome.Classifier = null;
         if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, water_size);
+        // Nauvis (base + SE configs) has the engine's starting-area lake.
+        if (is_nauvis) {
+            const lake = surfacegen.terrain.startingLakeCenter(zone_seed);
+            if (elev) |*e| e.addStartingLake(lake[0], lake[1]);
+        }
 
         // --zone-field-probe: raw all_patches value per resource at the given points
         // (the value-field oracle vs the game's calculate_tile_properties). Uses the
@@ -556,6 +561,10 @@ fn runZoneDriver(
             const full: i32 = r * 2;
             const cellW: i32 = @divTrunc(full + grid - 1, grid); // ceil
             var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
+            if (is_nauvis) {
+                const lake = surfacegen.terrain.startingLakeCenter(zone_seed);
+                el_s.addStartingLake(lake[0], lake[1]);
+            }
             const zt_s = zt.?;
             const cls_s = classifier.?;
 
