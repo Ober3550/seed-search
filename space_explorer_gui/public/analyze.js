@@ -103,7 +103,10 @@
       // SA/base planet rows pass via GEN (they're "planet" type); SE rows only
       // when their zone type is generatable.
       if (!GEN[z.t]) return false;
-      if (state.calidus && z.kind === "se" && z.c !== 1) return false; // Calidus system only
+      // Default view = the Calidus home system PLUS every asteroid field:
+      // fields orbit other stars (incl. the naquium-primary one), so a strict
+      // Calidus membership test would drop all of them.
+      if (state.calidus && z.kind === "se" && z.c !== 1 && z.t !== "asteroid-field") return false;
       if (!q) return true;
       return (z.n + " " + z.t + " " + (z.p || "")).toLowerCase().indexOf(q) !== -1;
     });

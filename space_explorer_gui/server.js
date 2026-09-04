@@ -850,7 +850,7 @@ app.get("/seed", (req, res) => {
       <button type="button" class="btn" id="gen-btn">Generate</button>
       <span id="gen-status" class="hint"></span><br/>
       <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
-      <label class="hint" title="Only the Calidus home system (the default SE view)"><input type="checkbox" id="cal-filter" checked> Calidus system only</label>
+      <label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label>
     </div>
     <table class="data-table" id="zone-table">
       <thead id="zt-head"><tr>
