@@ -63,3 +63,7 @@ gpu_compute/render-out.*
 zig-pkg/
 
 space_explorer_gui/public/sa.wasm
+
+# Ghidra headless logs
+ghidra/headless-*.log
+ghidra/headless-*.out
