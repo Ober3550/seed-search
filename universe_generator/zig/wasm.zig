@@ -39,9 +39,35 @@ fn emitTag(dst: []u8, name: []const u8, val: anytype) []u8 {
     return dst[0..0];
 }
 
+/// stellar position of the star containing zone z (walk parents; mirrors main.zig).
+fn zoneStarStellar(zones: []const gen.Zone, z: gen.Zone) [2]f64 {
+    var p = z.parent_index;
+    while (p >= 0 and zones[@intCast(p)].ztype != .star) p = zones[@intCast(p)].parent_index;
+    if (p >= 0) return .{ zones[@intCast(p)].stellar_x, zones[@intCast(p)].stellar_y };
+    return .{ z.stellar_x, z.stellar_y };
+}
+
+/// SE Zone.get_travel_delta_v(Nauvis, z) — the Δv the in-game navigation shows
+/// (mirrors main.zig deltaVFromNauvis; travel only, caller rounds).
+fn deltaVFromNauvis(zones: []const gen.Zone, z: gen.Zone, nauvis_sgw: f64, nauvis_pgw: f64, cx: f64, cy: f64) f64 {
+    const sp = zoneStarStellar(zones, z);
+    if (sp[0] == cx and sp[1] == cy) {
+        return if (@abs(z.star_gravity_well - nauvis_sgw) < 0.01)
+            100.0 * @abs(z.planet_gravity_well - nauvis_pgw)
+        else
+            500.0 * @abs(z.star_gravity_well - nauvis_sgw) + 100.0 * nauvis_pgw + 100.0 * z.planet_gravity_well;
+    }
+    const dx = sp[0] - cx;
+    const dy = sp[1] - cy;
+    const dist = @sqrt(dx * dx + dy * dy);
+    return 400.0 * dist + 500.0 * (nauvis_sgw + z.star_gravity_well) + 100.0 * (nauvis_pgw + z.planet_gravity_well);
+}
+
 fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
     const bodyMap = try gen.buildBodyMap(a);
     var universe = try gen.generateUniverse(a, seed, k2);
+    // gravity wells feed the Δv column (same as native main.zig does)
+    gen.computeGravityWells(&universe);
     const primaries = try gen.resolvePrimaries(a, universe.zones, bodyMap, k2);
     const field_primaries = try gen.resolveFieldPrimaries(a, universe.zones, k2);
 
@@ -72,6 +98,14 @@ fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
     pos += (try std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"k\":{},\"z\":[", .{ seed, k2 })).len;
 
     var zi: u32 = 0;
+    // Nauvis params for the Δv column (Nauvis is skipped from output rows).
+    var nauvis: ?gen.Zone = null;
+    for (universe.zones.items) |zz| {
+        if (std.mem.eql(u8, zz.name, "Nauvis")) {
+            nauvis = zz;
+            break;
+        }
+    }
     for (universe.zones.items, 0..) |z, si| {
         if (std.mem.eql(u8, z.name, "Nauvis")) continue; // map-gen UI, not universe gen
         if (z.ztype == .orbit or z.ztype == .star) continue; // no resource data
@@ -83,6 +117,12 @@ fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
         const in_cal: u8 = if ((si >= calidus_zi and si < zone_end) or si >= tail_start) 1 else 0;
         pos += (try std.fmt.bufPrint(buf[pos..], "{{\"i\":{d},\"n\":\"{s}\",\"t\":\"{s}\",\"s\":{d},\"c\":{d}", .{ zi, z.name, z.ztype.asStr(), z.seed, in_cal })).len;
         if (z.radius > 0) pos += (try std.fmt.bufPrint(buf[pos..], ",\"r\":{d}", .{z.radius})).len;
+        // Δv to Nauvis (same value the in-game navigation column shows).
+        if (nauvis) |nz| {
+            const ns = zoneStarStellar(universe.zones.items, nz);
+            const dv = @as(u32, @intFromFloat(@round(deltaVFromNauvis(universe.zones.items, z, nz.star_gravity_well, nz.planet_gravity_well, ns[0], ns[1]))));
+            pos += (try std.fmt.bufPrint(buf[pos..], ",\"dv\":{d}", .{dv})).len;
+        }
 
         if (z.ztype == .@"asteroid-field" or z.ztype == .planet or z.ztype == .moon) {
             const tags = gen.computeTags(z.seed, z.name, bodyMap);

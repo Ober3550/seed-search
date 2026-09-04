@@ -29,6 +29,13 @@
   // ?gpu=1 -> render base-Nauvis terrain with the WebGPU kernel (single dispatch)
   var USE_GPU = /[?&]gpu=1\b/.test(location.search);
   var GPU_MS = null;
+  // ?r=N -> initialise the preview radius to the zone's radius (passed by the
+  // seed page rows) so the surface opens disk-cropped to the zone.
+  var RADIUS_INIT = null;
+  try {
+    var _rv = parseInt(new URLSearchParams(location.search).get("r"), 10);
+    if (Number.isFinite(_rv)) RADIUS_INIT = _rv;
+  } catch (e) {}
 
   var PLANETS = {
     vulcanus: { label: "🌋 Vulcanus", ok: false, why: "Vulcanus terrain needs the multisample autoplace op — not ported yet" },
@@ -150,12 +157,12 @@
   } catch (e) {}
   var GRID_CAP = 512;   // allow up to a 512x512 grid at CELL_TILES=32
 
-  // disk radius the wasm clips to: zone radius (asteroid fields/Nauvis have no
-  // zone radius — SE uses the field effective radius 5000; fall back to R).
+  // disk radius the wasm clips to: min(preview R, zone radius) — disk-cropped
+  // maps so out-of-disk pixels/chunks are omitted instead of painting the
+  // whole square (zone radius; asteroid fields/Nauvis fall back to R).
   function zoneDiskRadius(zoneObj, R) {
-    if (zoneObj.r) return zoneObj.r;
-    if (zoneObj.t === "asteroid-field") return 5000;
-    return R;
+    var zr = zoneObj.r ? zoneObj.r : (zoneObj.t === "asteroid-field" ? 5000 : R);
+    return Math.min(R, zr);
   }
 
   function planSurfaceCells(R, diskR) {
@@ -195,7 +202,8 @@
     els.canvas.width = npx;
     els.canvas.height = npx;
     var fullRect = { x0: -R, y0: -R, x1: R, y1: R };
-    var plan = planSurfaceCells(R, zoneDiskRadius(zoneObj, R));
+    var diskR = zoneDiskRadius(zoneObj, R); // clip radius for the wasm + cell plan
+    var plan = planSurfaceCells(R, diskR);
     var cells = plan.cells;
     // tuning/bench hook: cell edge, grid N and the number of planned cells
     window.__SURF_CELLS__ = { cellTiles: CELL_TILES, n: plan.n, cells: cells.length };
@@ -229,7 +237,7 @@
       // it up while the pool streams terrain cells.
       var ore = layer === 1 ? Promise.resolve(null) : (function () {
         return sendToPool({
-          seed: SEED, k2: K2, zone: zoneObj, layer: layer,
+          seed: SEED, k2: K2, zone: zoneObj, layer: layer, radius: diskR,
           terrainless: layer === 0, palette: palette, rect: fullRect
         }).then(function (r) {
           var res = r.summary.resources || {};
@@ -259,7 +267,7 @@
 
       function terrainCell(cell) {
         return sendToPool({
-          seed: SEED, k2: K2, zone: zoneObj, layer: 1, palette: palette,
+          seed: SEED, k2: K2, zone: zoneObj, layer: 1, radius: diskR, palette: palette,
           rect: { x0: cell.x0, y0: cell.y0, x1: cell.x1, y1: cell.y1 }
         }).then(function (r) {
           // blit this cell (pixel data uploaded to the GPU-backed canvas).
@@ -331,6 +339,11 @@
     els.layerWrap.hidden = kind === "sa";
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
+    // Open at the zone's own radius when the seed page passed ?r= (disk-cropped
+    // so nothing renders outside the zone's disk).
+    if (RADIUS_INIT != null) {
+      els.radius.value = Math.max(lim.min, Math.min(RADIUS_INIT, lim.max));
+    }
   }
 
   function run() {

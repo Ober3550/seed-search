@@ -846,27 +846,24 @@ app.get("/seed", (req, res) => {
     <div class="crumbs"><span>Seed (client-side · ${modLabel(mod)})</span></div>
     <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
     <div class="filter-bar">
-      <label>Seed <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
+      <label>Seed: <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
       <button type="button" class="btn" id="gen-btn">Generate</button>
-      <span id="gen-status" class="hint"></span>
-    </div>
-    <div id="mod-mode" class="hint"></div>
-    <div class="filter-bar">
-      <input type="text" id="zt-search" placeholder="🔍 Search name / type / resource…" autocomplete="off">
-      <span id="zt-count" class="hint"></span>
-      <span class="hint">SE estimates are calibrated (~); all surfaces render client-side from the game's own expressions.</span>
+      <span id="gen-status" class="hint"></span><br/>
+      <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
+      <label class="hint" title="Only the Calidus home system (the default SE view)"><input type="checkbox" id="cal-filter" checked> Calidus system only</label>
     </div>
     <table class="data-table" id="zone-table">
       <thead id="zt-head"><tr>
         <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>
         <th class="sortable" data-key="type" style="cursor:pointer">Type <span class="sort-ind"></span></th>
         <th class="sortable" data-key="radius" style="cursor:pointer">Radius <span class="sort-ind"></span></th>
+        <th title="Travel Δv to Nauvis (km)" class="sortable" data-key="dv" style="cursor:pointer">Δv <span class="sort-ind"></span></th>
         <th>Water</th><th>Enemy</th>
         <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
         <th>Estimated resources</th>
         <th title="Open this surface on its own page (/surface/:seed/:name)">Open</th>
       </tr></thead>
-      <tbody id="zt-body"><tr><td colspan="8" class="hint">Enter a seed and press Generate.</td></tr></tbody>
+      <tbody id="zt-body"><tr><td colspan="9" class="hint">Enter a seed and press Generate.</td></tr></tbody>
     </table>
   </div>
   <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed}; window.__ANALYZE_MOD__ = "${mod}";</script>

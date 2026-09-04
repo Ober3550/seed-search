@@ -8,7 +8,7 @@
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
   var modQ = new URLSearchParams(location.search).get("mod");
   if (modQ === "se+k2") modQ = "k2se"; // legacy alias
-  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "radius", sortDir: "desc", q: "" };
+  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "dv", sortDir: "desc", q: "", calidus: true };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -47,6 +47,7 @@
   }
   function nm(r) { return r.replace(/^se-/, "").replace(/^kr-/, "").replace(/-ore$/, ""); }
   function fmt(n) { return n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : Math.round(n); }
+  function fmtDv(v) { return v == null || isNaN(v) ? "—" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(v); }
   function cw(w) { return (w || "none").replace(/^water[_-]?/, "") || "none"; }
   function ce(e) { return (e || "none").replace(/^enemy[_-]?/, "").replace("very_", "v") || "none"; }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
@@ -66,16 +67,14 @@
     }).join(" ");
   }
 
-  function applyMod() {
-    var mm = document.getElementById("mod-mode");
-    if (mm) mm.textContent = "Mod config: " + (MODS[state.mod] || state.mod) + (state.mod === "k2se" ? " (Krastorio 2 resources on)" : "");
-  }
+  function applyMod() {} // mod-mode element was removed from the /seed layout
 
   function sortZones(rows) {
     var k = state.sortKey, dir = state.sortDir === "asc" ? 1 : -1;
     return rows.slice().sort(function (a, b) {
       var va, vb;
       if (k === "radius") { va = a.r || 0; vb = b.r || 0; return (va - vb) * dir; }
+      if (k === "dv") { va = a.dv == null ? -1 : a.dv; vb = b.dv == null ? -1 : b.dv; return (va - vb) * dir; }
       if (k === "primary") { va = a.p || ""; vb = b.p || ""; }
       else if (k === "type") { va = a.t; vb = b.t; }
       else { va = a.n; vb = b.n; }
@@ -86,7 +85,11 @@
   // Dedicated route for generating one surface on its own page.
   function surfHref(z) {
     if (state.seed == null) return null;
-    return "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
+    var u = "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
+    // pass the zone's own radius so /surface opens disk-cropped at it (and
+    // can skip out-of-disk pixels/chunks for the larger zone area)
+    if (z.r) u += "&r=" + Math.round(z.r);
+    return u;
   }
   // True when the row can open a surface (seed present + engine support).
   function rowOpen(z) {
@@ -100,6 +103,7 @@
       // SA/base planet rows pass via GEN (they're "planet" type); SE rows only
       // when their zone type is generatable.
       if (!GEN[z.t]) return false;
+      if (state.calidus && z.kind === "se" && z.c !== 1) return false; // Calidus system only
       if (!q) return true;
       return (z.n + " " + z.t + " " + (z.p || "")).toLowerCase().indexOf(q) !== -1;
     });
@@ -127,6 +131,7 @@
         "<td><strong>" + (z.icon ? z.icon + " " : "") + esc(z.n) + "</strong></td>" +
         '<td><span class="badge zone-type">' + z.t + "</span></td>" +
         "<td>" + (z.infinity ? "∞" : (z.r ? Math.round(z.r) : "—")) + "</td>" +
+        "<td class=\"num\">" + fmtDv(z.dv) + "</td>" +
         "<td>" + cw(z.water) + "</td>" +
         "<td>" + ce(z.enemy) + "</td>" +
         "<td>" + (z.p ? nm(z.p) : "—") + "</td>" +
@@ -134,8 +139,9 @@
         "<td>" + openCell + "</td>" +
         "</tr>";
     }).join("");
-    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="8" class="hint">No generatable zones.</td></tr>';
-    document.getElementById("zt-count").textContent = rows.length +
+    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="9" class="hint">No generatable zones.</td></tr>';
+    var zc = document.getElementById("zt-count");
+    if (zc) zc.textContent = rows.length +
       (state.zones.length && state.zones[0].kind === "se" ? " zones" : " surfaces");
     document.querySelectorAll("#zt-head .sort-ind").forEach(function (s) { s.textContent = ""; });
     var active = document.querySelector('#zt-head th[data-key="' + state.sortKey + '"] .sort-ind');
@@ -163,7 +169,7 @@
         // Synthetic Nauvis (the universe generator never emits it): default-FSR
         // planet, r5000. Estimated client-side (base ores + K2 rare-metal);
         // surface generation uses the game's default map-gen settings (nauvis).
-        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, nauvis: true, kind: "se" });
+        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
         zones.forEach(function (z) { z.kind = "se"; });
         state.zones = zones;
         status.textContent = uni.z.length + " zones · generated client-side";
@@ -176,6 +182,8 @@
     document.getElementById("gen-btn").addEventListener("click", generate);
     document.getElementById("seed-input").addEventListener("keydown", function (e) { if (e.key === "Enter") generate(); });
     document.getElementById("zt-search").addEventListener("input", function (e) { state.q = e.target.value; renderTable(); });
+    var calEl = document.getElementById("cal-filter");
+    if (calEl) calEl.addEventListener("change", function (e) { state.calidus = e.target.checked; renderTable(); });
     document.getElementById("zt-head").addEventListener("click", function (e) {
       var thEl = e.target.closest("th[data-key]"); if (!thEl) return;
       var k = thEl.dataset.key;

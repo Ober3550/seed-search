@@ -86,6 +86,137 @@ export fn generateSurface(len: usize) void {
     };
 }
 
+// ── surfaceParams ──────────────────────────────────────────────────────────
+// Export the per-zone surface params the CPU renderer derives (mirror of the
+// derivation at the top of generateZone — keep in sync). The GPU worker calls
+// this on the same zone JSON so the WGSL kernel uses EXACTLY the params the
+// wasm renderer uses: elevation water freq/size, ZoneTerrain control scalars
+// (temperature climate already scaled by the zone frequency multiplier).
+const ZoneSurfaceParams = struct {
+    zone_seed: u32,
+    radius: f64,
+    has_water: bool,
+    water_frequency: f64,
+    water_size: f64,
+    moisture_frequency: f64,
+    moisture_bias: f64,
+    aux_frequency: f64,
+    aux_bias: f64,
+    cold_size: f64,
+    hot_size: f64,
+    cold_frequency: f64,
+    hot_frequency: f64,
+};
+
+fn zoneSurfaceParams(z: std.json.ObjectMap) !ZoneSurfaceParams {
+    const ztype_str = (z.get("t") orelse return error.NoZoneType).string;
+    const ztype: data.ZoneType = blk: {
+        inline for (@typeInfo(data.ZoneType).@"enum".fields) |fld| {
+            if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
+        }
+        return error.UnsupportedZoneType;
+    };
+    if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") return error.NotGeneratable;
+    const is_field = ztype == .@"asteroid-field";
+    const zone_seed: u32 = @intCast((z.get("s") orelse return error.NoZoneSeed).integer);
+    const radius: f64 = blk: {
+        if (z.get("r")) |rv| {
+            switch (rv) {
+                .integer => |v| break :blk @floatFromInt(v),
+                .float => |v| break :blk v,
+                else => {},
+            }
+        }
+        if (is_field) break :blk 5000.0;
+        return error.NoZoneRadius;
+    };
+    const is_nauvis = if (z.get("nauvis")) |v| (v == .bool and v.bool) else false;
+    const tags = universe.Tags{
+        .temperature = tagOf(data.Temperature, z, "temperature"),
+        .water = tagOf(data.Water, z, "water"),
+        .moisture = tagOf(data.Moisture, z, "moisture"),
+        .trees = tagOf(data.Trees, z, "trees"),
+        .aux = tagOf(data.Aux, z, "aux"),
+        .cliff = tagOf(data.Cliff, z, "cliff"),
+        .enemy = tagOf(data.Enemy, z, "enemy"),
+    };
+    const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
+    const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+    const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
+    const fm = universe.zoneFrequencyMultiplier(radius);
+    return .{
+        .zone_seed = zone_seed,
+        .radius = radius,
+        .has_water = has_water,
+        .water_frequency = 1.0,
+        .water_size = water_size,
+        .moisture_frequency = 1.0,
+        .moisture_bias = 0.0,
+        .aux_frequency = 1.0,
+        .aux_bias = 0.0,
+        .cold_size = tc.cold_size,
+        .hot_size = tc.hot_size,
+        .cold_frequency = tc.cold_freq * fm,
+        .hot_frequency = tc.hot_freq * fm,
+    };
+}
+
+export fn surfaceParams(len: usize) void {
+    _ = arena_state.reset(.retain_capacity);
+    const a = arena_state.allocator();
+    const req = if (len <= input_buf.len) input_buf[0..len] else &.{};
+    g_result = paramsRun(a, req) catch |e| blk: {
+        break :blk std.fmt.allocPrint(a, "{{\"ok\":false,\"error\":\"{s}\"}}", .{@errorName(e)}) catch &.{};
+    };
+}
+
+fn paramsRun(a: std.mem.Allocator, req: []const u8) ![]u8 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, req, .{});
+    const obj = parsed.value.object;
+    const seed: u64 = switch (obj.get("seed") orelse return error.NoSeed) {
+        .integer => |v| @intCast(v),
+        .float => |v| @intFromFloat(v),
+        else => return error.BadSeed,
+    };
+    const z = (obj.get("zone") orelse return error.NoZone).object;
+    const p = try zoneSurfaceParams(z);
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "{\"ok\":true,\"seed\":");
+    var num: [64]u8 = undefined;
+    const f = struct { fn fmt(buf: []u8, v: f64) []const u8 { return std.fmt.bufPrint(buf, "{d:.6}", .{v}) catch "0"; } }.fmt;
+    const i = struct { fn fmt(buf: []u8, v: u32) []const u8 { return std.fmt.bufPrint(buf, "{d}", .{v}) catch "0"; } }.fmt;
+    try out.appendSlice(a, i(&num, @intCast(seed)));
+    try out.appendSlice(a, ",\"zone_seed\":");
+    try out.appendSlice(a, i(&num, p.zone_seed));
+    try out.appendSlice(a, ",\"radius\":");
+    try out.appendSlice(a, f(&num, p.radius));
+    try out.appendSlice(a, ",\"has_water\":");
+    try out.appendSlice(a, if (p.has_water) "true" else "false");
+    try out.appendSlice(a, ",\"water_frequency\":");
+    try out.appendSlice(a, f(&num, p.water_frequency));
+    try out.appendSlice(a, ",\"water_size\":");
+    try out.appendSlice(a, f(&num, p.water_size));
+    try out.appendSlice(a, ",\"moisture_frequency\":");
+    try out.appendSlice(a, f(&num, p.moisture_frequency));
+    try out.appendSlice(a, ",\"moisture_bias\":");
+    try out.appendSlice(a, f(&num, p.moisture_bias));
+    try out.appendSlice(a, ",\"aux_frequency\":");
+    try out.appendSlice(a, f(&num, p.aux_frequency));
+    try out.appendSlice(a, ",\"aux_bias\":");
+    try out.appendSlice(a, f(&num, p.aux_bias));
+    try out.appendSlice(a, ",\"cold_size\":");
+    try out.appendSlice(a, f(&num, p.cold_size));
+    try out.appendSlice(a, ",\"hot_size\":");
+    try out.appendSlice(a, f(&num, p.hot_size));
+    try out.appendSlice(a, ",\"cold_frequency\":");
+    try out.appendSlice(a, f(&num, p.cold_frequency));
+    try out.appendSlice(a, ",\"hot_frequency\":");
+    try out.appendSlice(a, f(&num, p.hot_frequency));
+    try out.appendSlice(a, "}");
+    return out.toOwnedSlice(a);
+}
+
+
 /// Parse the request and generate the zone surface. Writes g_pixels (RGBA) and
 /// returns the summary JSON. Mirrors se_main.zig's runZoneDriver per-zone path
 /// (the pure part) — keep the two in sync when the algorithm changes.

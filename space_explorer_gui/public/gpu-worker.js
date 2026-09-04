@@ -249,12 +249,38 @@ async function runNauvis(mapSeed, rect, mode) {
   return { f1, f2, idx: u3, width: w, height: h };
 }
 
+// CPU-derived surface params for a zone (se_wasm.zig surfaceParams export) —
+// so WGSL kernels get the same numbers the wasm renderer uses.
+let surfWasmP = null;
+function loadSurfaceWasm() {
+  if (!surfWasmP) {
+    surfWasmP = fetch(location.origin + "/static/surface.wasm")
+      .then((r) => r.arrayBuffer())
+      .then((b) => WebAssembly.instantiate(b, {}));
+  }
+  return surfWasmP;
+}
+async function cpuSurfaceParams(req) {
+  const { instance } = await loadSurfaceWasm();
+  const e = instance.exports;
+  const bytes = new TextEncoder().encode(JSON.stringify(req));
+  if (bytes.length > e.inputCap()) e.growInput(bytes.length);
+  new Uint8Array(e.memory.buffer).set(bytes, e.inputPtr());
+  e.surfaceParams(bytes.length);
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(e.memory.buffer, e.resultPtr(), e.resultLen())));
+}
+
 self.onmessage = async function (ev) {
   const msg = ev.data;
   if (!msg || msg.id == null) return;
   try {
     if (msg.type !== "gpu-surface") throw new Error("bad type " + msg.type);
     const req = msg.req;
+    if (req.kind === "se-params") {
+      const p = await cpuSurfaceParams({ seed: req.seed, k2: !!req.k2, zone: req.zone });
+      self.postMessage({ id: msg.id, ok: !!p.ok, summary: p, error: p.ok ? null : p.error });
+      return;
+    }
     const mapSeed = req.seed >>> 0;
     const rect = req.rect || { x0: -req.radius, y0: -req.radius, x1: req.radius, y1: req.radius };
     const kind = req.kind;
