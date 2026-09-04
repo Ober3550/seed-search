@@ -5,10 +5,11 @@
 // which generates terrain + ore in the browser on its own route.
 (function () {
   var estimator = null;   // { estimateZoneOre }
-  var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", "se+k2": "SE + K2" };
+  var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
   var modQ = new URLSearchParams(location.search).get("mod");
-  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "se+k2"), k2: true, zones: [], sortKey: "radius", sortDir: "desc", q: "" };
-  state.k2 = state.mod === "se+k2";
+  if (modQ === "se+k2") modQ = "k2se"; // legacy alias
+  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "radius", sortDir: "desc", q: "" };
+  state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
     if (estimator) return Promise.resolve(estimator);
@@ -67,7 +68,7 @@
 
   function applyMod() {
     var mm = document.getElementById("mod-mode");
-    if (mm) mm.textContent = "Mod config: " + (MODS[state.mod] || state.mod) + (state.mod === "se+k2" ? " (Krastorio 2 resources on)" : "");
+    if (mm) mm.textContent = "Mod config: " + (MODS[state.mod] || state.mod) + (state.mod === "k2se" ? " (Krastorio 2 resources on)" : "");
   }
 
   function sortZones(rows) {

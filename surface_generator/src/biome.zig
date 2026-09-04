@@ -304,85 +304,152 @@ pub const water: [3]u8 = .{ 51, 83, 95 };
 pub const water_shallow: [3]u8 = .{ 53, 97, 110 };
 pub const water_mud: [3]u8 = .{ 54, 88, 90 };
 
-/// Base-game water palette — used for Nauvis under the base / Space Age configs
-/// (SE water is the Horaerratum teal above).
-pub const vanilla_water: [3]u8 = .{ 62, 120, 176 };
-pub const vanilla_deepwater: [3]u8 = .{ 34, 70, 118 };
+// ── Base-game (vanilla 2.0) Nauvis ground ──────────────────────────────────
+// Nauvis under the base / Space Age configs must NOT use the alien-biomes
+// tilesheet (that is Space-Exploration-only ground). This is a data-driven
+// port of the base tile autoplace competition (base/prototypes/tile/tiles.lua,
+// 2.0.77): each tile prototype carries
+//   probability_expression = moisture/aux band(s) + noise_layer_noise(seed)
+// and water/deepwater use water_base(elevation) — all competing in one argmax,
+// exactly the engine's basic-tiles task. Real map_colours are used verbatim.
+// The one engine primitive not ported yet is expression_in_range (band-edge
+// shape), so bands use the same linear plateau as the alien-biomes classifier
+// (verified shape) — selection is therefore approximate until it's RE'd, but
+// the tile set / palette / competition structure is the real data.
 
-// ── Vanilla Nauvis ground (approximate) ────────────────────────────────────
-// The alien-biomes tiles above are Space-Exploration-only. Rendering Nauvis in
-// the base / Space Age configs with them leaks SE biomes into non-SE previews.
-// The base 2.0 tile-autoplace expressions aren't exported yet, so this is a
-// visual approximation of the vanilla look: temperature bands (snow cold →
-// green temperate → dry/hot), moisture (grass ↔ dry grass ↔ dirt/sand), aux
-// dusting, sandy shores near water, plus a gentle per-pixel texture. It keeps
-// the alien palette (and the exact SE ground truth) exclusively for SE configs.
-fn vclamp(v: f64, lo: f64, hi: f64) f64 {
-    return @max(lo, @min(hi, v));
-}
-fn vramp(v: f64, a: f64, b: f64) f64 {
-    // linear 0→1 as v goes a→b
-    return vclamp((v - a) / (b - a), 0.0, 1.0);
-}
-fn vmix(c1: [3]u8, c2: [3]u8, t: f64) [3]u8 {
-    const s = t * t * (3.0 - 2.0 * t); // smoothstep
-    return .{
-        @intFromFloat(@as(f64, @floatFromInt(c1[0])) + (@as(f64, @floatFromInt(c2[0])) - @as(f64, @floatFromInt(c1[0]))) * s),
-        @intFromFloat(@as(f64, @floatFromInt(c1[1])) + (@as(f64, @floatFromInt(c2[1])) - @as(f64, @floatFromInt(c1[1]))) * s),
-        @intFromFloat(@as(f64, @floatFromInt(c1[2])) + (@as(f64, @floatFromInt(c2[2])) - @as(f64, @floatFromInt(c1[2]))) * s),
-    };
-}
-fn vshade(c: [3]u8, f: f64) [3]u8 {
-    return .{
-        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[0])) * f, 0.0, 255.0)),
-        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[1])) * f, 0.0, 255.0)),
-        @intFromFloat(vclamp(@as(f64, @floatFromInt(c[2])) * f, 0.0, 255.0)),
-    };
-}
+/// Base-Nauvis palette (index → { name, map_colour }); index order == the
+/// per-pixel tile ids the classifier returns.
+pub const NauvisTile = struct { name: []const u8, color: [3]u8 };
 
-/// Vanilla Nauvis land colour for a tile at (x,y) with the zone's temperature /
-/// moisture / aux / elevation. Only called with e >= 0 (water handled by the
-/// caller). Approximation — see note above.
-pub fn vanillaNauvisLand(x: f64, y: f64, t: f64, m: f64, a: f64, e: f64) [3]u8 {
-    const snow_col: [3]u8 = .{ 236, 240, 244 };
-    const grass_col: [3]u8 = .{ 99, 137, 60 };
-    const lush_col: [3]u8 = .{ 71, 112, 51 };
-    const dead_col: [3]u8 = .{ 171, 156, 102 };
-    const dirt_col: [3]u8 = .{ 127, 103, 76 };
-    const sand_col: [3]u8 = .{ 199, 177, 122 };
+pub const NB_WATER: u8 = 0;
+pub const NB_DEEPWATER: u8 = 1;
+pub const NB_SAND1: u8 = 2;
+pub const NB_SAND2: u8 = 3;
+pub const NB_SAND3: u8 = 4;
+pub const NB_DRY_DIRT: u8 = 5;
+pub const NB_DIRT1: u8 = 6;
+pub const NB_DIRT2: u8 = 7;
+pub const NB_DIRT3: u8 = 8;
+pub const NB_DIRT4: u8 = 9;
+pub const NB_DIRT5: u8 = 10;
+pub const NB_DIRT6: u8 = 11;
+pub const NB_DIRT7: u8 = 12;
+pub const NB_GRASS1: u8 = 13;
+pub const NB_GRASS2: u8 = 14;
+pub const NB_GRASS3: u8 = 15;
+pub const NB_GRASS4: u8 = 16;
 
-    // snow appears only in genuinely cold regions (t < ~0-8, e.g. map poles).
-    const snow = vramp(t, 18.0, 2.0); // 1 when t<=2, 0 when t>=18
+pub const nauvis_base_palette = [_]NauvisTile{
+    .{ .name = "water", .color = .{ 51, 83, 95 } },
+    .{ .name = "deepwater", .color = .{ 38, 64, 73 } },
+    .{ .name = "sand-1", .color = .{ 138, 103, 58 } },
+    .{ .name = "sand-2", .color = .{ 128, 93, 52 } },
+    .{ .name = "sand-3", .color = .{ 115, 83, 47 } },
+    .{ .name = "dry-dirt", .color = .{ 94, 66, 37 } },
+    .{ .name = "dirt-1", .color = .{ 141, 104, 60 } },
+    .{ .name = "dirt-2", .color = .{ 136, 96, 59 } },
+    .{ .name = "dirt-3", .color = .{ 133, 92, 53 } },
+    .{ .name = "dirt-4", .color = .{ 103, 72, 43 } },
+    .{ .name = "dirt-5", .color = .{ 91, 63, 38 } },
+    .{ .name = "dirt-6", .color = .{ 80, 55, 31 } },
+    .{ .name = "dirt-7", .color = .{ 80, 54, 28 } },
+    .{ .name = "grass-1", .color = .{ 55, 53, 11 } },
+    .{ .name = "grass-2", .color = .{ 66, 57, 15 } },
+    .{ .name = "grass-3", .color = .{ 65, 52, 28 } },
+    .{ .name = "grass-4", .color = .{ 59, 40, 18 } },
+};
 
-    // temperate moisture: wet → grass, dry → dead grass / dirt.
-    var c: [3]u8 = grass_col;
-    if (m < 0.55) {
-        c = vmix(grass_col, dead_col, vramp(m, 0.45, 0.12));
-        c = vmix(c, dirt_col, 0.35 * vramp(m, 0.25, 0.0));
-    } else {
-        c = vmix(grass_col, lush_col, vramp(m, 0.6, 0.92));
+const NB_Band = struct { lo: f64, hi: f64 };
+const NauvisRule = struct {
+    idx: u8,
+    /// primary aux×moisture band (range args of expression_in_range_base)
+    aux: NB_Band,
+    moist: NB_Band,
+    /// optional second band under max(...) (dirt-1/4, sand-2/3)
+    aux2: ?NB_Band = null,
+    moist2: ?NB_Band = null,
+    /// noise_layer_noise seed1 (per-tile layer speckle)
+    noise_seed: u32 = 0,
+    /// sand-1's shoreline term: expression_in_range(5, inf, elevation, aux,
+    /// -1.5, 0.5, 1.5, 1) — an elevation×aux band centred on sea level.
+    shore: bool = false,
+};
+
+/// Land-tile rules, verbatim from base tiles.lua autoplace expressions.
+const nauvis_rules = [_]NauvisRule{
+    .{ .idx = NB_SAND1, .aux = .{ .lo = -10, .hi = 0.25 }, .moist = .{ .lo = -10, .hi = 0.15 }, .noise_seed = 36, .shore = true },
+    .{ .idx = NB_SAND2, .aux = .{ .lo = -10, .hi = 0.3 }, .moist = .{ .lo = 0.15, .hi = 0.2 }, .aux2 = .{ .lo = 0.25, .hi = 0.3 }, .moist2 = .{ .lo = -10, .hi = 0.15 }, .noise_seed = 37 },
+    .{ .idx = NB_SAND3, .aux = .{ .lo = -10, .hi = 0.4 }, .moist = .{ .lo = 0.2, .hi = 0.25 }, .aux2 = .{ .lo = 0.3, .hi = 0.4 }, .moist2 = .{ .lo = -10, .hi = 0.2 }, .noise_seed = 38 },
+    .{ .idx = NB_DRY_DIRT, .aux = .{ .lo = 0.45, .hi = 0.55 }, .moist = .{ .lo = -10, .hi = 0.35 }, .noise_seed = 13 },
+    .{ .idx = NB_DIRT1, .aux = .{ .lo = -10, .hi = 0.45 }, .moist = .{ .lo = 0.25, .hi = 0.3 }, .aux2 = .{ .lo = 0.4, .hi = 0.45 }, .moist2 = .{ .lo = -10, .hi = 0.25 }, .noise_seed = 6 },
+    .{ .idx = NB_DIRT2, .aux = .{ .lo = -10, .hi = 0.45 }, .moist = .{ .lo = 0.3, .hi = 0.35 }, .noise_seed = 7 },
+    .{ .idx = NB_DIRT3, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.35, .hi = 0.4 }, .noise_seed = 8 },
+    .{ .idx = NB_DIRT4, .aux = .{ .lo = 0.55, .hi = 0.6 }, .moist = .{ .lo = -10, .hi = 0.35 }, .aux2 = .{ .lo = 0.6, .hi = 11 }, .moist2 = .{ .lo = 0.3, .hi = 0.35 }, .noise_seed = 9 },
+    .{ .idx = NB_DIRT5, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.4, .hi = 0.45 }, .noise_seed = 10 },
+    .{ .idx = NB_DIRT6, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.45, .hi = 0.5 }, .noise_seed = 11 },
+    .{ .idx = NB_DIRT7, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.5, .hi = 0.55 }, .noise_seed = 12 },
+    .{ .idx = NB_GRASS1, .aux = .{ .lo = -10, .hi = 11 }, .moist = .{ .lo = 0.7, .hi = 11 }, .noise_seed = 19 },
+    .{ .idx = NB_GRASS2, .aux = .{ .lo = 0.45, .hi = 11 }, .moist = .{ .lo = 0.45, .hi = 0.8 }, .noise_seed = 20 },
+    .{ .idx = NB_GRASS3, .aux = .{ .lo = -10, .hi = 0.65 }, .moist = .{ .lo = 0.6, .hi = 0.9 }, .noise_seed = 21 },
+    .{ .idx = NB_GRASS4, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.5, .hi = 0.7 }, .noise_seed = 22 },
+};
+
+/// Base-Nauvis tile competition. One basis-noise gen per land rule (the
+/// per-layer noise_layer_noise), precomputed from the map seed.
+pub const BaseNauvis = struct {
+    gens: [nauvis_rules.len]noise.BasisNoiseGen,
+
+    pub fn init(map_seed: u32) BaseNauvis {
+        var c: BaseNauvis = undefined;
+        for (nauvis_rules, 0..) |r, i| c.gens[i] = noise.BasisNoiseGen.init(map_seed, r.noise_seed);
+        return c;
     }
-    // low aux = dustier ground.
-    c = vmix(c, dirt_col, 0.55 * vramp(a, 0.34, 0.1));
 
-    // hot desert fringe (rare on Nauvis, dominant only at very high t).
-    const hot = vramp(t, 68.0, 88.0);
-    const desert = vmix(dirt_col, sand_col, vramp(m, 0.55, 0.05));
-    c = vmix(c, desert, hot);
+    /// soft band plateau: 1 deep inside, linear falloff at the edges (the
+    /// alien-biomes plateauPeak shape — stands in for expression_in_range).
+    fn band(v: f64, lo: f64, hi: f64) f64 {
+        const center = (lo + hi) / 2.0;
+        const range = @abs(lo - hi) / 2.0;
+        if (range <= 0.0) return if (v == center) 1.0 else 0.0;
+        const d = @max(0.0, (range - @abs(v - center)) * 20.0);
+        return @min(d, 1.0);
+    }
+    fn bandRange(aux: f64, m: f64, r: *const NauvisRule, which: u1) f64 {
+        const a = if (which == 0) r.aux else r.aux2.?;
+        const mo = if (which == 0) r.moist else r.moist2.?;
+        return band(aux, a.lo, a.hi) * band(m, mo.lo, mo.hi);
+    }
 
-    // sandy shores near water: strongest right at the coastline, only on dry
-    // ground (moisture low), suppressed in the snow.
-    const shore = @exp(-e * 0.9);
-    c = vmix(c, vmix(dirt_col, sand_col, 0.85), 0.6 * shore * (1.0 - snow) * (1.0 - vramp(m, 0.5, 0.15)));
-
-    // snow overrides everything in cold areas (soft band overlap).
-    c = vmix(c, snow_col, snow);
-
-    // gentle texture: tiny per-tile brightness wobble from a fixed gradient
-    // noise (approximation of the vanilla tile variants).
-    const j = vclamp(noise.basisNoise(x, y, 0x51F4AE, 0x6A09E667, 1.0 / 26.0, 1.0), -1.0, 1.0);
-    return vshade(c, 1.0 + 0.055 * j);
-}
+    /// Winning tile index into nauvis_base_palette at (x, y) given elevation,
+    /// moisture, aux. Water/deepwater (water_base) compete in the same argmax
+    /// as every land tile — the effective shoreline falls where water_base
+    /// (~100·-e) stops beating the land plateau, i.e. e ≈ −0.01 (the game
+    /// calibrates ≈ −0.012).
+    pub fn classify(self: *const BaseNauvis, x: f64, y: f64, e: f64, m: f64, aux: f64) u8 {
+        // water_base(0,100) / water_base(-2,200): influence·min(max_elev-e,1)
+        const water_p: f64 = if (e < 0.0) 100.0 * @min(-e, 1.0) else -std.math.inf(f64);
+        const deep_p: f64 = if (e < -2.0) 200.0 * @min(-2.0 - e, 1.0) else -std.math.inf(f64);
+        var best = water_p;
+        var best_idx: u8 = NB_WATER;
+        if (deep_p > best) {
+            best = deep_p;
+            best_idx = NB_DEEPWATER;
+        }
+        for (&nauvis_rules, 0..) |*r, i| {
+            var p = bandRange(aux, m, r, 0);
+            if (r.aux2 != null) p = @max(p, bandRange(aux, m, r, 1));
+            if (r.shore) p = @max(p, band(e, -1.5, 1.5) * band(aux, 0.5, 1.0));
+            // noise_layer_noise(seed) = multioctave, 4 octaves, 0.7 persist,
+            // input_scale 1/6, output_scale 2/3 — makes patchy tile speckle.
+            p += @as(f64, @floatCast(noise.multioctaveNoisePrebuilt(&self.gens[i], x, y, 4, 0.7, 1.0 / 6.0, 2.0 / 3.0)));
+            if (p > best) {
+                best = p;
+                best_idx = r.idx;
+            }
+        }
+        return best_idx;
+    }
+};
 
 // Unified tile-index space for the tile-correction pass: 0..biomes.len-1 are land
 // biomes; the following are the water/wetland tiles; BG = outside the disk.

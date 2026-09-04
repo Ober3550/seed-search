@@ -24,8 +24,8 @@
 (function () {
   var SEED = window.__SURF_SEED__;
   var TARGET = window.__SURF_TARGET__ || "";
-  var MOD = window.__SURF_MOD__ || "se+k2";
-  var K2 = MOD === "se+k2";
+  var MOD = window.__SURF_MOD__ || "k2se";
+  var K2 = MOD === "k2se";
 
   var PLANETS = {
     vulcanus: { label: "🌋 Vulcanus", ok: false, why: "Vulcanus terrain needs the multisample autoplace op — not ported yet" },
@@ -290,7 +290,7 @@
     if (TARGET === "Nauvis") return { kind: "nauvis" };
     var lower = TARGET.toLowerCase();
     if (PLANETS[lower]) return { kind: "sa", planetKey: lower };
-    if (MOD !== "se" && MOD !== "se+k2") {
+    if (MOD !== "se" && MOD !== "k2se") {
       return { kind: "error", msg: TARGET + " is not an SE zone of seed " + SEED + " (mod " + MOD + " has no universe generator)." };
     }
     return { kind: "zone" };
@@ -366,7 +366,7 @@
 
     // zone / nauvis → chunked surface.wasm pipeline.
     var palette = "se"; // alien-biomes ground is Space-Exploration-only
-    if (kind === "nauvis" && MOD !== "se" && MOD !== "se+k2") palette = "vanilla";
+    if (kind === "nauvis" && MOD !== "se" && MOD !== "k2se") palette = "vanilla";
     var needZone = kind === "zone";
     if (!pool) spawnPool();
     Promise.resolve(needZone ? fetchZone() : nauvisZone())
@@ -435,10 +435,10 @@
       els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet terrain (sa.wasm).</span>";
       els.badge.textContent = p.ok ? "planet" : "pending";
     } else if (kind === "nauvis") {
-      var vanilla = MOD !== "se" && MOD !== "se+k2";
+      var vanilla = MOD !== "se" && MOD !== "k2se";
       els.meta.innerHTML = "🌍 Nauvis <span class=\"hint\">· seed " + SEED + " · game-default map settings" +
         (vanilla
-          ? ", base-game ground (vanilla-style — the exact 2.0 tile-autoplace port is pending; alien-biomes stays SE-only)."
+          ? ", base-game Nauvis tiles (real 2.0 tile palette; tile selection approximated until expression_in_range is ported)."
           : ", SE ground (alien-biomes, exact).") + "</span>";
     } else {
       els.meta.innerHTML = "SE zone of seed " + SEED + " <span class=\"hint\">· resolving universe…</span>";

@@ -270,6 +270,14 @@ fn generateZone(
     });
     const classifier = try a.create(biome.Classifier);
     classifier.* = biome.Classifier.init(zone_seed);
+    // Base (vanilla) Nauvis ground for the base/Space Age configs — a separate
+    // tile competition + palette from the SE alien-biomes classifier above.
+    var base_nauvis: ?*biome.BaseNauvis = null;
+    if (vanilla_ground) {
+        const bc = try a.create(biome.BaseNauvis);
+        bc.* = biome.BaseNauvis.init(zone_seed);
+        base_nauvis = bc;
+    }
 
     // The render/ore RECT half-extent. --radius caps it (so we can generate
     // just the inner disk) while `radius` above stays the zone's true radius
@@ -338,13 +346,10 @@ fn generateZone(
                 const fy: f64 = @floatFromInt(iy);
                 if (fx * fx + fy * fy > radius * radius) continue;
                 const e = if (has_water) el_s.at(fx, fy) else 1.0;
-                const color: [3]u8 = if (has_water and e < 0.0)
-                    (if (e < -5.0)
-                        (if (vanilla_ground) biome.vanilla_deepwater else biome.deepwater)
-                    else
-                        (if (vanilla_ground) biome.vanilla_water else biome.water))
-                else if (vanilla_ground)
-                    biome.vanillaNauvisLand(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e)
+                const color: [3]u8 = if (vanilla_ground)
+                    biome.nauvis_base_palette[base_nauvis.?.classify(fx, fy, e, zt.moisture(fx, fy), zt.aux(fx, fy))].color
+                else if (has_water and e < 0.0)
+                    (if (e < -5.0) biome.deepwater else biome.water)
                 else
                     classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
                 const lpx: usize = @intCast(ix - xa);
@@ -378,6 +383,7 @@ fn generateZone(
     try summary.appendSlice(a, "{\"ok\":true");
     try appendFmt(a, &summary, ",\"zone\":\"{s}\",\"zone_seed\":{d},\"type\":\"{s}\"", .{ name, zone_seed, ztype_str });
     try appendFmt(a, &summary, ",\"radius\":{d},\"width\":{d},\"height\":{d},\"layer\":{d}", .{ r, cw, ch, layer });
+    try appendFmt(a, &summary, ",\"palette\":\"{s}\"", .{if (vanilla_ground) "nauvis-base" else "se-alien-biomes"});
     if (rect != null)
         try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
     try summary.appendSlice(a, ",\"resources\":{");

@@ -120,19 +120,23 @@ const LIVERELOAD_SNIPPET = DEV ? `
   })();
   </script>` : "";
 
-// ── Mod configuration (base | sa | se | se+k2) ──────────────────────────
-const MODS = ["base", "sa", "se", "se+k2"];
+// ── Mod configuration (base | sa | se | k2se) ─────────────────────────────
+// k2se = SE + Krastorio 2. Written without '+' so URLs don't need it encoded;
+// the legacy "se+k2" query value is accepted and treated as k2se.
+const MODS = ["base", "sa", "se", "k2se"];
 function navMod(req) {
-  const m = String(req.query.mod || "");
-  return MODS.includes(m) ? m : "se+k2"; // default matches the legacy default (K2 on)
+  let m = String(req.query.mod || "");
+  if (m === "se+k2") m = "k2se"; // legacy alias
+  return MODS.includes(m) ? m : "k2se"; // default = K2 on
 }
+function modLabel(m) { return { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" }[m] || m; }
 function modHref(path, mod) { return path + (mod ? (path.includes("?") ? "&" : "?") + "mod=" + encodeURIComponent(mod) : ""); }
 
 // ── Layout ───────────────────────────────────────────────────────────────
 
 
 function htmxPage(title, content, mod, backSeed) {
-  mod = mod || "se+k2";
+  mod = mod || "k2se";
   const seedHref = backSeed != null ? "/seed?seed=" + encodeURIComponent(backSeed) + "&mod=" + encodeURIComponent(mod) : modHref("/seed", mod);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -161,7 +165,7 @@ function htmxPage(title, content, mod, backSeed) {
       <h1>🌌 Surface Explorer</h1>
       <label class="modcfg">Mod config
         <select id="mod-nav">
-          ${MODS.map(m => `<option value="${m}"${m === mod ? " selected" : ""}>${{ base: "Base", sa: "Space Age", se: "Space Exploration", "se+k2": "SE + K2" }[m]}</option>`).join("")}
+          ${MODS.map(m => `<option value="${m}"${m === mod ? " selected" : ""}>${modLabel(m)}</option>`).join("")}
         </select>
       </label>
       <ul class="nav-links">
@@ -836,10 +840,10 @@ app.get("/analyze/:seed", (req, res) => res.redirect("/seed?seed=" + encodeURICo
 app.get("/seed", (req, res) => {
   const mod = navMod(req);
   const seed = /^\d+$/.test(req.query.seed || "") ? parseInt(req.query.seed) : null;
-  const k2 = mod === "se+k2";
+  const k2 = mod === "k2se";
   const content = `
   <div class="page" data-mod="${mod}">
-    <div class="crumbs"><span>Seed (client-side · ${{ base: "Base", sa: "Space Age", se: "Space Exploration", "se+k2": "SE + K2" }[mod]})</span></div>
+    <div class="crumbs"><span>Seed (client-side · ${modLabel(mod)})</span></div>
     <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
     <div class="filter-bar">
       <label>Seed <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
