@@ -419,7 +419,7 @@ async function runSEZone(mapSeed, zone, rect, mode) {
   return { elev, idx, width: w, height: h };
 }
 
-self.onmessage = async function (ev) {
+async function handleMsg(ev) {
   const msg = ev.data;
   if (!msg || msg.id == null) return;
   try {
@@ -467,6 +467,15 @@ self.onmessage = async function (ev) {
   } catch (e) {
     self.postMessage({ id: msg.id, ok: false, error: (e && e.message) || String(e) });
   }
+}
+
+// Serialize request handling: runSEZone shares device/table state and is not
+// re-entrant (concurrent gpu-surface messages produced invalid bind groups).
+var _msgQueue = Promise.resolve();
+self.onmessage = function (ev) {
+  if (!ev.data || ev.data.id == null) return;
+  var _id = ev.data.id;
+  _msgQueue = _msgQueue.then(function () { return handleMsg(ev); }).catch(function () {});
 };
 
 
