@@ -364,7 +364,8 @@ async function runSEZone(mapSeed, zone, rect, mode) {
   const osPers = ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5;
   // uniform: 26 floats then width/height/mode u32s (116 bytes)
   const tags = (zone && zone.tags) || {};
-  const hasWater = !!tags.water && tags.water !== "none";
+  const wtag = (zone && zone.water) || tags.water || "";
+  const hasWater = wtag.length > 0 && wtag !== "none";
   const arr = new ArrayBuffer(116);
   const f = new Float32Array(arr);
   const v = [rect.x0, rect.y0, nsm, seg, waterLevel,
