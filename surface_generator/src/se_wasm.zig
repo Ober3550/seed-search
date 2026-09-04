@@ -497,6 +497,10 @@ fn generateZone(
         const c = terrain.startingLakeCenter(zone_seed);
         el_s.addStartingLake(c[0], c[1]);
     }
+    // Asteroid fields draw se-space/se-asteroid tiles (field model), not the
+    // alien-biomes classifier — matches asteroid_render.zig / the game belt.
+    var field: ?asteroid.AsteroidField = null;
+    if (is_field) field = asteroid.AsteroidField.initField(zone_seed);
     if (!terrainless and layer != 2) {
         var iy: i32 = ya;
         while (iy < yb) : (iy += 1) {
@@ -514,7 +518,9 @@ fn generateZone(
                     mo_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "moisture");
                     aux_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "aux");
                 }
-                const color: [3]u8 = if (vanilla_ground)
+                const color: [3]u8 = if (field) |f|
+                    f.colorAt(fx, fy)
+                else if (vanilla_ground)
                     biome.nauvis_base_palette[base_nauvis.?.classify(fx, fy, e, mo_van, aux_van)].color
                 else if (has_water and e < 0.0)
                     (if (e < -5.0) biome.deepwater else biome.water)

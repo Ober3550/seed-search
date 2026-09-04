@@ -70,7 +70,9 @@
   // pixels outside the radius disk are left transparent (matches the CPU map
   // which draws a disk on a transparent square). req: { seed, zone, radius,
   // onProgress?, cell? } -> { rgba: Uint8Array(2R*2R*4), width, height }
-  window.generateSEZoneGPU = function (req) {
+  // Generic disk-chunked terrain wrapper shared by the SE classifier and the
+  // asteroid-field kernel: cells over [-R,R), disk-cropped at diskR.
+  function gpuDisk(req, workerKind) {
     var seed = req.seed, zone = req.zone, R = req.radius;
     var diskR = req.diskR || R;      // disk crop radius (<= R)
     var cell = req.cell || 512;
@@ -94,7 +96,7 @@
 
     var done = 0;
     var run = cells.map(function (c) {
-      return window.generateSurfaceGPU({ seed: seed, kind: "se-color", zone: zone, rect: { x0: c.xa, y0: c.ya, x1: c.xb, y1: c.yb } })
+      return window.generateSurfaceGPU({ seed: seed, kind: workerKind, zone: zone, rect: { x0: c.xa, y0: c.ya, x1: c.xb, y1: c.yb } })
         .then(function (r) {
           var packed = new Uint32Array(r.pixels);
           var cw = c.xb - c.xa, ch = c.yb - c.ya;
@@ -112,5 +114,15 @@
         });
     });
     return Promise.all(run).then(function () { return { rgba: rgba, width: size, height: size, cells: cells.length }; });
+  };
+
+  window.generateSEZoneGPU = function (req) { return gpuDisk(req, "se-color"); };
+  window.generateSEFieldGPU = function (req) {
+    // the field kernel seeds its billows gen with the ZONE's map seed, not the
+    // world seed
+    var r2 = {};
+    for (var k in req) r2[k] = req[k];
+    if (req.zone && req.zone.s != null) r2.seed = req.zone.s;
+    return gpuDisk(r2, "field-color");
   };
 })();

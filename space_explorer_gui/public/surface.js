@@ -467,6 +467,15 @@
             diskClearOutside(rgba, W, diskR);
             return { rgba: rgba, width: W, height: H, cells: 1, backend: "nauvis-tiles" };
           });
+        } else if (z.t === "asteroid-field") {
+          status("gpu: dispatching se asteroid-field kernel…");
+          terrain = window.generateSEFieldGPU({
+            seed: SEED, zone: z, radius: R, diskR: diskR,
+            onProgress: function (done, total) {
+              status("gpu: asteroid field " + done + "/" + total + " cells…");
+              setProgress(total ? done / total : 0);
+            }
+          }).then(function (o) { o.backend = "se-field"; return o; });
         } else {
           status("gpu: dispatching se alien-biomes classifier…");
           terrain = window.generateSEZoneGPU({

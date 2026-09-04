@@ -447,6 +447,21 @@ async function handleMsg(ev) {
       self.postMessage({ id: msg.id, ok: true, summary: { kind: req.kind, width: r.width, height: r.height }, pixels }, [pixels.buffer]);
       return;
     }
+    if (req.kind === "field" || req.kind === "field-color") {
+      const rect = req.rect;
+      const mode = req.kind === "field" ? 0 : 1;
+      const r = await runFieldZone(req.seed >>> 0, rect, mode);
+      const n = r.width * r.height;
+      let pixels;
+      if (mode === 0) {
+        pixels = new Uint8Array(n);
+        for (let i = 0; i < n; i++) pixels[i] = r.idx[i];
+      } else {
+        pixels = new Uint32Array(r.idx);
+      }
+      self.postMessage({ id: msg.id, ok: true, summary: { kind: req.kind, width: r.width, height: r.height }, pixels }, [pixels.buffer]);
+      return;
+    }
     const mapSeed = req.seed >>> 0;
     const rect = req.rect || { x0: -req.radius, y0: -req.radius, x1: req.radius, y1: req.radius };
     const kind = req.kind;
@@ -508,6 +523,82 @@ function readbackU32(device, buf, count) {
     return arr.slice(0, count);
   });
 }
+
+// ── Asteroid-field kernel (se_field.wgsl) ─────────────────────────────────
+let fieldP = null; // { pipeline, dev }
+let fieldTables = null; // { seed, bufs } single billows gen (zone_seed, 1)
+
+async function fieldPipeline() {
+  if (fieldP) return fieldP;
+  const dev = await getDevice();
+  const code = await fetchShader("se_field.wgsl");
+  const module = dev.createShaderModule({ code });
+  const info = await module.getCompilationInfo();
+  const errs = (info.messages || []).filter((m) => m.type === "error");
+  if (errs.length) throw new Error("se_field.wgsl: " + errs.map((e) => e.lineNum + ":" + e.linePos + " " + e.message).join(" | "));
+  const pipeline = dev.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "main" } });
+  fieldP = { pipeline, dev };
+  return fieldP;
+}
+
+function fieldTablesFor(dev, zoneSeed) {
+  if (fieldTables && fieldTables.seed === zoneSeed) return fieldTables;
+  const g = buildGen(zoneSeed, 1);
+  const mk = (arr) => { const b = dev.createBuffer({ size: arr.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); dev.queue.writeBuffer(b, 0, arr); return b; };
+  fieldTables = {
+    seed: zoneSeed,
+    perm1: mk(toU32(g.perm1)), perm2: mk(toU32(g.perm2)),
+    grad: mk(g.grad), sb: mk(new Uint32Array([g.seedByte])),
+  };
+  return fieldTables;
+}
+
+async function runFieldZone(zoneSeed, rect, mode) {
+  const ctx = await fieldPipeline();
+  const dev = ctx.dev;
+  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
+  // uniform: origin_x, origin_y, planetR f32 + width/height/mode u32 (32 B)
+  const arr = new ArrayBuffer(32);
+  const f = new Float32Array(arr);
+  f[0] = rect.x0; f[1] = rect.y0;
+  f[2] = (10000.0 / 6.0) * (6.0 + Math.log2(1000.0 / 6.0)); // field planet_radius
+  const d = new DataView(arr);
+  d.setUint32(12, w, true); d.setUint32(16, h, true); d.setUint32(20, mode, true);
+  const uni = dev.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  dev.queue.writeBuffer(uni, 0, arr);
+
+  const t = fieldTablesFor(dev, zoneSeed);
+  const outIdx = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const bind = dev.createBindGroup({
+    layout: ctx.pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uni } },
+      { binding: 1, resource: { buffer: t.perm1 } },
+      { binding: 2, resource: { buffer: t.perm2 } },
+      { binding: 3, resource: { buffer: t.grad } },
+      { binding: 4, resource: { buffer: t.sb } },
+      { binding: 5, resource: { buffer: outIdx } },
+    ],
+  });
+  const enc = dev.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(ctx.pipeline);
+  pass.setBindGroup(0, bind);
+  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+  pass.end();
+  dev.pushErrorScope("validation");
+  dev.queue.submit([enc.finish()]);
+  const verr = await dev.popErrorScope();
+  if (verr) throw new Error("gpu validation: " + verr.message);
+
+  const rB = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc2 = dev.createCommandEncoder();
+  enc2.copyBufferToBuffer(outIdx, 0, rB, 0, w * h * 4);
+  dev.queue.submit([enc2.finish()]);
+  const idx = await readbackU32(dev, rB, w * h);
+  return { width: w, height: h, idx };
+}
+
 
 function padF32Uniform(n) { // WGSL uniform struct size is rounded to 16
   return Math.ceil(n / 4) * 4;
