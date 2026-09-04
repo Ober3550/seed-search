@@ -385,7 +385,7 @@
     // zone / base Nauvis: preview radius IS the disk radius (planets render an
     // R-disk even though the real map is "infinite"). Allow up to 10000 — the
     // max radius of an SE zone/planet.
-    return { min: 10, max: 10000, step: 50, value: 200 };
+    return { min: 10, max: 10000, step: 50, value: 500 };
   }
 
   function adaptForKind() {
