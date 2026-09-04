@@ -1,0 +1,1502 @@
+{
+ "tile-unknown": {
+  "name": "tile-unknown",
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "layer": 0,
+  "subgroup": ""
+ },
+ "water-wube": {
+  "name": "water-wube",
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "layer": 2,
+  "subgroup": "special-tiles"
+ },
+ "out-of-map": {
+  "name": "out-of-map",
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "layer": 0,
+  "subgroup": "special-tiles"
+ },
+ "deepwater": {
+  "name": "deepwater",
+  "color": [
+   38,
+   64,
+   73
+  ],
+  "layer": 3,
+  "subgroup": "nauvis-tiles"
+ },
+ "deepwater-green": {
+  "name": "deepwater-green",
+  "color": [
+   24,
+   38,
+   17
+  ],
+  "layer": 3,
+  "subgroup": "nauvis-tiles"
+ },
+ "water": {
+  "name": "water",
+  "color": [
+   51,
+   83,
+   95
+  ],
+  "layer": 3,
+  "subgroup": "nauvis-tiles"
+ },
+ "water-green": {
+  "name": "water-green",
+  "color": [
+   31,
+   48,
+   18
+  ],
+  "layer": 3,
+  "subgroup": "nauvis-tiles"
+ },
+ "water-shallow": {
+  "name": "water-shallow",
+  "color": [
+   82,
+   98,
+   92
+  ],
+  "layer": 6,
+  "subgroup": "nauvis-tiles"
+ },
+ "water-mud": {
+  "name": "water-mud",
+  "color": [
+   65,
+   89,
+   90
+  ],
+  "layer": 7,
+  "subgroup": "nauvis-tiles"
+ },
+ "grass-1": {
+  "name": "grass-1",
+  "color": [
+   55,
+   53,
+   11
+  ],
+  "layer": 26,
+  "subgroup": "nauvis-tiles"
+ },
+ "grass-2": {
+  "name": "grass-2",
+  "color": [
+   66,
+   57,
+   15
+  ],
+  "layer": 28,
+  "subgroup": "nauvis-tiles"
+ },
+ "grass-3": {
+  "name": "grass-3",
+  "color": [
+   65,
+   52,
+   28
+  ],
+  "layer": 29,
+  "subgroup": "nauvis-tiles"
+ },
+ "grass-4": {
+  "name": "grass-4",
+  "color": [
+   59,
+   40,
+   18
+  ],
+  "layer": 30,
+  "subgroup": "nauvis-tiles"
+ },
+ "dry-dirt": {
+  "name": "dry-dirt",
+  "color": [
+   94,
+   66,
+   37
+  ],
+  "layer": 18,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-1": {
+  "name": "dirt-1",
+  "color": [
+   141,
+   104,
+   60
+  ],
+  "layer": 19,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-2": {
+  "name": "dirt-2",
+  "color": [
+   136,
+   96,
+   59
+  ],
+  "layer": 20,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-3": {
+  "name": "dirt-3",
+  "color": [
+   133,
+   92,
+   53
+  ],
+  "layer": 21,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-4": {
+  "name": "dirt-4",
+  "color": [
+   103,
+   72,
+   43
+  ],
+  "layer": 22,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-5": {
+  "name": "dirt-5",
+  "color": [
+   91,
+   63,
+   38
+  ],
+  "layer": 23,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-6": {
+  "name": "dirt-6",
+  "color": [
+   80,
+   55,
+   31
+  ],
+  "layer": 24,
+  "subgroup": "nauvis-tiles"
+ },
+ "dirt-7": {
+  "name": "dirt-7",
+  "color": [
+   80,
+   54,
+   28
+  ],
+  "layer": 25,
+  "subgroup": "nauvis-tiles"
+ },
+ "sand-1": {
+  "name": "sand-1",
+  "color": [
+   138,
+   103,
+   58
+  ],
+  "layer": 8,
+  "subgroup": "nauvis-tiles"
+ },
+ "sand-2": {
+  "name": "sand-2",
+  "color": [
+   128,
+   93,
+   52
+  ],
+  "layer": 9,
+  "subgroup": "nauvis-tiles"
+ },
+ "sand-3": {
+  "name": "sand-3",
+  "color": [
+   115,
+   83,
+   47
+  ],
+  "layer": 10,
+  "subgroup": "nauvis-tiles"
+ },
+ "red-desert-0": {
+  "name": "red-desert-0",
+  "color": [
+   103,
+   70,
+   32
+  ],
+  "layer": 31,
+  "subgroup": "nauvis-tiles"
+ },
+ "red-desert-1": {
+  "name": "red-desert-1",
+  "color": [
+   116,
+   81,
+   39
+  ],
+  "layer": 14,
+  "subgroup": "nauvis-tiles"
+ },
+ "red-desert-2": {
+  "name": "red-desert-2",
+  "color": [
+   116,
+   84,
+   43
+  ],
+  "layer": 15,
+  "subgroup": "nauvis-tiles"
+ },
+ "red-desert-3": {
+  "name": "red-desert-3",
+  "color": [
+   128,
+   93,
+   52
+  ],
+  "layer": 16,
+  "subgroup": "nauvis-tiles"
+ },
+ "nuclear-ground": {
+  "name": "nuclear-ground",
+  "color": [
+   48,
+   40,
+   35
+  ],
+  "layer": 33,
+  "subgroup": "special-tiles"
+ },
+ "stone-path": {
+  "name": "stone-path",
+  "color": [
+   86,
+   82,
+   74
+  ],
+  "layer": 11,
+  "subgroup": "artificial-tiles"
+ },
+ "lab-dark-1": {
+  "name": "lab-dark-1",
+  "color": [
+   49,
+   49,
+   49
+  ],
+  "layer": 25,
+  "subgroup": "special-tiles"
+ },
+ "lab-dark-2": {
+  "name": "lab-dark-2",
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "layer": 25,
+  "subgroup": "special-tiles"
+ },
+ "lab-white": {
+  "name": "lab-white",
+  "color": [
+   255,
+   255,
+   255
+  ],
+  "layer": 70,
+  "subgroup": "special-tiles"
+ },
+ "tutorial-grid": {
+  "name": "tutorial-grid",
+  "color": [
+   122,
+   122,
+   122
+  ],
+  "layer": 5,
+  "subgroup": "special-tiles"
+ },
+ "concrete": {
+  "name": "concrete",
+  "color": [
+   63,
+   61,
+   59
+  ],
+  "layer": 13,
+  "subgroup": "artificial-tiles"
+ },
+ "hazard-concrete-left": {
+  "name": "hazard-concrete-left",
+  "color": [
+   176,
+   142,
+   39
+  ],
+  "layer": 15,
+  "subgroup": "artificial-tiles"
+ },
+ "hazard-concrete-right": {
+  "name": "hazard-concrete-right",
+  "color": [
+   176,
+   142,
+   39
+  ],
+  "layer": 15,
+  "subgroup": "artificial-tiles"
+ },
+ "refined-concrete": {
+  "name": "refined-concrete",
+  "color": [
+   49,
+   48,
+   45
+  ],
+  "layer": 17,
+  "subgroup": "artificial-tiles"
+ },
+ "refined-hazard-concrete-left": {
+  "name": "refined-hazard-concrete-left",
+  "color": [
+   116,
+   94,
+   26
+  ],
+  "layer": 19,
+  "subgroup": "artificial-tiles"
+ },
+ "refined-hazard-concrete-right": {
+  "name": "refined-hazard-concrete-right",
+  "color": [
+   116,
+   94,
+   26
+  ],
+  "layer": 19,
+  "subgroup": "artificial-tiles"
+ },
+ "landfill": {
+  "name": "landfill",
+  "color": [
+   57,
+   39,
+   26
+  ],
+  "layer": 60,
+  "subgroup": "artificial-tiles"
+ },
+ "red-refined-concrete": {
+  "name": "red-refined-concrete",
+  "color": [
+   208,
+   6,
+   0
+  ],
+  "layer": 28,
+  "subgroup": "special-tiles"
+ },
+ "green-refined-concrete": {
+  "name": "green-refined-concrete",
+  "color": [
+   24,
+   196,
+   44
+  ],
+  "layer": 29,
+  "subgroup": "special-tiles"
+ },
+ "blue-refined-concrete": {
+  "name": "blue-refined-concrete",
+  "color": [
+   40,
+   138,
+   229
+  ],
+  "layer": 30,
+  "subgroup": "special-tiles"
+ },
+ "orange-refined-concrete": {
+  "name": "orange-refined-concrete",
+  "color": [
+   222,
+   128,
+   33
+  ],
+  "layer": 31,
+  "subgroup": "special-tiles"
+ },
+ "yellow-refined-concrete": {
+  "name": "yellow-refined-concrete",
+  "color": [
+   213,
+   170,
+   20
+  ],
+  "layer": 32,
+  "subgroup": "special-tiles"
+ },
+ "pink-refined-concrete": {
+  "name": "pink-refined-concrete",
+  "color": [
+   237,
+   98,
+   131
+  ],
+  "layer": 33,
+  "subgroup": "special-tiles"
+ },
+ "purple-refined-concrete": {
+  "name": "purple-refined-concrete",
+  "color": [
+   124,
+   28,
+   168
+  ],
+  "layer": 34,
+  "subgroup": "special-tiles"
+ },
+ "black-refined-concrete": {
+  "name": "black-refined-concrete",
+  "color": [
+   26,
+   26,
+   26
+  ],
+  "layer": 35,
+  "subgroup": "special-tiles"
+ },
+ "brown-refined-concrete": {
+  "name": "brown-refined-concrete",
+  "color": [
+   77,
+   30,
+   0
+  ],
+  "layer": 36,
+  "subgroup": "special-tiles"
+ },
+ "cyan-refined-concrete": {
+  "name": "cyan-refined-concrete",
+  "color": [
+   70,
+   193,
+   182
+  ],
+  "layer": 37,
+  "subgroup": "special-tiles"
+ },
+ "acid-refined-concrete": {
+  "name": "acid-refined-concrete",
+  "color": [
+   143,
+   194,
+   40
+  ],
+  "layer": 38,
+  "subgroup": "special-tiles"
+ },
+ "empty-space": {
+  "name": "empty-space",
+  "color": [
+   0,
+   0,
+   0
+  ],
+  "layer": 0,
+  "subgroup": "special-tiles"
+ },
+ "space-platform-foundation": {
+  "name": "space-platform-foundation",
+  "color": [
+   63,
+   61,
+   59
+  ],
+  "layer": 15,
+  "subgroup": "artificial-tiles"
+ },
+ "foundation": {
+  "name": "foundation",
+  "color": [
+   57,
+   39,
+   26
+  ],
+  "layer": 9,
+  "subgroup": "artificial-tiles"
+ },
+ "volcanic-jagged-ground": {
+  "name": "volcanic-jagged-ground",
+  "color": [
+   58,
+   58,
+   48
+  ],
+  "layer": 45,
+  "subgroup": "vulcanus-tiles"
+ },
+ "lava": {
+  "name": "lava",
+  "color": [
+   150,
+   49,
+   30
+  ],
+  "layer": 6,
+  "subgroup": "vulcanus-tiles"
+ },
+ "lava-hot": {
+  "name": "lava-hot",
+  "color": [
+   255,
+   138,
+   57
+  ],
+  "layer": 5,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-cracks-hot": {
+  "name": "volcanic-cracks-hot",
+  "color": [
+   58,
+   33,
+   23
+  ],
+  "layer": 42,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-cracks-warm": {
+  "name": "volcanic-cracks-warm",
+  "color": [
+   58,
+   38,
+   33
+  ],
+  "layer": 43,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-cracks": {
+  "name": "volcanic-cracks",
+  "color": [
+   43,
+   42,
+   43
+  ],
+  "layer": 44,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-folds-flat": {
+  "name": "volcanic-folds-flat",
+  "color": [
+   44,
+   43,
+   44
+  ],
+  "layer": 56,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-ash-light": {
+  "name": "volcanic-ash-light",
+  "color": [
+   53,
+   53,
+   53
+  ],
+  "layer": 54,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-ash-dark": {
+  "name": "volcanic-ash-dark",
+  "color": [
+   53,
+   53,
+   53
+  ],
+  "layer": 53,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-ash-flats": {
+  "name": "volcanic-ash-flats",
+  "color": [
+   53,
+   53,
+   53
+  ],
+  "layer": 52,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-pumice-stones": {
+  "name": "volcanic-pumice-stones",
+  "color": [
+   46,
+   46,
+   46
+  ],
+  "layer": 55,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-smooth-stone": {
+  "name": "volcanic-smooth-stone",
+  "color": [
+   50,
+   50,
+   58
+  ],
+  "layer": 41,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-smooth-stone-warm": {
+  "name": "volcanic-smooth-stone-warm",
+  "color": [
+   54,
+   50,
+   50
+  ],
+  "layer": 40,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-ash-cracks": {
+  "name": "volcanic-ash-cracks",
+  "color": [
+   67,
+   67,
+   67
+  ],
+  "layer": 46,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-folds": {
+  "name": "volcanic-folds",
+  "color": [
+   43,
+   43,
+   43
+  ],
+  "layer": 58,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-folds-warm": {
+  "name": "volcanic-folds-warm",
+  "color": [
+   65,
+   45,
+   45
+  ],
+  "layer": 57,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-soil-dark": {
+  "name": "volcanic-soil-dark",
+  "color": [
+   48,
+   51,
+   43
+  ],
+  "layer": 47,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-soil-light": {
+  "name": "volcanic-soil-light",
+  "color": [
+   58,
+   48,
+   43
+  ],
+  "layer": 48,
+  "subgroup": "vulcanus-tiles"
+ },
+ "volcanic-ash-soil": {
+  "name": "volcanic-ash-soil",
+  "color": [
+   48,
+   48,
+   43
+  ],
+  "layer": 51,
+  "subgroup": "vulcanus-tiles"
+ },
+ "artificial-yumako-soil": {
+  "name": "artificial-yumako-soil",
+  "color": [
+   204,
+   183,
+   6
+  ],
+  "layer": 87,
+  "subgroup": "gleba-tiles"
+ },
+ "overgrowth-yumako-soil": {
+  "name": "overgrowth-yumako-soil",
+  "color": [
+   204,
+   183,
+   6
+  ],
+  "layer": 89,
+  "subgroup": "gleba-tiles"
+ },
+ "artificial-jellynut-soil": {
+  "name": "artificial-jellynut-soil",
+  "color": [
+   204,
+   6,
+   183
+  ],
+  "layer": 88,
+  "subgroup": "gleba-tiles"
+ },
+ "overgrowth-jellynut-soil": {
+  "name": "overgrowth-jellynut-soil",
+  "color": [
+   204,
+   6,
+   183
+  ],
+  "layer": 90,
+  "subgroup": "gleba-tiles"
+ },
+ "natural-yumako-soil": {
+  "name": "natural-yumako-soil",
+  "color": [
+   185,
+   166,
+   5
+  ],
+  "layer": 85,
+  "subgroup": "gleba-tiles"
+ },
+ "natural-jellynut-soil": {
+  "name": "natural-jellynut-soil",
+  "color": [
+   185,
+   5,
+   166
+  ],
+  "layer": 86,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-olive-blubber": {
+  "name": "lowland-olive-blubber",
+  "color": [
+   66,
+   82,
+   11
+  ],
+  "layer": 36,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-olive-blubber-2": {
+  "name": "lowland-olive-blubber-2",
+  "color": [
+   66,
+   82,
+   11
+  ],
+  "layer": 35,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-olive-blubber-3": {
+  "name": "lowland-olive-blubber-3",
+  "color": [
+   66,
+   82,
+   11
+  ],
+  "layer": 40,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-brown-blubber": {
+  "name": "lowland-brown-blubber",
+  "color": [
+   66,
+   82,
+   11
+  ],
+  "layer": 33,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-pale-green": {
+  "name": "lowland-pale-green",
+  "color": [
+   66,
+   82,
+   11
+  ],
+  "layer": 34,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-cream-cauliflower-2": {
+  "name": "lowland-cream-cauliflower-2",
+  "color": [
+   95,
+   93,
+   88
+  ],
+  "layer": 39,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-cream-cauliflower": {
+  "name": "lowland-cream-cauliflower",
+  "color": [
+   95,
+   93,
+   88
+  ],
+  "layer": 40,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-dead-skin": {
+  "name": "lowland-dead-skin",
+  "color": [
+   95,
+   93,
+   88
+  ],
+  "layer": 37,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-dead-skin-2": {
+  "name": "lowland-dead-skin-2",
+  "color": [
+   95,
+   93,
+   88
+  ],
+  "layer": 38,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-cream-red": {
+  "name": "lowland-cream-red",
+  "color": [
+   95,
+   83,
+   78
+  ],
+  "layer": 43,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-vein-2": {
+  "name": "lowland-red-vein-2",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 44,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-vein": {
+  "name": "lowland-red-vein",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 45,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-vein-3": {
+  "name": "lowland-red-vein-3",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 46,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-vein-4": {
+  "name": "lowland-red-vein-4",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 47,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-vein-dead": {
+  "name": "lowland-red-vein-dead",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 39,
+  "subgroup": "gleba-tiles"
+ },
+ "lowland-red-infection": {
+  "name": "lowland-red-infection",
+  "color": [
+   115,
+   53,
+   66
+  ],
+  "layer": 48,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-cracked-lichen": {
+  "name": "midland-cracked-lichen",
+  "color": [
+   81,
+   77,
+   44
+  ],
+  "layer": 73,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-cracked-lichen-dull": {
+  "name": "midland-cracked-lichen-dull",
+  "color": [
+   71,
+   67,
+   40
+  ],
+  "layer": 74,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-cracked-lichen-dark": {
+  "name": "midland-cracked-lichen-dark",
+  "color": [
+   61,
+   57,
+   30
+  ],
+  "layer": 65,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-turquoise-bark-2": {
+  "name": "midland-turquoise-bark-2",
+  "color": [
+   46,
+   68,
+   48
+  ],
+  "layer": 75,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-turquoise-bark": {
+  "name": "midland-turquoise-bark",
+  "color": [
+   46,
+   68,
+   48
+  ],
+  "layer": 76,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-yellow-crust-3": {
+  "name": "midland-yellow-crust-3",
+  "color": [
+   114,
+   86,
+   40
+  ],
+  "layer": 77,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-yellow-crust-2": {
+  "name": "midland-yellow-crust-2",
+  "color": [
+   114,
+   86,
+   40
+  ],
+  "layer": 78,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-yellow-crust": {
+  "name": "midland-yellow-crust",
+  "color": [
+   114,
+   86,
+   40
+  ],
+  "layer": 79,
+  "subgroup": "gleba-tiles"
+ },
+ "midland-yellow-crust-4": {
+  "name": "midland-yellow-crust-4",
+  "color": [
+   114,
+   86,
+   40
+  ],
+  "layer": 80,
+  "subgroup": "gleba-tiles"
+ },
+ "highland-dark-rock": {
+  "name": "highland-dark-rock",
+  "color": [
+   52,
+   55,
+   48
+  ],
+  "layer": 81,
+  "subgroup": "gleba-tiles"
+ },
+ "highland-dark-rock-2": {
+  "name": "highland-dark-rock-2",
+  "color": [
+   52,
+   55,
+   48
+  ],
+  "layer": 82,
+  "subgroup": "gleba-tiles"
+ },
+ "highland-yellow-rock": {
+  "name": "highland-yellow-rock",
+  "color": [
+   52,
+   55,
+   48
+  ],
+  "layer": 83,
+  "subgroup": "gleba-tiles"
+ },
+ "pit-rock": {
+  "name": "pit-rock",
+  "color": [
+   50,
+   50,
+   58
+  ],
+  "layer": 64,
+  "subgroup": "gleba-tiles"
+ },
+ "wetland-yumako": {
+  "name": "wetland-yumako",
+  "color": [
+   132,
+   119,
+   7
+  ],
+  "layer": 3,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-jellynut": {
+  "name": "wetland-jellynut",
+  "color": [
+   132,
+   7,
+   119
+  ],
+  "layer": 3,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-dead-skin": {
+  "name": "wetland-dead-skin",
+  "color": [
+   46,
+   45,
+   51
+  ],
+  "layer": 7,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-light-dead-skin": {
+  "name": "wetland-light-dead-skin",
+  "color": [
+   51,
+   50,
+   56
+  ],
+  "layer": 7,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-green-slime": {
+  "name": "wetland-green-slime",
+  "color": [
+   25,
+   53,
+   25
+  ],
+  "layer": 6,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-light-green-slime": {
+  "name": "wetland-light-green-slime",
+  "color": [
+   35,
+   63,
+   35
+  ],
+  "layer": 6,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-red-tentacle": {
+  "name": "wetland-red-tentacle",
+  "color": [
+   54,
+   15,
+   24
+  ],
+  "layer": 5,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-pink-tentacle": {
+  "name": "wetland-pink-tentacle",
+  "color": [
+   64,
+   19,
+   34
+  ],
+  "layer": 5,
+  "subgroup": "gleba-water-tiles"
+ },
+ "wetland-blue-slime": {
+  "name": "wetland-blue-slime",
+  "color": [
+   25,
+   49,
+   58
+  ],
+  "layer": 1,
+  "subgroup": "gleba-water-tiles"
+ },
+ "gleba-deep-lake": {
+  "name": "gleba-deep-lake",
+  "color": [
+   18,
+   37,
+   51
+  ],
+  "layer": 1,
+  "subgroup": "gleba-water-tiles"
+ },
+ "fulgoran-dust": {
+  "name": "fulgoran-dust",
+  "color": [
+   112,
+   65,
+   50
+  ],
+  "layer": 6,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-dunes": {
+  "name": "fulgoran-dunes",
+  "color": [
+   125,
+   71,
+   59
+  ],
+  "layer": 7,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-sand": {
+  "name": "fulgoran-sand",
+  "color": [
+   118,
+   68,
+   56
+  ],
+  "layer": 8,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-rock": {
+  "name": "fulgoran-rock",
+  "color": [
+   131,
+   85,
+   66
+  ],
+  "layer": 9,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-paving": {
+  "name": "fulgoran-paving",
+  "color": [
+   120,
+   94,
+   67
+  ],
+  "layer": 5,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-walls": {
+  "name": "fulgoran-walls",
+  "color": [
+   114,
+   75,
+   65
+  ],
+  "layer": 10,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-conduit": {
+  "name": "fulgoran-conduit",
+  "color": [
+   100,
+   79,
+   68
+  ],
+  "layer": 11,
+  "subgroup": "fulgora-tiles"
+ },
+ "fulgoran-machinery": {
+  "name": "fulgoran-machinery",
+  "color": [
+   89,
+   79,
+   68
+  ],
+  "layer": 12,
+  "subgroup": "fulgora-tiles"
+ },
+ "oil-ocean-shallow": {
+  "name": "oil-ocean-shallow",
+  "color": [
+   74,
+   42,
+   43
+  ],
+  "layer": 4,
+  "subgroup": "fulgora-tiles"
+ },
+ "oil-ocean-deep": {
+  "name": "oil-ocean-deep",
+  "color": [
+   56,
+   36,
+   40
+  ],
+  "layer": 3,
+  "subgroup": "fulgora-tiles"
+ },
+ "ammoniacal-ocean": {
+  "name": "ammoniacal-ocean",
+  "color": [
+   15,
+   13,
+   25
+  ],
+  "layer": 3,
+  "subgroup": "aquilo-tiles"
+ },
+ "ammoniacal-ocean-2": {
+  "name": "ammoniacal-ocean-2",
+  "color": [
+   17,
+   15,
+   30
+  ],
+  "layer": 3,
+  "subgroup": "aquilo-tiles"
+ },
+ "snow-flat": {
+  "name": "snow-flat",
+  "color": [
+   190,
+   194,
+   197
+  ],
+  "layer": 52,
+  "subgroup": "aquilo-tiles"
+ },
+ "dust-flat": {
+  "name": "dust-flat",
+  "color": [
+   190,
+   194,
+   197
+  ],
+  "layer": 60,
+  "subgroup": "aquilo-tiles"
+ },
+ "snow-crests": {
+  "name": "snow-crests",
+  "color": [
+   180,
+   186,
+   192
+  ],
+  "layer": 53,
+  "subgroup": "aquilo-tiles"
+ },
+ "dust-crests": {
+  "name": "dust-crests",
+  "color": [
+   180,
+   186,
+   192
+  ],
+  "layer": 61,
+  "subgroup": "aquilo-tiles"
+ },
+ "snow-lumpy": {
+  "name": "snow-lumpy",
+  "color": [
+   166,
+   174,
+   186
+  ],
+  "layer": 54,
+  "subgroup": "aquilo-tiles"
+ },
+ "dust-lumpy": {
+  "name": "dust-lumpy",
+  "color": [
+   166,
+   174,
+   186
+  ],
+  "layer": 62,
+  "subgroup": "aquilo-tiles"
+ },
+ "snow-patchy": {
+  "name": "snow-patchy",
+  "color": [
+   156,
+   166,
+   181
+  ],
+  "layer": 55,
+  "subgroup": "aquilo-tiles"
+ },
+ "dust-patchy": {
+  "name": "dust-patchy",
+  "color": [
+   156,
+   166,
+   181
+  ],
+  "layer": 63,
+  "subgroup": "aquilo-tiles"
+ },
+ "ice-rough": {
+  "name": "ice-rough",
+  "color": [
+   100,
+   135,
+   177
+  ],
+  "layer": 51,
+  "subgroup": "aquilo-tiles"
+ },
+ "ice-smooth": {
+  "name": "ice-smooth",
+  "color": [
+   100,
+   135,
+   177
+  ],
+  "layer": 50,
+  "subgroup": "aquilo-tiles"
+ },
+ "ice-platform": {
+  "name": "ice-platform",
+  "color": [
+   95,
+   122,
+   156
+  ],
+  "layer": 49,
+  "subgroup": "aquilo-tiles"
+ },
+ "brash-ice": {
+  "name": "brash-ice",
+  "color": [
+   21,
+   42,
+   56
+  ],
+  "layer": 0,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-stone-path": {
+  "name": "frozen-stone-path",
+  "color": [
+   86,
+   82,
+   74
+  ],
+  "layer": 12,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-concrete": {
+  "name": "frozen-concrete",
+  "color": [
+   63,
+   61,
+   59
+  ],
+  "layer": 14,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-hazard-concrete-left": {
+  "name": "frozen-hazard-concrete-left",
+  "color": [
+   176,
+   142,
+   39
+  ],
+  "layer": 16,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-hazard-concrete-right": {
+  "name": "frozen-hazard-concrete-right",
+  "color": [
+   176,
+   142,
+   39
+  ],
+  "layer": 16,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-refined-concrete": {
+  "name": "frozen-refined-concrete",
+  "color": [
+   49,
+   48,
+   45
+  ],
+  "layer": 18,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-refined-hazard-concrete-left": {
+  "name": "frozen-refined-hazard-concrete-left",
+  "color": [
+   116,
+   94,
+   26
+  ],
+  "layer": 20,
+  "subgroup": "aquilo-tiles"
+ },
+ "frozen-refined-hazard-concrete-right": {
+  "name": "frozen-refined-hazard-concrete-right",
+  "color": [
+   116,
+   94,
+   26
+  ],
+  "layer": 20,
+  "subgroup": "aquilo-tiles"
+ }
+}

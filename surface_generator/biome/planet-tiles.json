@@ -1,0 +1,1012 @@
+{
+ "nauvis": [
+  {
+   "name": "deepwater",
+   "color": [
+    38,
+    64,
+    73
+   ],
+   "layer": 3,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-1",
+   "color": [
+    141,
+    104,
+    60
+   ],
+   "layer": 19,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-2",
+   "color": [
+    136,
+    96,
+    59
+   ],
+   "layer": 20,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-3",
+   "color": [
+    133,
+    92,
+    53
+   ],
+   "layer": 21,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-4",
+   "color": [
+    103,
+    72,
+    43
+   ],
+   "layer": 22,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-5",
+   "color": [
+    91,
+    63,
+    38
+   ],
+   "layer": 23,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-6",
+   "color": [
+    80,
+    55,
+    31
+   ],
+   "layer": 24,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dirt-7",
+   "color": [
+    80,
+    54,
+    28
+   ],
+   "layer": 25,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "dry-dirt",
+   "color": [
+    94,
+    66,
+    37
+   ],
+   "layer": 18,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "grass-1",
+   "color": [
+    55,
+    53,
+    11
+   ],
+   "layer": 26,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "grass-2",
+   "color": [
+    66,
+    57,
+    15
+   ],
+   "layer": 28,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "grass-3",
+   "color": [
+    65,
+    52,
+    28
+   ],
+   "layer": 29,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "grass-4",
+   "color": [
+    59,
+    40,
+    18
+   ],
+   "layer": 30,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "red-desert-0",
+   "color": [
+    103,
+    70,
+    32
+   ],
+   "layer": 31,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "red-desert-1",
+   "color": [
+    116,
+    81,
+    39
+   ],
+   "layer": 14,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "red-desert-2",
+   "color": [
+    116,
+    84,
+    43
+   ],
+   "layer": 15,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "red-desert-3",
+   "color": [
+    128,
+    93,
+    52
+   ],
+   "layer": 16,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "sand-1",
+   "color": [
+    138,
+    103,
+    58
+   ],
+   "layer": 8,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "sand-2",
+   "color": [
+    128,
+    93,
+    52
+   ],
+   "layer": 9,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "sand-3",
+   "color": [
+    115,
+    83,
+    47
+   ],
+   "layer": 10,
+   "subgroup": "nauvis-tiles"
+  },
+  {
+   "name": "water",
+   "color": [
+    51,
+    83,
+    95
+   ],
+   "layer": 3,
+   "subgroup": "nauvis-tiles"
+  }
+ ],
+ "vulcanus": [
+  {
+   "name": "lava",
+   "color": [
+    150,
+    49,
+    30
+   ],
+   "layer": 6,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "lava-hot",
+   "color": [
+    255,
+    138,
+    57
+   ],
+   "layer": 5,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-ash-cracks",
+   "color": [
+    67,
+    67,
+    67
+   ],
+   "layer": 46,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-ash-dark",
+   "color": [
+    53,
+    53,
+    53
+   ],
+   "layer": 53,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-ash-flats",
+   "color": [
+    53,
+    53,
+    53
+   ],
+   "layer": 52,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-ash-light",
+   "color": [
+    53,
+    53,
+    53
+   ],
+   "layer": 54,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-ash-soil",
+   "color": [
+    48,
+    48,
+    43
+   ],
+   "layer": 51,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-cracks",
+   "color": [
+    43,
+    42,
+    43
+   ],
+   "layer": 44,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-cracks-hot",
+   "color": [
+    58,
+    33,
+    23
+   ],
+   "layer": 42,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-cracks-warm",
+   "color": [
+    58,
+    38,
+    33
+   ],
+   "layer": 43,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-folds",
+   "color": [
+    43,
+    43,
+    43
+   ],
+   "layer": 58,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-folds-flat",
+   "color": [
+    44,
+    43,
+    44
+   ],
+   "layer": 56,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-folds-warm",
+   "color": [
+    65,
+    45,
+    45
+   ],
+   "layer": 57,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-jagged-ground",
+   "color": [
+    58,
+    58,
+    48
+   ],
+   "layer": 45,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-pumice-stones",
+   "color": [
+    46,
+    46,
+    46
+   ],
+   "layer": 55,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-smooth-stone",
+   "color": [
+    50,
+    50,
+    58
+   ],
+   "layer": 41,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-smooth-stone-warm",
+   "color": [
+    54,
+    50,
+    50
+   ],
+   "layer": 40,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-soil-dark",
+   "color": [
+    48,
+    51,
+    43
+   ],
+   "layer": 47,
+   "subgroup": "vulcanus-tiles"
+  },
+  {
+   "name": "volcanic-soil-light",
+   "color": [
+    58,
+    48,
+    43
+   ],
+   "layer": 48,
+   "subgroup": "vulcanus-tiles"
+  }
+ ],
+ "fulgora": [
+  {
+   "name": "fulgoran-conduit",
+   "color": [
+    100,
+    79,
+    68
+   ],
+   "layer": 11,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-dunes",
+   "color": [
+    125,
+    71,
+    59
+   ],
+   "layer": 7,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-dust",
+   "color": [
+    112,
+    65,
+    50
+   ],
+   "layer": 6,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-machinery",
+   "color": [
+    89,
+    79,
+    68
+   ],
+   "layer": 12,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-paving",
+   "color": [
+    120,
+    94,
+    67
+   ],
+   "layer": 5,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-rock",
+   "color": [
+    131,
+    85,
+    66
+   ],
+   "layer": 9,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-sand",
+   "color": [
+    118,
+    68,
+    56
+   ],
+   "layer": 8,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "fulgoran-walls",
+   "color": [
+    114,
+    75,
+    65
+   ],
+   "layer": 10,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "oil-ocean-deep",
+   "color": [
+    56,
+    36,
+    40
+   ],
+   "layer": 3,
+   "subgroup": "fulgora-tiles"
+  },
+  {
+   "name": "oil-ocean-shallow",
+   "color": [
+    74,
+    42,
+    43
+   ],
+   "layer": 4,
+   "subgroup": "fulgora-tiles"
+  }
+ ],
+ "gleba": [
+  {
+   "name": "gleba-deep-lake",
+   "color": [
+    18,
+    37,
+    51
+   ],
+   "layer": 1,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "highland-dark-rock",
+   "color": [
+    52,
+    55,
+    48
+   ],
+   "layer": 81,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "highland-dark-rock-2",
+   "color": [
+    52,
+    55,
+    48
+   ],
+   "layer": 82,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "highland-yellow-rock",
+   "color": [
+    52,
+    55,
+    48
+   ],
+   "layer": 83,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-brown-blubber",
+   "color": [
+    66,
+    82,
+    11
+   ],
+   "layer": 33,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-cream-cauliflower",
+   "color": [
+    95,
+    93,
+    88
+   ],
+   "layer": 40,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-cream-cauliflower-2",
+   "color": [
+    95,
+    93,
+    88
+   ],
+   "layer": 39,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-cream-red",
+   "color": [
+    95,
+    83,
+    78
+   ],
+   "layer": 43,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-dead-skin",
+   "color": [
+    95,
+    93,
+    88
+   ],
+   "layer": 37,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-dead-skin-2",
+   "color": [
+    95,
+    93,
+    88
+   ],
+   "layer": 38,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-olive-blubber",
+   "color": [
+    66,
+    82,
+    11
+   ],
+   "layer": 36,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-olive-blubber-2",
+   "color": [
+    66,
+    82,
+    11
+   ],
+   "layer": 35,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-olive-blubber-3",
+   "color": [
+    66,
+    82,
+    11
+   ],
+   "layer": 40,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-pale-green",
+   "color": [
+    66,
+    82,
+    11
+   ],
+   "layer": 34,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-infection",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 48,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-vein",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 45,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-vein-2",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 44,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-vein-3",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 46,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-vein-4",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 47,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "lowland-red-vein-dead",
+   "color": [
+    115,
+    53,
+    66
+   ],
+   "layer": 39,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-cracked-lichen",
+   "color": [
+    81,
+    77,
+    44
+   ],
+   "layer": 73,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-cracked-lichen-dark",
+   "color": [
+    61,
+    57,
+    30
+   ],
+   "layer": 65,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-cracked-lichen-dull",
+   "color": [
+    71,
+    67,
+    40
+   ],
+   "layer": 74,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-turquoise-bark",
+   "color": [
+    46,
+    68,
+    48
+   ],
+   "layer": 76,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-turquoise-bark-2",
+   "color": [
+    46,
+    68,
+    48
+   ],
+   "layer": 75,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-yellow-crust",
+   "color": [
+    114,
+    86,
+    40
+   ],
+   "layer": 79,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-yellow-crust-2",
+   "color": [
+    114,
+    86,
+    40
+   ],
+   "layer": 78,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-yellow-crust-3",
+   "color": [
+    114,
+    86,
+    40
+   ],
+   "layer": 77,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "midland-yellow-crust-4",
+   "color": [
+    114,
+    86,
+    40
+   ],
+   "layer": 80,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "natural-jellynut-soil",
+   "color": [
+    185,
+    5,
+    166
+   ],
+   "layer": 86,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "natural-yumako-soil",
+   "color": [
+    185,
+    166,
+    5
+   ],
+   "layer": 85,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "pit-rock",
+   "color": [
+    50,
+    50,
+    58
+   ],
+   "layer": 64,
+   "subgroup": "gleba-tiles"
+  },
+  {
+   "name": "wetland-blue-slime",
+   "color": [
+    25,
+    49,
+    58
+   ],
+   "layer": 1,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-dead-skin",
+   "color": [
+    46,
+    45,
+    51
+   ],
+   "layer": 7,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-green-slime",
+   "color": [
+    25,
+    53,
+    25
+   ],
+   "layer": 6,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-jellynut",
+   "color": [
+    132,
+    7,
+    119
+   ],
+   "layer": 3,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-light-dead-skin",
+   "color": [
+    51,
+    50,
+    56
+   ],
+   "layer": 7,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-light-green-slime",
+   "color": [
+    35,
+    63,
+    35
+   ],
+   "layer": 6,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-pink-tentacle",
+   "color": [
+    64,
+    19,
+    34
+   ],
+   "layer": 5,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-red-tentacle",
+   "color": [
+    54,
+    15,
+    24
+   ],
+   "layer": 5,
+   "subgroup": "gleba-water-tiles"
+  },
+  {
+   "name": "wetland-yumako",
+   "color": [
+    132,
+    119,
+    7
+   ],
+   "layer": 3,
+   "subgroup": "gleba-water-tiles"
+  }
+ ],
+ "aquilo": [
+  {
+   "name": "ammoniacal-ocean",
+   "color": [
+    15,
+    13,
+    25
+   ],
+   "layer": 3,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "ammoniacal-ocean-2",
+   "color": [
+    17,
+    15,
+    30
+   ],
+   "layer": 3,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "brash-ice",
+   "color": [
+    21,
+    42,
+    56
+   ],
+   "layer": 0,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "ice-rough",
+   "color": [
+    100,
+    135,
+    177
+   ],
+   "layer": 51,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "ice-smooth",
+   "color": [
+    100,
+    135,
+    177
+   ],
+   "layer": 50,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "snow-crests",
+   "color": [
+    180,
+    186,
+    192
+   ],
+   "layer": 53,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "snow-flat",
+   "color": [
+    190,
+    194,
+    197
+   ],
+   "layer": 52,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "snow-lumpy",
+   "color": [
+    166,
+    174,
+    186
+   ],
+   "layer": 54,
+   "subgroup": "aquilo-tiles"
+  },
+  {
+   "name": "snow-patchy",
+   "color": [
+    156,
+    166,
+    181
+   ],
+   "layer": 55,
+   "subgroup": "aquilo-tiles"
+  }
+ ]
+}
