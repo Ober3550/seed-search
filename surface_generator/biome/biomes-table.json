@@ -1,0 +1,4262 @@
+[
+ {
+  "name": "frozen-snow-0",
+  "group": "frozen",
+  "variant": "snow-0",
+  "beach_weight": -1.0,
+  "tv_seed": 1147,
+  "water_coef": 1.4,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   218,
+   221,
+   230
+  ]
+ },
+ {
+  "name": "frozen-snow-1",
+  "group": "frozen",
+  "variant": "snow-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1148,
+  "water_coef": 1.4,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   215,
+   219,
+   228
+  ]
+ },
+ {
+  "name": "frozen-snow-2",
+  "group": "frozen",
+  "variant": "snow-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1149,
+  "water_coef": 1.4,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   201,
+   206,
+   214
+  ]
+ },
+ {
+  "name": "frozen-snow-3",
+  "group": "frozen",
+  "variant": "snow-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1150,
+  "water_coef": 1.4,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   208,
+   211,
+   219
+  ]
+ },
+ {
+  "name": "frozen-snow-4",
+  "group": "frozen",
+  "variant": "snow-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1151,
+  "water_coef": 1.4,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   193,
+   199,
+   208
+  ]
+ },
+ {
+  "name": "frozen-snow-5",
+  "group": "frozen",
+  "variant": "snow-5",
+  "beach_weight": 1.0,
+  "tv_seed": 1152,
+  "water_coef": 0.6,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   153,
+   170,
+   181
+  ]
+ },
+ {
+  "name": "frozen-snow-6",
+  "group": "frozen",
+  "variant": "snow-6",
+  "beach_weight": 1.0,
+  "tv_seed": 1153,
+  "water_coef": 0.6,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   128,
+   147,
+   162
+  ]
+ },
+ {
+  "name": "frozen-snow-7",
+  "group": "frozen",
+  "variant": "snow-7",
+  "beach_weight": -1.0,
+  "tv_seed": 1154,
+  "water_coef": 0.6,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   139,
+   159,
+   168
+  ]
+ },
+ {
+  "name": "frozen-snow-8",
+  "group": "frozen",
+  "variant": "snow-8",
+  "beach_weight": -1.0,
+  "tv_seed": 1155,
+  "water_coef": 0.6,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   164,
+   178,
+   189
+  ]
+ },
+ {
+  "name": "frozen-snow-9",
+  "group": "frozen",
+  "variant": "snow-9",
+  "beach_weight": 1.0,
+  "tv_seed": 1156,
+  "water_coef": 0.6,
+  "crater": false,
+  "restrict": 2,
+  "t": [
+   -50.0,
+   0.0
+  ],
+  "m": null,
+  "a": null,
+  "e": null,
+  "color": [
+   155,
+   173,
+   184
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1046,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   61,
+   56,
+   74
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1047,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   48,
+   43,
+   61
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1048,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   45,
+   41,
+   55
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1049,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   49,
+   44,
+   59
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1050,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   48,
+   44,
+   58
+  ]
+ },
+ {
+  "name": "mineral-aubergine-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1051,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   44,
+   40,
+   54
+  ]
+ },
+ {
+  "name": "mineral-aubergine-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1052,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   59,
+   54,
+   79
+  ]
+ },
+ {
+  "name": "mineral-aubergine-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1053,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   60,
+   53,
+   80
+  ]
+ },
+ {
+  "name": "mineral-aubergine-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1054,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   59,
+   53,
+   75
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1064,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   131,
+   118,
+   94
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1065,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   108,
+   96,
+   75
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1066,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   98,
+   90,
+   75
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1067,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   94,
+   86,
+   70
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1068,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   91,
+   83,
+   69
+  ]
+ },
+ {
+  "name": "mineral-beige-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1069,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   86,
+   78,
+   63
+  ]
+ },
+ {
+  "name": "mineral-beige-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1070,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   139,
+   124,
+   98
+  ]
+ },
+ {
+  "name": "mineral-beige-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1071,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   141,
+   126,
+   100
+  ]
+ },
+ {
+  "name": "mineral-beige-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1072,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   130,
+   116,
+   91
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1082,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   59,
+   59,
+   55
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1083,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   43,
+   44,
+   41
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1084,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   43,
+   45,
+   45
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1085,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   43,
+   45,
+   43
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1086,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   39,
+   40,
+   39
+  ]
+ },
+ {
+  "name": "mineral-black-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1087,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   38,
+   39,
+   38
+  ]
+ },
+ {
+  "name": "mineral-black-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1088,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   56,
+   59,
+   56
+  ]
+ },
+ {
+  "name": "mineral-black-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1089,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   55,
+   58,
+   56
+  ]
+ },
+ {
+  "name": "mineral-black-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1090,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   56,
+   58,
+   55
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1028,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   115,
+   81,
+   61
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1029,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   90,
+   63,
+   46
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1030,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   76,
+   55,
+   43
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1031,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   68,
+   48,
+   36
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1032,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   70,
+   51,
+   39
+  ]
+ },
+ {
+  "name": "mineral-brown-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1033,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   61,
+   43,
+   31
+  ]
+ },
+ {
+  "name": "mineral-brown-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1034,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   125,
+   86,
+   64
+  ]
+ },
+ {
+  "name": "mineral-brown-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1035,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   129,
+   90,
+   66
+  ]
+ },
+ {
+  "name": "mineral-brown-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1036,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.6
+  ],
+  "e": null,
+  "color": [
+   113,
+   79,
+   59
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1073,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   163,
+   153,
+   109
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1074,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   136,
+   128,
+   86
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1075,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   121,
+   114,
+   84
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1076,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   118,
+   110,
+   80
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1077,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   111,
+   105,
+   75
+  ]
+ },
+ {
+  "name": "mineral-cream-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1078,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   109,
+   101,
+   71
+  ]
+ },
+ {
+  "name": "mineral-cream-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1079,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   175,
+   168,
+   116
+  ]
+ },
+ {
+  "name": "mineral-cream-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1080,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   180,
+   173,
+   121
+  ]
+ },
+ {
+  "name": "mineral-cream-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1081,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   160,
+   151,
+   105
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1055,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   103,
+   81,
+   74
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1056,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   79,
+   63,
+   58
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1057,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   76,
+   64,
+   63
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1058,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   70,
+   60,
+   56
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1059,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   71,
+   60,
+   58
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1060,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   64,
+   54,
+   51
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1061,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   103,
+   76,
+   73
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1062,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   103,
+   78,
+   73
+  ]
+ },
+ {
+  "name": "mineral-dustyrose-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1063,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   30.0,
+   60.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   100,
+   78,
+   71
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1091,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   119,
+   120,
+   115
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1092,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   96,
+   99,
+   95
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1093,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   96,
+   100,
+   100
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1094,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   96,
+   100,
+   98
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1095,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   90,
+   94,
+   93
+  ]
+ },
+ {
+  "name": "mineral-grey-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1096,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   89,
+   91,
+   89
+  ]
+ },
+ {
+  "name": "mineral-grey-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1097,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   116,
+   119,
+   116
+  ]
+ },
+ {
+  "name": "mineral-grey-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1098,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   115,
+   118,
+   115
+  ]
+ },
+ {
+  "name": "mineral-grey-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1099,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.3,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   116,
+   118,
+   115
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1001,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   74,
+   73,
+   118
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1002,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   56,
+   58,
+   103
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1003,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   54,
+   54,
+   85
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1004,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   63,
+   61,
+   96
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1005,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   69,
+   66,
+   98
+  ]
+ },
+ {
+  "name": "mineral-purple-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1006,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   59,
+   59,
+   91
+  ]
+ },
+ {
+  "name": "mineral-purple-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1007,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   65,
+   69,
+   129
+  ]
+ },
+ {
+  "name": "mineral-purple-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1008,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   65,
+   65,
+   131
+  ]
+ },
+ {
+  "name": "mineral-purple-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1009,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   64,
+   64,
+   121
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1019,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   124,
+   64,
+   51
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1020,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   100,
+   49,
+   38
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1021,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   91,
+   50,
+   41
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1022,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   75,
+   38,
+   30
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1023,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   89,
+   50,
+   41
+  ]
+ },
+ {
+  "name": "mineral-red-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1024,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   69,
+   33,
+   25
+  ]
+ },
+ {
+  "name": "mineral-red-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1025,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   130,
+   54,
+   46
+  ]
+ },
+ {
+  "name": "mineral-red-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1026,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   131,
+   58,
+   45
+  ]
+ },
+ {
+  "name": "mineral-red-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1027,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.6,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   124,
+   58,
+   46
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1037,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   139,
+   105,
+   68
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1038,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   114,
+   84,
+   49
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1039,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   93,
+   70,
+   44
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1040,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   88,
+   65,
+   40
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1041,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   84,
+   63,
+   39
+  ]
+ },
+ {
+  "name": "mineral-tan-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1042,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   80,
+   59,
+   34
+  ]
+ },
+ {
+  "name": "mineral-tan-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1043,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   153,
+   120,
+   73
+  ]
+ },
+ {
+  "name": "mineral-tan-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1044,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   156,
+   125,
+   78
+  ]
+ },
+ {
+  "name": "mineral-tan-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1045,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   136,
+   105,
+   64
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1010,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   108,
+   68,
+   100
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1011,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   89,
+   53,
+   86
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1012,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   78,
+   51,
+   73
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1013,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   83,
+   54,
+   79
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1014,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   88,
+   60,
+   83
+  ]
+ },
+ {
+  "name": "mineral-violet-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1015,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   76,
+   50,
+   75
+  ]
+ },
+ {
+  "name": "mineral-violet-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1016,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   110,
+   61,
+   109
+  ]
+ },
+ {
+  "name": "mineral-violet-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1017,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   115,
+   63,
+   109
+  ]
+ },
+ {
+  "name": "mineral-violet-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1018,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   60.0,
+   100.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   108,
+   61,
+   103
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-1",
+  "group": "dirt",
+  "variant": "dirt-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1100,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   165,
+   165,
+   161
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-2",
+  "group": "dirt",
+  "variant": "dirt-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1101,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   138,
+   140,
+   136
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-3",
+  "group": "dirt",
+  "variant": "dirt-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1102,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.8
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   138,
+   141,
+   141
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-4",
+  "group": "dirt",
+  "variant": "dirt-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1103,
+  "water_coef": 0.0,
+  "crater": true,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.6,
+   0.95
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   139,
+   141,
+   139
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-5",
+  "group": "dirt",
+  "variant": "dirt-5",
+  "beach_weight": -1.0,
+  "tv_seed": 1104,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   130,
+   133,
+   131
+  ]
+ },
+ {
+  "name": "mineral-white-dirt-6",
+  "group": "dirt",
+  "variant": "dirt-6",
+  "beach_weight": -1.0,
+  "tv_seed": 1105,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.4,
+   0.6
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   128,
+   130,
+   128
+  ]
+ },
+ {
+  "name": "mineral-white-sand-1",
+  "group": "sand",
+  "variant": "sand-1",
+  "beach_weight": 1.0,
+  "tv_seed": 1106,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   178,
+   178,
+   173
+  ]
+ },
+ {
+  "name": "mineral-white-sand-2",
+  "group": "sand",
+  "variant": "sand-2",
+  "beach_weight": 1.0,
+  "tv_seed": 1107,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   181,
+   183,
+   178
+  ]
+ },
+ {
+  "name": "mineral-white-sand-3",
+  "group": "sand",
+  "variant": "sand-3",
+  "beach_weight": 1.0,
+  "tv_seed": 1108,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 0,
+  "t": [
+   0.0,
+   30.0
+  ],
+  "m": [
+   0.0,
+   0.4
+  ],
+  "a": [
+   0.0,
+   0.3
+  ],
+  "e": null,
+  "color": [
+   161,
+   163,
+   159
+  ]
+ },
+ {
+  "name": "vegetation-blue-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1129,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   20.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   44,
+   51,
+   73
+  ]
+ },
+ {
+  "name": "vegetation-blue-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1130,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   20.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   44,
+   49,
+   60
+  ]
+ },
+ {
+  "name": "vegetation-green-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1111,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   50.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   68,
+   61,
+   21
+  ]
+ },
+ {
+  "name": "vegetation-green-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1112,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   50.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   75,
+   63,
+   25
+  ]
+ },
+ {
+  "name": "vegetation-green-grass-3",
+  "group": "grass",
+  "variant": "grass-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1113,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   50.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   69,
+   58,
+   30
+  ]
+ },
+ {
+  "name": "vegetation-green-grass-4",
+  "group": "grass",
+  "variant": "grass-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1114,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   50.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   70,
+   53,
+   26
+  ]
+ },
+ {
+  "name": "vegetation-mauve-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1127,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   40.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   52,
+   45,
+   75
+  ]
+ },
+ {
+  "name": "vegetation-mauve-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1128,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   20.0,
+   40.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   49,
+   40,
+   65
+  ]
+ },
+ {
+  "name": "vegetation-olive-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1115,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   50.0,
+   65.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   91,
+   73,
+   17
+  ]
+ },
+ {
+  "name": "vegetation-olive-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1116,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   50.0,
+   65.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   92,
+   71,
+   24
+  ]
+ },
+ {
+  "name": "vegetation-orange-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1119,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   80.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   103,
+   56,
+   16
+  ]
+ },
+ {
+  "name": "vegetation-orange-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1120,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   80.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   98,
+   52,
+   20
+  ]
+ },
+ {
+  "name": "vegetation-purple-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1125,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   40.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   66,
+   35,
+   80
+  ]
+ },
+ {
+  "name": "vegetation-purple-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1126,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   40.0,
+   60.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   55,
+   26,
+   72
+  ]
+ },
+ {
+  "name": "vegetation-red-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1121,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   80.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   91,
+   25,
+   18
+  ]
+ },
+ {
+  "name": "vegetation-red-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1122,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   80.0,
+   100.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   88,
+   25,
+   21
+  ]
+ },
+ {
+  "name": "vegetation-turquoise-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1109,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   20.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   55,
+   56,
+   47
+  ]
+ },
+ {
+  "name": "vegetation-turquoise-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1110,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   0.0,
+   20.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   62,
+   57,
+   40
+  ]
+ },
+ {
+  "name": "vegetation-violet-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1123,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   80.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   78,
+   30,
+   49
+  ]
+ },
+ {
+  "name": "vegetation-violet-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1124,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   60.0,
+   80.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.7,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   71,
+   25,
+   46
+  ]
+ },
+ {
+  "name": "vegetation-yellow-grass-1",
+  "group": "grass",
+  "variant": "grass-1",
+  "beach_weight": -1.0,
+  "tv_seed": 1117,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   65.0,
+   80.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   116,
+   88,
+   14
+  ]
+ },
+ {
+  "name": "vegetation-yellow-grass-2",
+  "group": "grass",
+  "variant": "grass-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1118,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 4,
+  "t": [
+   65.0,
+   80.0
+  ],
+  "m": [
+   0.6,
+   1.0
+  ],
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   109,
+   80,
+   21
+  ]
+ },
+ {
+  "name": "volcanic-blue-heat-1",
+  "group": "volcanic",
+  "variant": "heat-1",
+  "beach_weight": 0.0,
+  "tv_seed": 1139,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   100.0,
+   120.0
+  ],
+  "m": null,
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   31,
+   36,
+   36
+  ]
+ },
+ {
+  "name": "volcanic-blue-heat-2",
+  "group": "volcanic",
+  "variant": "heat-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1140,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   120.0,
+   135.0
+  ],
+  "m": null,
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   31,
+   38,
+   39
+  ]
+ },
+ {
+  "name": "volcanic-blue-heat-3",
+  "group": "volcanic",
+  "variant": "heat-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1141,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   135.0,
+   145.0
+  ],
+  "m": null,
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   24,
+   40,
+   55
+  ]
+ },
+ {
+  "name": "volcanic-blue-heat-4",
+  "group": "volcanic",
+  "variant": "heat-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1142,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   145.0,
+   150.0
+  ],
+  "m": null,
+  "a": [
+   0.8,
+   0.9
+  ],
+  "e": null,
+  "color": [
+   16,
+   68,
+   126
+  ]
+ },
+ {
+  "name": "volcanic-green-heat-1",
+  "group": "volcanic",
+  "variant": "heat-1",
+  "beach_weight": 0.0,
+  "tv_seed": 1135,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   100.0,
+   120.0
+  ],
+  "m": null,
+  "a": [
+   0.7,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   34,
+   36,
+   31
+  ]
+ },
+ {
+  "name": "volcanic-green-heat-2",
+  "group": "volcanic",
+  "variant": "heat-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1136,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   120.0,
+   135.0
+  ],
+  "m": null,
+  "a": [
+   0.7,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   34,
+   39,
+   31
+  ]
+ },
+ {
+  "name": "volcanic-green-heat-3",
+  "group": "volcanic",
+  "variant": "heat-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1137,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   135.0,
+   145.0
+  ],
+  "m": null,
+  "a": [
+   0.7,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   28,
+   55,
+   24
+  ]
+ },
+ {
+  "name": "volcanic-green-heat-4",
+  "group": "volcanic",
+  "variant": "heat-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1138,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   145.0,
+   150.0
+  ],
+  "m": null,
+  "a": [
+   0.7,
+   0.8
+  ],
+  "e": null,
+  "color": [
+   24,
+   126,
+   16
+  ]
+ },
+ {
+  "name": "volcanic-orange-heat-1",
+  "group": "volcanic",
+  "variant": "heat-1",
+  "beach_weight": 0.0,
+  "tv_seed": 1131,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   100.0,
+   120.0
+  ],
+  "m": null,
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   36,
+   34,
+   31
+  ]
+ },
+ {
+  "name": "volcanic-orange-heat-2",
+  "group": "volcanic",
+  "variant": "heat-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1132,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   120.0,
+   135.0
+  ],
+  "m": null,
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   39,
+   34,
+   31
+  ]
+ },
+ {
+  "name": "volcanic-orange-heat-3",
+  "group": "volcanic",
+  "variant": "heat-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1133,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   135.0,
+   145.0
+  ],
+  "m": null,
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   55,
+   28,
+   24
+  ]
+ },
+ {
+  "name": "volcanic-orange-heat-4",
+  "group": "volcanic",
+  "variant": "heat-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1134,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   145.0,
+   150.0
+  ],
+  "m": null,
+  "a": [
+   0.0,
+   0.7
+  ],
+  "e": null,
+  "color": [
+   126,
+   24,
+   16
+  ]
+ },
+ {
+  "name": "volcanic-purple-heat-1",
+  "group": "volcanic",
+  "variant": "heat-1",
+  "beach_weight": 0.0,
+  "tv_seed": 1143,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   100.0,
+   120.0
+  ],
+  "m": null,
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   35,
+   31,
+   36
+  ]
+ },
+ {
+  "name": "volcanic-purple-heat-2",
+  "group": "volcanic",
+  "variant": "heat-2",
+  "beach_weight": -1.0,
+  "tv_seed": 1144,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   120.0,
+   135.0
+  ],
+  "m": null,
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   36,
+   31,
+   39
+  ]
+ },
+ {
+  "name": "volcanic-purple-heat-3",
+  "group": "volcanic",
+  "variant": "heat-3",
+  "beach_weight": -1.0,
+  "tv_seed": 1145,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   135.0,
+   145.0
+  ],
+  "m": null,
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   38,
+   24,
+   55
+  ]
+ },
+ {
+  "name": "volcanic-purple-heat-4",
+  "group": "volcanic",
+  "variant": "heat-4",
+  "beach_weight": -1.0,
+  "tv_seed": 1146,
+  "water_coef": 0.0,
+  "crater": false,
+  "restrict": 1,
+  "t": [
+   145.0,
+   150.0
+  ],
+  "m": null,
+  "a": [
+   0.9,
+   1.0
+  ],
+  "e": null,
+  "color": [
+   60,
+   16,
+   126
+  ]
+ }
+]

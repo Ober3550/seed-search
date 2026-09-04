@@ -270,6 +270,108 @@ async function cpuSurfaceParams(req) {
   return JSON.parse(new TextDecoder().decode(new Uint8Array(e.memory.buffer, e.resultPtr(), e.resultLen())));
 }
 
+// ── SE zone elevation (se_zone.wgsl) ───────────────────────────────────────
+const SE_ELEV_S1 = [900, 99584, 700, 1000, 1100, 500, 600];
+let seP = null; // { pipeline, dev }
+let seTables = null; // { seed, bufs }
+
+async function sePipeline() {
+  if (seP) return seP;
+  const dev = await getDevice();
+  const code = await fetchShader("se_zone.wgsl");
+  const module = dev.createShaderModule({ code });
+  const info = await module.getCompilationInfo();
+  const errs = (info.messages || []).filter((m) => m.type === "error");
+  if (errs.length) throw new Error("se_zone.wgsl: " + errs.map((e) => e.lineNum + ":" + e.linePos + " " + e.message).join(" | "));
+  const pipeline = dev.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "main" } });
+  seP = { pipeline, dev };
+  return seP;
+}
+
+function seTablesFor(dev, zoneSeed) {
+  if (seTables && seTables.seed === zoneSeed) return seTables;
+  const n = SE_ELEV_S1.length;
+  const perm1 = new Uint32Array(n * 256);
+  const perm2 = new Uint32Array(n * 256);
+  const grad = new Float32Array(n * 512);
+  const sb = new Uint32Array(n);
+  for (let gi = 0; gi < n; gi++) {
+    const g = buildGen(zoneSeed, SE_ELEV_S1[gi]);
+    perm1.set(g.perm1, gi * 256);
+    perm2.set(g.perm2, gi * 256);
+    grad.set(g.grad, gi * 512);
+    sb[gi] = g.seedByte;
+  }
+  const mk = (arr, usage) => { const b = dev.createBuffer({ size: arr.byteLength, usage }); dev.queue.writeBuffer(b, 0, arr); return b; };
+  seTables = { seed: zoneSeed,
+    perm1: mk(perm1, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    perm2: mk(perm2, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    grad: mk(grad, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    sb: mk(sb, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) };
+  return seTables;
+}
+
+// Run se_zone.wgsl elevation (mode 0) or water mask (mode 1) for an SE zone.
+// `zone` = universe row; cpu params come from surface.wasm (surfaceParams).
+async function runSEZone(mapSeed, zone, rect, mode) {
+  const cp = await cpuSurfaceParams({ seed: mapSeed, k2: !!zone.k2, zone });
+  if (!cp.ok) throw new Error(cp.error || "surfaceParams failed");
+  const ctx = await sePipeline();
+  const dev = ctx.dev;
+  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
+  const nsm = 1.5 * cp.water_frequency;
+  const seg = cp.water_frequency;
+  const waterLevel = 10 * Math.log2(cp.water_size);
+  const osPers = ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5;
+  // uniform: 17 floats then width/height/mode u32s (80 bytes)
+  const arr = new ArrayBuffer(80);
+  const f = new Float32Array(arr);
+  const v = [rect.x0, rect.y0, nsm, seg, waterLevel,
+    nsm / 90, nsm / 500, 0.6, nsm / 150, nsm / 1600, nsm / 1600,
+    nsm / 14, 0.03, 10000 / nsm, nsm / 2, osPers, 10000 / nsm];
+  for (let i = 0; i < 17; i++) f[i] = v[i];
+  const d = new DataView(arr);
+  d.setUint32(68, w, true); d.setUint32(72, h, true); d.setUint32(76, mode, true);
+  const uni = dev.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  dev.queue.writeBuffer(uni, 0, arr);
+
+  const t = seTablesFor(dev, cp.zone_seed);
+  const outF = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const outIdx = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const bind = dev.createBindGroup({
+    layout: ctx.pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uni } },
+      { binding: 1, resource: { buffer: t.perm1 } },
+      { binding: 2, resource: { buffer: t.perm2 } },
+      { binding: 3, resource: { buffer: t.grad } },
+      { binding: 4, resource: { buffer: t.sb } },
+      { binding: 5, resource: { buffer: outF } },
+      { binding: 6, resource: { buffer: outIdx } },
+    ],
+  });
+  const enc = dev.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(ctx.pipeline);
+  pass.setBindGroup(0, bind);
+  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+  pass.end();
+  dev.pushErrorScope("validation");
+  dev.queue.submit([enc.finish()]);
+  const verr = await dev.popErrorScope();
+  if (verr) throw new Error("gpu validation: " + verr.message);
+
+  const rB = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const rI = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc2 = dev.createCommandEncoder();
+  enc2.copyBufferToBuffer(outF, 0, rB, 0, w * h * 4);
+  enc2.copyBufferToBuffer(outIdx, 0, rI, 0, w * h * 4);
+  dev.queue.submit([enc2.finish()]);
+  const elev = await readbackFloat(dev, rB, w * h);
+  const idx = await readbackU32(dev, rI, w * h);
+  return { elev, idx, width: w, height: h };
+}
+
 self.onmessage = async function (ev) {
   const msg = ev.data;
   if (!msg || msg.id == null) return;
@@ -279,6 +381,20 @@ self.onmessage = async function (ev) {
     if (req.kind === "se-params") {
       const p = await cpuSurfaceParams({ seed: req.seed, k2: !!req.k2, zone: req.zone });
       self.postMessage({ id: msg.id, ok: !!p.ok, summary: p, error: p.ok ? null : p.error });
+      return;
+    }
+    if (req.kind === "se" || req.kind === "se-elev") {
+      const rect = req.rect;
+      const r = await runSEZone(req.seed >>> 0, req.zone, rect, req.kind === "se" ? 1 : 0);
+      let pixels;
+      if (req.kind === "se") {
+        const n = r.width * r.height;
+        pixels = new Uint8Array(n);
+        for (let i = 0; i < n; i++) pixels[i] = r.idx[i];
+      } else {
+        pixels = new Float32Array(r.elev);
+      }
+      self.postMessage({ id: msg.id, ok: true, summary: { kind: req.kind, width: r.width, height: r.height }, pixels }, [pixels.buffer]);
       return;
     }
     const mapSeed = req.seed >>> 0;
@@ -318,7 +434,7 @@ async function getDevice() {
 
 async function fetchShader(name) {
   if (!shaders[name]) {
-    const r = await fetch("/static/shaders/" + name);
+    const r = await fetch("/static/shaders/" + name + "?_=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error("shader " + name + " fetch failed");
     shaders[name] = await r.text();
   }
