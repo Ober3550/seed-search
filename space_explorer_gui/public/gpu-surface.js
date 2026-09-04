@@ -63,4 +63,52 @@
     }
     return out;
   };
+
+  // Render an SE (alien-biomes) zone disk with the se_zone classifier kernel.
+  // Chunked into `cell`-sized dispatches so large radii stay memory-bounded;
+  // pixels outside the radius disk are left transparent (matches the CPU map
+  // which draws a disk on a transparent square). req: { seed, zone, radius,
+  // onProgress?, cell? } -> { rgba: Uint8Array(2R*2R*4), width, height }
+  window.generateSEZoneGPU = function (req) {
+    var seed = req.seed, zone = req.zone, R = req.radius;
+    var cell = req.cell || 512;
+    var onProgress = req.onProgress || null;
+    var size = 2 * R;
+    var rgba = new Uint8Array(size * size * 4); // transparent background
+
+    // cell squares over [-R, R) in absolute map coords; skip cells fully out
+    // of the disk (CPU renders transparent there).
+    var cells = [];
+    for (var ya = -R; ya < R; ya += cell) {
+      var yb = Math.min(ya + cell, R);
+      for (var xa = -R; xa < R; xa += cell) {
+        var xb = Math.min(xa + cell, R);
+        var cdx = Math.max(xa, Math.min(0, xb - 1));
+        var cdy = Math.max(ya, Math.min(0, yb - 1));
+        if (cdx * cdx + cdy * cdy > R * R) continue; // fully outside disk
+        cells.push({ xa: xa, ya: ya, xb: xb, yb: yb });
+      }
+    }
+
+    var done = 0;
+    var run = cells.map(function (c) {
+      return window.generateSurfaceGPU({ seed: seed, kind: "se-color", zone: zone, rect: { x0: c.xa, y0: c.ya, x1: c.xb, y1: c.yb } })
+        .then(function (r) {
+          var packed = new Uint32Array(r.pixels);
+          var cw = c.xb - c.xa, ch = c.yb - c.ya;
+          for (var i = 0; i < packed.length; i++) {
+            var x = c.xa + (i % cw), y = c.ya + ((i / cw) | 0);
+            if (x * x + y * y > R * R) continue;
+            var o = ((y + R) * size + (x + R)) * 4;
+            rgba[o] = (packed[i] >> 16) & 255;
+            rgba[o + 1] = (packed[i] >> 8) & 255;
+            rgba[o + 2] = packed[i] & 255;
+            rgba[o + 3] = 255;
+          }
+          done++;
+          if (onProgress) onProgress(done, cells.length);
+        });
+    });
+    return Promise.all(run).then(function () { return { rgba: rgba, width: size, height: size, cells: cells.length }; });
+  };
 })();

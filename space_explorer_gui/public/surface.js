@@ -395,6 +395,47 @@
       return;
     }
 
+    // WebGPU path for SE zones (alien-biomes classifier, terrain layer only).
+    // Chunked se_zone kernel; ?gpu=1.
+    if (USE_GPU && kind === "zone" && layer === 1) {
+      els.canvas.width = 2 * radius;
+      els.canvas.height = 2 * radius;
+      status("gpu: dispatching se alien-biomes classifier…");
+      Promise.resolve(fetchZone()).then(function (z) {
+        return window.generateSEZoneGPU({
+          seed: SEED, zone: z, radius: radius,
+          onProgress: function (done, total) {
+            status("gpu: classifier " + done + "/" + total + " cells…");
+            setProgress(total ? done / total : 0);
+          }
+        }).then(function (out) {
+          var ctx = els.canvas.getContext("2d");
+          var img = ctx.createImageData(out.width, out.height);
+          img.data.set(out.rgba);
+          ctx.putImageData(img, 0, 0);
+          var ms = Date.now() - t0;
+          GPU_MS = ms;
+          window.__SURF_MS__ = ms;
+          window.__LAST_SURF_AT__ = Date.now();
+          window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: {}, layer: layer, gpu: true };
+          busy = false;
+          els.go.disabled = false;
+          setProgress(1);
+          status("zone " + z.n + " · " + z.t + " · r" + radius + " (WebGPU)");
+          var px = out.width * out.height;
+          els.res.innerHTML = '<span class="hint">· ' + out.width + "×" + out.height + " · WebGPU alien-biomes classifier (" +
+            out.cells + " cell dispatches) · " + ms + " ms · " +
+            (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
+        });
+      }).catch(function (e) {
+        busy = false;
+        els.go.disabled = false;
+        status("gpu error: " + e.message);
+        console.error(e);
+      });
+      return;
+    }
+
     if (kind === "sa") {
       var p = PLANETS[planetKey];
       if (!p.ok) {
