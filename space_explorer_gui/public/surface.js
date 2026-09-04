@@ -26,6 +26,9 @@
   var TARGET = window.__SURF_TARGET__ || "";
   var MOD = window.__SURF_MOD__ || "k2se";
   var K2 = MOD === "k2se";
+  // ?gpu=1 -> render base-Nauvis terrain with the WebGPU kernel (single dispatch)
+  var USE_GPU = /[?&]gpu=1\b/.test(location.search);
+  var GPU_MS = null;
 
   var PLANETS = {
     vulcanus: { label: "🌋 Vulcanus", ok: false, why: "Vulcanus terrain needs the multisample autoplace op — not ported yet" },
@@ -341,6 +344,43 @@
     if (!Number.isFinite(radius)) radius = 200;
     var layer = parseInt(els.layer.value, 10) || 0;
     var layerName = ["terrain + ore", "terrain only", "ore only"][layer];
+
+    // WebGPU path (base Nauvis terrain only, single dispatch). ?gpu=1.
+    if (USE_GPU && kind === "nauvis" && layer === 1) {
+      els.canvas.width = 2 * radius;
+      els.canvas.height = 2 * radius;
+      status("gpu: dispatching nauvis tile kernel…");
+      window.generateSurfaceGPU({
+        seed: SEED, kind: "tiles",
+        rect: { x0: -radius, y0: -radius, x1: radius, y1: radius }
+      }).then(function (r) {
+        var s = r.summary;
+        var ctx = els.canvas.getContext("2d");
+        var img = ctx.createImageData(s.width, s.height);
+        img.data.set(window.gpuIndicesToRgba(r.pixels, s.width, s.height));
+        ctx.putImageData(img, 0, 0);
+        var ms = Date.now() - t0;
+        GPU_MS = ms;
+        window.__SURF_MS__ = ms;
+        window.__LAST_SURF_AT__ = Date.now();
+        window.__LAST_SURF__ = { zone: "Nauvis", type: "planet", resources: {}, layer: layer, gpu: true };
+        busy = false;
+        els.go.disabled = false;
+        setProgress(1);
+        status("zone Nauvis · planet · r" + radius + " (WebGPU)");
+        var px = s.width * s.height;
+        var cpu1 = Math.round(px * 0.08); // ~80 us/px single-thread wasm -> ms
+        els.res.innerHTML = '<span class="hint">· ' + s.width + "×" + s.height + " · WebGPU kernel, 1 dispatch · " +
+          ms + " ms (CPU-wasm 1-thread ~" + cpu1 + " ms ≈ " + (cpu1 / 1000).toFixed(1) + " s) · " +
+          (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
+      }).catch(function (e) {
+        busy = false;
+        els.go.disabled = false;
+        status("gpu error: " + e.message);
+        console.error(e);
+      });
+      return;
+    }
 
     if (kind === "sa") {
       var p = PLANETS[planetKey];

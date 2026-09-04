@@ -80,8 +80,203 @@ function toU32(bytes) {
   return out;
 }
 
-// elevation.wgsl gens: (seed0, seed1) = (map_seed, gi seed1s)
-const ELEV_SEED1 = [900, 99584, 700, 1000, 1100, 500, 600];
+// ── Combined nauvis kernel (elevation + fields + 21-tile competition) ─────
+// Fixed gen registry (order must match nauvis.wgsl GI_* slots), seed0 = map seed
+// except the per-octave quick/lake gens (seed0+k).
+const ELEV_S1 = [900, 99584, 700, 1000, 1100, 500, 600];
+const TILE_S1 = [36, 37, 38, 13, 6, 7, 8, 9, 10, 11, 12, 19, 20, 21, 22, 30, 31, 32, 33];
+function genList(mapSeed) {
+  const g = [];
+  for (const s1 of ELEV_S1) g.push([mapSeed, s1]);
+  g.push([mapSeed, 1800]);
+  for (let k = 0; k < 4; k++) g.push([(mapSeed + k) >>> 0, 6]);   // moisture quick
+  for (let k = 0; k < 4; k++) g.push([(mapSeed + k) >>> 0, 7]);   // aux quick
+  for (let k = 0; k < 4; k++) g.push([(mapSeed + k) >>> 0, 14]);  // starting lake
+  for (const s1 of TILE_S1) g.push([mapSeed, s1]);
+  return g;
+}
+
+// land rule table (12 f32/tile) mirroring biome.zig nauvis_rules:
+// [loa, lom, hia, him, altloa, altlom, althia, althim, hasAlt, hasShore, 0, 0]
+const LAND_RULES = [
+  [-10, -10, 0.25, 0.15, 0, 0, 0, 0, 0, 1], // sand-1 (shore)
+  [-10, 0.15, 0.3, 0.2, 0.25, -10, 0.3, 0.15, 1, 0],
+  [-10, 0.2, 0.4, 0.25, 0.3, -10, 0.4, 0.2, 1, 0],
+  [0.45, -10, 0.55, 0.35, 0, 0, 0, 0, 0, 0],            // dry-dirt
+  [-10, 0.25, 0.45, 0.3, 0.4, -10, 0.45, 0.25, 1, 0],    // dirt-1
+  [-10, 0.3, 0.45, 0.35, 0, 0, 0, 0, 0, 0],
+  [-10, 0.35, 0.55, 0.4, 0, 0, 0, 0, 0, 0],
+  [0.55, -10, 0.6, 0.35, 0.6, 0.3, 11, 0.35, 1, 0],      // dirt-4
+  [-10, 0.4, 0.55, 0.45, 0, 0, 0, 0, 0, 0],
+  [-10, 0.45, 0.55, 0.5, 0, 0, 0, 0, 0, 0],
+  [-10, 0.5, 0.55, 0.55, 0, 0, 0, 0, 0, 0],
+  [-10, 0.7, 11, 11, 0, 0, 0, 0, 0, 0],                   // grass-1
+  [0.45, 0.45, 11, 0.8, 0, 0, 0, 0, 0, 0],
+  [-10, 0.6, 0.65, 0.9, 0, 0, 0, 0, 0, 0],
+  [-10, 0.5, 0.55, 0.7, 0, 0, 0, 0, 0, 0],
+  [0.55, 0.35, 11, 0.5, 0, 0, 0, 0, 0, 0],                // red-desert-0
+  [0.6, -10, 0.7, 0.3, 0.7, 0.25, 11, 0.3, 1, 0],
+  [0.7, -10, 0.8, 0.25, 0.8, 0.2, 11, 0.25, 1, 0],
+  [0.8, -10, 11, 0.2, 0, 0, 0, 0, 0, 0],
+];
+
+// starting lake centre (engine rule: R=74.25 ring at the map RNG's first draw)
+function lakeCentre(mapSeed) {
+  const r = lfsrInit(mapSeed);
+  const f = lfsrNext(r) / 4294967296;
+  const th = f * 2 * Math.PI;
+  const R = 74.25;
+  return [R * Math.cos(th), R * Math.sin(th)];
+}
+
+let nau = null; // { pipeline, dev }
+let tablesCache = null; // { seed, bufs }
+let rulesBuf = null;
+
+async function nauvisPipeline() {
+  if (nau) return nau;
+  const dev = await getDevice();
+  const code = await fetchShader("nauvis.wgsl");
+  const module = dev.createShaderModule({ code });
+  const info = await module.getCompilationInfo();
+  const errs = (info.messages || []).filter((m) => m.type === "error");
+  if (errs.length) throw new Error("nauvis.wgsl: " + errs.map((e) => e.lineNum + ":" + e.linePos + " " + e.message).join(" | "));
+  const pipeline = dev.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "main" } });
+  nau = { pipeline, dev };
+  return nau;
+}
+
+function uploadTables(dev, mapSeed) {
+  if (tablesCache && tablesCache.seed === mapSeed) return tablesCache;
+  const gl = genList(mapSeed);
+  const n = gl.length;
+  const perm1 = new Uint32Array(n * 256);
+  const perm2 = new Uint32Array(n * 256);
+  const grad = new Float32Array(n * 512);
+  const sb = new Uint32Array(n);
+  for (let gi = 0; gi < n; gi++) {
+    const g = buildGen(gl[gi][0], gl[gi][1]);
+    perm1.set(g.perm1, gi * 256);
+    perm2.set(g.perm2, gi * 256);
+    grad.set(g.grad, gi * 512);
+    sb[gi] = g.seedByte;
+  }
+  const mk = (arr, usage) => {
+    const b = dev.createBuffer({ size: arr.byteLength, usage });
+    dev.queue.writeBuffer(b, 0, arr);
+    return b;
+  };
+  tablesCache = { seed: mapSeed, count: n,
+    perm1: mk(perm1, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    perm2: mk(perm2, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    grad: mk(grad, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST),
+    sb: mk(sb, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST) };
+  return tablesCache;
+}
+
+function rulesStorage(dev) {
+  if (rulesBuf) return rulesBuf;
+  const f = new Float32Array(19 * 12);
+  LAND_RULES.forEach((r, t) => { for (let i = 0; i < 10; i++) f[t * 12 + i] = r[i]; });
+  rulesBuf = dev.createBuffer({ size: f.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  dev.queue.writeBuffer(rulesBuf, 0, f);
+  return rulesBuf;
+}
+
+async function runNauvis(mapSeed, rect, mode) {
+  const ctx = await nauvisPipeline();
+  const dev = ctx.dev;
+  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
+  const uniSize = 96; // 20 f32 + 3 u32 padded to 16
+  const uni = dev.createBuffer({ size: uniSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const p = new Float32Array(20);
+  const nsm = 1.5;
+  const vals = [rect.x0, rect.y0, nsm, 1.0, 0, nsm / 90, nsm / 500, 0.6, nsm / 150,
+    nsm / 1600, nsm / 1600, nsm / 14, 0.03, 10000 / nsm, nsm / 2,
+    ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5, 10000 / nsm, 0, 0, 0];
+  const lc = lakeCentre(mapSeed);
+  vals[17] = lc[0]; vals[18] = lc[1];
+  for (let i = 0; i < 20; i++) p[i] = vals[i];
+  const dv = new DataView(uniSize === 96 ? new ArrayBuffer(uniSize) : null);
+  // write float part via Float32 view, u32s at the tail
+  const arr = new ArrayBuffer(uniSize);
+  new Float32Array(arr).set(p, 0);
+  const d = new DataView(arr);
+  d.setUint32(80, w, true); d.setUint32(84, h, true); d.setUint32(88, mode, true);
+  dev.queue.writeBuffer(uni, 0, arr);
+
+  const t = uploadTables(dev, mapSeed);
+  const rules = rulesStorage(dev);
+  const outF = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const outF2 = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const outIdx = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const bind = dev.createBindGroup({
+    layout: ctx.pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uni } },
+      { binding: 1, resource: { buffer: t.perm1 } },
+      { binding: 2, resource: { buffer: t.perm2 } },
+      { binding: 3, resource: { buffer: t.grad } },
+      { binding: 4, resource: { buffer: t.sb } },
+      { binding: 5, resource: { buffer: rules } },
+      { binding: 6, resource: { buffer: outF } },
+      { binding: 7, resource: { buffer: outF2 } },
+      { binding: 8, resource: { buffer: outIdx } },
+    ],
+  });
+  const enc = dev.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(ctx.pipeline);
+  pass.setBindGroup(0, bind);
+  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+  pass.end();
+  dev.pushErrorScope("validation");
+  dev.queue.submit([enc.finish()]);
+  const verr = await dev.popErrorScope();
+  if (verr) throw new Error("gpu validation: " + verr.message);
+
+  const readB = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const readB2 = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const readB3 = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  const enc2 = dev.createCommandEncoder();
+  enc2.copyBufferToBuffer(outF, 0, readB, 0, w * h * 4);
+  enc2.copyBufferToBuffer(outF2, 0, readB2, 0, w * h * 4);
+  enc2.copyBufferToBuffer(outIdx, 0, readB3, 0, w * h * 4);
+  dev.queue.submit([enc2.finish()]);
+  const f1 = await readbackFloat(dev, readB, w * h);
+  const f2 = await readbackFloat(dev, readB2, w * h);
+  const u3 = await readbackU32(dev, readB3, w * h);
+  return { f1, f2, idx: u3, width: w, height: h };
+}
+
+self.onmessage = async function (ev) {
+  const msg = ev.data;
+  if (!msg || msg.id == null) return;
+  try {
+    if (msg.type !== "gpu-surface") throw new Error("bad type " + msg.type);
+    const req = msg.req;
+    const mapSeed = req.seed >>> 0;
+    const rect = req.rect || { x0: -req.radius, y0: -req.radius, x1: req.radius, y1: req.radius };
+    const kind = req.kind;
+    const mode = kind === "elevation" ? 0 : kind === "fields" ? 1 : kind === "tiles" ? 2 : kind === "debug" ? 9 : -1;
+    if (mode < 0) throw new Error("unsupported kind " + kind);
+    const r = await runNauvis(mapSeed, rect, mode);
+    let pixels = null;
+    if (mode === 2) {
+      const n = r.width * r.height;
+      pixels = new Uint8Array(n);
+      for (let i = 0; i < n; i++) pixels[i] = r.idx[i];
+    } else {
+      pixels = mode === 0 ? new Float32Array(r.f1) : new Float32Array(r.f1);
+    }
+    const extra = mode === 1 ? new Float32Array(r.f2) : null;
+    self.postMessage({ id: msg.id, ok: true, summary: { kind, width: r.width, height: r.height }, pixels, extra },
+      pixels ? [pixels.buffer].concat(extra ? [extra.buffer] : []) : []);
+  } catch (e) {
+    self.postMessage({ id: msg.id, ok: false, error: (e && e.message) || String(e) });
+  }
+};
+
 
 let device = null, deviceP = null, shaders = {};
 
@@ -104,6 +299,15 @@ async function fetchShader(name) {
   return shaders[name];
 }
 
+function readbackU32(device, buf, count) {
+  return buf.mapAsync(GPUMapMode.READ).then(() => {
+    const arr = new Uint32Array(buf.size / 4);
+    arr.set(new Uint32Array(buf.getMappedRange()));
+    buf.unmap();
+    return arr.slice(0, count);
+  });
+}
+
 function padF32Uniform(n) { // WGSL uniform struct size is rounded to 16
   return Math.ceil(n / 4) * 4;
 }
@@ -117,152 +321,3 @@ function readbackFloat(device, buf, count) {
   });
   return res;
 }
-
-// Elevation kernel context cached per device.
-let elev = null;
-async function elevationPipeline() {
-  if (elev) return elev;
-  const dev = await getDevice();
-  const code = await fetchShader("elevation.wgsl");
-  const module = dev.createShaderModule({ code });
-  const pipeline = dev.createComputePipeline({
-    layout: "auto",
-    compute: { module, entryPoint: "main" },
-  });
-  // uniform buffer: 19 f32 floats -> padded 80
-  const uniSize = 80;
-  // table buffers: perm1 7*256 u32, perm2 7*256, grad 7*512 f32, seed_bytes 7 u32
-  elev = { dev, pipeline, uniSize,
-    perm1Size: 7 * 256 * 4, perm2Size: 7 * 256 * 4, gradSize: 7 * 512 * 4, sbSize: 7 * 4 };
-  return elev;
-}
-
-// Compose the 7-gens table buffers for a map seed.
-function buildElevTables(mapSeed) {
-  const perm1 = new Uint32Array(7 * 256);
-  const perm2 = new Uint32Array(7 * 256);
-  const grad = new Float32Array(7 * 512);
-  const sb = new Uint32Array(7);
-  for (let gi = 0; gi < 7; gi++) {
-    const g = buildGen(mapSeed, ELEV_SEED1[gi]);
-    perm1.set(g.perm1, gi * 256);
-    perm2.set(g.perm2, gi * 256);
-    grad.set(g.grad, gi * 512);
-    sb[gi] = g.seedByte;
-  }
-  return { perm1, perm2, grad, sb };
-}
-
-// Elevation params: mirror EParams field order in elevation.wgsl.
-// origin_x, origin_y, nsm, seg, water_level, is_hills, is_cliff, os_cliff,
-// is_bridge, is_macro1, is_macro2, is_detail, os_detail, offx_detail,
-// is_pers, os_pers, offx_pers, width, height, slake_n
-function setElevParams(buf, p) {
-  const f = new Float32Array(buf);
-  const o = [p.originX, p.originY, 1.5, 1.0, p.waterLevel,
-    p.isHills, p.isCliff, 0.6, p.isBridge, p.isMacro1, p.isMacro2,
-    p.isDetail, 0.03, p.offxDetail, p.isPers, p.osPers, p.offxPers,
-    0, 0, 0];
-  for (let i = 0; i < 17; i++) f[i] = o[i];
-  // width/height/slake_n are u32 in EParams (offsets 17/18/19)
-  const d = new DataView(buf);
-  d.setUint32(17 * 4, p.width, true);
-  d.setUint32(18 * 4, p.height, true);
-  d.setUint32(19 * 4, 0, true);
-}
-// Elevation parameter values (terrain.Elevation defaults: nsm=1.5, seg=1).
-function elevParamsFor(x0, y0, w, h) {
-  const nsm = 1.5;
-  return {
-    originX: x0, originY: y0, waterLevel: 0,
-    isHills: nsm / 90.0, isCliff: nsm / 500.0, isBridge: nsm / 150.0,
-    isMacro1: nsm / 1600.0, isMacro2: nsm / 1600.0,
-    isDetail: nsm / 14.0, offxDetail: 10000.0 / nsm,
-    isPers: nsm / 2.0, osPers: ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5,
-    offxPers: 10000.0 / nsm,
-    width: w, height: h,
-  };
-}
-
-async function runElevation(mapSeed, rect) {
-  const ctx = await elevationPipeline();
-  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0;
-  const dev = ctx.dev;
-
-  const uni = dev.createBuffer({ size: ctx.uniSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const paramsBuf = new ArrayBuffer(ctx.uniSize);
-  setElevParams(paramsBuf, elevParamsFor(rect.x0, rect.y0, w, h));
-  dev.queue.writeBuffer(uni, 0, paramsBuf);
-
-  const tables = buildElevTables(mapSeed);
-  const mk = (arr, usage) => {
-    const b = dev.createBuffer({ size: arr.byteLength, usage });
-    dev.queue.writeBuffer(b, 0, arr);
-    return b;
-  };
-  const perm1B = mk(tables.perm1, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-  const perm2B = mk(tables.perm2, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-  const gradB = mk(tables.grad, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-  const sbB = mk(tables.sb, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-  const outB = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-
-  const bind = dev.createBindGroup({
-    layout: ctx.pipeline.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: uni } },
-      { binding: 1, resource: { buffer: perm1B } },
-      { binding: 2, resource: { buffer: perm2B } },
-      { binding: 3, resource: { buffer: gradB } },
-      { binding: 4, resource: { buffer: sbB } },
-      { binding: 5, resource: { buffer: outB } },
-    ],
-  });
-
-  const enc = dev.createCommandEncoder();
-  const pass = enc.beginComputePass();
-  pass.setPipeline(ctx.pipeline);
-  pass.setBindGroup(0, bind);
-  const gx = Math.ceil(w / 8), gy = Math.ceil(h / 8);
-  pass.dispatchWorkgroups(gx, gy);
-  pass.end();
-  dev.queue.submit([enc.finish()]);
-
-  // readback
-  const readB = dev.createBuffer({ size: w * h * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-  const enc2 = dev.createCommandEncoder();
-  enc2.copyBufferToBuffer(outB, 0, readB, 0, w * h * 4);
-  dev.queue.submit([enc2.finish()]);
-  return { grid: await readbackFloat(dev, readB, w * h), width: w, height: h };
-}
-
-self.onmessage = async function (ev) {
-  const msg = ev.data;
-  if (!msg || msg.id == null) return;
-  try {
-    if (msg.type !== "gpu-surface") throw new Error("bad type " + msg.type);
-    const req = msg.req;
-    const mapSeed = req.seed >>> 0;
-    const rect = req.rect || { x0: -req.radius, y0: -req.radius, x1: req.radius, y1: req.radius };
-    if (req.kind === "elevation" || req.kind === "water") {
-      const r = await runElevation(mapSeed, rect);
-      let pixels = null;
-      if (req.kind === "water") {
-        // tile index grid: 0 land, 1 water, 2 deepwater (e < 0; e < -2 deep)
-        const n = r.width * r.height;
-        pixels = new Uint8Array(n);
-        for (let i = 0; i < n; i++) {
-          const e = r.grid[i];
-          pixels[i] = e < 0 ? (e < -2 ? 2 : 1) : 0;
-        }
-      } else {
-        // return the raw f32 grid for debugging/comparison
-        pixels = new Float32Array(r.grid);
-      }
-      self.postMessage({ id: msg.id, ok: true, summary: { kind: req.kind, width: r.width, height: r.height }, pixels }, pixels ? [pixels.buffer] : []);
-    } else {
-      throw new Error("unsupported kind " + req.kind);
-    }
-  } catch (e) {
-    self.postMessage({ id: msg.id, ok: false, error: (e && e.message) || String(e) });
-  }
-};

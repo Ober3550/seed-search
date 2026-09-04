@@ -913,6 +913,7 @@ app.get("/surface/:seed/:target", (req, res) => {
   <script src="/static/universe-wasm.js"></script>
   <script src="/static/surface-wasm.js"></script>
   <script src="/static/sa-wasm.js"></script>
+  <script src="/static/gpu-surface.js"></script>
   <script src="/static/surface.js"></script>`;
   page(req, res, `Seed ${seed} · ${target}`, content, seed);
 });

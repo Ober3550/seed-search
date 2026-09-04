@@ -150,14 +150,14 @@ fn elevationAt(x : f32, y : f32, lakeDist : f32, lakeNoise : f32) -> f32 {
     let hp = 0.1 * hc.x + 0.8 * plateaus;
     let bb = abs(multioctaveG(GI_BRIDGE, x, y, 4u, 2.0, P.is_bridge));
     let bridges = 1.0 - 0.1 * bb - 0.9 * max(0.0, -0.1 + bb);
-    let macro = multioctaveG(GI_MACRO1, x, y, 2u, 1.0 / 0.6, P.is_macro1) *
+    let macroN = multioctaveG(GI_MACRO1, x, y, 2u, 1.0 / 0.6, P.is_macro1) *
                 max(0.0, multioctaveG(GI_MACRO2, x, y, 1u, 1.0 / 0.6, P.is_macro2));
     let persist = clamp(variablePersistenceG(GI_PERS, x, y, 5u, P.is_pers, P.os_pers, P.offx_pers, 0.7) + 0.55, 0.5, 0.65);
     let detail = variablePersistenceG(GI_DET, x, y, 5u, P.is_detail, P.os_detail, P.offx_detail, persist);
     let dist = sqrt(x * x + y * y);
     let smm = clamp(dist * P.nsm / 2000.0, 0.0, 1.0);
     let main = 20.0 * (mix(0.5 * hp - 0.6, 1.9 * hp + 1.6, 0.1 + 0.5 * bridges) +
-                       0.25 * detail + 3.0 * macro * smm);
+                       0.25 * detail + 3.0 * macroN * smm);
     let island = main + 20.0 * (2.5 - dist * P.seg / 200.0);
     let wlc = max(main - P.water_level * 2.0, island);
     let lakeBowl = 20.0 * (-3.0 + (lakeDist + lakeNoise) / 8.0) / 8.0;
@@ -220,6 +220,10 @@ fn tileProb(t : u32, aux : f32, m : f32, e : f32) -> f32 {
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+    if (P.mode == 9u) { // debug: sentinel before the width guard
+        if (gid.x == 0u && gid.y == 0u) { outF[0] = 12345.0; outF2[0] = 6789.0; outIdx[0] = 777u; }
+        return;
+    }
     if (gid.x >= P.width || gid.y >= P.height) { return; }
     let x = P.origin_x + f32(gid.x);
     let y = P.origin_y + f32(gid.y);
