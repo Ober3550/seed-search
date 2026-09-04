@@ -36,6 +36,7 @@ struct Params {
     hot_size : f32,
     cold_freq : f32,
     hot_freq : f32,
+    water_gate : f32,
     width : u32,
     height : u32,
     mode : u32,
@@ -48,6 +49,8 @@ struct Params {
 @group(0) @binding(4) var<storage, read>       sbytes: array<u32>;
 @group(0) @binding(5) var<storage, read_write> outF  : array<f32>;
 @group(0) @binding(6) var<storage, read_write> outIdx: array<u32>;
+@group(0) @binding(7) var<storage, read>       rowsF : array<f32, 1872>; // 156 rows x 12
+@group(0) @binding(8) var<storage, read>       rowsU : array<u32, 312>;  // flags,color
 
 const GI_HILLS : u32 = 0u;
 const GI_CLIFF : u32 = 1u;
@@ -59,6 +62,9 @@ const GI_DET   : u32 = 6u;
 const GI_TQ    : u32 = 7u;   // temperature quick gens (map_seed+k, 5) x11
 const GI_MQ    : u32 = 18u;  // moisture quick gens (map_seed+k, 6) x8
 const GI_AQ    : u32 = 26u;  // aux quick gens      (map_seed+k, 7) x8
+const GI_WATER : u32 = 34u;  // shared water noise gen (zone_seed, crc32("water"))
+const GI_CRATER: u32 = 35u;  // shared crater noise gen (zone_seed, crc32("crater"))
+const GI_TV    : u32 = 36u;  // per-row terrain-variation gens (zone_seed, tv_seed)
 
 fn basisG(gi : u32, x : f32, y : f32, scale : f32, offx : f32, offy : f32) -> f32 {
     let po = gi * 256u;
@@ -182,13 +188,82 @@ fn auxAt(x : f32, y : f32) -> f32 {
     return clamp(0.45 + 2.2 * P.aux_bias + 2.2 * q, 0.0, 1.0);
 }
 
+// ── Alien-biomes classifier (biome.zig classifyBest, f32) ───────────────
+// multioctave_noise (noise.zig multioctaveNoiseOffset): single gen per slot,
+// octaves coarsen coordmul*=0.5, amplitude *= 1/persistence, offsets folded in
+// tile space before coordmul; result = value/sqrt(sumsq) * output_scale.
+fn multiOff(gi : u32, x : f32, y : f32, octaves : u32, persistence : f32,
+            ins : f32, outs : f32, ox : f32, oy : f32) -> f32 {
+    let xo = x + ox;
+    let yo = y + oy;
+    let ampmul = 1.0 / persistence;
+    var value : f32 = 0.0;
+    var amplitude : f32 = 1.0;
+    var coordmul : f32 = 1.0;
+    var sumsq : f32 = 0.0;
+    var k : f32 = 0.0;
+    for (var i : u32 = 0u; i < octaves; i = i + 1u) {
+        let x_arg = (k * 17.17) / ins + xo * coordmul;
+        let y_arg = yo * coordmul;
+        value = value + basisG(gi, x_arg, y_arg, ins, 0.0, 0.0) * amplitude;
+        sumsq = sumsq + amplitude * amplitude;
+        coordmul = coordmul * 0.5;
+        amplitude = amplitude * ampmul;
+        k = k + 1.0;
+    }
+    return value / sqrt(sumsq) * outs;
+}
+
+fn plateauPeak(v : f32, lo : f32, hi : f32) -> f32 {
+    let range = abs(lo - hi) / 2.0;
+    let center = (lo + hi) / 2.0;
+    return min((range - abs(v - center)) * 20.0, 1.0);
+}
+
+// Winning land-biome packed color (0x00RRGGBB), args = t,m,a,e (f32 like the
+// engine's classify f32 math). Water handled by the caller gate.
+fn classifierColor(x : f32, y : f32, t : f32, m : f32, a : f32, e : f32) -> u32 {
+    let water_noise = multiOff(GI_WATER, x, y, 5u, 0.75, 1.0 / 6.0 / 8.0, 0.666, 0.0, 0.0);
+    let crater_noise = multiOff(GI_CRATER, x, y, 5u, 0.75, 1.0 / 6.0, 0.666, 0.0, 0.0);
+    let beach = min(0.0, e / 5.0 - 1.0);
+    var best : f32 = -3.0e38;
+    var col : u32 = 0u;
+    for (var r : u32 = 0u; r < 156u; r = r + 1u) {
+        let base = r * 12u;
+        var f : f32 = 1.0e38;
+        let fl = rowsU[r * 2u];
+        if ((fl & 1u) != 0u) { f = min(f, plateauPeak(t, rowsF[base], rowsF[base + 4u])); }
+        if ((fl & 2u) != 0u) { f = min(f, plateauPeak(m, rowsF[base + 1u], rowsF[base + 5u])); }
+        if ((fl & 4u) != 0u) { f = min(f, plateauPeak(a, rowsF[base + 2u], rowsF[base + 6u])); }
+        if ((fl & 8u) != 0u) { f = min(f, plateauPeak(e, rowsF[base + 3u], rowsF[base + 7u])); }
+        if (rowsF[base + 8u] < 0.0) { f = f + beach; }
+        let wc = rowsF[base + 9u];
+        if (wc != 0.0) { f = f + wc * water_noise; }
+        if ((fl & 16u) != 0u) { f = f + (-0.6 - 0.7 * crater_noise); }
+        f = f + 0.5 * multiOff(GI_TV + r, x, y, 6u, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0);
+        if (f > best) { best = f; col = rowsU[r * 2u + 1u]; }
+    }
+    return col;
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     if (gid.x >= P.width || gid.y >= P.height) { return; }
     let x = P.origin_x + f32(gid.x);
     let y = P.origin_y + f32(gid.y);
     let i = gid.y * P.width + gid.x;
-    let e = elevationAt(x, y);
+    let has_water = P.water_gate > 0.5;
+    var e : f32 = 1.0;
+    if (has_water) { e = elevationAt(x, y); }
+    if (P.mode == 5u) {
+        if (has_water && e < 0.0) {
+            if (e < -5.0) { outIdx[i] = 0x00264049u; } // deepwater
+            else { outIdx[i] = 0x0033535Fu; }          // water
+            return;
+        }
+        outIdx[i] = classifierColor(x, y, temperatureAt(x, y), moistureAt(x, y), auxAt(x, y), e);
+        return;
+    }
     if (P.mode == 0u) { outF[i] = e; return; }
     if (P.mode == 2u) { outF[i] = temperatureAt(x, y); return; }
     if (P.mode == 3u) { outF[i] = moistureAt(x, y); return; }

@@ -14,6 +14,7 @@
 // gens (seed1 = 900,99584,700,1000,1100,500,600) into shared buffers.
 
 // ── triple-LFSR (rng.zig port) ─────────────────────────────────────────────
+importScripts("/static/ab-table.js");
 const M32 = 0xffffffff;
 function lfsrInit(seed) {
   const s = Math.max(seed >>> 0, 341);
@@ -278,10 +279,13 @@ function seGenList(zoneSeed) {
   for (let k = 0; k < 11; k++) g.push([(zoneSeed + k) >>> 0, 5]); // temperature quick
   for (let k = 0; k < 8; k++) g.push([(zoneSeed + k) >>> 0, 6]);  // moisture quick
   for (let k = 0; k < 8; k++) g.push([(zoneSeed + k) >>> 0, 7]);  // aux quick
+  g.push([zoneSeed, AB_WATER_SEED], [zoneSeed, AB_CRATER_SEED]);  // shared water/crater
+  for (let i = 0; i < AB_BIOMES.length; i++) g.push([zoneSeed, AB_BIOMES[i].tv]); // tv per row
   return g;
 }
 let seP = null; // { pipeline, dev }
 let seTables = null; // { seed, bufs }
+let seRows = null; // { bufF, bufU } classifier rows (device-wide)
 
 async function sePipeline() {
   if (seP) return seP;
@@ -320,6 +324,32 @@ function seTablesFor(dev, zoneSeed) {
   return seTables;
 }
 
+// Pack AB_BIOMES into WGSL row storage: rowsF = 12 f32/row
+// [lo_t,lo_m,lo_a,lo_e, hi_t,hi_m,hi_a,hi_e, beach, wc, 0, 0]; rowsU = flags,color.
+function seRowsFor(dev) {
+  if (seRows) return seRows;
+  const n = AB_BIOMES.length;
+  const F = new Float32Array(n * 12);
+  const U = new Uint32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const r = AB_BIOMES[i];
+    const dims = [["t", 1], ["m", 2], ["a", 4], ["e", 8]];
+    let flags = r.crater ? 16 : 0;
+    for (let d = 0; d < 4; d++) {
+      const k = dims[d][0], bit = dims[d][1];
+      const rg = r[k];
+      if (rg) { F[i * 12 + d] = rg[0]; F[i * 12 + 4 + d] = rg[1]; flags |= bit; }
+    }
+    F[i * 12 + 8] = r.beach;
+    F[i * 12 + 9] = r.wc;
+    U[i * 2] = flags;
+    U[i * 2 + 1] = (r.c[0] << 16) | (r.c[1] << 8) | r.c[2];
+  }
+  const mk = (arr) => { const b = dev.createBuffer({ size: arr.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST }); dev.queue.writeBuffer(b, 0, arr); return b; };
+  seRows = { bufF: mk(F), bufU: mk(U) };
+  return seRows;
+}
+
 // Run se_zone.wgsl elevation (mode 0) or water mask (mode 1) for an SE zone.
 // `zone` = universe row; cpu params come from surface.wasm (surfaceParams).
 async function runSEZone(mapSeed, zone, rect, mode) {
@@ -332,18 +362,21 @@ async function runSEZone(mapSeed, zone, rect, mode) {
   const seg = cp.water_frequency;
   const waterLevel = 10 * Math.log2(cp.water_size);
   const osPers = ((1 - 0.7) / Math.pow(2, 5) / (1 - Math.pow(0.7, 5))) * 0.5;
-  // uniform: 25 floats then width/height/mode u32s (112 bytes)
-  const arr = new ArrayBuffer(112);
+  // uniform: 26 floats then width/height/mode u32s (116 bytes)
+  const tags = (zone && zone.tags) || {};
+  const hasWater = !!tags.water && tags.water !== "none";
+  const arr = new ArrayBuffer(116);
   const f = new Float32Array(arr);
   const v = [rect.x0, rect.y0, nsm, seg, waterLevel,
     nsm / 90, nsm / 500, 0.6, nsm / 150, nsm / 1600, nsm / 1600,
     nsm / 14, 0.03, 10000 / nsm, nsm / 2, osPers, 10000 / nsm,
     cp.moisture_frequency || 1, cp.moisture_bias || 0, cp.aux_frequency || 1, cp.aux_bias || 0,
-    cp.cold_size || 0, cp.hot_size || 0, cp.cold_frequency || 0, cp.hot_frequency || 0];
-  for (let i = 0; i < 25; i++) f[i] = v[i];
+    cp.cold_size || 0, cp.hot_size || 0, cp.cold_frequency || 0, cp.hot_frequency || 0,
+    hasWater ? 1 : 0];
+  for (let i = 0; i < 26; i++) f[i] = v[i];
   const d = new DataView(arr);
-  d.setUint32(100, w, true); d.setUint32(104, h, true); d.setUint32(108, mode, true);
-  const uni = dev.createBuffer({ size: 112, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  d.setUint32(104, w, true); d.setUint32(108, h, true); d.setUint32(112, mode, true);
+  const uni = dev.createBuffer({ size: 116, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   dev.queue.writeBuffer(uni, 0, arr);
 
   const t = seTablesFor(dev, cp.zone_seed);
@@ -359,6 +392,8 @@ async function runSEZone(mapSeed, zone, rect, mode) {
       { binding: 4, resource: { buffer: t.sb } },
       { binding: 5, resource: { buffer: outF } },
       { binding: 6, resource: { buffer: outIdx } },
+      { binding: 7, resource: { buffer: seRowsFor(dev).bufF } },
+      { binding: 8, resource: { buffer: seRowsFor(dev).bufU } },
     ],
   });
   const enc = dev.createCommandEncoder();
@@ -394,15 +429,17 @@ self.onmessage = async function (ev) {
       self.postMessage({ id: msg.id, ok: !!p.ok, summary: p, error: p.ok ? null : p.error });
       return;
     }
-    if (req.kind === "se" || req.kind === "se-elev" || req.kind === "se-temp" || req.kind === "se-moist" || req.kind === "se-aux") {
+    if (req.kind === "se" || req.kind === "se-elev" || req.kind === "se-temp" || req.kind === "se-moist" || req.kind === "se-aux" || req.kind === "se-color") {
       const rect = req.rect;
-      const modeMap = { "se": 1, "se-elev": 0, "se-temp": 2, "se-moist": 3, "se-aux": 4 };
+      const modeMap = { "se": 1, "se-elev": 0, "se-temp": 2, "se-moist": 3, "se-aux": 4, "se-color": 5 };
       const r = await runSEZone(req.seed >>> 0, req.zone, rect, modeMap[req.kind]);
       let pixels;
       if (req.kind === "se") {
         const n = r.width * r.height;
         pixels = new Uint8Array(n);
         for (let i = 0; i < n; i++) pixels[i] = r.idx[i];
+      } else if (req.kind === "se-color") {
+        pixels = new Uint32Array(r.idx);
       } else {
         pixels = new Float32Array(r.elev);
       }
