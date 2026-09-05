@@ -86,9 +86,12 @@
   function surfHref(z) {
     if (state.seed == null) return null;
     var u = "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
-    // Open at the zone's ACTUAL radius (disk-cropped to it). Max SE zone radius
-    // is 10000, which is also the page slider max; ?r is clamped to that only.
-    if (z.r) u += "&r=" + Math.min(Math.round(z.r), 10000);
+    // Open at the zone's ACTUAL radius (disk-cropped to it). Asteroid fields
+    // carry no radius in the universe data — open them at 5000 (SE's default
+    // field radius, same as the Nauvis default). Max SE zone radius is 10000,
+    // which is also the page slider max; ?r is clamped to that only.
+    var r0 = z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
+    if (r0) u += "&r=" + Math.min(r0, 10000);
     return u;
   }
   // True when the row can open a surface (seed present + engine support).
