@@ -695,14 +695,28 @@ fn evalMemoized(ctx: *EvalCtx, memo: *Memo, bindings: ?*const Bindings, node: *c
     return v;
 }
 
-pub fn evalRootMemoed(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
-    const e = closure.find(name) orelse return error.UnknownName;
-    if (e.is_function) return error.BadCall;
+pub fn memoNewEpoch(memo: *Memo) void {
     memo.epoch +%= 1;
     if (memo.epoch == 0) memo.epoch = 1;
+}
+
+/// Evaluate one root within the CURRENT memo epoch (call memoNewEpoch first).
+/// Lets several roots that share subexpressions (e.g. the 10 fulgora tile
+/// probability expressions) reuse the same per-pixel cache instead of
+/// recomputing the common elevation chain once per tile.
+pub fn evalRootSharedEpoch(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
+    const e = closure.find(name) orelse return error.UnknownName;
+    if (e.is_function) return error.BadCall;
     var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo };
     const frame = try bindEntry(e, &.{}, &ctx, null);
     return evalNode(&ctx, frame, e.root);
+}
+
+pub fn evalRootMemoed(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
+    const e = closure.find(name) orelse return error.UnknownName;
+    if (e.is_function) return error.BadCall;
+    memoNewEpoch(memo);
+    return evalRootSharedEpoch(closure, s, controls, arena, memo, name);
 }
 fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx, bindings: ?*const Bindings) EvalError!?*const Bindings {
     // parameterless entries (plain expressions): no allocation — the frame

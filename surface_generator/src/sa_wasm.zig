@@ -127,6 +127,18 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
         }
         break :blk "elevation";
     };
+    const cx: i32 = blk: {
+        if (json.get(o, "cx")) |v| {
+            if (v == .number) break :blk @intFromFloat(v.number);
+        }
+        break :blk 0;
+    };
+    const cy: i32 = blk: {
+        if (json.get(o, "cy")) |v| {
+            if (v == .number) break :blk @intFromFloat(v.number);
+        }
+        break :blk 0;
+    };
     const radius: i32 = blk: {
         if (json.get(o, "radius")) |v| {
             if (v == .number) {
@@ -162,17 +174,25 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
         const sa = scratch_state.allocator();
         var xi: i32 = -radius;
         while (xi <= radius) : (xi += 1) {
-            const x: f64 = @floatFromInt(xi);
-            const y: f64 = @floatFromInt(yi);
+            const cx_f: f64 = @floatFromInt(cx);
+            const cy_f: f64 = @floatFromInt(cy);
+            const xi_f: f64 = @floatFromInt(xi);
+            const yi_f: f64 = @floatFromInt(yi);
+            const x: f64 = cx_f + xi_f;
+            const y: f64 = cy_f + yi_f;
             const s = sa_expr.Scalars{ .x = x, .y = y, .seed = seed, .x_from_start = x, .y_from_start = y };
             const rgba = if (root_only) |rn| blk: {
                 const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, sa, &memo, rn);
                 break :blk colour(v, planetName);
             } else if (is_tiles) blk: {
+                // one memo epoch per PIXEL shared across all tile roots: the
+                // tile probabilities share the elevation/dune chains, so this
+                // avoids recomputing them once per tile.
+                sa_expr.memoNewEpoch(&memo);
                 var best: f64 = -std.math.inf(f64);
                 var col: [3]u8 = .{ 0, 0, 0 };
                 for (planet.tiles) |t| {
-                    const p = try sa_expr.evalRootMemoed(closure, s, defaultControls, sa, &memo, t.name);
+                    const p = try sa_expr.evalRootSharedEpoch(closure, s, defaultControls, sa, &memo, t.name);
                     if (p > best) {
                         best = p;
                         col = t.color;
