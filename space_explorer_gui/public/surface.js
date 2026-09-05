@@ -432,7 +432,7 @@
   }
 
   function radiusLimits() {
-    if (kind === "sa") return { min: 16, max: 512, step: 8, value: 96 };
+    if (kind === "sa") return { min: 16, max: 2000, step: 50, value: 500 };
     // zone / base Nauvis: preview radius IS the disk radius (planets render an
     // R-disk even though the real map is "infinite"). Allow up to 10000 — the
     // max radius of an SE zone/planet.
@@ -568,6 +568,55 @@
         doneUI();
         els.res.innerHTML = '<span class="hint">' + esc(p.why) + "</span>";
         status("not supported yet");
+        return;
+      }
+      if (planetKey === "fulgora" && layer !== 2) {
+        // fulgora tile layer: centre-out CPU cells (property "tiles" renders
+        // the real tile map colours)
+        var R = radius;
+        els.canvas.width = 2 * R;
+        els.canvas.height = 2 * R;
+        var ctx = els.canvas.getContext("2d");
+        var CELL = 129; // odd; cell half
+        var h = Math.floor(CELL / 2);
+        var cells = [];
+        for (var yc = -R + h; yc < R; yc += CELL) {
+          for (var xc = -R + h; xc < R; xc += CELL) {
+            cells.push({ cx: xc, cy: yc });
+          }
+        }
+        cells.sort(function (a, b) { return (a.cx * a.cx + a.cy * a.cy) - (b.cx * b.cx + b.cy * b.cy); });
+        status("fulgora tiles: rendering " + cells.length + " cells (centre-out)…");
+        var doneCells = 0;
+        var stepCell = function (i) {
+          if (i >= cells.length) {
+            doneUI();
+            window.__LAST_SURF__ = { zone: "Fulgora", type: "planet", resources: {}, layer: layer, gpu: false };
+            window.__SURF_MS__ = Date.now() - t0;
+            els.res.innerHTML = '<span class="hint">· ' + (2 * R) + "×" + (2 * R) + " · fulgora tiles (CPU) · " + window.__SURF_MS__ + " ms</span>";
+            status("fulgora · r" + radius + " · tiles");
+            return;
+          }
+          var c = cells[i];
+          window.generateSA({ seed: SEED, planet: "fulgora", property: "tiles", cx: c.cx, cy: c.cy, radius: h })
+            .then(function (r) {
+              var w = r.summary.width;
+              var img = ctx.createImageData(w, r.summary.height);
+              img.data.set(r.pixels);
+              var x0 = c.cx - h + R;
+              var y0 = c.cy - h + R;
+              ctx.putImageData(img, x0, y0);
+              doneCells++;
+              status("fulgora tiles " + doneCells + "/" + cells.length + " cells…");
+              setProgress(doneCells / cells.length);
+              stepCell(i + 1);
+            }).catch(function (e) {
+              doneUI();
+              status("error: " + e.message);
+              console.error(e);
+            });
+        };
+        stepCell(0);
         return;
       }
       window.generateSA({ seed: SEED, planet: planetKey, radius: radius })

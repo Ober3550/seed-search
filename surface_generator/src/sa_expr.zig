@@ -580,7 +580,8 @@ const Bindings = struct {
 /// cost, and one planet render reuses the same seeds many times. Single
 /// worker thread, so a process-global hook is fine (set before a render).
 pub const GenCache = struct {
-    const N = 32;
+    const N = 1024; // fulgora's expression graph uses dozens of distinct
+    // (seed0, seed1) noise gens; 32 evicted/rebuild per pixel and dominated cost.
     keys: [N]u64 = undefined,
     gens: [N]noise.BasisNoiseGen = undefined,
     n: usize = 0,
@@ -620,6 +621,9 @@ const EvalCtx = struct {
     controls: Controls,
     arena: std.mem.Allocator,
     memo: ?*Memo = null,
+    /// the real memo, kept even while ctx.memo is nulled inside function
+    /// frames (parameterless references from within still cache fine)
+    memo_ptr: ?*Memo = null,
 };
 
 fn rf32(v: f64) f64 {
@@ -707,7 +711,7 @@ pub fn memoNewEpoch(memo: *Memo) void {
 pub fn evalRootSharedEpoch(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
     const e = closure.find(name) orelse return error.UnknownName;
     if (e.is_function) return error.BadCall;
-    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo };
+    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo, .memo_ptr = memo };
     const frame = try bindEntry(e, &.{}, &ctx, null);
     return evalNode(&ctx, frame, e.root);
 }
@@ -853,7 +857,12 @@ fn resolveName(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8) Eval
     // without a call).
     if (ctx.closure.find(name)) |e| {
         const save = ctx.memo;
-        if (e.is_function) ctx.memo = null; // function value depends on args
+        // a parameterized function's value depends on its ARGUMENTS - keep its
+        // body uncached. Parameterless referenced entries are pure functions of
+        // the tile scalars, so caching them (even from inside a function frame)
+        // is safe and essential: water_base's bare `elevation` resolves the
+        // whole planet elevation chain here.
+        if (e.is_function) ctx.memo = null else ctx.memo = ctx.memo_ptr;
         defer ctx.memo = save;
         const frame = try bindEntry(e, &.{}, ctx, bindings);
         return evalNode(ctx, frame, e.root);
