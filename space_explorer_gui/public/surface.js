@@ -30,6 +30,18 @@
   // ?cpu=1 forces the CPU wasm pipeline (ore always comes from CPU wasm).
   var USE_GPU = !/[?&]cpu=1\b/.test(location.search) && !!(window.navigator && navigator.gpu);
   var GPU_MS = null;
+  // 2D canvases larger than this no-op their drawing ops in Chrome, so very
+  // large disks are rendered into a capped canvas with cells downscaled.
+  var DISP_MAX = 4096;
+  var cellCv = null, cellCx = null;
+  function cellCanvas(w, h) {
+    if (!cellCv || cellCv.width < w || cellCv.height < h) {
+      cellCv = document.createElement("canvas");
+      cellCv.width = w; cellCv.height = h;
+      cellCx = cellCv.getContext("2d");
+    }
+    return cellCx;
+  }
   // ?r=N -> initialise the preview radius to the zone's radius (passed by the
   // seed page rows) so the surface opens disk-cropped to the zone.
   var RADIUS_INIT = null;
@@ -452,8 +464,12 @@
       return Promise.resolve(kind === "zone" ? fetchZone() : nauvisZone()).then(function (z) {
         var R = radius;
         var diskR = zoneDiskRadius(z, R);
-        els.canvas.width = 2 * R;
-        els.canvas.height = 2 * R;
+        // display canvas is capped at DISP_MAX px; larger disks are downscaled
+        var disp = Math.min(2 * R, DISP_MAX);
+        var scaleS = (2 * R) / disp;
+        var downscaled = scaleS > 1;
+        els.canvas.width = disp;
+        els.canvas.height = disp;
         var gpuKind, backend, label;
         if (kind === "nauvis") { gpuKind = "tiles"; backend = "nauvis-tiles"; label = "nauvis tiles"; }
         else if (z.t === "asteroid-field") { gpuKind = "field-color"; backend = "se-field"; label = "asteroid field"; }
@@ -467,14 +483,30 @@
           seed: seed, zone: z, kind: gpuKind, radius: R, diskR: diskR, cell: 512,
           onCell: function (c) {
             var ctx = els.canvas.getContext("2d");
-            var img = ctx.createImageData(c.w, c.h);
-            img.data.set(c.rgba);
-            ctx.putImageData(img, c.x, c.y);
+            if (scaleS === 1) {
+              var img = ctx.createImageData(c.w, c.h);
+              img.data.set(c.rgba);
+              ctx.putImageData(img, c.x, c.y);
+            } else {
+              // downscale: draw the cell through an offscreen canvas
+              var cx = cellCanvas(c.w, c.h);
+              var cimg = cx.createImageData(c.w, c.h);
+              cimg.data.set(c.rgba);
+              cx.putImageData(cimg, 0, 0);
+              ctx.imageSmoothingEnabled = true;
+              ctx.drawImage(cellCv, 0, 0, c.w, c.h,
+                c.x / scaleS, c.y / scaleS, c.w / scaleS, c.h / scaleS);
+            }
             status("gpu: " + label + " " + c.done + "/" + c.total + " cells…");
             setProgress(c.total ? c.done / c.total : 0);
           }
         }).then(function (cells) {
-          var out = { cells: cells, backend: backend, width: 2 * R, height: 2 * R };
+          var out = { cells: cells, backend: backend, width: disp, height: disp, scale: scaleS, downscaled: downscaled };
+          if (downscaled && layer === 0) {
+            // ore overlay is not practical at >DISPLAY_MAX-res disks yet
+            window.__GPU_STAGE__ = "done";
+            return { out: out, z: z, totals: {} };
+          }
           if (layer === 0) {
             window.__GPU_STAGE__ = "ore";
             status("gpu terrain ready — placing ore (CPU wasm)…");
@@ -532,13 +564,13 @@
       window.__LAST_SURF_AT__ = Date.now();
       window.__LAST_SURF__ = { zone: z.n, type: z.t, resources: totals, layer: layer, gpu: true, ore: layer === 0 ? "cpu" : null };
       var px = out.width * out.height;
-      var modeTxt = layer === 0 ? "WebGPU terrain + CPU ore" : "WebGPU " + (out.backend || "kernel");
+      var modeTxt = layer === 0 && !out.downscaled ? "WebGPU terrain + CPU ore" : "WebGPU " + (out.backend || "kernel");
       els.res.innerHTML =
-        (layer === 0 && surfChips(totals) ? surfChips(totals) + " " : "") +
-        '<span class="hint">· ' + out.width + "×" + out.height + " · " + modeTxt + " (" +
+        (layer === 0 && !out.downscaled && surfChips(totals) ? surfChips(totals) + " " : "") +
+        '<span class="hint">· ' + out.width + "×" + out.height + (out.downscaled ? " (downscaled ×" + out.scale.toFixed(1) + ", ore overlay >4096px disks not yet)" : "") + " · " + modeTxt + " (" +
         out.cells + (out.cells === 1 ? " cell dispatch" : " cell dispatches") + ") · " + ms + " ms · " +
         (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
-      status("zone " + z.n + " · " + z.t + " · r" + radius + (layer === 0 ? " (WebGPU terrain + CPU ore)" : " (WebGPU)"));
+      status("zone " + z.n + " · " + z.t + " · r" + radius + (layer === 0 && !out.downscaled ? " (WebGPU terrain + CPU ore)" : " (WebGPU" + (out.downscaled ? ", downscaled preview)" : ")")));
     }, function (e) {
       // WebGPU unavailable / failure -> CPU wasm pipeline for the same request.
       console.error("WebGPU terrain failed, falling back to wasm:", e);
