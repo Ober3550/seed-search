@@ -656,10 +656,11 @@ pub const Memo = struct {
     epoch: u64 = 1,
 
     pub fn init(arena: std.mem.Allocator, node_count: usize) !Memo {
-        return .{
-            .vals = try arena.alloc(f64, node_count),
-            .epochs = try arena.alloc(u64, node_count),
-        };
+        const vals = try arena.alloc(f64, node_count);
+        const epochs = try arena.alloc(u64, node_count);
+        @memset(vals, 0);
+        @memset(epochs, 0);
+        return .{ .vals = vals, .epochs = epochs };
     }
 };
 
@@ -672,13 +673,12 @@ fn evalMemoized(ctx: *EvalCtx, memo: *Memo, bindings: ?*const Bindings, node: *c
 }
 
 pub fn evalRootMemoed(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
-    const e = closure.find(name) orelse return error.UnknownName;
-    if (e.is_function) return error.BadCall;
-    memo.epoch +%= 1;
-    if (memo.epoch == 0) memo.epoch = 1;
-    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo };
-    const frame = try bindEntry(e, &.{}, &ctx, null);
-    return evalNode(&ctx, frame, e.root);
+    _ = memo;
+    // FIXME(memo): the per-node memo produced wrong results when comparison
+    // operands cross entry boundaries (e.g. fulgora_starting_mask returned 0
+    // while unmemoised eval gave the correct 1). Delegate to the proven
+    // unmemoised path until that is root-caused; memo can return later.
+    return evalRoot(closure, s, controls, arena, name);
 }
 
 fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx, bindings: ?*const Bindings) EvalError!?*const Bindings {
