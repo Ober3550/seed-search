@@ -454,43 +454,27 @@
         var diskR = zoneDiskRadius(z, R);
         els.canvas.width = 2 * R;
         els.canvas.height = 2 * R;
-        var terrain;
-        if (kind === "nauvis") {
-          status("gpu: dispatching nauvis tile kernel…");
-          terrain = window.generateSurfaceGPU({
-            seed: SEED, kind: "tiles",
-            rect: { x0: -R, y0: -R, x1: R, y1: R }
-          }).then(function (r) {
-            var W = r.summary.width;
-            var H = r.summary.height;
-            var rgba = window.gpuIndicesToRgba(r.pixels, W, H);
-            diskClearOutside(rgba, W, diskR);
-            return { rgba: rgba, width: W, height: H, cells: 1, backend: "nauvis-tiles" };
-          });
-        } else if (z.t === "asteroid-field") {
-          status("gpu: dispatching se asteroid-field kernel…");
-          terrain = window.generateSEFieldGPU({
-            seed: SEED, zone: z, radius: R, diskR: diskR,
-            onProgress: function (done, total) {
-              status("gpu: asteroid field " + done + "/" + total + " cells…");
-              setProgress(total ? done / total : 0);
-            }
-          }).then(function (o) { o.backend = "se-field"; return o; });
-        } else {
-          status("gpu: dispatching se alien-biomes classifier…");
-          terrain = window.generateSEZoneGPU({
-            seed: SEED, zone: z, radius: R, diskR: diskR,
-            onProgress: function (done, total) {
-              status("gpu: classifier " + done + "/" + total + " cells…");
-              setProgress(total ? done / total : 0);
-            }
-          });
-        }
-        return terrain.then(function (out) {
-          var ctx = els.canvas.getContext("2d");
-          var img = ctx.createImageData(out.width, out.height);
-          img.data.set(out.rgba);
-          ctx.putImageData(img, 0, 0);
+        var gpuKind, backend, label;
+        if (kind === "nauvis") { gpuKind = "tiles"; backend = "nauvis-tiles"; label = "nauvis tiles"; }
+        else if (z.t === "asteroid-field") { gpuKind = "field-color"; backend = "se-field"; label = "asteroid field"; }
+        else { gpuKind = "se-color"; backend = "se-alien-biomes"; label = "alien biomes"; }
+        // field kernel seeds its billows gen with the ZONE's map seed
+        var seed = gpuKind === "field-color" && z.s != null ? z.s : SEED;
+        status("gpu: dispatching " + label + " kernel…");
+        // Centre-out cells: each dispatch has a small readback and blits into
+        // the canvas as it lands, so slower devices visibly fill the disk.
+        return window.generateSurfaceProgressive({
+          seed: seed, zone: z, kind: gpuKind, radius: R, diskR: diskR, cell: 256,
+          onCell: function (c) {
+            var ctx = els.canvas.getContext("2d");
+            var img = ctx.createImageData(c.w, c.h);
+            img.data.set(c.rgba);
+            ctx.putImageData(img, c.x, c.y);
+            status("gpu: " + label + " " + c.done + "/" + c.total + " cells…");
+            setProgress(c.total ? c.done / c.total : 0);
+          }
+        }).then(function (cells) {
+          var out = { cells: cells, backend: backend, width: 2 * R, height: 2 * R };
           if (layer === 0) {
             window.__GPU_STAGE__ = "ore";
             status("gpu terrain ready — placing ore (CPU wasm)…");
@@ -590,6 +574,11 @@
     kind = r.kind;
     if (kind === "sa") planetKey = r.planetKey;
     els.badge.textContent = "…";
+    // ?layer=N optionally preselects the layer (terrain+ore 0 / terrain 1 / ore 2)
+    try {
+      var _ly = new URLSearchParams(location.search).get("layer");
+      if (_ly != null && ["0", "1", "2"].indexOf(_ly) !== -1) els.layer.value = _ly;
+    } catch (e2) {}
     adaptForKind();
     els.go.addEventListener("click", run);
     els.radius.addEventListener("change", run);

@@ -65,23 +65,16 @@
     return out;
   };
 
-  // Render an SE (alien-biomes) zone disk with the se_zone classifier kernel.
-  // Chunked into `cell`-sized dispatches so large radii stay memory-bounded;
-  // pixels outside the radius disk are left transparent (matches the CPU map
-  // which draws a disk on a transparent square). req: { seed, zone, radius,
-  // onProgress?, cell? } -> { rgba: Uint8Array(2R*2R*4), width, height }
-  // Generic disk-chunked terrain wrapper shared by the SE classifier and the
-  // asteroid-field kernel: cells over [-R,R), disk-cropped at diskR.
-  function gpuDisk(req, workerKind) {
-    var seed = req.seed, zone = req.zone, R = req.radius;
-    var diskR = req.diskR || R;      // disk crop radius (<= R)
-    var cell = req.cell || 512;
-    var onProgress = req.onProgress || null;
-    var size = 2 * R;
-    var rgba = new Uint8Array(size * size * 4); // transparent background
+  // ── Progressive disk renderer (GPU) ───────────────────────────────────────
+  // Splits the disk into `cell`-sized squares (centre-out, like the CPU
+  // pipeline) so each dispatch has a small readback and, on slower devices,
+  // the map visibly fills from spawn while work continues. onCell is called
+  // per cell with { x, y, w, h, rgba, done, total } where (x,y) is the canvas
+  // offset of the cell's top-left corner.
+  // req: { seed, zone?, kind: "tiles"|"se-color"|"field-color", radius,
+  //        diskR?, cell?, onCell } -> { cells }
 
-    // cell squares over [-R, R) in absolute map coords; skip cells fully out
-    // of the rendered disk (CPU renders transparent there).
+  function diskPlan(R, diskR, cell) {
     var cells = [];
     for (var ya = -R; ya < R; ya += cell) {
       var yb = Math.min(ya + cell, R);
@@ -90,39 +83,91 @@
         var cdx = Math.max(xa, Math.min(0, xb - 1));
         var cdy = Math.max(ya, Math.min(0, yb - 1));
         if (cdx * cdx + cdy * cdy > diskR * diskR) continue; // fully outside disk
-        cells.push({ xa: xa, ya: ya, xb: xb, yb: yb });
+        var cx = (xa + xb) / 2, cy = (ya + yb) / 2;
+        cells.push({ xa: xa, ya: ya, xb: xb, yb: yb, d2: cx * cx + cy * cy });
       }
     }
+    // centre-out so the spawn area appears first; row-major tie-break.
+    cells.sort(function (a, b) { return (a.d2 - b.d2) || (a.xa - b.xa) || (a.ya - b.ya); });
+    return cells;
+  }
 
-    var done = 0;
-    var run = cells.map(function (c) {
-      return window.generateSurfaceGPU({ seed: seed, kind: workerKind, zone: zone, rect: { x0: c.xa, y0: c.ya, x1: c.xb, y1: c.yb } })
-        .then(function (r) {
-          var packed = new Uint32Array(r.pixels);
-          var cw = c.xb - c.xa, ch = c.yb - c.ya;
-          for (var i = 0; i < packed.length; i++) {
-            var x = c.xa + (i % cw), y = c.ya + ((i / cw) | 0);
-            if (x * x + y * y > diskR * diskR) continue;
-            var o = ((y + R) * size + (x + R)) * 4;
-            rgba[o] = (packed[i] >> 16) & 255;
-            rgba[o + 1] = (packed[i] >> 8) & 255;
-            rgba[o + 2] = packed[i] & 255;
-            rgba[o + 3] = 255;
-          }
-          done++;
-          if (onProgress) onProgress(done, cells.length);
-        });
-    });
-    return Promise.all(run).then(function () { return { rgba: rgba, width: size, height: size, cells: cells.length }; });
+  // Colour a cell's pixels: tiles -> palette indices -> RGBA; the classifier
+  // and field kernels already return packed 0xRRGGBB colours.
+  function cellRgba(kind, px, w, h) {
+    if (kind === "tiles") return window.gpuIndicesToRgba(px, w, h);
+    var packed = new Uint32Array(px);
+    var out = new Uint8Array(w * h * 4);
+    for (var i = 0; i < packed.length; i++) {
+      var o = i * 4;
+      out[o] = (packed[i] >> 16) & 255;
+      out[o + 1] = (packed[i] >> 8) & 255;
+      out[o + 2] = packed[i] & 255;
+      out[o + 3] = 255;
+    }
+    return out;
+  }
+
+  // Zero the alpha of pixels outside the disk (kernel fills the whole cell
+  // square; only the disk region belongs to the surface).
+  function maskCell(rgba, w, h, diskR, x0, y0) {
+    var R2 = diskR * diskR;
+    for (var y = 0; y < h; y++) {
+      var row = (y0 + y);
+      for (var x = 0; x < w; x++) {
+        var dx = x0 + x;
+        if (dx * dx + row * row > R2) rgba[(y * w + x) * 4 + 3] = 0;
+      }
+    }
+  }
+
+  window.generateSurfaceProgressive = function (req) {
+    var R = req.radius, diskR = req.diskR || R, cell = req.cell || 256;
+    var cells = diskPlan(R, diskR, cell);
+    var offset = R; // canvas index of map coord 0
+    var onCell = req.onCell || null;
+    function step(i) {
+      if (i >= cells.length) return Promise.resolve(cells.length);
+      var c = cells[i];
+      var w = c.xb - c.xa;
+      var h = c.yb - c.ya;
+      return window.generateSurfaceGPU({
+        seed: req.seed, kind: req.kind, zone: req.zone || null,
+        rect: { x0: c.xa, y0: c.ya, x1: c.xb, y1: c.yb }
+      }).then(function (r) {
+        var rgba = cellRgba(req.kind, r.pixels, w, h);
+        maskCell(rgba, w, h, diskR, c.xa, c.ya);
+        if (onCell) onCell({ x: c.xa + offset, y: c.ya + offset, w: w, h: h, rgba: rgba, done: i + 1, total: cells.length });
+        return step(i + 1);
+      });
+    }
+    return step(0);
   };
 
-  window.generateSEZoneGPU = function (req) { return gpuDisk(req, "se-color"); };
+  // Whole-buffer helpers (kept for callers that want the final RGBA square;
+  // the page uses generateSurfaceProgressive directly so work streams in).
+  function gpuFull(req, workerKind) {
+    var size = 2 * req.radius;
+    var rgba = new Uint8Array(size * size * 4);
+    var R = req.radius;
+    return window.generateSurfaceProgressive({
+      seed: req.seed, zone: req.zone, kind: workerKind, radius: R,
+      diskR: req.diskR, cell: req.cell || 256,
+      onCell: function (c) {
+        var dst = (c.y * size + c.x) * 4;
+        var w = c.w, h = c.h;
+        for (var y = 0; y < h; y++) rgba.set(c.rgba.subarray(y * w * 4, (y + 1) * w * 4), dst + y * size * 4);
+      }
+    }).then(function (cells) { return { rgba: rgba, width: size, height: size, cells: cells }; });
+  }
+
+  window.generateSEZoneGPU = function (req) { return gpuFull(req, "se-color"); };
   window.generateSEFieldGPU = function (req) {
     // the field kernel seeds its billows gen with the ZONE's map seed, not the
     // world seed
     var r2 = {};
     for (var k in req) r2[k] = req[k];
     if (req.zone && req.zone.s != null) r2.seed = req.zone.s;
-    return gpuDisk(r2, "field-color");
+    return gpuFull(r2, "field-color");
   };
 })();
