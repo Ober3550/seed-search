@@ -1,0 +1,126 @@
+{
+ "planet": "fulgora",
+ "source": "/Applications/factorio.app/Contents/data/space-age/prototypes/tile/tiles-fulgora.lua",
+ "tiles": [
+  {
+   "name": "oil-ocean-deep",
+   "order": "a[oil]-b[deep]",
+   "subgroup": "fulgora-tiles",
+   "layer": 3,
+   "color": [
+    56,
+    36,
+    40
+   ],
+   "probability": "100 * fulgora_oil_mask * water_base(fulgora_coastline - 50 - fulgora_coastline_drop / 2, 2000)"
+  },
+  {
+   "name": "oil-ocean-shallow",
+   "order": "a[oil]-b[shallow]",
+   "subgroup": "fulgora-tiles",
+   "layer": 4,
+   "color": [
+    74,
+    42,
+    43
+   ],
+   "probability": "50 * fulgora_oil_mask * water_base(fulgora_coastline, 1000)"
+  },
+  {
+   "name": "fulgoran-paving",
+   "order": "c[artificial]-b[paving]",
+   "subgroup": "fulgora-tiles",
+   "layer": 5,
+   "color": [
+    120,
+    94,
+    67
+   ],
+   "probability": "fulgora_tile_ruin_paving"
+  },
+  {
+   "name": "fulgoran-dust",
+   "order": "b[natural]-a[dust]",
+   "subgroup": "fulgora-tiles",
+   "layer": 6,
+   "color": [
+    112,
+    65,
+    50
+   ],
+   "probability": "fulgora_scrap_medium + max(0, fulgora_natural, 2 * fulgora_mesa * fulgora_pyramids) * 2 - 0.9 + fulgora_rock + fulgora_road_dust * fulgora_sprawl"
+  },
+  {
+   "name": "fulgoran-dunes",
+   "order": "b[natural]-b[dunes]",
+   "subgroup": "fulgora-tiles",
+   "layer": 7,
+   "color": [
+    125,
+    71,
+    59
+   ],
+   "probability": "1 + fulgora_dunes"
+  },
+  {
+   "name": "fulgoran-sand",
+   "order": "b[natural]-c[sand]",
+   "subgroup": "fulgora-tiles",
+   "layer": 8,
+   "color": [
+    118,
+    68,
+    56
+   ],
+   "probability": "1 - fulgora_dunes"
+  },
+  {
+   "name": "fulgoran-rock",
+   "order": "b[natural]-d[rock]",
+   "subgroup": "fulgora-tiles",
+   "layer": 9,
+   "color": [
+    131,
+    85,
+    66
+   ],
+   "probability": "0.8 + fulgora_rock * 2 - max(0, fulgora_mix_oil) * 6"
+  },
+  {
+   "name": "fulgoran-walls",
+   "order": "c[artificial]-a[walls]",
+   "subgroup": "fulgora-tiles",
+   "layer": 10,
+   "color": [
+    114,
+    75,
+    65
+   ],
+   "probability": "fulgora_tile_ruin_walls"
+  },
+  {
+   "name": "fulgoran-conduit",
+   "order": "c[artificial]-c[conduit]",
+   "subgroup": "fulgora-tiles",
+   "layer": 11,
+   "color": [
+    100,
+    79,
+    68
+   ],
+   "probability": "fulgora_tile_ruin_conduit"
+  },
+  {
+   "name": "fulgoran-machinery",
+   "order": "c[artificial]-d[machinery]",
+   "subgroup": "fulgora-tiles",
+   "layer": 12,
+   "color": [
+    89,
+    79,
+    68
+   ],
+   "probability": "fulgora_tile_ruin_machinery"
+  }
+ ]
+}
