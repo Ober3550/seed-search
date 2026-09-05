@@ -23,6 +23,10 @@ const sa_expr = @import("sa_expr.zig");
 const noise = @import("noise.zig");
 
 var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+// per-pixel scratch: eval frames are transient, so they get their own arena
+// that is reset every tile (the render arena `a` keeps only the closure,
+// Memo arrays and output, so r500 renders stay memory-bounded).
+var scratch_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_result: []u8 = &.{};
 var g_pixels: []u8 = &.{};
 var input_buf: []u8 = &.{};
@@ -154,19 +158,21 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     var idx: usize = 0;
     var yi: i32 = -radius;
     while (yi <= radius) : (yi += 1) {
+        _ = scratch_state.reset(.retain_capacity);
+        const sa = scratch_state.allocator();
         var xi: i32 = -radius;
         while (xi <= radius) : (xi += 1) {
             const x: f64 = @floatFromInt(xi);
             const y: f64 = @floatFromInt(yi);
             const s = sa_expr.Scalars{ .x = x, .y = y, .seed = seed, .x_from_start = x, .y_from_start = y };
             const rgba = if (root_only) |rn| blk: {
-                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, rn);
+                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, sa, &memo, rn);
                 break :blk colour(v, planetName);
             } else if (is_tiles) blk: {
                 var best: f64 = -std.math.inf(f64);
                 var col: [3]u8 = .{ 0, 0, 0 };
                 for (planet.tiles) |t| {
-                    const p = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, t.name);
+                    const p = try sa_expr.evalRootMemoed(closure, s, defaultControls, sa, &memo, t.name);
                     if (p > best) {
                         best = p;
                         col = t.color;
@@ -175,7 +181,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
                 break :blk [4]u8{ col[0], col[1], col[2], 255 };
             } else blk: {
                 const entry = planet.prop(property) orelse return error.NoSuchProperty;
-                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, entry);
+                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, sa, &memo, entry);
                 break :blk colour(v, planetName);
             };
             pixels[idx] = rgba[0];
