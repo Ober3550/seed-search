@@ -86,9 +86,11 @@
   function surfHref(z) {
     if (state.seed == null) return null;
     var u = "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
-    // pass the zone's own radius so /surface opens disk-cropped at it (and
-    // can skip out-of-disk pixels/chunks for the larger zone area)
-    if (z.r) u += "&r=" + Math.round(z.r);
+    // Open at the zone's own radius so /surface starts disk-cropped at it —
+    // but cap the OPENING preview at 1000: beyond that the disk is large
+    // enough that the default WebGPU render (and its CPU ore pass) is slow.
+    // The full zone radius is one slider drag (or ?r=N) away.
+    if (z.r) u += "&r=" + Math.min(Math.round(z.r), 1000);
     return u;
   }
   // True when the row can open a surface (seed present + engine support).
