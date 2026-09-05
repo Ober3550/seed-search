@@ -37,11 +37,30 @@ matrix = [
     (32, 0.5, "euclidean", "'hxprobe'", "g"),
     (10, 0.5, "euclidean", "'aquilo-cracks'", "h"),
     (64, 0.35, "manhattan", "'fulgora_cells'", "i"),
-]
+    (24, 0.25, "manhattan", "42", "j"),
+    (32, 1.0, "manhattan", "42", "k"),
+    (64, 0.35, "manhattan", "'hxprobe'", "l"),
+    (24, 0.0, "euclidean", "42", "m"),
+    (24, 0.0, "manhattan", "42", "n"),
+    (24, 0.0, "chebyshev", "42", "o"),
+    (32, 0.5, "euclidean", "42", "p"),
+    (24, 0.5, "chebyshev", "42", "q"),
+    (64, 0.35, "euclidean", "'hxprobe'", "r"),
+    (64, 0.35, "chebyshev", "42", "t"),]
 outs_per = {"a": ["cid", "spot", "facet", "pyr"], "b": ["cid", "spot", "facet", "pyr"],
             "c": ["cid", "spot", "facet"], "d": ["cid", "facet", "spot"],
             "e": ["cid", "facet", "spot"], "f": ["cid", "facet", "spot"],
-            "g": ["cid", "spot"], "h": ["cid", "facet"], "i": ["cid", "facet"]}
+            "g": ["cid", "spot"], "h": ["cid", "facet"], "i": ["cid", "facet"],
+            "j": ["cid", "spot", "facet", "pyr"],
+            "k": ["cid", "spot", "facet", "pyr"],
+            "l": ["cid", "spot", "facet", "pyr"],
+            "m": ["spot", "facet", "pyr"],
+            "n": ["spot", "facet", "pyr"],
+            "o": ["spot", "facet", "pyr"],
+            "p": ["spot", "facet", "pyr"],
+            "q": ["spot", "facet", "pyr"],
+            "r": ["spot", "facet", "pyr"],
+            "t": ["spot", "facet", "pyr"]}
 for grid, jitter, dist, seed1, tag in matrix:
     for out in outs_per[tag]:
         if out == "pyr" and dist == "minkowski3":

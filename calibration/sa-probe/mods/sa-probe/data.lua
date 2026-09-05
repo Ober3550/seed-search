@@ -26,76 +26,40 @@ data:extend({
   {type = "noise-expression", name = "vp_h_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'aquilo-cracks', grid_size = 10, distance_type = 'euclidean', jitter = 0.5}"},
   {type = "noise-expression", name = "vp_i_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 'fulgora_cells', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
   {type = "noise-expression", name = "vp_i_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'fulgora_cells', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_j_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.25}"},
+  {type = "noise-expression", name = "vp_j_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.25}"},
+  {type = "noise-expression", name = "vp_j_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.25}"},
+  {type = "noise-expression", name = "vp_j_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.25}"},
+  {type = "noise-expression", name = "vp_k_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'manhattan', jitter = 1.0}"},
+  {type = "noise-expression", name = "vp_k_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'manhattan', jitter = 1.0}"},
+  {type = "noise-expression", name = "vp_k_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'manhattan', jitter = 1.0}"},
+  {type = "noise-expression", name = "vp_k_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'manhattan', jitter = 1.0}"},
+  {type = "noise-expression", name = "vp_l_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_l_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_l_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_l_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'manhattan', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_m_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'euclidean', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_m_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'euclidean', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_m_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'euclidean', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_n_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_n_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_n_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'manhattan', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_o_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_o_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_o_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.0}"},
+  {type = "noise-expression", name = "vp_p_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'euclidean', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_p_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'euclidean', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_p_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'euclidean', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_q_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_q_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_q_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 24, distance_type = 'chebyshev', jitter = 0.5}"},
+  {type = "noise-expression", name = "vp_r_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'euclidean', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_r_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'euclidean', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_r_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 'hxprobe', grid_size = 64, distance_type = 'euclidean', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_t_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 64, distance_type = 'chebyshev', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_t_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 64, distance_type = 'chebyshev', jitter = 0.35}"},
+  {type = "noise-expression", name = "vp_t_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 64, distance_type = 'chebyshev', jitter = 0.35}"},
   {type = "noise-expression", name = "vp_t_gleba", expression = "terrace{value = min(150, -25 + 0.3 * x * 100), offset = 40, width = 20, strength = 0.2}"},
   {type = "noise-expression", name = "vp_t_v1", expression = "terrace{value = v, offset = 0, width = 1, strength = 0.0}"},
   {type = "noise-expression", name = "vp_t_v2", expression = "terrace{value = x * 1.0 - 500, offset = 40, width = 20, strength = 0.5}"},
-})
-
--- seed1=0 variants (added for seed-nulling test)
-data:extend({
-  {type = "noise-expression", name = "vz_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0}"},
-  {type = "noise-expression", name = "vz_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0}"},
-  {type = "noise-expression", name = "vz_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0}"},
-  {type = "noise-expression", name = "vz_pyr", expression = "voronoi_pyramid_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vh_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0}"},
-  {type = "noise-expression", name = "vh_hi", expression = "floor(voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0} * 16777216)"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vh_lo", expression = "256 * (voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0} * 16777216 - floor(voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0.0} * 16777216))"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vm_seed", expression = "0.0001 * map_seed"},
-  {type = "noise-expression", name = "vm_x", expression = "x * 0.01"},
-  {type = "noise-expression", name = "vm_id0", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0}"},
-  {type = "noise-expression", name = "vm_idA", expression = "voronoi_cell_id{x = x, y = y, seed0 = 0, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0}"},
-  {type = "noise-expression", name = "vm_idB", expression = "voronoi_cell_id{x = x, y = y, seed0 = 1000, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vj_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 1.0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vq_spot", expression = "voronoi_spot_noise{x = x * 0.25, y = y * 0.25, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 1.0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vw_spot", expression = "voronoi_spot_noise{x = x * 0.125, y = y * 0.125, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 1.0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vv_spot", expression = "voronoi_spot_noise{x = x * 0.03125, y = y * 0.03125, seed0 = map_seed, seed1 = 0, grid_size = 32, distance_type = 'euclidean', jitter = 1.0}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vk_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 42, grid_size = 32, distance_type = 'euclidean', jitter = 0.5}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "vx1_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 64, distance_type = 'manhattan', jitter = 1}"},
-  {type = "noise-expression", name = "vx1_spot", expression = "voronoi_spot_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 64, distance_type = 'manhattan', jitter = 1}"},
-  {type = "noise-expression", name = "vx1_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 64, distance_type = 'manhattan', jitter = 1}"},
-  {type = "noise-expression", name = "vx2_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 64, distance_type = 'chebyshev', jitter = 1}"},
-  {type = "noise-expression", name = "vx2_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 0, grid_size = 64, distance_type = 'chebyshev', jitter = 1}"},
-  {type = "noise-expression", name = "vx3_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 'fulgora_cells', grid_size = 24, distance_type = 'minkowski3', jitter = 0.8}"},
-  {type = "noise-expression", name = "vx3_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'fulgora_cells', grid_size = 24, distance_type = 'minkowski3', jitter = 0.8}"},
-  {type = "noise-expression", name = "vx4_cid", expression = "voronoi_cell_id{x = x, y = y, seed0 = map_seed, seed1 = 'aquilo-cracks', grid_size = 24, distance_type = 'euclidean', jitter = 1}"},
-  {type = "noise-expression", name = "vx4_facet", expression = "voronoi_facet_noise{x = x, y = y, seed0 = map_seed, seed1 = 'aquilo-cracks', grid_size = 24, distance_type = 'euclidean', jitter = 1}"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "pp_msn", expression = "map_seed_normalized * 4294967296.0"},
-  {type = "noise-expression", name = "pp_mss", expression = "map_seed_small * 1.0"},
-  {type = "noise-expression", name = "pp_xfs", expression = "x_from_start - x"},
-  {type = "noise-expression", name = "pp_yfs", expression = "y_from_start - y"},
-  {type = "noise-expression", name = "pp_ds", expression = "map_seed_small * 4294967296.0"},
-})
-
-data:extend({
-  {type = "noise-expression", name = "pp_dist", expression = "distance * 1.0"},
 })
