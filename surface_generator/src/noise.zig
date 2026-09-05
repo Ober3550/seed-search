@@ -757,6 +757,61 @@ fn voronoiDist(metric: VoronoiDistanceType, xs: f32, ys: f32, px: f32, py: f32, 
     };
 }
 
+// Euclidean distance from the sample (xg, yg) to the L1 bisector set of two
+// cell points A, B: {P : |P-A|_1 == |P-B|_1}. With B-A translated/reflected to
+// the first quadrant the set is the diagonal x+y=(u+v)/2 inside the cell
+// rectangle plus axis-aligned rays continuing from its exits (verified 100% vs
+// the live game, 7203 manhattan samples).
+fn l1BisectorDist(sx: f32, sy: f32, ax: f32, ay: f32, bx: f32, by: f32) f32 {
+    var sxx = sx; var axx = ax; var bxx = bx;
+    if (bxx < axx) {
+        axx = -axx; bxx = -bxx; sxx = -sxx;
+    }
+    var syy = sy; var ayy = ay; var byy = by;
+    if (byy < ayy) {
+        ayy = -ayy; byy = -byy; syy = -syy;
+    }
+    sxx -= axx; syy -= ayy;
+    const u = bxx - axx; // >= 0
+    const v = byy - ayy; // >= 0
+    if (u == 0.0 and v == 0.0) return 0.0;
+    if (u == 0.0) return @abs(syy - v / 2.0);
+    if (v == 0.0) return @abs(sxx - u / 2.0);
+    var best: f32 = std.math.inf(f32);
+    const c = (u + v) / 2.0;
+    // diagonal segment x+y=c clipped to [0,u]x[0,v]
+    const x0 = @max(0.0, c - v); const y0 = @min(v, c);
+    const x1 = @min(u, c); const y1 = @max(0.0, c - u);
+    if (x1 >= x0) {
+        const dxs = x1 - x0; const dys = y1 - y0;
+        const L = dxs * dxs + dys * dys;
+        var t: f32 = 0.0;
+        if (L != 0.0) t = ((sxx - x0) * dxs + (syy - y0) * dys) / L;
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        const fx = x0 + t * dxs; const fy = y0 + t * dys;
+        best = @min(best, @sqrt((sxx - fx) * (sxx - fx) + (syy - fy) * (syy - fy)));
+    }
+    // axis-aligned rays out of the rectangle
+    const Exits = struct { x: f32, y: f32, kind: u8 };
+    var exits: [4]Exits = undefined;
+    var ne: usize = 0;
+    if (c >= 0.0 and c <= v) { exits[ne] = .{ .x = 0.0, .y = c, .kind = 0 }; ne += 1; } // left
+    if (c - u >= 0.0 and c - u <= v) { exits[ne] = .{ .x = u, .y = c - u, .kind = 1 }; ne += 1; } // right
+    if (c >= 0.0 and c <= u) { exits[ne] = .{ .x = c, .y = 0.0, .kind = 2 }; ne += 1; } // down
+    if (c - v >= 0.0 and c - v <= u) { exits[ne] = .{ .x = c - v, .y = v, .kind = 3 }; ne += 1; } // up
+    for (exits[0..ne]) |e| {
+        const d: f32 = switch (e.kind) {
+            0 => if (sxx <= e.x) @abs(syy - e.y) else @sqrt((sxx - e.x) * (sxx - e.x) + (syy - e.y) * (syy - e.y)),
+            1 => if (sxx >= e.x) @abs(syy - e.y) else @sqrt((sxx - e.x) * (sxx - e.x) + (syy - e.y) * (syy - e.y)),
+            2 => if (syy <= e.y) @abs(sxx - e.x) else @sqrt((sxx - e.x) * (sxx - e.x) + (syy - e.y) * (syy - e.y)),
+            else => if (syy >= e.y) @abs(sxx - e.x) else @sqrt((sxx - e.x) * (sxx - e.x) + (syy - e.y) * (syy - e.y)),
+        };
+        best = @min(best, d);
+    }
+    return best;
+}
+
 pub const VoronoiNoise = struct {
     seed: u32,
     grid: u16,
@@ -816,22 +871,43 @@ pub const VoronoiNoise = struct {
         }
 
         // pyramid: min over the other 8 window points of the distance from the
-        // sample to the perpendicular bisector of (winner, that point).
+        // sample to the bisector of (winner, that point). Metric-specific:
+        //  euclidean - distance to the perpendicular-bisector line
+        //             (== |da^2-db^2|/(2|AB|), verified 100% vs the game);
+        //  manhattan - distance to the L1 equal-distance set (a diagonal
+        //             segment inside the cell rectangle + up to four
+        //             axis-aligned rays; verified 100% vs the game);
+        //  chebyshev/minkowski3 - not yet pinned (chebyshev oracle exists).
         var pyr: f32 = std.math.inf(f32);
-        dy = -1;
-        while (dy <= 1) : (dy += 1) {
-            var dx: i32 = -1;
-            while (dx <= 1) : (dx += 1) {
-                const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
-                const px: f32 = @as(f32, @floatFromInt(sxi + dx)) + p.x;
-                const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
-                if (px == win[0] and py == win[1]) continue;
-                const dab2 = (win[0] - px) * (win[0] - px) + (win[1] - py) * (win[1] - py);
-                if (dab2 == 0.0) continue;
-                const da2 = (xg - win[0]) * (xg - win[0]) + (yg - win[1]) * (yg - win[1]);
-                const db2 = (xg - px) * (xg - px) + (yg - py) * (yg - py);
-                const d: f32 = @abs(da2 - db2) / (2.0 * @sqrt(dab2));
-                if (d < pyr) pyr = d;
+        if (self.distance_type == .manhattan) {
+            dy = -1;
+            while (dy <= 1) : (dy += 1) {
+                var dx: i32 = -1;
+                while (dx <= 1) : (dx += 1) {
+                    const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
+                    const px: f32 = @as(f32, @floatFromInt(sxi + dx)) + p.x;
+                    const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
+                    if (px == win[0] and py == win[1]) continue;
+                    const d = l1BisectorDist(xg, yg, win[0], win[1], px, py);
+                    if (d < pyr) pyr = d;
+                }
+            }
+        } else {
+            dy = -1;
+            while (dy <= 1) : (dy += 1) {
+                var dx: i32 = -1;
+                while (dx <= 1) : (dx += 1) {
+                    const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
+                    const px: f32 = @as(f32, @floatFromInt(sxi + dx)) + p.x;
+                    const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
+                    if (px == win[0] and py == win[1]) continue;
+                    const dab2 = (win[0] - px) * (win[0] - px) + (win[1] - py) * (win[1] - py);
+                    if (dab2 == 0.0) continue;
+                    const da2 = (xg - win[0]) * (xg - win[0]) + (yg - win[1]) * (yg - win[1]);
+                    const db2 = (xg - px) * (xg - px) + (yg - py) * (yg - py);
+                    const d: f32 = @abs(da2 - db2) / (2.0 * @sqrt(dab2));
+                    if (d < pyr) pyr = d;
+                }
             }
         }
         return .{ .nearest = d0, .gap = d1 - d0, .pyramid = pyr, .cell_id = wid };
@@ -919,6 +995,26 @@ test "voronoi pyramid (bisector) matches live game" {
     try std.testing.expectApproxEqAbs(@as(f64, A.evalAt(0, 0).pyramid), 0.0, 1e-6);
     const B = VoronoiNoise.init(341, 42, 32, .euclidean, 0.5);
     try std.testing.expectApproxEqAbs(@as(f64, B.evalAt(16, 16).pyramid), 0.39552483, 1e-6);
+}
+
+
+test "voronoi pyramid (manhattan L1 bisector) matches live game" {
+    // oracle: calibration/sa-probe/oracles/pyr-m.jsonl (seed0=341)
+    const Man = struct { grid: u16, jitter: f32, seed1: u32, x: f64, y: f64, v: f64 };
+    const rows = [_]Man{
+        .{ .grid = 24, .jitter = 0.25, .seed1 = 42, .x = -24, .y = -24, .v = 0.057306394 },
+        .{ .grid = 24, .jitter = 0.25, .seed1 = 42, .x = 11, .y = -11, .v = 0.450775176 },
+        .{ .grid = 24, .jitter = 0.25, .seed1 = 42, .x = -4, .y = 4, .v = 0.053184256 },
+        .{ .grid = 32, .jitter = 1.0, .seed1 = 42, .x = -24, .y = -24, .v = 0.0172107928 },
+        .{ .grid = 32, .jitter = 1.0, .seed1 = 42, .x = 7, .y = -7, .v = 0.345926583 },
+        .{ .grid = 64, .jitter = 0.35, .seed1 = 3543714407, .x = -24, .y = -24, .v = 0.237434328 },
+        .{ .grid = 64, .jitter = 0.35, .seed1 = 3543714407, .x = 0, .y = 0, .v = 0.00653988123 },
+        .{ .grid = 64, .jitter = 0.35, .seed1 = 3543714407, .x = -13, .y = 13, .v = 0.0786412358 },
+    };
+    for (rows) |r| {
+        const V = VoronoiNoise.init(341, r.seed1, r.grid, .manhattan, r.jitter);
+        try std.testing.expectApproxEqAbs(V.evalAt(r.x, r.y).pyramid, @as(f32, @floatCast(r.v)), 1e-4);
+    }
 }
 
 test "terrace matches live-game formula (floor semantics)" {
