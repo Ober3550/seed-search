@@ -464,7 +464,7 @@
         // Centre-out cells: each dispatch has a small readback and blits into
         // the canvas as it lands, so slower devices visibly fill the disk.
         return window.generateSurfaceProgressive({
-          seed: seed, zone: z, kind: gpuKind, radius: R, diskR: diskR, cell: 256,
+          seed: seed, zone: z, kind: gpuKind, radius: R, diskR: diskR, cell: 512,
           onCell: function (c) {
             var ctx = els.canvas.getContext("2d");
             var img = ctx.createImageData(c.w, c.h);

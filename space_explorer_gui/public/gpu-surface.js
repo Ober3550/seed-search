@@ -122,7 +122,7 @@
   }
 
   window.generateSurfaceProgressive = function (req) {
-    var R = req.radius, diskR = req.diskR || R, cell = req.cell || 256;
+    var R = req.radius, diskR = req.diskR || R, cell = req.cell || 512;
     var cells = diskPlan(R, diskR, cell);
     var offset = R; // canvas index of map coord 0
     var onCell = req.onCell || null;
@@ -152,7 +152,7 @@
     var R = req.radius;
     return window.generateSurfaceProgressive({
       seed: req.seed, zone: req.zone, kind: workerKind, radius: R,
-      diskR: req.diskR, cell: req.cell || 256,
+      diskR: req.diskR, cell: req.cell || 512,
       onCell: function (c) {
         var dst = (c.y * size + c.x) * 4;
         var w = c.w, h = c.h;
