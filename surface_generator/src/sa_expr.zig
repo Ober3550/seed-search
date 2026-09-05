@@ -653,34 +653,57 @@ pub fn evalRoot(closure: *const Closure, s: Scalars, controls: Controls, arena: 
 pub const Memo = struct {
     vals: []f64,
     epochs: []u64,
+    /// node pointer recorded for each cached slot: node ids must be globally
+    /// unique for the pure-id cache to be safe, and fulgora showed two
+    /// different entries sharing an id (starting_vault_cone read the cone's
+    /// cached value). Matching the pointer prevents cross-entry hits; a slot
+    /// whose pointer differs is treated as uncached.
+    keys: []*const Node,
     epoch: u64 = 1,
 
     pub fn init(arena: std.mem.Allocator, node_count: usize) !Memo {
-        const vals = try arena.alloc(f64, node_count);
-        const epochs = try arena.alloc(u64, node_count);
+        const n = node_count + 8;
+        const vals = try arena.alloc(f64, n);
+        const epochs = try arena.alloc(u64, n);
+        const keys = try arena.alloc(*const Node, n);
         @memset(vals, 0);
         @memset(epochs, 0);
-        return .{ .vals = vals, .epochs = epochs };
+        for (keys) |*k| k.* = undefined;
+        return .{ .vals = vals, .epochs = epochs, .keys = keys };
+    }
+
+    pub fn cached(self: *const Memo, node: *const Node) ?f64 {
+        const id = node.id;
+        if (id >= self.keys.len) return null;
+        if (self.epochs[id] == self.epoch and self.keys[id] == node) return self.vals[id];
+        return null;
+    }
+
+    pub fn store(self: *Memo, node: *const Node, v: f64) void {
+        const id = node.id;
+        if (id >= self.keys.len) return;
+        self.vals[id] = v;
+        self.epochs[id] = self.epoch;
+        self.keys[id] = node;
     }
 };
 
 fn evalMemoized(ctx: *EvalCtx, memo: *Memo, bindings: ?*const Bindings, node: *const Node) EvalError!f64 {
-    if (memo.epochs[node.id] == memo.epoch) return memo.vals[node.id];
+    if (memo.cached(node)) |c| return c;
     const v = try evalNode(ctx, bindings, node);
-    memo.vals[node.id] = v;
-    memo.epochs[node.id] = memo.epoch;
+    memo.store(node, v);
     return v;
 }
 
 pub fn evalRootMemoed(closure: *const Closure, s: Scalars, controls: Controls, arena: std.mem.Allocator, memo: *Memo, name: []const u8) EvalError!f64 {
-    _ = memo;
-    // FIXME(memo): the per-node memo produced wrong results when comparison
-    // operands cross entry boundaries (e.g. fulgora_starting_mask returned 0
-    // while unmemoised eval gave the correct 1). Delegate to the proven
-    // unmemoised path until that is root-caused; memo can return later.
-    return evalRoot(closure, s, controls, arena, name);
+    const e = closure.find(name) orelse return error.UnknownName;
+    if (e.is_function) return error.BadCall;
+    memo.epoch +%= 1;
+    if (memo.epoch == 0) memo.epoch = 1;
+    var ctx = EvalCtx{ .closure = closure, .scalars = s, .controls = controls, .arena = arena, .memo = memo };
+    const frame = try bindEntry(e, &.{}, &ctx, null);
+    return evalNode(&ctx, frame, e.root);
 }
-
 fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx, bindings: ?*const Bindings) EvalError!?*const Bindings {
     // parameterless entries (plain expressions): no allocation — the frame
     // points at the closure's precomputed local tables.
@@ -727,10 +750,9 @@ fn bindEntry(entry: *const Closure.Entry, args: []const Node.Arg, ctx: *EvalCtx,
 
 fn evalNode(ctx: *EvalCtx, bindings: ?*const Bindings, node: *const Node) EvalError!f64 {
     if (ctx.memo) |m| {
-        if (m.epochs[node.id] == m.epoch) return m.vals[node.id];
+        if (m.cached(node)) |c| return c;
         const v = try evalNodeInner(ctx, bindings, node);
-        m.vals[node.id] = v;
-        m.epochs[node.id] = m.epoch;
+        m.store(node, v);
         return v;
     }
     return evalNodeInner(ctx, bindings, node);
@@ -816,6 +838,9 @@ fn resolveName(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8) Eval
     // locals (+ parameters, if it is a parameterized function referenced
     // without a call).
     if (ctx.closure.find(name)) |e| {
+        const save = ctx.memo;
+        if (e.is_function) ctx.memo = null; // function value depends on args
+        defer ctx.memo = save;
         const frame = try bindEntry(e, &.{}, ctx, bindings);
         return evalNode(ctx, frame, e.root);
     }
@@ -827,6 +852,13 @@ fn evalCall(ctx: *EvalCtx, bindings: ?*const Bindings, name: []const u8, args: [
     // data function (parameterized closure entry)
     if (ctx.closure.find(name)) |e| {
         if (e.is_function) {
+            // a parameterized function's value depends on its ARGUMENTS, so its
+            // body must not be memoized (different calls share node ids but
+            // different bindings - the vault cone was returning the cone's
+            // cached starting_spot result). Evaluate without the memo cache.
+            const save = ctx.memo;
+            ctx.memo = null;
+            defer ctx.memo = save;
             const frame = bindEntry(e, args, ctx, bindings) catch |err| {
                 dbg.print("bind {s}: {s}\n", .{ name, @errorName(err) });
                 return err;
