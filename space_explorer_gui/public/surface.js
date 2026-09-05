@@ -30,9 +30,48 @@
   // ?cpu=1 forces the CPU wasm pipeline (ore always comes from CPU wasm).
   var USE_GPU = !/[?&]cpu=1\b/.test(location.search) && !!(window.navigator && navigator.gpu);
   var GPU_MS = null;
-  // 2D canvases larger than this no-op their drawing ops in Chrome, so very
-  // large disks are rendered into a capped canvas with cells downscaled.
-  var DISP_MAX = 4096;
+  // 2D canvases above the GPU texture size silently no-op every drawing op in
+  // Chrome, so the usable display size is probed at runtime (binary search for
+  // the largest square where a draw round-trips) instead of hardcoded. Disks
+  // larger than that render into a capped canvas with cells downscaled.
+  var DISP_MAX = 4096; // fallback until the probe resolves
+  var canvasMaxP = null;
+  function canvasMax() {
+    if (!canvasMaxP) {
+      canvasMaxP = (async function () {
+        function works(W) {
+          try {
+            var cv = document.createElement("canvas");
+            cv.width = W; cv.height = W;
+            var ctx = cv.getContext("2d");
+            if (!ctx) return false;
+            ctx.fillStyle = "#f00";
+            ctx.fillRect(1, 1, 2, 2);
+            var px = ctx.getImageData(2, 2, 1, 1).data;
+            return px[0] === 255 && px[3] === 255;
+          } catch (e) { return false; }
+        }
+        // doubling scan (max disk we ever display is 20000 = 2*r10000), then
+        // binary refine between the last working and first failing size.
+        var good = 1024;
+        var bad = 20000;
+        if (!works(good)) { DISP_MAX = good; return good; }
+        for (var step = 2048; step <= 20000; step *= 2) {
+          if (!works(step)) { bad = step; break; }
+          good = step;
+        }
+        if (good === 20000) { DISP_MAX = good; return good; }
+        while (bad - good > 64) {
+          var mid = (good + bad) >> 1;
+          if (works(mid)) good = mid; else bad = mid;
+        }
+        DISP_MAX = good;
+        return good;
+      })();
+    }
+    return canvasMaxP;
+  }
+  window.__probeCanvasMax = function () { return canvasMax(); };
   var cellCv = null, cellCx = null;
   function cellCanvas(w, h) {
     if (!cellCv || cellCv.width < w || cellCv.height < h) {
@@ -459,13 +498,15 @@
     }
 
     // WebGPU terrain, with the CPU ore overlay when layer = terrain + ore.
-    function runGpu() {
+    async function runGpu() {
       window.__GPU_STAGE__ = "terrain";
+      var dispMax = await canvasMax();
       return Promise.resolve(kind === "zone" ? fetchZone() : nauvisZone()).then(function (z) {
         var R = radius;
         var diskR = zoneDiskRadius(z, R);
-        // display canvas is capped at DISP_MAX px; larger disks are downscaled
-        var disp = Math.min(2 * R, DISP_MAX);
+        // display canvas is capped at the probed max (usually the GPU texture
+        // size); larger disks are downscaled
+        var disp = Math.min(2 * R, dispMax);
         var scaleS = (2 * R) / disp;
         var downscaled = scaleS > 1;
         els.canvas.width = disp;
@@ -567,7 +608,7 @@
       var modeTxt = layer === 0 && !out.downscaled ? "WebGPU terrain + CPU ore" : "WebGPU " + (out.backend || "kernel");
       els.res.innerHTML =
         (layer === 0 && !out.downscaled && surfChips(totals) ? surfChips(totals) + " " : "") +
-        '<span class="hint">· ' + out.width + "×" + out.height + (out.downscaled ? " (downscaled ×" + out.scale.toFixed(1) + ", ore overlay >4096px disks not yet)" : "") + " · " + modeTxt + " (" +
+        '<span class="hint">· ' + out.width + "×" + out.height + (out.downscaled ? " (downscaled ×" + out.scale.toFixed(1) + ", ore overlay above usable canvas size not yet)" : "") + " · " + modeTxt + " (" +
         out.cells + (out.cells === 1 ? " cell dispatch" : " cell dispatches") + ") · " + ms + " ms · " +
         (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
       status("zone " + z.n + " · " + z.t + " · r" + radius + (layer === 0 && !out.downscaled ? " (WebGPU terrain + CPU ore)" : " (WebGPU" + (out.downscaled ? ", downscaled preview)" : ")")));
