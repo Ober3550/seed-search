@@ -877,7 +877,10 @@ pub const VoronoiNoise = struct {
         //  manhattan - distance to the L1 equal-distance set (a diagonal
         //             segment inside the cell rectangle + up to four
         //             axis-aligned rays; verified 100% vs the game);
-        //  chebyshev/minkowski3 - not yet pinned (chebyshev oracle exists).
+        //  chebyshev - same as manhattan on 45-degree rotated coordinates
+        //             (X=0.75(x+y), Y=0.75(y-x); maps L-inf onto L1,
+        //             verified 100% vs the game);
+        //  minkowski3 - pyramid not defined (engine throws).
         var pyr: f32 = std.math.inf(f32);
         if (self.distance_type == .manhattan) {
             dy = -1;
@@ -889,6 +892,28 @@ pub const VoronoiNoise = struct {
                     const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
                     if (px == win[0] and py == win[1]) continue;
                     const d = l1BisectorDist(xg, yg, win[0], win[1], px, py);
+                    if (d < pyr) pyr = d;
+                }
+            }
+        } else if (self.distance_type == .chebyshev) {
+            // chebyshev runs the SAME L1-bisector algorithm on coordinates
+            // rotated 45 degrees (X = 0.75(x+y), Y = 0.75(y-x)), which maps
+            // the L-inf metric onto L1 (verified 100% vs the game).
+            const rsx = 0.75 * xg + 0.75 * yg;
+            const rsy = 0.75 * yg - 0.75 * xg;
+            const rwx = 0.75 * win[0] + 0.75 * win[1];
+            const rwy = 0.75 * win[1] - 0.75 * win[0];
+            dy = -1;
+            while (dy <= 1) : (dy += 1) {
+                var dx: i32 = -1;
+                while (dx <= 1) : (dx += 1) {
+                    const p = voronoiPoint(sxi + dx, syi + dy, self.seed, self.jitter);
+                    const px: f32 = @as(f32, @floatFromInt(sxi + dx)) + p.x;
+                    const py: f32 = @as(f32, @floatFromInt(syi + dy)) + p.y;
+                    if (px == win[0] and py == win[1]) continue;
+                    const rpx = 0.75 * px + 0.75 * py;
+                    const rpy = 0.75 * py - 0.75 * px;
+                    const d = l1BisectorDist(rsx, rsy, rwx, rwy, rpx, rpy);
                     if (d < pyr) pyr = d;
                 }
             }
@@ -1013,6 +1038,22 @@ test "voronoi pyramid (manhattan L1 bisector) matches live game" {
     };
     for (rows) |r| {
         const V = VoronoiNoise.init(341, r.seed1, r.grid, .manhattan, r.jitter);
+        try std.testing.expectApproxEqAbs(V.evalAt(r.x, r.y).pyramid, @as(f32, @floatCast(r.v)), 1e-4);
+    }
+}
+
+
+test "voronoi pyramid (chebyshev = rotated L1) matches live game" {
+    // oracle: calibration/sa-probe/oracles/pyr-cheb64.jsonl + pyr-eucl-cheb.jsonl
+    const Ch = struct { grid: u16, jitter: f32, seed1: u32, x: f64, y: f64, v: f64 };
+    const rows = [_]Ch{
+        .{ .grid = 24, .jitter = 0.5, .seed1 = 42, .x = -24, .y = -24, .v = 0.105026469 },
+        .{ .grid = 24, .jitter = 0.5, .seed1 = 42, .x = -22, .y = -24, .v = 0.0166381635 },
+        .{ .grid = 64, .jitter = 0.35, .seed1 = 42, .x = 0, .y = 0, .v = 0.103443719 },
+        .{ .grid = 64, .jitter = 0.35, .seed1 = 42, .x = -24, .y = 13, .v = 0.125386208 },
+    };
+    for (rows) |r| {
+        const V = VoronoiNoise.init(341, r.seed1, r.grid, .chebyshev, r.jitter);
         try std.testing.expectApproxEqAbs(V.evalAt(r.x, r.y).pyramid, @as(f32, @floatCast(r.v)), 1e-4);
     }
 }
