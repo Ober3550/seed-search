@@ -33,38 +33,27 @@
    ],
    "type": "noise-function"
   },
-  "elevation_nauvis_function": {
-   "expression": "min(wlc_elevation, starting_lake)",
-   "local_expressions": {
-    "elevation_magnitude": 20,
-    "nauvis_main": "elevation_magnitude * (lerp(0.5 * added_cliff_elevation - 0.6,1.9 * added_cliff_elevation + 1.6,0.1 + 0.5 * nauvis_bridges)+ 0.25 * nauvis_detail+ 3 * nauvis_macro * starting_macro_multiplier)",
-    "starting_island": "nauvis_main + elevation_magnitude * (2.5 - distance * segmentation_multiplier / 200)",
-    "starting_lake": "elevation_magnitude * (-3 + (starting_lake_distance + starting_lake_noise) / 8) / 8",
-    "starting_lake_distance": "distance_from_nearest_point{x = x, y = y, points = starting_lake_positions, maximum_distance = 1024}",
-    "starting_lake_noise": "quick_multioctave_noise_persistence{x = x,y = y,seed0 = map_seed,seed1 = 14,input_scale = 1/8,output_scale = 0.8,octaves = 4,octave_input_scale_multiplier = 0.5,persistence = 0.68}",
-    "starting_macro_multiplier": "clamp(distance * nauvis_segmentation_multiplier / 2000, 0, 1)",
-    "wlc_amplitude": 2,
-    "wlc_elevation": "max(nauvis_main - water_level * wlc_amplitude, starting_island)"
-   },
-   "name": "elevation_nauvis_function",
+  "aquilo_simple_billows": {
+   "expression": "abs(quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = seed1,input_scale = input_scale,output_scale = 1,offset_x = 10000,octaves = octaves,octave_input_scale_multiplier = 0.5,octave_output_scale_multiplier = 0.75})",
+   "name": "aquilo_simple_billows",
    "parameters": [
-    "added_cliff_elevation"
+    "seed1",
+    "octaves",
+    "input_scale"
    ],
    "type": "noise-function"
   },
-  "quick_multioctave_noise_persistence": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = seed0,seed1 = seed1,input_scale = input_scale * octave_input_scale_multiplier ^ (octaves - 1),output_scale = output_scale * 2 ^ (octaves - 1),octaves = octaves,octave_output_scale_multiplier = persistence,octave_input_scale_multiplier = 1 / octave_input_scale_multiplier}",
-   "name": "quick_multioctave_noise_persistence",
+  "aquilo_spot_noise": {
+   "expression": "spot_noise{x = x,y = y,seed0 = map_seed,seed1 = seed,candidate_spot_count = count,suggested_minimum_candidate_point_spacing = 128,skip_span = 3,skip_offset = skip_offset,region_size = region_size,density_expression = density,spot_quantity_expression = radius * radius,spot_radius_expression = radius,hard_region_target_quantity = 0,spot_favorability_expression = favorability,basement_value = -1,maximum_spot_basement_radius = radius * 2}",
+   "name": "aquilo_spot_noise",
    "parameters": [
-    "x",
-    "y",
-    "seed0",
-    "seed1",
-    "input_scale",
-    "output_scale",
-    "octaves",
-    "octave_input_scale_multiplier",
-    "persistence"
+    "seed",
+    "count",
+    "skip_offset",
+    "region_size",
+    "density",
+    "radius",
+    "favorability"
    ],
    "type": "noise-function"
   },
@@ -225,6 +214,103 @@
   }
  },
  "expressions": {
+  "aquilo_angle": {
+   "expression": "map_seed_normalized * 3600",
+   "name": "aquilo_angle",
+   "type": "noise-expression"
+  },
+  "aquilo_aux": {
+   "expression": "0.5 + multioctave_noise{x = x + aquilo_wobble_x * 300 / aquilo_aux_scale,y = y + aquilo_wobble_y * 300 / aquilo_aux_scale,seed0 = map_seed,seed1 = 14243,octaves = 3,persistence = 0.7,input_scale = aquilo_aux_scale / 25,output_scale = 1}",
+   "name": "aquilo_aux",
+   "type": "noise-expression"
+  },
+  "aquilo_aux_scale": {
+   "expression": "aquilo_segmentation_multiplier * 1.5",
+   "name": "aquilo_aux_scale",
+   "type": "noise-expression"
+  },
+  "aquilo_crude_oil_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 4,skip_offset = 0,region_size = 600 + 400 / control:aquilo_crude_oil:frequency,density = 1,radius = aquilo_spot_size * sqrt(control:aquilo_crude_oil:size),favorability = 1}",
+   "name": "aquilo_crude_oil_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_elevation": {
+   "expression": "lerp(blended, maxed, 0.4)",
+   "local_expressions": {
+    "blended": "lerp(formation_clumped, formation_broken, 0.4)",
+    "formation_broken": "-20+ 8 * max(aquilo_island_peaks * 1.1, min(0., random_island_peaks - 0.2))+ 13 * (pow(voronoi_large * max(0, voronoi_large_cell * 1.2 - 0.2) + 0.5 * voronoi_small * max(0, aux + 0.1), 0.5))",
+    "formation_clumped": "-25+ 12 * max(aquilo_island_peaks, random_island_peaks)+ 15 * tri_crack",
+    "maxed": "max(formation_clumped, formation_broken)",
+    "random_island_peaks": "abs(amplitude_corrected_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 1000,input_scale = segmentation_mult / 1.2,offset_x = -10000,octaves = 6,persistence = 0.8,amplitude = 1})",
+    "segmentation_mult": "aquilo_segmentation_multiplier / 25",
+    "tri_crack": "min(aquilo_simple_billows{seed1 = 2000, octaves = 3, input_scale = segmentation_mult / 1.5},aquilo_simple_billows{seed1 = 3000, octaves = 3, input_scale = segmentation_mult / 1.2},aquilo_simple_billows{seed1 = 4000, octaves = 3, input_scale = segmentation_mult})",
+    "voronoi_large": "voronoi_facet_noise{   x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 24,distance_type = 'euclidean',jitter = 1}",
+    "voronoi_large_cell": "voronoi_cell_id{  x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 24,distance_type = 'euclidean',jitter = 1}",
+    "voronoi_small": "voronoi_facet_noise{   x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 10,distance_type = 'euclidean',jitter = 1}"
+   },
+   "name": "aquilo_elevation",
+   "type": "noise-expression"
+  },
+  "aquilo_flourine_vent_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 2,skip_offset = 2,region_size = 600 + 400 / control:fluorine_vent:frequency,density = 1,radius = aquilo_spot_size * 1.5 * sqrt(control:fluorine_vent:size),favorability = 1}",
+   "name": "aquilo_flourine_vent_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_island_peaks": {
+   "expression": "max(1.7 * (0.3 + aquilo_starting_island),1.5 * (0.5 + max(aquilo_starting_crude_oil, aquilo_crude_oil_spots,aquilo_starting_lithium_brine, aquilo_lithium_brine_spots,aquilo_starting_flourine_vent, aquilo_flourine_vent_spots)))",
+   "name": "aquilo_island_peaks",
+   "type": "noise-expression"
+  },
+  "aquilo_lithium_brine_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 3,skip_offset = 1,region_size = 600 + 400 / control:lithium_brine:frequency,density = 1,radius = aquilo_spot_size * 1.2 * sqrt(control:lithium_brine:size),favorability = 1}",
+   "name": "aquilo_lithium_brine_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_segmentation_multiplier": {
+   "expression": "1",
+   "name": "aquilo_segmentation_multiplier",
+   "type": "noise-expression"
+  },
+  "aquilo_spot_size": {
+   "expression": "30",
+   "name": "aquilo_spot_size",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_crude_oil": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle, distance = 40, radius = aquilo_spot_size * 0.8, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_crude_oil",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_flourine_vent": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle + 240, distance = 160, radius = aquilo_spot_size * 0.6, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_flourine_vent",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_island": {
+   "expression": "1 - distance * (aquilo_segmentation_multiplier / 100)",
+   "name": "aquilo_starting_island",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_lithium_brine": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle + 120, distance = 80, radius = aquilo_spot_size * 0.6, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_lithium_brine",
+   "type": "noise-expression"
+  },
+  "aquilo_temperature": {
+   "expression": "temperature_basic - 100",
+   "name": "aquilo_temperature",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_x": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 12243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_x",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_y": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 13243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_y",
+   "type": "noise-expression"
+  },
   "aux": {
    "expression": "aux_nauvis",
    "localised_name": [
@@ -234,17 +320,17 @@
    "type": "noise-expression"
   },
   "aux_nauvis": {
-   "expression": "clamp(0.5 + var('control:aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
+   "expression": "clamp(0.5 + var('control:aquilo_aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
    "name": "aux_nauvis",
    "type": "noise-expression"
   },
   "aux_noise": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aquilo_aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aquilo_aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
    "name": "aux_noise",
    "type": "noise-expression"
   },
   "cliff_elevation_from_elevation": {
-   "expression": "elevation",
+   "expression": "aquilo_elevation",
    "name": "cliff_elevation_from_elevation",
    "type": "noise-expression"
   },
@@ -256,20 +342,6 @@
   "distance": {
    "expression": "distance_from_nearest_point{x = x, y = y, points = starting_positions}",
    "name": "distance",
-   "type": "noise-expression"
-  },
-  "elevation": {
-   "expression": "elevation_nauvis",
-   "intended_property": "elevation",
-   "localised_name": [
-    "noise-expression.elevation_nauvis"
-   ],
-   "name": "elevation",
-   "type": "noise-expression"
-  },
-  "elevation_nauvis": {
-   "expression": "elevation_nauvis_function(nauvis_hills_plateaus)",
-   "name": "elevation_nauvis",
    "type": "noise-expression"
   },
   "mountain_basis_noise": {
@@ -301,21 +373,6 @@
    "name": "mountain_volcano_spots",
    "type": "noise-expression"
   },
-  "nauvis_bridge_billows": {
-   "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 700,octaves = 4,input_scale = nauvis_segmentation_multiplier / 150})",
-   "name": "nauvis_bridge_billows",
-   "type": "noise-expression"
-  },
-  "nauvis_bridges": {
-   "expression": "1 - 0.1 * nauvis_bridge_billows - 0.9 * max(0, -0.1 + nauvis_bridge_billows)",
-   "name": "nauvis_bridges",
-   "type": "noise-expression"
-  },
-  "nauvis_detail": {
-   "expression": "variable_persistence_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 600,input_scale = nauvis_segmentation_multiplier / 14,output_scale = 0.03,offset_x = 10000 / nauvis_segmentation_multiplier,octaves = 5,persistence = nauvis_persistance}",
-   "name": "nauvis_detail",
-   "type": "noise-expression"
-  },
   "nauvis_hills": {
    "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 900,octaves = 4,input_scale = nauvis_segmentation_multiplier / 90})",
    "name": "nauvis_hills",
@@ -324,21 +381,6 @@
   "nauvis_hills_cliff_level": {
    "expression": "clamp(0.65 + basis_noise{x = x,y = y,seed0 = map_seed,seed1 = 99584,input_scale = nauvis_segmentation_multiplier/500,output_scale = 0.6}, 0.15, 1.15)",
    "name": "nauvis_hills_cliff_level",
-   "type": "noise-expression"
-  },
-  "nauvis_hills_plateaus": {
-   "expression": "0.1 * nauvis_hills + 0.8 * nauvis_plateaus",
-   "name": "nauvis_hills_plateaus",
-   "type": "noise-expression"
-  },
-  "nauvis_macro": {
-   "expression": "multioctave_noise{x = x,y = y,persistence = 0.6,seed0 = map_seed,seed1 = 1000,octaves = 2,input_scale = nauvis_segmentation_multiplier / 1600}* max(0, multioctave_noise{x = x,y = y,persistence = 0.6,seed0 = map_seed,seed1 = 1100,octaves = 1,input_scale = nauvis_segmentation_multiplier / 1600})",
-   "name": "nauvis_macro",
-   "type": "noise-expression"
-  },
-  "nauvis_persistance": {
-   "expression": "clamp(amplitude_corrected_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 500,octaves = 5,input_scale = nauvis_segmentation_multiplier / 2,offset_x = 10000 / nauvis_segmentation_multiplier,persistence = 0.7,amplitude = 0.5} + 0.55,0.5, 0.65)",
-   "name": "nauvis_persistance",
    "type": "noise-expression"
   },
   "nauvis_plateaus": {
@@ -351,11 +393,6 @@
    "name": "nauvis_segmentation_multiplier",
    "type": "noise-expression"
   },
-  "segmentation_multiplier": {
-   "expression": "control:water:frequency",
-   "name": "segmentation_multiplier",
-   "type": "noise-expression"
-  },
   "temperature": {
    "expression": "temperature_basic",
    "localised_name": [
@@ -365,7 +402,7 @@
    "type": "noise-expression"
   },
   "temperature_basic": {
-   "expression": "clamp(sea_level_temperature + var('control:temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
+   "expression": "clamp(sea_level_temperature + var('control:aquilo_temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:aquilo_temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:aquilo_temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
    "local_expressions": {
     "sea_level_temperature": 15
    },
@@ -470,7 +507,7 @@
    "type": "noise-expression"
   },
   "vulcanus_biome_contrast": {
-   "expression": 2,
+   "expression": "2",
    "name": "vulcanus_biome_contrast",
    "type": "noise-expression"
   },
@@ -515,7 +552,7 @@
    "type": "noise-expression"
   },
   "vulcanus_cracks_scale": {
-   "expression": 0.325,
+   "expression": "0.325",
    "name": "vulcanus_cracks_scale",
    "type": "noise-expression"
   },
@@ -593,12 +630,12 @@
    "type": "noise-expression"
   },
   "vulcanus_mountains_elevation_multiplier": {
-   "expression": 1.5,
+   "expression": "1.5",
    "name": "vulcanus_mountains_elevation_multiplier",
    "type": "noise-expression"
   },
   "vulcanus_mountains_func": {
-   "expression": "lerp(mountain_elevation, 700 * volcano_inverted_peak(mountain_volcano_spots, 0.65), clamp(mountain_volcano_spots * 3, 0, 1))+ 200 * (aux - 0.5) * (mountain_volcano_spots + 0.5)",
+   "expression": "lerp(mountain_elevation, 700 * volcano_inverted_peak(mountain_volcano_spots, 0.65), clamp(mountain_volcano_spots * 3, 0, 1))+ 200 * (vulcanus_aux - 0.5) * (mountain_volcano_spots + 0.5)",
    "name": "vulcanus_mountains_func",
    "type": "noise-expression"
   },
@@ -645,7 +682,7 @@
    "type": "noise-expression"
   },
   "vulcanus_ore_spacing": {
-   "expression": 128,
+   "expression": "128",
    "name": "vulcanus_ore_spacing",
    "type": "noise-expression"
   },
@@ -750,7 +787,7 @@
    "type": "noise-expression"
   },
   "vulcanus_temperature": {
-   "expression": "100+ 100 * var('control:temperature:bias')- min(vulcanus_elev, vulcanus_elev / 100)- 2 * vulcanus_moisture- 1 * vulcanus_aux- 20 * vulcanus_ashlands_biome+ 200 * max(0, mountain_volcano_spots - 0.6)",
+   "expression": "100+ 100 * var('control:vulcanus_temperature:bias')- min(vulcanus_elev, vulcanus_elev / 100)- 2 * vulcanus_moisture- 1 * vulcanus_aux- 20 * vulcanus_ashlands_biome+ 200 * max(0, mountain_volcano_spots - 0.6)",
    "name": "vulcanus_temperature",
    "type": "noise-expression"
   },
@@ -802,11 +839,6 @@
   "vulcanus_wobble_y": {
    "expression": "vulcanus_detail_noise{seed1 = 1010, scale = 1/8, octaves = 2, magnitude = 4}",
    "name": "vulcanus_wobble_y",
-   "type": "noise-expression"
-  },
-  "water_level": {
-   "expression": "10 * log2(control:water:size)",
-   "name": "water_level",
    "type": "noise-expression"
   }
  },

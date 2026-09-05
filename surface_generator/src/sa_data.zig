@@ -39,10 +39,20 @@ pub const PlanetName = enum {
     }
 };
 
+/// One autoplaced tile of a planet's ground competition.
+pub const Tile = struct {
+    name: []const u8,
+    layer: i32,
+    color: [3]u8,
+};
+
 /// A planet's parsed surface closure + its property/control wiring.
 pub const Planet = struct {
     name: PlanetName,
     closure: expr.Closure,
+    /// autoplaced ground tiles (name = closure entry whose expression is the
+    /// tile's probability_expression; winner = highest value, argmax)
+    tiles: []Tile,
     /// map_gen_settings.property_expression_names: property key (e.g.
     /// "elevation", "entity:iron-ore:probability") → closure entry name.
     properties: []const Property,
@@ -93,6 +103,25 @@ pub fn load(arena: std.mem.Allocator, name: PlanetName) LoadError!Planet {
     if (funcs) |f| try collect(arena, f, true, &entries, &seq);
     const node_count: usize = seq;
 
+    // autoplaced tile competition metadata (closure entries share the tile
+    // names, so evalRootMemoed can evaluate each tile's probability)
+    var tiles: std.ArrayList(Tile) = .empty;
+    if (objArr(rootObj, "tiles")) |tl| {
+        for (tl) |v| {
+            if (v != .object) continue;
+            const to = v.object;
+            const nm = objString(to, "name") orelse continue;
+            const lay = if (json.get(to, "layer")) |lv| (if (lv == .number) @as(i32, @intFromFloat(lv.number)) else 0) else 0;
+            var col: [3]u8 = .{ 0, 0, 0 };
+            if (objArr(to, "color")) |cv| {
+                if (cv.len >= 3 and cv[0] == .number and cv[1] == .number and cv[2] == .number) {
+                    col = .{ @intFromFloat(cv[0].number), @intFromFloat(cv[1].number), @intFromFloat(cv[2].number) };
+                }
+            }
+            try tiles.append(arena, .{ .name = nm, .layer = lay, .color = col });
+        }
+    }
+
     // property-expression roots: list of entry names
     var properties: std.ArrayList(Planet.Property) = .empty;
     if (objArr(rootObj, "property_expressions")) |pl| {
@@ -107,6 +136,7 @@ pub fn load(arena: std.mem.Allocator, name: PlanetName) LoadError!Planet {
     return .{
         .name = name,
         .closure = .{ .a = arena, .entries = entries.items, .node_count = node_count },
+        .tiles = tiles.items,
         .properties = properties.items,
         .controls = controls.items,
         .arena = arena,

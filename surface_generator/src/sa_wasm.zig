@@ -135,8 +135,17 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
 
     const planet = try sa_data.load(a, planetName);
     const closure = &planet.closure;
-    const entry = planet.prop(property) orelse return error.NoSuchProperty;
     var memo = try sa_expr.Memo.init(a, closure.node_count);
+
+    // "tiles" = the autoplaced ground competition: per tile evaluate the
+    // tile's probability expression; the highest value wins the position.
+    const is_tiles = std.mem.eql(u8, property, "tiles");
+    if (is_tiles and planet.tiles.len == 0) return error.NoSuchProperty;
+    // debug: evaluate a single arbitrary closure root (any name) instead
+    var root_only: ?[]const u8 = null;
+    if (json.get(o, "root")) |v| {
+        if (v == .string) root_only = v.string;
+    }
 
     // ---- evaluate + colour each tile ----
     const n = @as(usize, @intCast(2 * radius + 1));
@@ -150,8 +159,25 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
             const x: f64 = @floatFromInt(xi);
             const y: f64 = @floatFromInt(yi);
             const s = sa_expr.Scalars{ .x = x, .y = y, .seed = seed, .x_from_start = x, .y_from_start = y };
-            const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, entry);
-            const rgba = colour(v, planetName);
+            const rgba = if (root_only) |rn| blk: {
+                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, rn);
+                break :blk colour(v, planetName);
+            } else if (is_tiles) blk: {
+                var best: f64 = -std.math.inf(f64);
+                var col: [3]u8 = .{ 0, 0, 0 };
+                for (planet.tiles) |t| {
+                    const p = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, t.name);
+                    if (p > best) {
+                        best = p;
+                        col = t.color;
+                    }
+                }
+                break :blk [4]u8{ col[0], col[1], col[2], 255 };
+            } else blk: {
+                const entry = planet.prop(property) orelse return error.NoSuchProperty;
+                const v = try sa_expr.evalRootMemoed(closure, s, defaultControls, a, &memo, entry);
+                break :blk colour(v, planetName);
+            };
             pixels[idx] = rgba[0];
             pixels[idx + 1] = rgba[1];
             pixels[idx + 2] = rgba[2];
@@ -165,7 +191,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     try sb.appendSlice(a, "{\"ok\":true,\"planet\":\"");
     try sb.appendSlice(a, planetName.asStr());
     try sb.appendSlice(a, "\",\"property\":\"");
-    try sb.appendSlice(a, entry);
+    try sb.appendSlice(a, property);
     try sb.appendSlice(a, "\",\"seed\":");
     var numbuf: [32]u8 = undefined;
     try sb.appendSlice(a, try std.fmt.bufPrint(&numbuf, "{d}", .{seed}));

@@ -70,6 +70,36 @@
   }
  },
  "expressions": {
+  "aquilo_aux": {
+   "expression": "0.5 + multioctave_noise{x = x + aquilo_wobble_x * 300 / aquilo_aux_scale,y = y + aquilo_wobble_y * 300 / aquilo_aux_scale,seed0 = map_seed,seed1 = 14243,octaves = 3,persistence = 0.7,input_scale = aquilo_aux_scale / 25,output_scale = 1}",
+   "name": "aquilo_aux",
+   "type": "noise-expression"
+  },
+  "aquilo_aux_scale": {
+   "expression": "aquilo_segmentation_multiplier * 1.5",
+   "name": "aquilo_aux_scale",
+   "type": "noise-expression"
+  },
+  "aquilo_segmentation_multiplier": {
+   "expression": "1",
+   "name": "aquilo_segmentation_multiplier",
+   "type": "noise-expression"
+  },
+  "aquilo_temperature": {
+   "expression": "temperature_basic - 100",
+   "name": "aquilo_temperature",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_x": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 12243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_x",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_y": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 13243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_y",
+   "type": "noise-expression"
+  },
   "aux": {
    "expression": "aux_nauvis",
    "localised_name": [
@@ -79,12 +109,12 @@
    "type": "noise-expression"
   },
   "aux_nauvis": {
-   "expression": "clamp(0.5 + var('control:aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
+   "expression": "clamp(0.5 + var('control:aquilo_aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
    "name": "aux_nauvis",
    "type": "noise-expression"
   },
   "aux_noise": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aquilo_aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aquilo_aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
    "name": "aux_noise",
    "type": "noise-expression"
   },
@@ -137,6 +167,11 @@
    "name": "moisture_adjusted_bias",
    "type": "noise-expression"
   },
+  "moisture_basic": {
+   "expression": "clamp(0.45 + moisture_adjusted_bias + moisture_noise, 0, 1)",
+   "name": "moisture_basic",
+   "type": "noise-expression"
+  },
   "moisture_nauvis": {
    "expression": "max(min(moisture_main, 0.45), moisture_main - 0.2 * max(0, 1 - trees_forest_path_cutout * 1.5))",
    "local_expressions": {
@@ -146,7 +181,7 @@
    "type": "noise-expression"
   },
   "moisture_noise": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 6,octaves = 4,input_scale = var('control:moisture:frequency') / 256,output_scale = 0.125,offset_x = 30000 / var('control:moisture:frequency'),octave_output_scale_multiplier = 1.5,octave_input_scale_multiplier = 1/3}",
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 6,octaves = 4,input_scale = var('control:moisture_basic:frequency') / 256,output_scale = 0.125,offset_x = 30000 / var('control:moisture_basic:frequency'),octave_output_scale_multiplier = 1.5,octave_input_scale_multiplier = 1/3}",
    "name": "moisture_noise",
    "type": "noise-expression"
   },
@@ -224,7 +259,7 @@
    "type": "noise-expression"
   },
   "temperature_basic": {
-   "expression": "clamp(sea_level_temperature + var('control:temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
+   "expression": "clamp(sea_level_temperature + var('control:aquilo_temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:aquilo_temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:aquilo_temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
    "local_expressions": {
     "sea_level_temperature": 15
    },

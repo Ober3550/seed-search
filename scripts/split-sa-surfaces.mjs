@@ -74,17 +74,50 @@ for (const [planet, mg] of Object.entries(planets)) {
     for (const n of ["elevation", "moisture", "aux", "temperature"]) roots.add(n);
   }
   // entity autoplace expressions from property_expression_names are already roots;
-  // also add any autoplace settings name lists we know are expressions? no — tiles later.
+  // the planet's autoplaced TILE probability expressions (surfaces/<planet>-tiles.json)
+  // are roots too, so the closure contains every fulgora_* noise expression the
+  // tile competition references.
+  const tileFile = `${outDir}/${planet}-tiles.json`;
+  if (fs.existsSync(tileFile)) {
+    const tj = JSON.parse(fs.readFileSync(tileFile, "utf8"));
+    for (const t of tj.tiles || []) for (const r of refsIn(t.probability || "")) roots.add(r);
+  }
   const want = closeOver([...roots]);
   const exprs = {}; const fns = {};
   for (const n of [...want].sort()) {
     if (expressions[n]) exprs[n] = expressions[n];
     if (functions[n]) fns[n] = functions[n];
   }
+  // property tokens inside expression source (e.g. water_base's body uses bare
+  // `elevation`) must resolve to THIS planet's property expression — rewrite
+  // them to the property_expression_names entry before embedding.
+  const aliases = {};
+  for (const [k, v] of Object.entries(mg.property_expression_names || {})) {
+    if (typeof v === "string" && v !== k) aliases[k] = v;
+  }
+  const word = (tok) => new RegExp("(?<![A-Za-z0-9_])" + tok + "(?![A-Za-z0-9_])", "g");
+  function remap(src) {
+    let s0 = String(src);
+    for (const [k, v] of Object.entries(aliases)) s0 = s0.replace(word(k), v);
+    return s0;
+  }
+  for (const e of Object.values(exprs)) if (e && e.expression) e.expression = remap(e.expression);
+  for (const fn of Object.values(fns)) if (fn && fn.expression) fn.expression = remap(fn.expression);
+
   const out = { planet,
     property_expressions: [...roots].sort(),
     functions: fns, expressions: exprs,
     resource_autoplace_overrides: planet === "fulgora" ? resources : {} };
+  // autoplaced tile competition: expression per tile lives in the closure
+  // (entry keyed by tile name) and metadata (layer/colour) for the renderer
+  if (fs.existsSync(tileFile)) {
+    const tj = JSON.parse(fs.readFileSync(tileFile, "utf8"));
+    out.tiles = (tj.tiles || []).map((t) => ({ name: t.name, layer: t.layer, color: t.color }));
+    for (const t of tj.tiles || []) {
+      if (expressions[t.name]) continue; // never shadow a global name
+      exprs[t.name] = { name: t.name, expression: t.probability };
+    }
+  }
   fs.writeFileSync(`${outDir}/${planet}.json`, JSON.stringify(out, null, 1) + "\n");
   console.log(`${planet}: ${Object.keys(exprs).length} expressions, ${Object.keys(fns).length} functions`);
 }

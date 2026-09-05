@@ -4,9 +4,26 @@
   "aux_basic",
   "cliff_elevation_from_elevation",
   "fulgora_cliffiness",
+  "fulgora_coastline",
+  "fulgora_coastline_drop",
+  "fulgora_dunes",
   "fulgora_elevation",
+  "fulgora_mesa",
+  "fulgora_mix_oil",
+  "fulgora_natural",
+  "fulgora_oil_mask",
+  "fulgora_pyramids",
+  "fulgora_road_dust",
+  "fulgora_rock",
+  "fulgora_scrap_medium",
+  "fulgora_sprawl",
+  "fulgora_tile_ruin_conduit",
+  "fulgora_tile_ruin_machinery",
+  "fulgora_tile_ruin_paving",
+  "fulgora_tile_ruin_walls",
   "moisture_basic",
-  "temperature_basic"
+  "temperature_basic",
+  "water_base"
  ],
  "functions": {
   "amplitude_corrected_multioctave_noise": {
@@ -22,6 +39,30 @@
     "octaves",
     "persistence",
     "amplitude"
+   ],
+   "type": "noise-function"
+  },
+  "aquilo_simple_billows": {
+   "expression": "abs(quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = seed1,input_scale = input_scale,output_scale = 1,offset_x = 10000,octaves = octaves,octave_input_scale_multiplier = 0.5,octave_output_scale_multiplier = 0.75})",
+   "name": "aquilo_simple_billows",
+   "parameters": [
+    "seed1",
+    "octaves",
+    "input_scale"
+   ],
+   "type": "noise-function"
+  },
+  "aquilo_spot_noise": {
+   "expression": "spot_noise{x = x,y = y,seed0 = map_seed,seed1 = seed,candidate_spot_count = count,suggested_minimum_candidate_point_spacing = 128,skip_span = 3,skip_offset = skip_offset,region_size = region_size,density_expression = density,spot_quantity_expression = radius * radius,spot_radius_expression = radius,hard_region_target_quantity = 0,spot_favorability_expression = favorability,basement_value = -1,maximum_spot_basement_radius = radius * 2}",
+   "name": "aquilo_spot_noise",
+   "parameters": [
+    "seed",
+    "count",
+    "skip_offset",
+    "region_size",
+    "density",
+    "radius",
+    "favorability"
    ],
    "type": "noise-function"
   },
@@ -95,9 +136,115 @@
     "y_distortion"
    ],
    "type": "noise-function"
+  },
+  "water_base": {
+   "expression": "if(max_elevation >= fulgora_elevation, influence * min(max_elevation - fulgora_elevation, 1), -inf)",
+   "name": "water_base",
+   "parameters": [
+    "max_elevation",
+    "influence"
+   ],
+   "type": "noise-function"
   }
  },
  "expressions": {
+  "aquilo_angle": {
+   "expression": "map_seed_normalized * 3600",
+   "name": "aquilo_angle",
+   "type": "noise-expression"
+  },
+  "aquilo_aux": {
+   "expression": "0.5 + multioctave_noise{x = x + aquilo_wobble_x * 300 / aquilo_aux_scale,y = y + aquilo_wobble_y * 300 / aquilo_aux_scale,seed0 = map_seed,seed1 = 14243,octaves = 3,persistence = 0.7,input_scale = aquilo_aux_scale / 25,output_scale = 1}",
+   "name": "aquilo_aux",
+   "type": "noise-expression"
+  },
+  "aquilo_aux_scale": {
+   "expression": "aquilo_segmentation_multiplier * 1.5",
+   "name": "aquilo_aux_scale",
+   "type": "noise-expression"
+  },
+  "aquilo_crude_oil_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 4,skip_offset = 0,region_size = 600 + 400 / control:aquilo_crude_oil:frequency,density = 1,radius = aquilo_spot_size * sqrt(control:aquilo_crude_oil:size),favorability = 1}",
+   "name": "aquilo_crude_oil_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_elevation": {
+   "expression": "lerp(blended, maxed, 0.4)",
+   "local_expressions": {
+    "blended": "lerp(formation_clumped, formation_broken, 0.4)",
+    "formation_broken": "-20+ 8 * max(aquilo_island_peaks * 1.1, min(0., random_island_peaks - 0.2))+ 13 * (pow(voronoi_large * max(0, voronoi_large_cell * 1.2 - 0.2) + 0.5 * voronoi_small * max(0, aux + 0.1), 0.5))",
+    "formation_clumped": "-25+ 12 * max(aquilo_island_peaks, random_island_peaks)+ 15 * tri_crack",
+    "maxed": "max(formation_clumped, formation_broken)",
+    "random_island_peaks": "abs(amplitude_corrected_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 1000,input_scale = segmentation_mult / 1.2,offset_x = -10000,octaves = 6,persistence = 0.8,amplitude = 1})",
+    "segmentation_mult": "aquilo_segmentation_multiplier / 25",
+    "tri_crack": "min(aquilo_simple_billows{seed1 = 2000, octaves = 3, input_scale = segmentation_mult / 1.5},aquilo_simple_billows{seed1 = 3000, octaves = 3, input_scale = segmentation_mult / 1.2},aquilo_simple_billows{seed1 = 4000, octaves = 3, input_scale = segmentation_mult})",
+    "voronoi_large": "voronoi_facet_noise{   x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 24,distance_type = 'euclidean',jitter = 1}",
+    "voronoi_large_cell": "voronoi_cell_id{  x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 24,distance_type = 'euclidean',jitter = 1}",
+    "voronoi_small": "voronoi_facet_noise{   x = x + aquilo_wobble_x * 2,y = y + aquilo_wobble_y * 2,seed0 = map_seed,seed1 = 'aquilo-cracks',grid_size = 10,distance_type = 'euclidean',jitter = 1}"
+   },
+   "name": "aquilo_elevation",
+   "type": "noise-expression"
+  },
+  "aquilo_flourine_vent_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 2,skip_offset = 2,region_size = 600 + 400 / control:fluorine_vent:frequency,density = 1,radius = aquilo_spot_size * 1.5 * sqrt(control:fluorine_vent:size),favorability = 1}",
+   "name": "aquilo_flourine_vent_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_island_peaks": {
+   "expression": "max(1.7 * (0.3 + aquilo_starting_island),1.5 * (0.5 + max(aquilo_starting_crude_oil, aquilo_crude_oil_spots,aquilo_starting_lithium_brine, aquilo_lithium_brine_spots,aquilo_starting_flourine_vent, aquilo_flourine_vent_spots)))",
+   "name": "aquilo_island_peaks",
+   "type": "noise-expression"
+  },
+  "aquilo_lithium_brine_spots": {
+   "expression": "aquilo_spot_noise{seed = 567,count = 3,skip_offset = 1,region_size = 600 + 400 / control:lithium_brine:frequency,density = 1,radius = aquilo_spot_size * 1.2 * sqrt(control:lithium_brine:size),favorability = 1}",
+   "name": "aquilo_lithium_brine_spots",
+   "type": "noise-expression"
+  },
+  "aquilo_segmentation_multiplier": {
+   "expression": "1",
+   "name": "aquilo_segmentation_multiplier",
+   "type": "noise-expression"
+  },
+  "aquilo_spot_size": {
+   "expression": "30",
+   "name": "aquilo_spot_size",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_crude_oil": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle, distance = 40, radius = aquilo_spot_size * 0.8, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_crude_oil",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_flourine_vent": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle + 240, distance = 160, radius = aquilo_spot_size * 0.6, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_flourine_vent",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_island": {
+   "expression": "1 - distance * (aquilo_segmentation_multiplier / 100)",
+   "name": "aquilo_starting_island",
+   "type": "noise-expression"
+  },
+  "aquilo_starting_lithium_brine": {
+   "expression": "starting_spot_at_angle{angle = aquilo_angle + 120, distance = 80, radius = aquilo_spot_size * 0.6, x_distortion = 0, y_distortion = 0}",
+   "name": "aquilo_starting_lithium_brine",
+   "type": "noise-expression"
+  },
+  "aquilo_temperature": {
+   "expression": "temperature_basic - 100",
+   "name": "aquilo_temperature",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_x": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 12243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_x",
+   "type": "noise-expression"
+  },
+  "aquilo_wobble_y": {
+   "expression": "multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 13243,octaves = 3,persistence = 0.65,input_scale = aquilo_aux_scale / 100,output_scale = 0.35}",
+   "name": "aquilo_wobble_y",
+   "type": "noise-expression"
+  },
   "aux": {
    "expression": "aux_nauvis",
    "localised_name": [
@@ -107,22 +254,22 @@
    "type": "noise-expression"
   },
   "aux_basic": {
-   "expression": "clamp(0.5 + var('control:aux:bias') + aux_noise, 0, 1)",
+   "expression": "clamp(0.5 + var('control:aux_basic:bias') + aux_noise, 0, 1)",
    "name": "aux_basic",
    "type": "noise-expression"
   },
   "aux_nauvis": {
-   "expression": "clamp(0.5 + var('control:aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
+   "expression": "clamp(0.5 + var('control:aquilo_aux:bias') + 0.06 * (nauvis_plateaus - 0.4)+ aux_noise,0, 1)",
    "name": "aux_nauvis",
    "type": "noise-expression"
   },
   "aux_noise": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 7,octaves = 4,input_scale = var('control:aquilo_aux:frequency') / 2048,output_scale = 0.25,offset_x = 20000 / var('control:aquilo_aux:frequency'),octave_output_scale_multiplier = 0.5,octave_input_scale_multiplier = 3}",
    "name": "aux_noise",
    "type": "noise-expression"
   },
   "cliff_elevation_from_elevation": {
-   "expression": "elevation",
+   "expression": "aquilo_elevation",
    "name": "cliff_elevation_from_elevation",
    "type": "noise-expression"
   },
@@ -160,6 +307,11 @@
    "name": "fulgora_artificial_cap",
    "type": "noise-expression"
   },
+  "fulgora_artificial_mask": {
+   "expression": "1 - max(fulgora_oil_mask, fulgora_natural_and_mesa_mask)",
+   "name": "fulgora_artificial_mask",
+   "type": "noise-expression"
+  },
   "fulgora_basis": {
    "expression": "multioctave_noise{x = fulgora_wx,y = fulgora_wy,persistence = 0.5,seed0 = map_seed,seed1 = 'fulgora_basis',octaves = 6,input_scale = 128 / fulgora_grid / 7.5,output_scale = 0.5}",
    "name": "fulgora_basis",
@@ -189,13 +341,18 @@
    "type": "noise-expression"
   },
   "fulgora_coastline": {
-   "expression": 80,
+   "expression": "80",
    "name": "fulgora_coastline",
    "type": "noise-expression"
   },
   "fulgora_coastline_drop": {
-   "expression": 20,
+   "expression": "20",
    "name": "fulgora_coastline_drop",
+   "type": "noise-expression"
+  },
+  "fulgora_dunes": {
+   "expression": "0.66 - abs(multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_dunes',octaves = 3,input_scale = 1/6 })",
+   "name": "fulgora_dunes",
    "type": "noise-expression"
   },
   "fulgora_elevation": {
@@ -253,6 +410,16 @@
    "name": "fulgora_natural",
    "type": "noise-expression"
   },
+  "fulgora_natural_and_mesa_mask": {
+   "expression": "max(fulgora_natural_mask, fulgora_mesa)",
+   "name": "fulgora_natural_and_mesa_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_natural_mask": {
+   "expression": "max(min(fulgora_natural > fulgora_mix_pyramids, 1 - fulgora_vaults_and_starting_vault), fulgora_starting_mask)",
+   "name": "fulgora_natural_mask",
+   "type": "noise-expression"
+  },
   "fulgora_oil_mask": {
    "expression": "fulgora_mix_spots < 0",
    "name": "fulgora_oil_mask",
@@ -278,14 +445,44 @@
    "name": "fulgora_pyramids",
    "type": "noise-expression"
   },
+  "fulgora_pyramids_banding": {
+   "expression": "(fulgora_pyramids * 8) % 1",
+   "name": "fulgora_pyramids_banding",
+   "type": "noise-expression"
+  },
   "fulgora_road_cells": {
    "expression": "voronoi_cell_id{x = x,y = y,seed0 = map_seed,seed1 = 'fulgora_road_cells',grid_size = fulgora_grid / 3,distance_type = 'chebyshev',jitter = fulgora_road_jitter}",
    "name": "fulgora_road_cells",
    "type": "noise-expression"
   },
+  "fulgora_road_dust": {
+   "expression": "(fulgora_road_pyramids < 0.08) * 0.9 - fulgora_road_paving_2c",
+   "name": "fulgora_road_dust",
+   "type": "noise-expression"
+  },
   "fulgora_road_jitter": {
-   "expression": 1,
+   "expression": "1",
    "name": "fulgora_road_jitter",
+   "type": "noise-expression"
+  },
+  "fulgora_road_paving_2": {
+   "expression": "max((fulgora_road_pyramids < 0.05) * 0.9,(fulgora_pyramids_banding < 0.1) * 0.85 * (fulgora_road_cells < 0.6) * (fulgora_road_cells > 0.25),(fulgora_spots_banding < 0.1) * 0.85 * (fulgora_road_cells < 0.25),(fulgora_structure_facets < 0.1) * 0.85 * (fulgora_road_cells > 0.6))",
+   "name": "fulgora_road_paving_2",
+   "type": "noise-expression"
+  },
+  "fulgora_road_paving_2b": {
+   "expression": "lerp(fulgora_road_paving_2, (fulgora_structure_facets < 0.2) * 0.9, fulgora_structure_cells > 0.8)",
+   "name": "fulgora_road_paving_2b",
+   "type": "noise-expression"
+  },
+  "fulgora_road_paving_2c": {
+   "expression": "lerp(fulgora_road_paving_2b, (fulgora_spots_prebanding > 1) * 0.9, fulgora_spots_prebanding < 1.3)",
+   "name": "fulgora_road_paving_2c",
+   "type": "noise-expression"
+  },
+  "fulgora_road_paving_thin": {
+   "expression": "max((fulgora_road_pyramids < 0.03) * 0.9, (fulgora_structure_facets < 0.06) * 0.5)",
+   "name": "fulgora_road_paving_thin",
    "type": "noise-expression"
   },
   "fulgora_road_pyramids": {
@@ -298,9 +495,24 @@
    "name": "fulgora_rock",
    "type": "noise-expression"
   },
+  "fulgora_ruins_paving": {
+   "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_ruins_paving',octaves = 3,input_scale = 1/16})",
+   "name": "fulgora_ruins_paving",
+   "type": "noise-expression"
+  },
+  "fulgora_ruins_walls": {
+   "expression": "0.66 - abs(multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_ruins_walls',octaves = 3,input_scale = 1/6})",
+   "name": "fulgora_ruins_walls",
+   "type": "noise-expression"
+  },
   "fulgora_sand_basins": {
    "expression": "min(fulgora_mix_oil, 0.6 - fulgora_mix_oil)",
    "name": "fulgora_sand_basins",
+   "type": "noise-expression"
+  },
+  "fulgora_scrap_medium": {
+   "expression": "multioctave_noise{x = x,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_scrap_medium',octaves = 3,input_scale = 1/18}",
+   "name": "fulgora_scrap_medium",
    "type": "noise-expression"
   },
   "fulgora_spots": {
@@ -308,9 +520,19 @@
    "name": "fulgora_spots",
    "type": "noise-expression"
   },
+  "fulgora_spots_banding": {
+   "expression": "fulgora_spots_prebanding % 1",
+   "name": "fulgora_spots_banding",
+   "type": "noise-expression"
+  },
   "fulgora_spots_inv": {
    "expression": "1 - fulgora_spots",
    "name": "fulgora_spots_inv",
+   "type": "noise-expression"
+  },
+  "fulgora_spots_prebanding": {
+   "expression": "min(fulgora_spots, (1 - fulgora_starting_vault_cone) / 2) * 9 + 0.5",
+   "name": "fulgora_spots_prebanding",
    "type": "noise-expression"
   },
   "fulgora_sprawl": {
@@ -341,6 +563,46 @@
   "fulgora_starting_vault_mask": {
    "expression": "(fulgora_starting_vault_cone - fulgora_starting_cone) > 0",
    "name": "fulgora_starting_vault_mask",
+   "type": "noise-expression"
+  },
+  "fulgora_structure_cells": {
+   "expression": "voronoi_cell_id{x = x,y = y * 0.8,seed0 = map_seed,seed1 = 'fulgora_structure_cells',grid_size = fulgora_grid / 8,distance_type = 'minkowski3',jitter = fulgora_structure_jitter}",
+   "name": "fulgora_structure_cells",
+   "type": "noise-expression"
+  },
+  "fulgora_structure_facets": {
+   "expression": "voronoi_facet_noise{x = x,y = y * 0.8,seed0 = map_seed,seed1 = 'fulgora_structure_cells',grid_size = fulgora_grid / 8,distance_type = 'minkowski3',jitter = fulgora_structure_jitter}",
+   "name": "fulgora_structure_facets",
+   "type": "noise-expression"
+  },
+  "fulgora_structure_jitter": {
+   "expression": "0.8",
+   "name": "fulgora_structure_jitter",
+   "type": "noise-expression"
+  },
+  "fulgora_structure_subnoise": {
+   "expression": "multioctave_noise{x = x + 10000 * fulgora_structure_cells,y = y,persistence = 0.7,seed0 = map_seed,seed1 = 'fulgora_structure_subnoise',octaves = 3,input_scale = 1/12}",
+   "name": "fulgora_structure_subnoise",
+   "type": "noise-expression"
+  },
+  "fulgora_tile_ruin_conduit": {
+   "expression": "fulgora_artificial_mask * (fulgora_ruins_walls+ fulgora_structure_subnoise + 2 * fulgora_structure_facets- fulgora_road_paving_2c+ 0.2+ 0.3 * fulgora_vaults_and_starting_vault) - fulgora_road_paving_2c",
+   "name": "fulgora_tile_ruin_conduit",
+   "type": "noise-expression"
+  },
+  "fulgora_tile_ruin_machinery": {
+   "expression": "fulgora_artificial_mask * (-fulgora_ruins_walls+ 1.25 * fulgora_structure_subnoise+ 2.5 * fulgora_structure_facets- fulgora_road_paving_2c- 0.2+ 0.3 * fulgora_vaults_and_starting_vault+ 2 * (fulgora_spots_prebanding < 1)) - fulgora_road_paving_2c",
+   "name": "fulgora_tile_ruin_machinery",
+   "type": "noise-expression"
+  },
+  "fulgora_tile_ruin_paving": {
+   "expression": "max(fulgora_natural_and_mesa_mask * (3 * fulgora_ruins_paving * fulgora_road_paving_thin - 0.5),fulgora_artificial_mask * (4 * fulgora_road_paving_2c + fulgora_ruins_paving - 1))",
+   "name": "fulgora_tile_ruin_paving",
+   "type": "noise-expression"
+  },
+  "fulgora_tile_ruin_walls": {
+   "expression": "max(fulgora_natural_and_mesa_mask * (2 * fulgora_ruins_walls + fulgora_ruins_paving - 0.5),fulgora_artificial_mask * (0.25 * fulgora_ruins_walls+ 0.25 * fulgora_structure_subnoise- 4 * fulgora_structure_facets- fulgora_road_paving_2c+ 2.5))",
+   "name": "fulgora_tile_ruin_walls",
    "type": "noise-expression"
   },
   "fulgora_vault_pyramids": {
@@ -432,7 +694,7 @@
    "type": "noise-expression"
   },
   "moisture_noise": {
-   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 6,octaves = 4,input_scale = var('control:moisture:frequency') / 256,output_scale = 0.125,offset_x = 30000 / var('control:moisture:frequency'),octave_output_scale_multiplier = 1.5,octave_input_scale_multiplier = 1/3}",
+   "expression": "quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 6,octaves = 4,input_scale = var('control:moisture_basic:frequency') / 256,output_scale = 0.125,offset_x = 30000 / var('control:moisture_basic:frequency'),octave_output_scale_multiplier = 1.5,octave_input_scale_multiplier = 1/3}",
    "name": "moisture_noise",
    "type": "noise-expression"
   },
@@ -501,16 +763,8 @@
    "name": "segmentation_multiplier",
    "type": "noise-expression"
   },
-  "temperature": {
-   "expression": "temperature_basic",
-   "localised_name": [
-    "noise-expression.temperature_basic"
-   ],
-   "name": "temperature",
-   "type": "noise-expression"
-  },
   "temperature_basic": {
-   "expression": "clamp(sea_level_temperature + var('control:temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
+   "expression": "clamp(sea_level_temperature + var('control:aquilo_temperature:bias') + quick_multioctave_noise{x = x,y = y,seed0 = map_seed,seed1 = 5,octaves = 4,input_scale = var('control:aquilo_temperature:frequency') / 32,output_scale = 1/20,offset_x = 40000 / var('control:aquilo_temperature:frequency'),octave_output_scale_multiplier = 3,octave_input_scale_multiplier = 1/3},-20, 50)",
    "local_expressions": {
     "sea_level_temperature": 15
    },
@@ -526,6 +780,46 @@
    "expression": "10 * log2(control:water:size)",
    "name": "water_level",
    "type": "noise-expression"
+  },
+  "oil-ocean-deep": {
+   "name": "oil-ocean-deep",
+   "expression": "100 * fulgora_oil_mask * water_base(fulgora_coastline - 50 - fulgora_coastline_drop / 2, 2000)"
+  },
+  "oil-ocean-shallow": {
+   "name": "oil-ocean-shallow",
+   "expression": "50 * fulgora_oil_mask * water_base(fulgora_coastline, 1000)"
+  },
+  "fulgoran-paving": {
+   "name": "fulgoran-paving",
+   "expression": "fulgora_tile_ruin_paving"
+  },
+  "fulgoran-dust": {
+   "name": "fulgoran-dust",
+   "expression": "fulgora_scrap_medium + max(0, fulgora_natural, 2 * fulgora_mesa * fulgora_pyramids) * 2 - 0.9 + fulgora_rock + fulgora_road_dust * fulgora_sprawl"
+  },
+  "fulgoran-dunes": {
+   "name": "fulgoran-dunes",
+   "expression": "1 + fulgora_dunes"
+  },
+  "fulgoran-sand": {
+   "name": "fulgoran-sand",
+   "expression": "1 - fulgora_dunes"
+  },
+  "fulgoran-rock": {
+   "name": "fulgoran-rock",
+   "expression": "0.8 + fulgora_rock * 2 - max(0, fulgora_mix_oil) * 6"
+  },
+  "fulgoran-walls": {
+   "name": "fulgoran-walls",
+   "expression": "fulgora_tile_ruin_walls"
+  },
+  "fulgoran-conduit": {
+   "name": "fulgoran-conduit",
+   "expression": "fulgora_tile_ruin_conduit"
+  },
+  "fulgoran-machinery": {
+   "name": "fulgoran-machinery",
+   "expression": "fulgora_tile_ruin_machinery"
   }
  },
  "resource_autoplace_overrides": {
@@ -542,5 +836,97 @@
    "probability_expression": "(control:scrap:size > 0)* (1 - fulgora_starting_mask)* (min((fulgora_structure_cells < min(0.1 * frequency, 0.05 + 0.05 * frequency))* (1 + fulgora_structure_subnoise) * abs_mult_height_over * fulgora_artificial_mask+ (fulgora_spots_prebanding < (1.2 + 0.4 * linear_size)) * fulgora_vaults_and_starting_vault * 10,0.5) * (1 - fulgora_road_paving_2c))",
    "richness_expression": "(1 + fulgora_structure_subnoise) * 1000 * (7 / (6 + frequency) + 100 * fulgora_vaults_and_starting_vault) * richness"
   }
- }
+ },
+ "tiles": [
+  {
+   "name": "oil-ocean-deep",
+   "layer": 3,
+   "color": [
+    56,
+    36,
+    40
+   ]
+  },
+  {
+   "name": "oil-ocean-shallow",
+   "layer": 4,
+   "color": [
+    74,
+    42,
+    43
+   ]
+  },
+  {
+   "name": "fulgoran-paving",
+   "layer": 5,
+   "color": [
+    120,
+    94,
+    67
+   ]
+  },
+  {
+   "name": "fulgoran-dust",
+   "layer": 6,
+   "color": [
+    112,
+    65,
+    50
+   ]
+  },
+  {
+   "name": "fulgoran-dunes",
+   "layer": 7,
+   "color": [
+    125,
+    71,
+    59
+   ]
+  },
+  {
+   "name": "fulgoran-sand",
+   "layer": 8,
+   "color": [
+    118,
+    68,
+    56
+   ]
+  },
+  {
+   "name": "fulgoran-rock",
+   "layer": 9,
+   "color": [
+    131,
+    85,
+    66
+   ]
+  },
+  {
+   "name": "fulgoran-walls",
+   "layer": 10,
+   "color": [
+    114,
+    75,
+    65
+   ]
+  },
+  {
+   "name": "fulgoran-conduit",
+   "layer": 11,
+   "color": [
+    100,
+    79,
+    68
+   ]
+  },
+  {
+   "name": "fulgoran-machinery",
+   "layer": 12,
+   "color": [
+    89,
+    79,
+    68
+   ]
+  }
+ ]
 }
