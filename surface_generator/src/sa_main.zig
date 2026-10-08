@@ -2,12 +2,14 @@
 //!
 //!   sa_main <planet> info
 //!       planet wiring (seed offset, property names, tiles, controls)
-//!   sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles]
-//!       evaluate named expressions (and/or the winning tiles) over a grid;
+//!   sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles] [--entities]
+//!       evaluate named expressions (and/or the winning tiles, and/or the
+//!       resource entities placed in the grid's area) over a grid;
 //!       same JSON layout as calibration/sa-probe/probe_surface.py so the two
 //!       can be diffed (calibration/sa-probe/diff_surface.py)
 //!   sa_main <planet> render <map-seed> <radius> <out.png>
-//!       tile map, one tile per pixel
+//!       tile map, one tile per pixel, plus <out>-resources.png: the placed
+//!       resources on a transparent background
 //!   sa_main <planet> deps
 //!       names of every expression the planet's tiles depend on
 //!   sa_main <planet> check
@@ -26,7 +28,7 @@ const png = sg.png;
 fn usage() void {
     std.debug.print(
         \\usage: sa_main <planet> info
-        \\       sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles]
+        \\       sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles] [--entities]
         \\       sa_main <planet> render <map-seed> <radius> <out.png>
         \\       sa_main <planet> check
         \\
@@ -111,22 +113,27 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, cmd, "render")) {
         const radius = try std.fmt.parseInt(i32, args[4], 10);
         var msg: []const u8 = "";
-        var s = surface.Surface.init(a, &data, planet, map_seed, .{}, &msg) catch |e| {
+        var w = surface.World.init(a, &data, planet, map_seed, .{}, &msg) catch |e| {
             std.debug.print("cannot compile {s}: {s}: {s}\n", .{ planet.name, @errorName(e), msg });
             return;
         };
-        const w: usize = @intCast(2 * radius);
-        const rgba = try a.alloc(u8, w * w * 4);
+        const n: usize = @intCast(2 * radius);
+        const terrain = try a.alloc(u8, n * n * 4);
+        const overlay = try a.alloc(u8, n * n * 4);
+        const totals = try a.alloc(surface.World.Totals, planet.resources.len);
+        @memset(totals, .{});
         var timer = std.Io.Clock.Timestamp.now(init.io, .awake);
-        try s.renderRgba(a, -radius, -radius, w, w, rgba);
+        w.render(-radius, -radius, n, n, terrain, overlay, null, totals);
         const ns = timer.untilNow(init.io).raw.toNanoseconds();
-        const bytes = try png.encodeRgba(a, @intCast(w), @intCast(w), rgba);
-        try writeFile(init, args[5], bytes);
-        std.debug.print("{s}: {d}x{d} tiles, {d} ops, {d} ms ({d:.2} us/tile) -> {s}\n", .{
-            planet.name,                                                     w,       w, s.program.insts.len,
-            @divTrunc(ns, 1_000_000),                                        @as(f64, @floatFromInt(ns)) / 1000.0 / @as(f64, @floatFromInt(w * w)),
-            args[5],
+        try writeFile(init, args[5], try png.encodeRgba(a, @intCast(n), @intCast(n), terrain));
+        const base = if (std.mem.endsWith(u8, args[5], ".png")) args[5][0 .. args[5].len - 4] else args[5];
+        const res_path = try std.fmt.allocPrint(a, "{s}-resources.png", .{base});
+        try writeFile(init, res_path, try png.encodeRgba(a, @intCast(n), @intCast(n), overlay));
+        std.debug.print("{s}: {d}x{d} tiles, {d} ops, {d} ms ({d:.2} us/tile) -> {s}, {s}\n", .{
+            planet.name,              n,                                                                    n,       w.program.insts.len,
+            @divTrunc(ns, 1_000_000), @as(f64, @floatFromInt(ns)) / 1000.0 / @as(f64, @floatFromInt(n * n)), args[5], res_path,
         });
+        for (planet.resources, totals) |r, t| std.debug.print("  {s}: {d} entities, amount {d}\n", .{ r.name, t.count, t.amount });
         return;
     }
 
@@ -135,9 +142,10 @@ pub fn main(init: std.process.Init) !void {
         var g: [5]i32 = undefined;
         for (&g) |*v| v.* = try std.fmt.parseInt(i32, it.next() orelse return usage(), 10);
         var want_tiles = false;
+        var want_entities = false;
         var names: std.ArrayList([]const u8) = .empty;
         for (args[6..]) |n| {
-            if (std.mem.eql(u8, n, "--tiles")) want_tiles = true else try names.append(a, n);
+            if (std.mem.eql(u8, n, "--tiles")) want_tiles = true else if (std.mem.eql(u8, n, "--entities")) want_entities = true else try names.append(a, n);
         }
         var out: std.ArrayList(u8) = .empty;
         try out.print(a, "{{\"planet\":\"{s}\",\"seed\":{d},\"grid\":[{d},{d},{d},{d},{d}],\"values\":{{", .{ planet.name, map_seed, g[0], g[1], g[2], g[3], g[4] });
@@ -193,6 +201,42 @@ pub fn main(init: std.process.Init) !void {
             } else |e| {
                 if (errors.items.len > 0) try errors.append(a, ',');
                 try errors.print(a, "\"tiles\":\"{s}: {s}\"", .{ @errorName(e), msg });
+            }
+        }
+        if (want_entities) {
+            // every resource entity whose centre tile lies in the grid's area
+            var msg: []const u8 = "";
+            if (surface.World.init(a, &data, planet, map_seed, .{}, &msg)) |w0| {
+                var w = w0;
+                try out.appendSlice(a, ",\"entities\":[");
+                var chunk: surface.ChunkData = undefined;
+                var k: usize = 0;
+                var cy = @divFloor(g[2], surface.CHUNK);
+                while (cy * surface.CHUNK <= g[3]) : (cy += 1) {
+                    var cx = @divFloor(g[0], surface.CHUNK);
+                    while (cx * surface.CHUNK <= g[1]) : (cx += 1) {
+                        w.chunk(cx, cy, &chunk);
+                        for (chunk.amount, 0..) |am, i| {
+                            if (am == 0) continue;
+                            const tx = cx * surface.CHUNK + @as(i32, @intCast(i % surface.CHUNK));
+                            const ty = cy * surface.CHUNK + @as(i32, @intCast(i / surface.CHUNK));
+                            if (tx < g[0] or tx > g[1] or ty < g[2] or ty > g[3]) continue;
+                            if (k > 0) try out.append(a, ',');
+                            k += 1;
+                            // entity position = tile centre
+                            try out.print(a, "{{\"n\":\"{s}\",\"x\":{d:.1},\"y\":{d:.1},\"a\":{d}}}", .{
+                                planet.resources[chunk.resource[i]].name,
+                                @as(f64, @floatFromInt(tx)) + 0.5,
+                                @as(f64, @floatFromInt(ty)) + 0.5,
+                                am,
+                            });
+                        }
+                    }
+                }
+                try out.append(a, ']');
+            } else |e| {
+                if (errors.items.len > 0) try errors.append(a, ',');
+                try errors.print(a, "\"entities\":\"{s}: {s}\"", .{ @errorName(e), msg });
             }
         }
         try out.print(a, ",\"errors\":{{{s}}}}}\n", .{errors.items});

@@ -8,6 +8,7 @@
    ],
    "control": null,
    "order": "b[tree]-b[normal]",
+   "size": 1,
    "type": "tree"
   },
   "ashland-lichen-tree-flaming": {
@@ -18,6 +19,7 @@
    ],
    "control": null,
    "order": "b[tree]-a[flaming]",
+   "size": 1,
    "type": "tree"
   },
   "big-fulgora-rock": {
@@ -28,6 +30,7 @@
    ],
    "control": null,
    "order": "r[rock]-1",
+   "size": 2,
    "type": "simple-entity"
   },
   "big-rock": {
@@ -38,6 +41,7 @@
    ],
    "control": "rocks",
    "order": "a[doodad]-a[rock]-b[big]",
+   "size": 2,
    "type": "simple-entity"
   },
   "big-sand-rock": {
@@ -48,6 +52,7 @@
    ],
    "control": "rocks",
    "order": "a[doodad]-a[rock]-b[big]",
+   "size": 2,
    "type": "simple-entity"
   },
   "big-volcanic-rock": {
@@ -58,6 +63,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[rock]-b[big]",
+   "size": 2,
    "type": "simple-entity"
   },
   "calcite": {
@@ -68,6 +74,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "coal": {
@@ -78,6 +85,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "copper-ore": {
@@ -88,6 +96,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "copper-stromatolite": {
@@ -98,6 +107,7 @@
    ],
    "control": null,
    "order": "",
+   "size": 1,
    "type": "simple-entity"
   },
   "crater-cliff": {
@@ -108,6 +118,7 @@
    ],
    "control": null,
    "order": "a[landscape]-a[cliff]-b[crater]",
+   "size": 2,
    "type": "cliff"
   },
   "crude-oil": {
@@ -118,6 +129,7 @@
    ],
    "control": null,
    "order": "c",
+   "size": 3,
    "type": "resource"
   },
   "fish": {
@@ -128,6 +140,7 @@
    ],
    "control": null,
    "order": "",
+   "size": 2,
    "type": "fish"
   },
   "fluorine-vent": {
@@ -138,6 +151,7 @@
    ],
    "control": null,
    "order": "a[resources]-a[fluorine]",
+   "size": 3,
    "type": "resource"
   },
   "fulgoran-ruin-attractor": {
@@ -148,6 +162,7 @@
    ],
    "control": null,
    "order": "a[ruin]-b[attractor]",
+   "size": 3,
    "type": "lightning-attractor"
   },
   "fulgoran-ruin-big": {
@@ -158,6 +173,7 @@
    ],
    "control": null,
    "order": "a[ruin]-e[big]",
+   "size": 4,
    "type": "simple-entity"
   },
   "fulgoran-ruin-colossal": {
@@ -168,6 +184,7 @@
    ],
    "control": null,
    "order": "a[ruin]-c[colossal]",
+   "size": 7,
    "type": "simple-entity"
   },
   "fulgoran-ruin-huge": {
@@ -178,6 +195,7 @@
    ],
    "control": null,
    "order": "a[ruin]-d[huge]",
+   "size": 6,
    "type": "simple-entity"
   },
   "fulgoran-ruin-medium": {
@@ -188,6 +206,7 @@
    ],
    "control": null,
    "order": "a[ruin]-g[medium]",
+   "size": 3,
    "type": "simple-entity"
   },
   "fulgoran-ruin-small": {
@@ -198,6 +217,7 @@
    ],
    "control": null,
    "order": "a[ruin]-h[small]",
+   "size": 2,
    "type": "simple-entity"
   },
   "fulgoran-ruin-stonehenge": {
@@ -208,6 +228,7 @@
    ],
    "control": null,
    "order": "a[ruin]-f[stonehenge]",
+   "size": 4,
    "type": "simple-entity"
   },
   "fulgoran-ruin-vault": {
@@ -218,6 +239,7 @@
    ],
    "control": null,
    "order": "a[ruin]-a[vault]",
+   "size": 14,
    "type": "simple-entity"
   },
   "fulgurite": {
@@ -228,6 +250,7 @@
    ],
    "control": null,
    "order": "",
+   "size": 2,
    "type": "simple-entity"
   },
   "huge-rock": {
@@ -238,6 +261,7 @@
    ],
    "control": "rocks",
    "order": "a[doodad]-a[rock]-a[huge]",
+   "size": 3,
    "type": "simple-entity"
   },
   "huge-volcanic-rock": {
@@ -248,6 +272,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[rock]-a[huge]",
+   "size": 3,
    "type": "simple-entity"
   },
   "iron-ore": {
@@ -258,6 +283,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "iron-stromatolite": {
@@ -268,6 +294,7 @@
    ],
    "control": null,
    "order": "",
+   "size": 1,
    "type": "simple-entity"
   },
   "lithium-brine": {
@@ -278,6 +305,7 @@
    ],
    "control": null,
    "order": "a[resources]-b[lithium]",
+   "size": 3,
    "type": "resource"
   },
   "lithium-iceberg-big": {
@@ -288,6 +316,7 @@
    ],
    "control": null,
    "order": "a[rock]-b[big]",
+   "size": 2,
    "type": "simple-entity"
   },
   "lithium-iceberg-huge": {
@@ -298,6 +327,7 @@
    ],
    "control": null,
    "order": "a[rock]-a[huge]",
+   "size": 4,
    "type": "simple-entity"
   },
   "scrap": {
@@ -308,6 +338,7 @@
    ],
    "control": "scrap",
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "stone": {
@@ -318,6 +349,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "sulfuric-acid-geyser": {
@@ -328,6 +360,7 @@
    ],
    "control": null,
    "order": "c",
+   "size": 3,
    "type": "resource"
   },
   "tungsten-ore": {
@@ -338,6 +371,7 @@
    ],
    "control": null,
    "order": "b",
+   "size": 1,
    "type": "resource"
   },
   "uranium-ore": {
@@ -348,6 +382,7 @@
    ],
    "control": null,
    "order": "c",
+   "size": 1,
    "type": "resource"
   },
   "vulcanus-chimney": {
@@ -358,6 +393,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[chimney]-a[full]-a",
+   "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-cold": {
@@ -368,6 +404,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[chimney]-a[full]-c",
+   "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-faded": {
@@ -378,6 +415,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[chimney]-a[full]-b",
+   "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-short": {
@@ -388,6 +426,7 @@
    ],
    "control": null,
    "order": "a[landscape]-c[chimney]-b[truncated]-e",
+   "size": 2,
    "type": "simple-entity"
   },
   "vulcanus-chimney-truncated": {
@@ -398,6 +437,7 @@
    ],
    "control": null,
    "order": "a[landscape]-b[chimney]-b[truncated]-d",
+   "size": 2,
    "type": "simple-entity"
   }
  },
@@ -3869,6 +3909,11 @@
     "moisture": "moisture_basic",
     "temperature": "aquilo_temperature"
    },
+   "resources": [
+    "fluorine-vent",
+    "lithium-brine",
+    "crude-oil"
+   ],
    "seed_offset": 3111799872,
    "tiles": [
     "ammoniacal-ocean",
@@ -3925,6 +3970,9 @@
     "moisture": "moisture_basic",
     "temperature": "temperature_basic"
    },
+   "resources": [
+    "scrap"
+   ],
    "seed_offset": 2967579010,
    "tiles": [
     "oil-ocean-deep",
@@ -4067,6 +4115,9 @@
     "moisture": "gleba_moisture",
     "temperature": "gleba_temperature"
    },
+   "resources": [
+    "stone"
+   ],
    "seed_offset": 3215082971,
    "tiles": [
     "gleba-deep-lake",
@@ -4181,6 +4232,14 @@
     "big-rock"
    ],
    "property_expression_names": {},
+   "resources": [
+    "coal",
+    "copper-ore",
+    "iron-ore",
+    "stone",
+    "crude-oil",
+    "uranium-ore"
+   ],
    "seed_offset": 0,
    "tiles": [
     "water",
@@ -4280,6 +4339,12 @@
     "moisture": "vulcanus_moisture",
     "temperature": "vulcanus_temperature"
    },
+   "resources": [
+    "calcite",
+    "coal",
+    "tungsten-ore",
+    "sulfuric-acid-geyser"
+   ],
    "seed_offset": 1249812791,
    "tiles": [
     "lava-hot",
@@ -4306,6 +4371,7 @@
  },
  "tiles": {
   "ammoniacal-ocean": {
+   "blocks_resource": false,
    "color": [
     15,
     13,
@@ -4314,6 +4380,7 @@
    "layer": 3
   },
   "ammoniacal-ocean-2": {
+   "blocks_resource": false,
    "color": [
     17,
     15,
@@ -4322,6 +4389,7 @@
    "layer": 3
   },
   "brash-ice": {
+   "blocks_resource": false,
    "color": [
     21,
     42,
@@ -4330,6 +4398,7 @@
    "layer": 0
   },
   "deepwater": {
+   "blocks_resource": true,
    "color": [
     38,
     64,
@@ -4338,6 +4407,7 @@
    "layer": 3
   },
   "dirt-1": {
+   "blocks_resource": false,
    "color": [
     141,
     104,
@@ -4346,6 +4416,7 @@
    "layer": 19
   },
   "dirt-2": {
+   "blocks_resource": false,
    "color": [
     136,
     96,
@@ -4354,6 +4425,7 @@
    "layer": 20
   },
   "dirt-3": {
+   "blocks_resource": false,
    "color": [
     133,
     92,
@@ -4362,6 +4434,7 @@
    "layer": 21
   },
   "dirt-4": {
+   "blocks_resource": false,
    "color": [
     103,
     72,
@@ -4370,6 +4443,7 @@
    "layer": 22
   },
   "dirt-5": {
+   "blocks_resource": false,
    "color": [
     91,
     63,
@@ -4378,6 +4452,7 @@
    "layer": 23
   },
   "dirt-6": {
+   "blocks_resource": false,
    "color": [
     80,
     55,
@@ -4386,6 +4461,7 @@
    "layer": 24
   },
   "dirt-7": {
+   "blocks_resource": false,
    "color": [
     80,
     54,
@@ -4394,6 +4470,7 @@
    "layer": 25
   },
   "dry-dirt": {
+   "blocks_resource": false,
    "color": [
     94,
     66,
@@ -4402,6 +4479,7 @@
    "layer": 18
   },
   "fulgoran-conduit": {
+   "blocks_resource": false,
    "color": [
     100,
     79,
@@ -4410,6 +4488,7 @@
    "layer": 11
   },
   "fulgoran-dunes": {
+   "blocks_resource": false,
    "color": [
     125,
     71,
@@ -4418,6 +4497,7 @@
    "layer": 7
   },
   "fulgoran-dust": {
+   "blocks_resource": false,
    "color": [
     112,
     65,
@@ -4426,6 +4506,7 @@
    "layer": 6
   },
   "fulgoran-machinery": {
+   "blocks_resource": false,
    "color": [
     89,
     79,
@@ -4434,6 +4515,7 @@
    "layer": 12
   },
   "fulgoran-paving": {
+   "blocks_resource": false,
    "color": [
     120,
     94,
@@ -4442,6 +4524,7 @@
    "layer": 5
   },
   "fulgoran-rock": {
+   "blocks_resource": false,
    "color": [
     131,
     85,
@@ -4450,6 +4533,7 @@
    "layer": 9
   },
   "fulgoran-sand": {
+   "blocks_resource": false,
    "color": [
     118,
     68,
@@ -4458,6 +4542,7 @@
    "layer": 8
   },
   "fulgoran-walls": {
+   "blocks_resource": false,
    "color": [
     114,
     75,
@@ -4466,6 +4551,7 @@
    "layer": 10
   },
   "gleba-deep-lake": {
+   "blocks_resource": true,
    "color": [
     18,
     37,
@@ -4474,6 +4560,7 @@
    "layer": 1
   },
   "grass-1": {
+   "blocks_resource": false,
    "color": [
     55,
     53,
@@ -4482,6 +4569,7 @@
    "layer": 26
   },
   "grass-2": {
+   "blocks_resource": false,
    "color": [
     66,
     57,
@@ -4490,6 +4578,7 @@
    "layer": 28
   },
   "grass-3": {
+   "blocks_resource": false,
    "color": [
     65,
     52,
@@ -4498,6 +4587,7 @@
    "layer": 29
   },
   "grass-4": {
+   "blocks_resource": false,
    "color": [
     59,
     40,
@@ -4506,6 +4596,7 @@
    "layer": 30
   },
   "highland-dark-rock": {
+   "blocks_resource": false,
    "color": [
     52,
     55,
@@ -4514,6 +4605,7 @@
    "layer": 81
   },
   "highland-dark-rock-2": {
+   "blocks_resource": false,
    "color": [
     52,
     55,
@@ -4522,6 +4614,7 @@
    "layer": 82
   },
   "highland-yellow-rock": {
+   "blocks_resource": false,
    "color": [
     52,
     55,
@@ -4530,6 +4623,7 @@
    "layer": 83
   },
   "ice-rough": {
+   "blocks_resource": false,
    "color": [
     100,
     135,
@@ -4538,6 +4632,7 @@
    "layer": 51
   },
   "ice-smooth": {
+   "blocks_resource": false,
    "color": [
     100,
     135,
@@ -4546,6 +4641,7 @@
    "layer": 50
   },
   "lava": {
+   "blocks_resource": true,
    "color": [
     150,
     49,
@@ -4554,6 +4650,7 @@
    "layer": 6
   },
   "lava-hot": {
+   "blocks_resource": true,
    "color": [
     255,
     138,
@@ -4562,6 +4659,7 @@
    "layer": 5
   },
   "lowland-brown-blubber": {
+   "blocks_resource": false,
    "color": [
     66,
     82,
@@ -4570,6 +4668,7 @@
    "layer": 33
   },
   "lowland-cream-cauliflower": {
+   "blocks_resource": false,
    "color": [
     95,
     93,
@@ -4578,6 +4677,7 @@
    "layer": 40
   },
   "lowland-cream-cauliflower-2": {
+   "blocks_resource": false,
    "color": [
     95,
     93,
@@ -4586,6 +4686,7 @@
    "layer": 39
   },
   "lowland-cream-red": {
+   "blocks_resource": false,
    "color": [
     95,
     83,
@@ -4594,6 +4695,7 @@
    "layer": 43
   },
   "lowland-dead-skin": {
+   "blocks_resource": false,
    "color": [
     95,
     93,
@@ -4602,6 +4704,7 @@
    "layer": 37
   },
   "lowland-dead-skin-2": {
+   "blocks_resource": false,
    "color": [
     95,
     93,
@@ -4610,6 +4713,7 @@
    "layer": 38
   },
   "lowland-olive-blubber": {
+   "blocks_resource": false,
    "color": [
     66,
     82,
@@ -4618,6 +4722,7 @@
    "layer": 36
   },
   "lowland-olive-blubber-2": {
+   "blocks_resource": false,
    "color": [
     66,
     82,
@@ -4626,6 +4731,7 @@
    "layer": 35
   },
   "lowland-olive-blubber-3": {
+   "blocks_resource": false,
    "color": [
     66,
     82,
@@ -4634,6 +4740,7 @@
    "layer": 40
   },
   "lowland-pale-green": {
+   "blocks_resource": false,
    "color": [
     66,
     82,
@@ -4642,6 +4749,7 @@
    "layer": 34
   },
   "lowland-red-infection": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4650,6 +4758,7 @@
    "layer": 48
   },
   "lowland-red-vein": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4658,6 +4767,7 @@
    "layer": 45
   },
   "lowland-red-vein-2": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4666,6 +4776,7 @@
    "layer": 44
   },
   "lowland-red-vein-3": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4674,6 +4785,7 @@
    "layer": 46
   },
   "lowland-red-vein-4": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4682,6 +4794,7 @@
    "layer": 47
   },
   "lowland-red-vein-dead": {
+   "blocks_resource": false,
    "color": [
     115,
     53,
@@ -4690,6 +4803,7 @@
    "layer": 39
   },
   "midland-cracked-lichen": {
+   "blocks_resource": false,
    "color": [
     81,
     77,
@@ -4698,6 +4812,7 @@
    "layer": 73
   },
   "midland-cracked-lichen-dark": {
+   "blocks_resource": false,
    "color": [
     61,
     57,
@@ -4706,6 +4821,7 @@
    "layer": 65
   },
   "midland-cracked-lichen-dull": {
+   "blocks_resource": false,
    "color": [
     71,
     67,
@@ -4714,6 +4830,7 @@
    "layer": 74
   },
   "midland-turquoise-bark": {
+   "blocks_resource": false,
    "color": [
     46,
     68,
@@ -4722,6 +4839,7 @@
    "layer": 76
   },
   "midland-turquoise-bark-2": {
+   "blocks_resource": false,
    "color": [
     46,
     68,
@@ -4730,6 +4848,7 @@
    "layer": 75
   },
   "midland-yellow-crust": {
+   "blocks_resource": false,
    "color": [
     114,
     86,
@@ -4738,6 +4857,7 @@
    "layer": 79
   },
   "midland-yellow-crust-2": {
+   "blocks_resource": false,
    "color": [
     114,
     86,
@@ -4746,6 +4866,7 @@
    "layer": 78
   },
   "midland-yellow-crust-3": {
+   "blocks_resource": false,
    "color": [
     114,
     86,
@@ -4754,6 +4875,7 @@
    "layer": 77
   },
   "midland-yellow-crust-4": {
+   "blocks_resource": false,
    "color": [
     114,
     86,
@@ -4762,6 +4884,7 @@
    "layer": 80
   },
   "natural-jellynut-soil": {
+   "blocks_resource": false,
    "color": [
     185,
     5,
@@ -4770,6 +4893,7 @@
    "layer": 86
   },
   "natural-yumako-soil": {
+   "blocks_resource": false,
    "color": [
     185,
     166,
@@ -4778,6 +4902,7 @@
    "layer": 85
   },
   "oil-ocean-deep": {
+   "blocks_resource": true,
    "color": [
     56,
     36,
@@ -4786,6 +4911,7 @@
    "layer": 3
   },
   "oil-ocean-shallow": {
+   "blocks_resource": true,
    "color": [
     74,
     42,
@@ -4794,6 +4920,7 @@
    "layer": 4
   },
   "pit-rock": {
+   "blocks_resource": false,
    "color": [
     50,
     50,
@@ -4802,6 +4929,7 @@
    "layer": 64
   },
   "red-desert-0": {
+   "blocks_resource": false,
    "color": [
     103,
     70,
@@ -4810,6 +4938,7 @@
    "layer": 31
   },
   "red-desert-1": {
+   "blocks_resource": false,
    "color": [
     116,
     81,
@@ -4818,6 +4947,7 @@
    "layer": 14
   },
   "red-desert-2": {
+   "blocks_resource": false,
    "color": [
     116,
     84,
@@ -4826,6 +4956,7 @@
    "layer": 15
   },
   "red-desert-3": {
+   "blocks_resource": false,
    "color": [
     128,
     93,
@@ -4834,6 +4965,7 @@
    "layer": 16
   },
   "sand-1": {
+   "blocks_resource": false,
    "color": [
     138,
     103,
@@ -4842,6 +4974,7 @@
    "layer": 8
   },
   "sand-2": {
+   "blocks_resource": false,
    "color": [
     128,
     93,
@@ -4850,6 +4983,7 @@
    "layer": 9
   },
   "sand-3": {
+   "blocks_resource": false,
    "color": [
     115,
     83,
@@ -4858,6 +4992,7 @@
    "layer": 10
   },
   "snow-crests": {
+   "blocks_resource": false,
    "color": [
     180,
     186,
@@ -4866,6 +5001,7 @@
    "layer": 53
   },
   "snow-flat": {
+   "blocks_resource": false,
    "color": [
     190,
     194,
@@ -4874,6 +5010,7 @@
    "layer": 52
   },
   "snow-lumpy": {
+   "blocks_resource": false,
    "color": [
     166,
     174,
@@ -4882,6 +5019,7 @@
    "layer": 54
   },
   "snow-patchy": {
+   "blocks_resource": false,
    "color": [
     156,
     166,
@@ -4890,6 +5028,7 @@
    "layer": 55
   },
   "volcanic-ash-cracks": {
+   "blocks_resource": false,
    "color": [
     67,
     67,
@@ -4898,6 +5037,7 @@
    "layer": 46
   },
   "volcanic-ash-dark": {
+   "blocks_resource": false,
    "color": [
     53,
     53,
@@ -4906,6 +5046,7 @@
    "layer": 53
   },
   "volcanic-ash-flats": {
+   "blocks_resource": false,
    "color": [
     53,
     53,
@@ -4914,6 +5055,7 @@
    "layer": 52
   },
   "volcanic-ash-light": {
+   "blocks_resource": false,
    "color": [
     53,
     53,
@@ -4922,6 +5064,7 @@
    "layer": 54
   },
   "volcanic-ash-soil": {
+   "blocks_resource": false,
    "color": [
     48,
     48,
@@ -4930,6 +5073,7 @@
    "layer": 51
   },
   "volcanic-cracks": {
+   "blocks_resource": false,
    "color": [
     43,
     42,
@@ -4938,6 +5082,7 @@
    "layer": 44
   },
   "volcanic-cracks-hot": {
+   "blocks_resource": false,
    "color": [
     58,
     33,
@@ -4946,6 +5091,7 @@
    "layer": 42
   },
   "volcanic-cracks-warm": {
+   "blocks_resource": false,
    "color": [
     58,
     38,
@@ -4954,6 +5100,7 @@
    "layer": 43
   },
   "volcanic-folds": {
+   "blocks_resource": false,
    "color": [
     43,
     43,
@@ -4962,6 +5109,7 @@
    "layer": 58
   },
   "volcanic-folds-flat": {
+   "blocks_resource": false,
    "color": [
     44,
     43,
@@ -4970,6 +5118,7 @@
    "layer": 56
   },
   "volcanic-folds-warm": {
+   "blocks_resource": false,
    "color": [
     65,
     45,
@@ -4978,6 +5127,7 @@
    "layer": 57
   },
   "volcanic-jagged-ground": {
+   "blocks_resource": false,
    "color": [
     58,
     58,
@@ -4986,6 +5136,7 @@
    "layer": 45
   },
   "volcanic-pumice-stones": {
+   "blocks_resource": false,
    "color": [
     46,
     46,
@@ -4994,6 +5145,7 @@
    "layer": 55
   },
   "volcanic-smooth-stone": {
+   "blocks_resource": false,
    "color": [
     50,
     50,
@@ -5002,6 +5154,7 @@
    "layer": 41
   },
   "volcanic-smooth-stone-warm": {
+   "blocks_resource": false,
    "color": [
     54,
     50,
@@ -5010,6 +5163,7 @@
    "layer": 40
   },
   "volcanic-soil-dark": {
+   "blocks_resource": false,
    "color": [
     48,
     51,
@@ -5018,6 +5172,7 @@
    "layer": 47
   },
   "volcanic-soil-light": {
+   "blocks_resource": false,
    "color": [
     58,
     48,
@@ -5026,6 +5181,7 @@
    "layer": 48
   },
   "water": {
+   "blocks_resource": true,
    "color": [
     51,
     83,
@@ -5034,6 +5190,7 @@
    "layer": 3
   },
   "wetland-blue-slime": {
+   "blocks_resource": true,
    "color": [
     25,
     49,
@@ -5042,6 +5199,7 @@
    "layer": 1
   },
   "wetland-dead-skin": {
+   "blocks_resource": true,
    "color": [
     46,
     45,
@@ -5050,6 +5208,7 @@
    "layer": 7
   },
   "wetland-green-slime": {
+   "blocks_resource": true,
    "color": [
     25,
     53,
@@ -5058,6 +5217,7 @@
    "layer": 6
   },
   "wetland-jellynut": {
+   "blocks_resource": true,
    "color": [
     132,
     7,
@@ -5066,6 +5226,7 @@
    "layer": 3
   },
   "wetland-light-dead-skin": {
+   "blocks_resource": true,
    "color": [
     51,
     50,
@@ -5074,6 +5235,7 @@
    "layer": 7
   },
   "wetland-light-green-slime": {
+   "blocks_resource": true,
    "color": [
     35,
     63,
@@ -5082,6 +5244,7 @@
    "layer": 6
   },
   "wetland-pink-tentacle": {
+   "blocks_resource": true,
    "color": [
     64,
     19,
@@ -5090,6 +5253,7 @@
    "layer": 5
   },
   "wetland-red-tentacle": {
+   "blocks_resource": true,
    "color": [
     54,
     15,
@@ -5098,6 +5262,7 @@
    "layer": 5
   },
   "wetland-yumako": {
+   "blocks_resource": true,
    "color": [
     132,
     119,

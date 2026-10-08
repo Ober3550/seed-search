@@ -266,3 +266,70 @@ test "aquilo: aquilo_elevation matches the game" {
         .{ .x = -420, .y = 360, .v = -6.25465488 },
     });
 }
+
+const ResourceVec = struct { x: i32, y: i32, name: []const u8, amount: u32 };
+
+fn checkResources(planet_name: []const u8, vecs: []const ResourceVec) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const data = try sa_data.load(a);
+    const planet = data.planet(planet_name).?;
+    var w = try surface.World.init(a, &data, planet, MAP_SEED, .{}, null);
+    const chunk = try a.create(surface.ChunkData);
+    for (vecs) |v| {
+        const cx = @divFloor(v.x, surface.CHUNK);
+        const cy = @divFloor(v.y, surface.CHUNK);
+        w.chunk(cx, cy, chunk);
+        const i: usize = @intCast((v.y - cy * surface.CHUNK) * surface.CHUNK + (v.x - cx * surface.CHUNK));
+        try std.testing.expect(chunk.resource[i] != surface.NO_RESOURCE);
+        try std.testing.expectEqualStrings(v.name, planet.resources[chunk.resource[i]].name);
+        try std.testing.expectEqual(v.amount, chunk.amount[i]);
+    }
+}
+
+
+test "vulcanus: resource entities and amounts match the game" {
+    try checkResources("vulcanus", &.{
+        .{ .x = -127, .y = 97, .name = "calcite", .amount = 63 },
+        .{ .x = -132, .y = 134, .name = "calcite", .amount = 892 },
+        .{ .x = 65, .y = 393, .name = "calcite", .amount = 9502 },
+        .{ .x = 75, .y = 415, .name = "calcite", .amount = 2629 },
+        .{ .x = 475, .y = 459, .name = "calcite", .amount = 611 },
+        .{ .x = 181, .y = -499, .name = "coal", .amount = 494 },
+        .{ .x = -132, .y = -356, .name = "coal", .amount = 4164 },
+        .{ .x = -69, .y = -82, .name = "coal", .amount = 295 },
+        .{ .x = -74, .y = -68, .name = "coal", .amount = 735 },
+        .{ .x = -89, .y = -54, .name = "coal", .amount = 338 },
+        .{ .x = 259, .y = -475, .name = "tungsten-ore", .amount = 127 },
+        .{ .x = 434, .y = -292, .name = "tungsten-ore", .amount = 6412 },
+        .{ .x = 452, .y = -279, .name = "tungsten-ore", .amount = 4874 },
+        .{ .x = 415, .y = -262, .name = "tungsten-ore", .amount = 853 },
+        .{ .x = -374, .y = -58, .name = "tungsten-ore", .amount = 335 },
+    });
+}
+
+test "gleba: resource entities and amounts match the game" {
+    try checkResources("gleba", &.{
+        .{ .x = -297, .y = -500, .name = "stone", .amount = 142 },
+        .{ .x = 53, .y = -12, .name = "stone", .amount = 223 },
+        .{ .x = 60, .y = -2, .name = "stone", .amount = 763 },
+        .{ .x = 62, .y = 8, .name = "stone", .amount = 208 },
+        .{ .x = -444, .y = 300, .name = "stone", .amount = 145 },
+    });
+}
+
+test "aquilo: resource entities and amounts match the game" {
+    try checkResources("aquilo", &.{
+        .{ .x = -319, .y = -164, .name = "fluorine-vent", .amount = 255560 },
+        .{ .x = -327, .y = -160, .name = "fluorine-vent", .amount = 253547 },
+        .{ .x = -315, .y = -141, .name = "fluorine-vent", .amount = 465351 },
+        .{ .x = -86, .y = -134, .name = "fluorine-vent", .amount = 354215 },
+        .{ .x = -42, .y = -68, .name = "fluorine-vent", .amount = 420000 },
+        .{ .x = 482, .y = -251, .name = "lithium-brine", .amount = 339031 },
+        .{ .x = 469, .y = -233, .name = "lithium-brine", .amount = 496562 },
+        .{ .x = 494, .y = -35, .name = "lithium-brine", .amount = 266945 },
+        .{ .x = -442, .y = 370, .name = "lithium-brine", .amount = 140648 },
+        .{ .x = -428, .y = 390, .name = "lithium-brine", .amount = 566757 },
+    });
+}

@@ -103,6 +103,8 @@
     radius: document.getElementById("sf-radius"),
     layerWrap: document.getElementById("sf-layer-wrap"),
     layer: document.getElementById("sf-layer"),
+    dimWrap: document.getElementById("sf-dim-wrap"),
+    dim: document.getElementById("sf-dim"),
     go: document.getElementById("sf-go"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
@@ -211,12 +213,15 @@
   } catch (e) {}
   var GRID_CAP = 512;   // allow up to a 512x512 grid at CELL_TILES=32
 
-  // The rendered disk radius is the preview radius R for every ground type —
-  // base Nauvis is "infinite" in the game, but the page draws an R-disk, and SE
-  // moons are clipped to the same R (the game keeps generating ocean beyond the
-  // disk if you want to look further out).
+  // Space Exploration surfaces are finite disks, so they render as an R-disk.
+  // Without SE, Nauvis is an unbounded map: fill the whole square instead.
+  function squareSurface(zoneObj) {
+    return !!(zoneObj && zoneObj.nauvis) && MOD !== "se" && MOD !== "k2se";
+  }
+  // Clip radius for the cell plan and the disk masks. A square surface uses a
+  // radius beyond the square's corners, which makes every clip a no-op.
   function zoneDiskRadius(zoneObj, R) {
-    return R;
+    return squareSurface(zoneObj) ? 2 * R : R;
   }
 
   function planSurfaceCells(R, diskR) {
@@ -290,9 +295,9 @@
       // Whole-rect ore pass (single request) — queued first so a worker picks
       // it up while the pool streams terrain cells.
       var ore = layer === 1 ? Promise.resolve(null) : (function () {
-        return sendToPool({
+        return orePass({
           seed: SEED, k2: K2, zone: zoneObj, layer: layer, radius: diskR,
-          terrainless: layer === 0, palette: palette, rect: fullRect
+          terrainless: layer === 0, palette: palette, rect: fullRect, square: squareSurface(zoneObj)
         }).then(function (r) {
           var res = r.summary.resources || {};
           Object.keys(res).forEach(function (rn) {
@@ -325,7 +330,7 @@
       function terrainCell(cell) {
         return sendToPool({
           seed: SEED, k2: K2, zone: zoneObj, layer: 1, radius: diskR, palette: palette,
-          rect: { x0: cell.x0, y0: cell.y0, x1: cell.x1, y1: cell.y1 }
+          rect: { x0: cell.x0, y0: cell.y0, x1: cell.x1, y1: cell.y1 }, square: squareSurface(zoneObj)
         }).then(function (r) {
           // blit this cell (pixel data uploaded to the GPU-backed canvas).
           var img = ctx.createImageData(r.summary.width, r.summary.height);
@@ -382,12 +387,54 @@
     }
   }
 
+  // One ore request over a rect -> { summary: { width, height, resources },
+  // pixels }. SE surfaces run it as a single whole-rect call. Base-game Nauvis
+  // (req.square) uses the base game's placement, which is decided chunk by
+  // chunk and costs more per tile, so the rect is split into chunk-aligned
+  // cells across the pool and stitched back together - the union is identical
+  // to one whole call.
+  function orePass(req) {
+    if (!req.square) return sendToPool(req);
+    var rc = req.rect, W = rc.x1 - rc.x0, H = rc.y1 - rc.y0, CELL = 256;
+    var out = new Uint8Array(W * H * 4);
+    var totals = {};
+    var jobs = [];
+    for (var y = Math.floor(rc.y0 / CELL) * CELL; y < rc.y1; y += CELL) {
+      for (var x = Math.floor(rc.x0 / CELL) * CELL; x < rc.x1; x += CELL) {
+        (function (c) {
+          var q = {};
+          Object.keys(req).forEach(function (k) { q[k] = req[k]; });
+          q.rect = c;
+          jobs.push(sendToPool(q).then(function (r) {
+            var w = c.x1 - c.x0, h = c.y1 - c.y0;
+            for (var row = 0; row < h; row++) {
+              out.set(r.pixels.subarray(row * w * 4, (row + 1) * w * 4), ((c.y0 - rc.y0 + row) * W + (c.x0 - rc.x0)) * 4);
+            }
+            var res = r.summary.resources || {};
+            Object.keys(res).forEach(function (rn) {
+              if (!totals[rn]) totals[rn] = { amount: 0, tiles: 0 };
+              totals[rn].amount += res[rn].amount;
+              totals[rn].tiles += res[rn].tiles || 0;
+            });
+          }));
+        })({ x0: Math.max(x, rc.x0), y0: Math.max(y, rc.y0), x1: Math.min(x + CELL, rc.x1), y1: Math.min(y + CELL, rc.y1) });
+      }
+    }
+    return Promise.all(jobs).then(function () {
+      Object.keys(totals).forEach(function (rn) {
+        var v = totals[rn].amount;
+        totals[rn].display = v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : String(v);
+      });
+      return { summary: { width: W, height: H, resources: totals }, pixels: out };
+    });
+  }
+
   // Single whole-rect CPU ore pass, source-over onto the GPU terrain canvas.
   // Mirrors the layer-0 ore pass in renderSurfaceMap (layer 0, terrainless).
   function cpuOre(z, R, diskR, palette) {
-    return sendToPool({
+    return orePass({
       seed: SEED, k2: K2, zone: z, layer: 0, radius: diskR, terrainless: true,
-      palette: palette, rect: { x0: -R, y0: -R, x1: R, y1: R }
+      palette: palette, rect: { x0: -R, y0: -R, x1: R, y1: R }, square: squareSurface(z)
     }).then(function (r) {
       var res = r.summary.resources || {};
       // the wasm ore pass fills the whole rect; clip it to the disk so no ore
@@ -434,16 +481,17 @@
   }
 
   function radiusLimits() {
-    if (kind === "sa") return { min: 16, max: 2000, step: 50, value: 500 };
+    if (kind === "sa") return { min: 16, max: 10000, step: 50, value: 2000 };
     // zone / base Nauvis: preview radius IS the disk radius (planets render an
     // R-disk even though the real map is "infinite"). Allow up to 10000 — the
     // max radius of an SE zone/planet.
-    return { min: 10, max: 10000, step: 50, value: 500 };
+    return { min: 10, max: 10000, step: 50, value: 2000 };
   }
 
   function adaptForKind() {
     els.badge.textContent = kind === "sa" ? "planet" : kind === "nauvis" ? "planet (base)" : "zone";
-    els.layerWrap.hidden = kind === "sa";
+    els.layerWrap.hidden = false;
+    if (els.dimWrap) els.dimWrap.hidden = kind !== "sa";
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
     // ?r=N drives the radius on this page directly (disk radius; the seed page
@@ -451,6 +499,37 @@
     if (RADIUS_INIT != null) {
       els.radius.value = Math.max(lim.min, RADIUS_INIT);
     }
+  }
+
+  // ── Space Age planet layers ───────────────────────────────────────────────
+  var sa = null;   // { R, terrain, ore, done } - offscreen layers of the last render
+  var SA_LAYER_MAX = 5000; // px per side of each layer canvas
+
+  function fmtAmount(v) {
+    if (v >= 1e9) return (v / 1e9).toFixed(1) + "B";
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + "M";
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + "k";
+    return String(v);
+  }
+
+  // Draw the visible canvas from the two layers (optionally just one rect).
+  // The "Terrain" slider darkens the terrain (drawn over black at reduced
+  // alpha) so the resources stand out.
+  function compositeSA(x, y, w, h) {
+    if (!sa) return;
+    var ctx = els.canvas.getContext("2d");
+    if (x == null) { x = 0; y = 0; w = els.canvas.width; h = els.canvas.height; }
+    var layer = parseInt(els.layer.value, 10) || 0;
+    var dim = els.dim ? parseInt(els.dim.value, 10) / 100 : 1;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(x, y, w, h);
+    if (layer !== 2) {
+      ctx.globalAlpha = layer === 1 ? 1 : dim;
+      ctx.drawImage(sa.terrain, x, y, w, h, x, y, w, h);
+    }
+    ctx.globalAlpha = 1;
+    if (layer !== 1) ctx.drawImage(sa.ore, x, y, w, h, x, y, w, h);
   }
 
   function run() {
@@ -565,20 +644,42 @@
     }
 
     if (kind === "sa") {
-      // Space Age planet: the tile map straight from the game's own map-gen
-      // data (sa.wasm compiles the planet's tile expressions once per worker).
-      // Square cells over [-R,R)², dispatched centre-out across the pool.
+      // Space Age planet: tiles + resources straight from the game's own
+      // map-gen data (sa.wasm compiles the planet once per worker). Each cell
+      // comes back as TWO layers - terrain and a transparent resource overlay
+      // - kept on separate offscreen canvases so the page can dim the terrain
+      // under the resources without regenerating.
       var p = PLANETS[planetKey];
-      if (!pool) spawnPool();
       var R = radius;
-      els.canvas.width = 2 * R;
-      els.canvas.height = 2 * R;
-      var ctx = els.canvas.getContext("2d");
-      var CELL = 128;
+      if (sa && sa.R === R && sa.done) { compositeSA(); doneUI(); return; }
+      if (!pool) spawnPool();
+      // three canvases (two layers + the visible one) are kept, so the layer
+      // size is capped; larger disks draw their cells downscaled
+      var disp = Math.min(2 * R, SA_LAYER_MAX);
+      var scale = (2 * R) / disp;
+      els.canvas.width = disp;
+      els.canvas.height = disp;
+      var mk = function () { var c = document.createElement("canvas"); c.width = disp; c.height = disp; return c; };
+      sa = { R: R, terrain: mk(), ore: mk(), done: false };
+      var blit = function (ctx, w, h, px, tx, ty) {
+        if (scale === 1) { putImg(ctx, w, h, px, tx, ty); return; }
+        var cx = cellCanvas(w, h);
+        var cimg = cx.createImageData(w, h);
+        cimg.data.set(px);
+        cx.putImageData(cimg, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(cellCv, 0, 0, w, h, tx / scale, ty / scale, w / scale, h / scale);
+      };
+      var run_ = sa;
+      var tctx = sa.terrain.getContext("2d");
+      var octx = sa.ore.getContext("2d");
+      // cells on the 128-tile grid (whole chunks), clipped to [-R,R)
+      var CELL = R > 1500 ? 256 : 128;
       var cells = [];
-      for (var yc = -R; yc < R; yc += CELL) {
-        for (var xc = -R; xc < R; xc += CELL) {
-          cells.push({ x0: xc, y0: yc, w: Math.min(CELL, R - xc), h: Math.min(CELL, R - yc) });
+      for (var yc = Math.floor(-R / CELL) * CELL; yc < R; yc += CELL) {
+        for (var xc = Math.floor(-R / CELL) * CELL; xc < R; xc += CELL) {
+          var cx0 = Math.max(xc, -R), cy0 = Math.max(yc, -R);
+          cells.push({ x0: cx0, y0: cy0, w: Math.min(xc + CELL, R) - cx0, h: Math.min(yc + CELL, R) - cy0 });
         }
       }
       var mid = function (c) { var mx = c.x0 + c.w / 2, my = c.y0 + c.h / 2; return mx * mx + my * my; };
@@ -586,40 +687,52 @@
       status(p.label + ": rendering " + cells.length + " cells…");
       var doneCells = 0;
       var counts = {};   // tile name -> { color, count }
+      var ores = {};     // resource name -> { color, count, amount }
       var failed = false;
       cells.forEach(function (c) {
-        sendToPool({ seed: SEED, planet: planetKey, x0: c.x0, y0: c.y0, width: c.w, height: c.h }, "sa")
+        sendToPool({ seed: SEED, planet: planetKey, property: "all", x0: c.x0, y0: c.y0, width: c.w, height: c.h }, "sa")
           .then(function (r) {
-            if (failed) return;
-            putImg(ctx, r.summary.width, r.summary.height, r.pixels, c.x0 + R, c.y0 + R);
+            if (failed || sa !== run_) return;
+            var n = r.summary.width * r.summary.height * 4;
+            blit(tctx, r.summary.width, r.summary.height, r.pixels.subarray(0, n), c.x0 + R, c.y0 + R);
+            blit(octx, r.summary.width, r.summary.height, r.pixels.subarray(n, 2 * n), c.x0 + R, c.y0 + R);
             (r.summary.tiles || []).forEach(function (t) {
               if (!counts[t.name]) counts[t.name] = { color: t.color, count: 0 };
               counts[t.name].count += t.count;
             });
+            (r.summary.resources || []).forEach(function (t) {
+              if (!ores[t.name]) ores[t.name] = { color: t.color, count: 0, amount: 0 };
+              ores[t.name].count += t.count;
+              ores[t.name].amount += t.amount;
+            });
+            compositeSA(Math.floor((c.x0 + R) / scale), Math.floor((c.y0 + R) / scale), Math.ceil(c.w / scale) + 1, Math.ceil(c.h / scale) + 1);
             doneCells++;
             setProgress(doneCells / cells.length);
             if (doneCells < cells.length) {
               status(p.label + " " + doneCells + "/" + cells.length + " cells…");
               return;
             }
+            sa.done = true;
             doneUI();
             window.__SURF_MS__ = Date.now() - t0;
-            window.__LAST_SURF__ = { zone: p.label, type: "planet", resources: {}, layer: layer, gpu: false, tiles: counts };
-            var total = 4 * R * R;
-            var legend = Object.keys(counts).sort(function (a, b) { return counts[b].count - counts[a].count; })
-              .map(function (n) {
-                var t = counts[n];
-                return '<span class="res-chip" title="' + esc(n) + '"><span style="display:inline-block;width:10px;height:10px;' +
-                  "border-radius:2px;margin-right:4px;background:rgb(" + t.color.join(",") + ')"></span>' + esc(n) +
-                  " <strong>" + (100 * t.count / total).toFixed(1) + "%</strong></span>";
-              }).join(" ");
-            els.res.innerHTML = legend + ' <span class="hint">· ' + (2 * R) + "×" + (2 * R) + " tiles · " +
-              pool.length + " workers · " + window.__SURF_MS__ + " ms</span>";
-            status(p.label + " · r" + radius + " · tiles");
+            window.__LAST_SURF__ = { zone: p.label, type: "planet", resources: ores, layer: layer, gpu: false, tiles: counts };
+            var swatch = function (col) {
+              return '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;' +
+                "border:1px solid #888;background:rgb(" + col.join(",") + ')"></span>';
+            };
+            var oreChips = Object.keys(ores).map(function (n) {
+              var t = ores[n];
+              return '<span class="res-chip surf" title="' + t.count + " entities · total amount " + t.amount.toLocaleString() + '">' +
+                swatch(t.color) + esc(n) + " <strong>" + fmtAmount(t.amount) + "</strong> <span class=\"hint\">×" + t.count + "</span></span>";
+            }).join(" ");
+            els.res.innerHTML = oreChips + ' <span class="hint">· ' + (2 * R) + "×" + (2 * R) + " tiles" +
+              (scale > 1 ? " (shown ×1/" + scale.toFixed(1) + ")" : "") + " · " + pool.length + " workers · " + window.__SURF_MS__ + " ms</span>";
+            status(p.label + " · r" + radius + " · tiles + resources");
           })
           .catch(function (e) {
             if (failed) return;
             failed = true;
+            sa = null;
             fail(e, "error");
           });
       });
@@ -692,6 +805,7 @@
     els.go.addEventListener("click", run);
     els.radius.addEventListener("change", run);
     els.layer.addEventListener("change", run);
+    if (els.dim) els.dim.addEventListener("input", function () { compositeSA(); });
     if (kind === "sa") {
       var p = PLANETS[planetKey];
       els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet tiles, generated from the game's map-gen data (sa.wasm).</span>";

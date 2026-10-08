@@ -33,18 +33,47 @@ tiles at the same ~96% on Vulcanus.
 Speed: about 2 µs per tile native, 1.6–5.7 µs in wasm — an r500 disk renders
 in 0.2–2.2 s in the browser across the worker pool.
 
+### Resources
+
+Resource entities, checked against every resource the game placed in the
+r500 square at map seed 341 (position = same tile, amount = total):
+
+| Planet   | Resource             | Game / ours | Same tile | Amount |
+| -------- | -------------------- | ----------- | --------- | ------ |
+| Vulcanus | calcite              | 5104 / 5105 | 100%      | x1.000 |
+| Vulcanus | coal                 | 3576 / 3574 | 99.9%     | x1.000 |
+| Vulcanus | tungsten-ore         | 3896 / 3895 | 99.9%     | x1.000 |
+| Vulcanus | sulfuric-acid-geyser | 70 / 71     | 3%        | x1.109 |
+| Gleba    | stone                | 620 / 620   | 100%      | x1.000 |
+| Aquilo   | fluorine-vent        | 26 / 26     | 100%      | x1.000 |
+| Aquilo   | lithium-brine        | 33 / 34     | 100%      | x1.035 |
+| Aquilo   | crude-oil            | 45 / 61     | 9%        | x1.140 |
+| Fulgora  | scrap                | 3307 / 3247 | 47%       | x0.957 |
+
+Placement (`sa_surface.World`) follows the game's chunk pass: a 32x32 chunk
+is one evaluation column (so `random_penalty` draws from one stream seeded at
+the chunk origin — confirmed by tungsten matching tile for tile), resources
+compete group by group in autoplace order, the highest probability wins a
+tile, and it is placed when a draw from the chunk's placement stream falls
+below it. Tiles whose collision mask has the `resource` layer take none.
+
+Resources whose probability saturates at 1 are exact. The three that are not
+(scrap is capped at probability 0.5; geysers and Aquilo crude oil are sparse
+by design) depend on the placement stream, which the game shares with every
+other entity group in the chunk (ruins, rocks, trees); those groups are not
+generated, so the draws differ. Their patches are in the right places with
+the right density, but not the same individual tiles.
+
 Not done yet:
 
-- Resources and other entities. Their autoplace expressions are in the data
-  file and compile (`sa_main <planet> check`), but there is no placement pass.
+- Non-resource entities (ruins, rocks, trees, enemy bases) — also what would
+  make scrap, geysers and Aquilo crude oil tile-exact.
 - Cliffs, decoratives.
 - The tile-transition correction pass.
 - Nauvis through this engine (it still uses the dedicated generator):
   `expression_in_range` and `starting_lake_positions` are not implemented.
-- `random_penalty` batching. The op draws from one RNG stream per evaluated
-  batch; tile generation's batch shape is not pinned, so expressions that use
-  it per tile (Vulcanus tungsten probability) do not match yet. No tile map
-  depends on it except through `vulcanus_metal_tile`.
+- Tile generation's `random_penalty` batch shape is assumed to be the chunk
+  column too (only `vulcanus_metal_tile` depends on it).
 
 ## Pipeline
 
@@ -58,7 +87,7 @@ surface_generator/src/sa_noise_data.json  expressions, functions, tiles, planets
 sa_data.zig      load definitions + planet wiring
 sa_expr.zig      parse the noise-expression DSL
 sa_program.zig   compile roots to one straight-line program; evaluate in batches
-sa_surface.zig   tile competition = argmax of tile:<name>:probability
+sa_surface.zig   tile competition (argmax) + resource placement, per chunk
         │
         ├─ sa_main.zig   native CLI (info / check / deps / probe / render)
         └─ sa_wasm.zig   browser module → space_explorer_gui /surface page
@@ -158,7 +187,9 @@ python3 ../calibration/sa-probe/diff_surface.py /tmp/game.json /tmp/ours.json
 `zig build test` runs the regression vectors in `src/sa_test.zig` (game tiles
 and elevation values for all four planets) without needing the game.
 
-Other tools: `sa_main <planet> render <seed> <radius> out.png`,
+Resources: add `--entities` to both probes. Other tools:
+`sa_main <planet> render <seed> <radius> out.png` (also writes
+`out-resources.png`, the resource layer on a transparent background),
 `sa_main <planet> check` (what compiles), `sa_main <planet> info`.
 
 ## Reverse-engineering references

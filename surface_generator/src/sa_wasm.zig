@@ -1,6 +1,6 @@
 //! WebAssembly entry for the data-driven planet surface generator: renders a
-//! rectangle of a planet's tile map (or any named noise expression) entirely
-//! in the browser. Same exported-buffer protocol as se_wasm.zig
+//! rectangle of a planet's tile map and its resources (or any named noise
+//! expression) entirely in the browser. Same exported-buffer protocol as se_wasm.zig
 //! (inputPtr/growInput/resultPtr/pixelsPtr/generate), so it plugs into the
 //! same gen-worker plumbing.
 //!
@@ -11,12 +11,19 @@
 //! Request JSON:
 //!   { "seed": <u32 MAP seed>, "planet": "<any planet in the data file>",
 //!     "x0": <left tile>, "y0": <top tile>, "width": w, "height": h,
-//!     "property": "tiles" (default) | property key | expression name }
+//!     "property": "all" (default) | "tiles" | "resources"
+//!                 | property key | expression name }
 //!   (legacy square form: "cx", "cy", "radius" -> a (2r+1)^2 square)
 //! Response: summary JSON via resultPtr/resultLen + RGBA8 pixels via
 //! pixelsPtr/pixelsLen, one tile per pixel, row-major from (x0, y0).
+//!   "tiles"      one layer: opaque tile colours
+//!   "resources"  one layer: resource colours, transparent elsewhere
+//!   "all"        both layers back to back (terrain, then resources), so the
+//!                page can composite them with its own contrast
 //!   summary = { ok, planet, property, seed, surface_seed, x0, y0, width,
-//!               height, tiles: [{ name, color: [r,g,b], count }] }
+//!               height, layers,
+//!               tiles: [{ name, color: [r,g,b], count }],
+//!               resources: [{ name, color, count, amount }] }
 //!
 //! The compiled program for a (planet, seed, property) is kept between
 //! calls, so rendering a surface cell by cell compiles once.
@@ -41,7 +48,7 @@ const Compiled = struct {
     planet: *const sa_data.Planet,
     seed: u32,
     property: []const u8, // owned by program_arena
-    tiles: ?surface.Surface,
+    world: ?surface.World,
     single: ?struct { program: prog.Program, ws: prog.Program.Workspace },
 };
 var g_compiled: ?Compiled = null;
@@ -89,17 +96,23 @@ fn int(o: json.Object, key: []const u8) ?i32 {
     return if (v == .number) @intFromFloat(v.number) else null;
 }
 
+fn isWorld(property: []const u8) bool {
+    return std.mem.eql(u8, property, "all") or std.mem.eql(u8, property, "tiles") or std.mem.eql(u8, property, "resources");
+}
+
 fn compiled(planet: *const sa_data.Planet, seed: u32, property: []const u8) !*Compiled {
     if (g_compiled) |*c| {
-        if (c.planet == planet and c.seed == seed and std.mem.eql(u8, c.property, property)) return c;
+        // the three world layers share one compiled program
+        const same = std.mem.eql(u8, c.property, property) or (c.world != null and isWorld(property));
+        if (c.planet == planet and c.seed == seed and same) return c;
     }
     g_compiled = null;
     _ = program_arena.reset(.retain_capacity);
     const pa = program_arena.allocator();
     const data = &g_data.?;
-    var c = Compiled{ .planet = planet, .seed = seed, .property = try pa.dupe(u8, property), .tiles = null, .single = null };
-    if (std.mem.eql(u8, property, "tiles")) {
-        c.tiles = try surface.Surface.init(pa, data, planet, seed, .{}, &g_error);
+    var c = Compiled{ .planet = planet, .seed = seed, .property = try pa.dupe(u8, property), .world = null, .single = null };
+    if (isWorld(property)) {
+        c.world = try surface.World.init(pa, data, planet, seed, .{}, &g_error);
     } else {
         const p = try prog.compile(pa, data, planet, seed, .{}, &.{c.property}, &g_error);
         c.single = .{ .program = p, .ws = try p.workspace(pa) };
@@ -129,7 +142,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
         if (json.get(o, "property")) |v| {
             if (v == .string) break :blk v.string;
         }
-        break :blk "tiles";
+        break :blk "all";
     };
     var x0: i32 = 0;
     var y0: i32 = 0;
@@ -150,31 +163,43 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     if (width * height > 4096 * 4096) return error.TooLarge;
 
     const c = try compiled(planet, seed, property);
-    const pixels = try a.alloc(u8, width * height * 4);
+    const want_terrain = !std.mem.eql(u8, property, "resources");
+    const want_overlay = c.world != null and !std.mem.eql(u8, property, "tiles");
+    const layer = width * height * 4;
+    const layers: usize = @as(usize, @intFromBool(want_terrain)) + @intFromBool(want_overlay);
+    const pixels = try a.alloc(u8, layer * layers);
     g_pixels = pixels;
 
     var sb: std.ArrayList(u8) = .empty;
-    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"tiles\":[", .{
-        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height,
+    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"tiles\":[", .{
+        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers,
     });
-    if (c.tiles) |*s| {
+    var resources_json: std.ArrayList(u8) = .empty;
+    if (c.world) |*w| {
         const counts = try a.alloc(u32, planet.tiles.len);
         @memset(counts, 0);
-        const row = try a.alloc(u16, width);
-        for (0..height) |r| {
-            s.tileRow(x0, y0 + @as(i32, @intCast(r)), row);
-            for (row, 0..) |t, col| {
-                counts[t] += 1;
-                const rgb = planet.tiles[t].color;
-                pixels[(r * width + col) * 4 ..][0..4].* = .{ rgb[0], rgb[1], rgb[2], 255 };
-            }
-        }
+        const totals = try a.alloc(surface.World.Totals, planet.resources.len);
+        @memset(totals, .{});
+        w.render(
+            x0,
+            y0,
+            width,
+            height,
+            if (want_terrain) pixels[0..layer] else null,
+            if (want_overlay) pixels[layer * (layers - 1) ..] else null,
+            counts,
+            totals,
+        );
         var first = true;
         for (planet.tiles, counts) |t, n| {
             if (n == 0) continue;
             if (!first) try sb.append(a, ',');
             first = false;
             try sb.print(a, "{{\"name\":\"{s}\",\"color\":[{d},{d},{d}],\"count\":{d}}}", .{ t.name, t.color[0], t.color[1], t.color[2], n });
+        }
+        for (planet.resources, totals, 0..) |r, t, i| {
+            if (i > 0) try resources_json.append(a, ',');
+            try resources_json.print(a, "{{\"name\":\"{s}\",\"color\":[{d},{d},{d}],\"count\":{d},\"amount\":{d}}}", .{ r.name, r.color[0], r.color[1], r.color[2], t.count, t.amount });
         }
     } else if (c.single) |*s| {
         // any other expression: a height-map style ramp for inspection
@@ -196,7 +221,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
             }
         }
     }
-    try sb.appendSlice(a, "]}");
+    try sb.print(a, "],\"resources\":[{s}]}}", .{resources_json.items});
     return sb.items;
 }
 

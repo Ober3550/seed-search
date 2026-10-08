@@ -6,7 +6,8 @@
 Both files use the layout written by probe_surface.py (game) and
 `sa_main <planet> probe` (ours) over the same grid. For every named expression
 present in both: how many samples are bit-identical as f32, and the worst
-absolute error. Then the tile agreement with a confusion summary.
+absolute error. Then the tile agreement with a confusion summary, and for
+resource entities the per-resource counts, positional overlap and amounts.
 """
 import collections, json, struct, sys
 
@@ -58,6 +59,24 @@ def main():
             print(f"  game {g} -> ours {o}: {c}")
     elif "tiles" in game:
         print("tiles: not produced by ours:", ours.get("errors", {}).get("tiles"))
+    if "entities" in game and "entities" in ours:
+        # resources only (the game dump also lists rocks, ruins, ... with a=0)
+        def by_name(ents):
+            out = collections.defaultdict(dict)
+            for e in ents:
+                if e["a"] > 0:
+                    out[e["n"]][(int(e["x"] // 1), int(e["y"] // 1))] = e["a"]
+            return out
+        g, o = by_name(game["entities"]), by_name(ours["entities"])
+        print("resources (entities: game / ours / same tile; amount ours/game):")
+        for name in sorted(set(g) | set(o)):
+            gp, op = g.get(name, {}), o.get(name, {})
+            both = len(set(gp) & set(op))
+            ga, oa = sum(gp.values()), sum(op.values())
+            print(f"  {name}: {len(gp)} / {len(op)} / {both} "
+                  f"({100 * both / max(len(gp), 1):.1f}% of game found, "
+                  f"{100 * both / max(len(op), 1):.1f}% of ours real); "
+                  f"amount x{oa / ga if ga else float('nan'):.3f}")
 
 
 if __name__ == "__main__":

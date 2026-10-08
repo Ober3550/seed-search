@@ -523,6 +523,28 @@ pub fn computeOresInRect(
     while (cy <= cy1) : (cy += 1) {
         var cx: i32 = cx0;
         while (cx <= cx1) : (cx += 1) {
+            // Most chunks hold no ore at all. Find that out from the resource
+            // fields alone before paying for the chunk's elevation (the water
+            // mask below is by far the most expensive part).
+            var any_ore = false;
+            scan: for (rstates) |*rs| {
+                const sspot_scan: ?*StartingSpotField = if (rs.sspot) |*ss| ss else null;
+                var ly: i32 = 0;
+                while (ly < CHUNK) : (ly += 1) {
+                    var lx: i32 = 0;
+                    while (lx < CHUNK) : (lx += 1) {
+                        const tx = cx * CHUNK + lx;
+                        const ty = cy * CHUNK + ly;
+                        if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                        if (try probabilityAt(rs.field, &rs.spot, sspot_scan, &rs.basis, @floatFromInt(tx), @floatFromInt(ty)) > 0.0) {
+                            any_ore = true;
+                            break :scan;
+                        }
+                    }
+                }
+            }
+            if (!any_ore) continue;
+
             // Per-chunk water mask + counts (fish sweeps water; land groups
             // sweep every land tile regardless of probability — winner best is
             // initialized/reset to -inf, so any eligible tile rolls).
@@ -588,7 +610,7 @@ pub fn computeOresInRect(
                                     chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
                                     penalty_done = true;
                                 }
-                                const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
+                                const r_draw = penalty_draws[@as(usize, @intCast(CHUNK * CHUNK - 1)) - idx];
                                 p *= 1.0 - r_draw / rs.field.config.random_probability;
                                 if (p < 0.0) p = 0.0;
                             }

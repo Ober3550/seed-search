@@ -18,6 +18,7 @@
 //     "k2": <bool>,
 //     "zone": { ...one universe z-array element (n,t,s,r,p,tags, nauvis?)... },
 //     "radius": <render half-extent in tiles, optional>,
+//     "square": <bool, optional: do not clip terrain to the zone disk>,
 //     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only> }
 //
 // Response: resultPtr()/resultLen() = UTF-8 JSON
@@ -27,27 +28,27 @@
 //   north-up like the native cell render). Valid until the next call.
 const std = @import("std");
 const se = @import("se_ore_placement.zig");
+const vanilla_ore = @import("ore_placement.zig");
 const terrain = @import("terrain.zig");
 const biome = @import("biome.zig");
 const asteroid = @import("asteroid.zig");
 const universe = @import("universe_gen");
 const data = universe.data;
 const res = @import("se_resources.zig");
-// Vanilla-Nauvis ground: the base property expressions (moisture_nauvis /
-// aux_nauvis, oracle-exact) are evaluated from the embedded nauvis closure.
+// Vanilla-Nauvis ground: the base property expressions (moisture / aux) are
+// compiled from the game's map-gen data by the generic noise-program engine.
 const sa_data = @import("sa_data.zig");
-const sa_expr = @import("sa_expr.zig");
+const sa_program = @import("sa_program.zig");
 
 var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+// vanilla-ground moisture/aux program, kept between calls
+var g_van_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_van_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_van_data: ?sa_data.Data = null;
+var g_van: ?struct { seed: u32, program: sa_program.Program, ws: sa_program.Program.Workspace } = null;
 var g_result: []u8 = &.{};
 var g_pixels: []u8 = &.{};
 var input_buf: []u8 = &.{};
-// shared basis-gen cache for the vanilla closure evaluator (sa_expr)
-var g_van_gen_cache: sa_expr.GenCache = .{};
-
-fn vanillaCtrlLookup(_: *const anyopaque, _: []const u8, field: []const u8) f64 {
-    return if (std.mem.eql(u8, field, "bias")) 0.0 else 1.0;
-}
 
 export fn inputPtr() [*]u8 {
     return input_buf.ptr;
@@ -78,7 +79,6 @@ export fn generateSurface(len: usize) void {
     _ = arena_state.reset(.retain_capacity);
     const a = arena_state.allocator();
     g_pixels = &.{};
-    sa_expr.globalGenCache = &g_van_gen_cache;
     const req = if (len <= input_buf.len) input_buf[0..len] else &.{};
     g_result = run(a, req) catch |e| blk: {
         g_pixels = &.{};
@@ -258,6 +258,9 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     // worker does the whole-rect ore pass — ore placement is rect-dependent
     // (starting-area enrichment), so ores can't be split across band calls.
     const terrainless = if (obj.get("terrainless")) |v| (v == .bool and v.bool) else false;
+    // square: fill the whole rect instead of clipping terrain to the zone's
+    // disk. SE surfaces are finite disks; a base-game Nauvis is unbounded.
+    const square = if (obj.get("square")) |v| (v == .bool and v.bool) else false;
     const rect: ?[4]i32 = if (obj.get("rect")) |v| blk: {
         const o = v.object;
         const gv = struct { fn g(oo: std.json.ObjectMap, k: []const u8) !i32 {
@@ -272,7 +275,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     } else null;
     const g_pixels_ptr: *[]u8 = &g_pixels;
 
-    return generateZone(a, seed, k2, z, override_radius, rect, layer, terrainless, vanilla_ground, g_pixels_ptr);
+    return generateZone(a, seed, k2, z, override_radius, rect, layer, terrainless, vanilla_ground, square, g_pixels_ptr);
 }
 
 /// The pure zone driver — same math as segen's runZoneDriver for one zone.
@@ -286,6 +289,7 @@ fn generateZone(
     layer: i32,
     terrainless: bool,
     vanilla_ground: bool,
+    square: bool,
     out_pixels: *[]u8,
 ) ![]u8 {
     _ = world_seed; // output paths only in the native CLI
@@ -422,17 +426,26 @@ fn generateZone(
     // tile competition + palette from the SE alien-biomes classifier above.
     var base_nauvis: ?*biome.BaseNauvis = null;
     // Vanilla property evaluator (moisture/aux from the embedded base closure).
-    const van_controls = sa_expr.Controls{ .lookup = vanillaCtrlLookup };
-    var van_planet: ?*sa_data.Planet = null;
-    var van_memo: ?sa_expr.Memo = null;
+    var van_prog: ?sa_program.Program = null;
+    var van_ws: sa_program.Program.Workspace = undefined;
     if (vanilla_ground) {
         const bc = try a.create(biome.BaseNauvis);
         bc.* = biome.BaseNauvis.init(zone_seed);
         base_nauvis = bc;
-        const p = try a.create(sa_data.Planet);
-        p.* = try sa_data.load(a, .nauvis);
-        van_planet = p;
-        van_memo = try sa_expr.Memo.init(a, p.closure.node_count);
+        // compiled once per seed and kept across calls (a render is many
+        // small cell requests)
+        if (g_van == null or g_van.?.seed != zone_seed) {
+            g_van = null;
+            _ = g_van_arena.reset(.retain_capacity);
+            const va = g_van_arena.allocator();
+            if (g_van_data == null) g_van_data = try sa_data.load(g_van_data_arena.allocator());
+            const d = &g_van_data.?;
+            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+            const pr = try sa_program.compile(va, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
+            g_van = .{ .seed = zone_seed, .program = pr, .ws = try pr.workspaceN(va, 1) };
+        }
+        van_prog = g_van.?.program;
+        van_ws = g_van.?.ws;
     }
 
     // The render/ore RECT half-extent. --radius caps it (so we can generate
@@ -454,7 +467,38 @@ fn generateZone(
 
     // terrain-only renders don't touch ore at all.
     const need_ores = layer != 1;
-    if (need_ores) {
+    // Resource names reported in the summary, in order.
+    var summary_names: std.ArrayList([]const u8) = .empty;
+    for (inputs) |inp| try summary_names.append(a, inp.name);
+    if (need_ores and is_nauvis and vanilla_ground) {
+        // Nauvis WITHOUT Space Exploration: the base game's own resource
+        // autoplace (ore_placement.zig - resource_autoplace_all_patches with
+        // starting patches, the water gate and the per-chunk placement roll),
+        // not SE's re-derived one above.
+        summary_names.clearRetainingCapacity();
+        const lake = terrain.startingLakeCenter(zone_seed);
+        var elev_gate = terrain.Elevation.init(zone_seed, 1.0, 1.0);
+        var lakes_gate = terrain.ElevationLakes.init(zone_seed, 1.0, 1.0);
+        elev_gate.addStartingLake(lake[0], lake[1]);
+        lakes_gate.addStartingLake(lake[0], lake[1]);
+        const all = [_]struct { []const u8, vanilla_ore.ResourceAutoplaceConfig }{
+            .{ "iron-ore", vanilla_ore.iron_ore_default },       .{ "copper-ore", vanilla_ore.copper_ore_default },
+            .{ "coal", vanilla_ore.coal_default },               .{ "stone", vanilla_ore.stone_default },
+            .{ "uranium-ore", vanilla_ore.uranium_ore_default }, .{ "crude-oil", vanilla_ore.crude_oil_default },
+        };
+        var cfgs: std.ArrayList(vanilla_ore.ResourceAutoplaceConfig) = .empty;
+        var ctrls: std.ArrayList(vanilla_ore.AutoplaceControls) = .empty;
+        for (all) |e| {
+            if (ores_only and e[1].random_probability < 1.0) continue;
+            try cfgs.append(a, e[1]);
+            try summary_names.append(a, e[0]);
+            const ov = res.fsrOverride(z, e[0]) orelse [3]f64{ 1, 1, 1 };
+            try ctrls.append(a, .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] });
+        }
+        var placed = try vanilla_ore.computeOresInRect(a, zone_seed, xa, ya, xb, yb, cfgs.items, summary_names.items, .{}, .{ .elev = &elev_gate, .lakes = &lakes_gate }, ctrls.items);
+        defer placed.deinit(a);
+        for (placed.items) |o| try ores.append(a, .{ .x = o.x, .y = o.y, .resource_name = o.resource_name, .amount = o.amount });
+    } else if (need_ores) {
         ores = try se.computeSEOresInRect(
             a,
             zone_seed,
@@ -508,15 +552,16 @@ fn generateZone(
             while (ix < xb) : (ix += 1) {
                 const fx: f64 = @floatFromInt(ix);
                 const fy: f64 = @floatFromInt(iy);
-                if (fx * fx + fy * fy > radius * radius) continue;
+                if (!square and fx * fx + fy * fy > radius * radius) continue;
                 const e = if (has_water) el_s.at(fx, fy) else 1.0;
                 var mo_van: f64 = 0.0;
                 var aux_van: f64 = 0.0;
                 if (vanilla_ground) {
-                    // base moisture/aux (oracle-exact) from the embedded closure
-                    const s = sa_expr.Scalars{ .x = fx, .y = fy, .seed = zone_seed, .x_from_start = fx, .y_from_start = fy };
-                    mo_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "moisture");
-                    aux_van = try sa_expr.evalRootMemoed(&van_planet.?.closure, s, van_controls, a, &van_memo.?, "aux");
+                    // base moisture/aux from the compiled base expressions
+                    const vp = &van_prog.?;
+                    vp.eval(&van_ws, &.{@as(f32, @floatCast(fx))}, &.{@as(f32, @floatCast(fy))});
+                    mo_van = vp.out(&van_ws, 0)[0];
+                    aux_van = vp.out(&van_ws, 1)[0];
                 }
                 const color: [3]u8 = if (field) |f|
                     f.colorAt(fx, fy)
@@ -563,11 +608,11 @@ fn generateZone(
     try summary.appendSlice(a, ",\"resources\":{");
     {
         var first = true;
-        for (inputs) |inp| {
+        for (summary_names.items) |rname| {
             var cnt: u64 = 0;
             var amount: u64 = 0;
             for (ores.items) |o| {
-                if (std.mem.eql(u8, o.resource_name, inp.name)) {
+                if (std.mem.eql(u8, o.resource_name, rname)) {
                     cnt += 1;
                     amount += o.amount;
                 }
@@ -577,7 +622,7 @@ fn generateZone(
             const disp = fmtAmount(&abuf, amount);
             if (!first) try summary.appendSlice(a, ",");
             first = false;
-            try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ inp.name, amount, disp, cnt });
+            try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ rname, amount, disp, cnt });
         }
     }
     try summary.appendSlice(a, "}}");

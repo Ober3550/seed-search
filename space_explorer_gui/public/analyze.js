@@ -88,9 +88,10 @@
     var u = "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
     // Open at the zone's ACTUAL radius (disk-cropped to it). Asteroid fields
     // carry no radius in the universe data — open them at 5000 (SE's default
-    // field radius, same as the Nauvis default). Max SE zone radius is 10000,
-    // which is also the page slider max; ?r is clamped to that only.
-    var r0 = z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
+    // field radius). Max SE zone radius is 10000, which is also the page
+    // slider max; ?r is clamped to that only. Nauvis carries no ?r: it opens
+    // at the surface page's default preview radius.
+    var r0 = z.nauvis ? null : z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
     if (r0) u += "&r=" + Math.min(r0, 10000);
     return u;
   }

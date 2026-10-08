@@ -890,12 +890,13 @@ app.get("/surface/:seed/:target", (req, res) => {
     <h2>🗺️ <span id="sf-name">${escH(target)}</span> <span id="sf-badge" class="badge zone-type">…</span> <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
     <div id="sf-meta" class="hint"></div>
     <div class="filter-bar">
-      <label>Preview radius <input type="number" id="sf-radius" min="10" max="10000" step="50" value="500" style="width:7em"></label>
+      <label>Preview radius <input type="number" id="sf-radius" min="10" max="10000" step="50" value="2000" style="width:7em"></label>
       <label id="sf-layer-wrap">Layer <select id="sf-layer">
         <option value="0">Terrain + ore</option>
         <option value="1">Terrain only</option>
         <option value="2">Ore only</option>
       </select></label>
+      <label id="sf-dim-wrap" hidden title="terrain brightness under the resources">Terrain <input type="range" id="sf-dim" min="0" max="100" value="100" style="width:8em;vertical-align:middle"></label>
       <button type="button" class="btn" id="sf-go">Generate</button>
       <span id="sf-status" class="hint"></span>
     </div>

@@ -38,6 +38,18 @@ pub const Tile = struct {
     name: []const u8,
     layer: i32,
     color: [3]u8,
+    /// the tile's collision mask has the "resource" layer (water, lava, ...)
+    blocks_resource: bool,
+};
+
+/// An autoplaced resource entity (ore tile or fluid patch).
+pub const Resource = struct {
+    name: []const u8,
+    /// autoplace order: resources sharing it compete in one placement group
+    order: []const u8,
+    color: [3]u8,
+    /// footprint in tiles (1 for ores, 3 for fluid patches)
+    size: u8,
 };
 
 pub const Prop = struct { key: []const u8, value: Body };
@@ -54,6 +66,8 @@ pub const Planet = struct {
     /// autoplaced ground tiles in prototype order (ties go to the first)
     tiles: []const Tile,
     entities: []const []const u8,
+    /// resource entities in placement order (autoplace order, then name)
+    resources: []const Resource,
     cliff_richness: f64,
     cliff_elevation_0: f64,
     cliff_elevation_interval: f64,
@@ -119,6 +133,16 @@ fn strings(a: std.mem.Allocator, o: json.Object, key: []const u8) LoadError![]co
     return out.items;
 }
 
+fn color(o: json.Object) [3]u8 {
+    var col: [3]u8 = .{ 0, 0, 0 };
+    if (json.get(o, "color")) |cv| {
+        if (cv == .array and cv.array.len >= 3) {
+            for (0..3) |i| col[i] = @intFromFloat(cv.array[i].number);
+        }
+    }
+    return col;
+}
+
 fn parseDef(a: std.mem.Allocator, name: []const u8, o: json.Object, is_function: bool) LoadError!Def {
     var locals: std.ArrayList(Local) = .empty;
     if (obj(o, "local_expressions")) |lo| {
@@ -162,6 +186,7 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
     }
 
     const tile_meta = obj(ro, "tiles") orelse return error.BadData;
+    const entity_meta = obj(ro, "entities") orelse return error.BadData;
     const planets = obj(ro, "planets") orelse return error.BadData;
     var list: std.ArrayList(Planet) = .empty;
     for (planets) |kv| {
@@ -174,13 +199,14 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
         var tiles: std.ArrayList(Tile) = .empty;
         for (try strings(arena, po, "tiles")) |tn| {
             const tm = obj(tile_meta, tn) orelse return error.BadData;
-            var col: [3]u8 = .{ 0, 0, 0 };
-            if (json.get(tm, "color")) |cv| {
-                if (cv == .array and cv.array.len >= 3) {
-                    for (0..3) |i| col[i] = @intFromFloat(cv.array[i].number);
-                }
-            }
-            try tiles.append(arena, .{ .name = tn, .layer = @intFromFloat(num(tm, "layer", 0)), .color = col });
+            const blocks = if (json.get(tm, "blocks_resource")) |v| v == .boolean and v.boolean else false;
+            try tiles.append(arena, .{ .name = tn, .layer = @intFromFloat(num(tm, "layer", 0)), .color = color(tm), .blocks_resource = blocks });
+        }
+        var resources: std.ArrayList(Resource) = .empty;
+        for (try strings(arena, po, "resources")) |rn| {
+            const em = obj(entity_meta, rn) orelse return error.BadData;
+            const order = if (json.get(em, "order")) |v| (if (v == .string) v.string else "") else "";
+            try resources.append(arena, .{ .name = rn, .order = order, .color = color(em), .size = @intFromFloat(num(em, "size", 1)) });
         }
         const cliff = obj(po, "cliff_settings") orelse &.{};
         try list.append(arena, .{
@@ -190,6 +216,7 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
             .controls = try strings(arena, po, "autoplace_controls"),
             .tiles = tiles.items,
             .entities = try strings(arena, po, "entities"),
+            .resources = resources.items,
             .cliff_richness = num(cliff, "richness", 1),
             .cliff_elevation_0 = num(cliff, "cliff_elevation_0", 10),
             .cliff_elevation_interval = num(cliff, "cliff_elevation_interval", 40),

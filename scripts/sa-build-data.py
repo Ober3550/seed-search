@@ -13,9 +13,12 @@ mods are enabled) and keeps just the map-generation slice:
                   entity:<name>:probability / entity:<name>:richness
                   decorative:<name>:probability
   functions     every noise-function
-  tiles         layer + map colour of each autoplaced tile
+  tiles         layer + map colour of each autoplaced tile, and whether it
+                blocks resources
+  entities      type, autoplace order, map colour and footprint of each
+                autoplaced entity
   planets       per planet: property_expression_names, autoplace controls,
-                cliff settings, and the tile/entity/decorative lists of its
+                cliff settings, its resources, and the tile/entity/decorative lists of its
                 autoplace_settings (tiles in prototype order: ties go to the first)
 
 Nothing planet-specific lives in the generator: sa_program.zig compiles
@@ -24,7 +27,7 @@ whichever planet it is asked for straight from this file.
 Usage: sa-build-data.py [--dump existing-data-raw-dump.json] [--mods a,b,c]
 Writes surface_generator/src/sa_noise_data.json (embedded by sa_data.zig).
 """
-import argparse, json, os, shutil, subprocess, sys, tempfile, zlib
+import argparse, json, math, os, shutil, subprocess, sys, tempfile, zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -130,16 +133,26 @@ def main():
                     r = dict(d); r["expression"] = ap_["richness_expression"]
                     expressions.setdefault(f"{kind}:{n}:richness", r)
                 if kind == "tile":
-                    tiles[n] = {"layer": p.get("layer", 0), "color": rgb(p.get("map_color"))}
+                    layers = (p.get("collision_mask") or {}).get("layers") or {}
+                    tiles[n] = {"layer": p.get("layer", 0), "color": rgb(p.get("map_color")),
+                                # resources collide with the "resource" layer
+                                "blocks_resource": bool(layers.get("resource"))}
                 elif kind == "entity":
+                    box = p.get("collision_box") or [[-0.1, -0.1], [0.1, 0.1]]
                     entities[n] = {"type": typ, "control": ap_.get("control"),
-                                   "order": ap_.get("order", ""), "color": rgb(p.get("map_color"))}
+                                   "order": ap_.get("order", ""), "color": rgb(p.get("map_color")),
+                                   # footprint in tiles (ore 1, fluid patches 3)
+                                   "size": max(1, math.ceil(max(box[1][0] - box[0][0], box[1][1] - box[0][1])))}
             if kind == "tile":
                 # equal probabilities are common by design (Gleba's clamped
                 # range selectors); the engine then keeps the first tile in
                 # prototype order = (order string, name). Verified on Gleba.
                 keep.sort(key=lambda n: tile_order[n])
             cfg[{"tile": "tiles", "entity": "entities", "decorative": "decoratives"}[kind]] = keep
+            if kind == "entity":
+                # resources are placed group by group in autoplace order
+                cfg["resources"] = sorted((n for n in keep if entities[n]["type"] == "resource"),
+                                          key=lambda n: (entities[n]["order"], n))
         planets[pname] = cfg
 
     out = {"game_version": game_version(), "mods": a.mods.split(","),
