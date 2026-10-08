@@ -115,6 +115,13 @@ def main():
         }
         for key, kind in AUTOPLACE_KINDS:
             names = list(((mgs.get("autoplace_settings") or {}).get(key) or {}).get("settings") or {})
+            if kind == "entity":
+                # an autoplace control on the surface also enables every
+                # entity tied to it (Nauvis trees via "trees", enemy bases via
+                # "enemy-base") without listing them one by one
+                controls = mgs.get("autoplace_controls") or {}
+                names += [n for n, (_, p) in by_name[kind].items()
+                          if n not in names and p["autoplace"].get("control") in controls]
             keep = []
             for n in names:
                 if n not in by_name[kind]:

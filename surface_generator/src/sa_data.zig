@@ -52,6 +52,13 @@ pub const Resource = struct {
     size: u8,
 };
 
+/// Any autoplaced entity of a surface, for simulating the placement stream.
+pub const Entity = struct {
+    name: []const u8,
+    order: []const u8,
+    kind: enum { resource, water, land },
+};
+
 pub const Prop = struct { key: []const u8, value: Body };
 
 pub const Planet = struct {
@@ -68,6 +75,10 @@ pub const Planet = struct {
     entities: []const []const u8,
     /// resource entities in placement order (autoplace order, then name)
     resources: []const Resource,
+    /// every autoplaced entity (resources, rocks, trees, enemies, fish),
+    /// sorted by autoplace order: entities sharing an order form one
+    /// placement group, and groups are placed in this sequence
+    placed: []const Entity,
     cliff_richness: f64,
     cliff_elevation_0: f64,
     cliff_elevation_interval: f64,
@@ -208,6 +219,22 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
             const order = if (json.get(em, "order")) |v| (if (v == .string) v.string else "") else "";
             try resources.append(arena, .{ .name = rn, .order = order, .color = color(em), .size = @intFromFloat(num(em, "size", 1)) });
         }
+        var placed: std.ArrayList(Entity) = .empty;
+        for (try strings(arena, po, "entities")) |en| {
+            const em = obj(entity_meta, en) orelse continue;
+            const order = if (json.get(em, "order")) |v| (if (v == .string) v.string else "") else "";
+            const typ = if (json.get(em, "type")) |v| (if (v == .string) v.string else "") else "";
+            try placed.append(arena, .{
+                .name = en,
+                .order = order,
+                .kind = if (std.mem.eql(u8, typ, "resource")) .resource else if (std.mem.eql(u8, typ, "fish")) .water else .land,
+            });
+        }
+        std.mem.sort(Entity, placed.items, {}, struct {
+            fn lt(_: void, l: Entity, r: Entity) bool {
+                return std.mem.order(u8, l.order, r.order) == .lt;
+            }
+        }.lt);
         const cliff = obj(po, "cliff_settings") orelse &.{};
         try list.append(arena, .{
             .name = kv.key,
@@ -217,6 +244,7 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
             .tiles = tiles.items,
             .entities = try strings(arena, po, "entities"),
             .resources = resources.items,
+            .placed = placed.items,
             .cliff_richness = num(cliff, "richness", 1),
             .cliff_elevation_0 = num(cliff, "cliff_elevation_0", 10),
             .cliff_elevation_interval = num(cliff, "cliff_elevation_interval", 40),

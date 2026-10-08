@@ -64,6 +64,17 @@ other entity group in the chunk (ruins, rocks, trees); those groups are not
 generated, so the draws differ. Their patches are in the right places with
 the right density, but not the same individual tiles.
 
+### Nauvis (base game) resources
+
+Without Space Exploration the page places Nauvis resources with the
+base-game port (`ore_placement.zig`), and uses this engine for one thing:
+`sa_surface.EntityRolls` replays the rock, tree, enemy and fish placement
+rolls of a chunk (their probability expressions compile from the data file;
+nothing is placed or drawn) so the resource groups start at the right position
+in the chunk's shared placement stream. It only runs in chunks that contain
+ore. Against the game at seed 341 over a 3000x3000 area: 72,192 of 72,205
+resource entities on the same tile, crude oil 108 of 114 wells (115 placed).
+
 Not done yet:
 
 - Non-resource entities (ruins, rocks, trees, enemy bases) — also what would

@@ -296,3 +296,91 @@ pub const World = struct {
         }
     }
 };
+
+// ---------------------------------------------------------------------------
+// Placement stream of the non-resource entities
+// ---------------------------------------------------------------------------
+
+/// Where a resource group's rolls start in a chunk's placement stream.
+///
+/// Every autoplace group of a chunk draws from ONE random stream, in
+/// autoplace-order: each group sweeps the chunk's tiles last to first and
+/// takes one draw per tile it could stand on (fish: water; everything else:
+/// land); an entity whose roll passes (draw < probability) and that is not
+/// centre-placed - rocks, trees, enemies, fish - takes two more draws for its
+/// sub-tile offset. So the rolls of a late group (crude oil is in "c") start
+/// at a position that depends on how many rocks, trees and enemies were
+/// attempted before it. This replays just those rolls - nothing is placed or
+/// rendered - to count them.
+pub const EntityRolls = struct {
+    planet: *const sa_data.Planet,
+    program: prog.Program,
+    ws: prog.Program.Workspace,
+    /// root index per planet.placed entry (unused for resources)
+    roots: []const usize,
+    xs: []f32,
+    ys: []f32,
+
+    pub fn init(a: std.mem.Allocator, data: *const sa_data.Data, planet: *const sa_data.Planet, map_seed: u32, controls: prog.Controls, err_out: ?*[]const u8) !EntityRolls {
+        var names: std.ArrayList([]const u8) = .empty;
+        const roots = try a.alloc(usize, planet.placed.len);
+        for (planet.placed, 0..) |e, i| {
+            roots[i] = names.items.len;
+            if (e.kind == .resource) continue;
+            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e.name}));
+        }
+        const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
+        var ws = try program.workspaceN(a, AREA);
+        ws.column_rng = true;
+        return .{ .planet = planet, .program = program, .ws = ws, .roots = roots, .xs = try a.alloc(f32, AREA), .ys = try a.alloc(f32, AREA) };
+    }
+
+    /// Replay chunk (cx, cy). `water[i]` marks the tiles only water entities
+    /// can use. `out[k]` receives the number of passing non-resource rolls
+    /// between resource group k-1 and resource group k (k = 0: before the
+    /// first), for the first `out.len` resource groups in placement order.
+    pub fn attempts(self: *EntityRolls, cx: i32, cy: i32, water: *const [AREA]bool, out: []u32) void {
+        @memset(out, 0);
+        for (0..AREA) |i| {
+            self.xs[i] = @as(f32, @floatFromInt(cx * CHUNK + @as(i32, @intCast(i % CHUNK)))) + SAMPLE_OFFSET;
+            self.ys[i] = @as(f32, @floatFromInt(cy * CHUNK + @as(i32, @intCast(i / CHUNK)))) + SAMPLE_OFFSET;
+        }
+        self.program.eval(&self.ws, self.xs, self.ys);
+        var land_count: u32 = 0;
+        for (water) |w| land_count += @intFromBool(!w);
+
+        var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
+        if (seed < 342) seed = 341;
+        var prng = rng.Rng.init(seed);
+
+        const placed = self.planet.placed;
+        var slot: usize = 0; // resource groups passed so far
+        var g0: usize = 0;
+        while (g0 < placed.len and slot < out.len) {
+            var g1 = g0 + 1;
+            while (g1 < placed.len and std.mem.eql(u8, placed[g1].order, placed[g0].order)) g1 += 1;
+            if (placed[g0].kind == .resource) {
+                // resources are centre-placed: one draw per land tile, no more
+                var k: u32 = 0;
+                while (k < land_count) : (k += 1) _ = prng.next();
+                slot += 1;
+            } else {
+                const on_water = placed[g0].kind == .water;
+                var i: usize = AREA;
+                while (i > 0) {
+                    i -= 1;
+                    if (water[i] != on_water) continue;
+                    const draw: f32 = @floatCast(prng.float());
+                    var p: f32 = 0;
+                    for (g0..g1) |e| p = @max(p, self.program.out(&self.ws, self.roots[e])[i]);
+                    if (draw < p) {
+                        out[slot] += 1;
+                        _ = prng.next();
+                        _ = prng.next();
+                    }
+                }
+            }
+            g0 = g1;
+        }
+    }
+};

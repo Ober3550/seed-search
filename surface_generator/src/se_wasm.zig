@@ -39,6 +39,7 @@ const res = @import("se_resources.zig");
 // compiled from the game's map-gen data by the generic noise-program engine.
 const sa_data = @import("sa_data.zig");
 const sa_program = @import("sa_program.zig");
+const sa_surface = @import("sa_surface.zig");
 
 var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 // vanilla-ground moisture/aux program, kept between calls
@@ -46,6 +47,24 @@ var g_van_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_van_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_van_data: ?sa_data.Data = null;
 var g_van: ?struct { seed: u32, program: sa_program.Program, ws: sa_program.Program.Workspace } = null;
+// replay of Nauvis's rock / tree / enemy placement rolls (positions the ore
+// groups in each chunk's placement stream), kept between calls
+var g_rolls_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_rolls: ?struct { seed: u32, rolls: sa_surface.EntityRolls } = null;
+
+fn nauvisData() !*sa_data.Data {
+    if (g_van_data == null) g_van_data = try sa_data.load(g_van_data_arena.allocator());
+    return &g_van_data.?;
+}
+
+/// ore_placement.TerrainCtx.extras_fn: passing rolls before group "b" and
+/// between "b" and "c" for one chunk.
+fn nauvisExtras(ctx: *anyopaque, cx: i32, cy: i32, water: *const [32 * 32]bool) [2]u32 {
+    const rolls: *sa_surface.EntityRolls = @ptrCast(@alignCast(ctx));
+    var out: [2]u32 = undefined;
+    rolls.attempts(cx, cy, water, &out);
+    return out;
+}
 var g_result: []u8 = &.{};
 var g_pixels: []u8 = &.{};
 var input_buf: []u8 = &.{};
@@ -438,8 +457,7 @@ fn generateZone(
             g_van = null;
             _ = g_van_arena.reset(.retain_capacity);
             const va = g_van_arena.allocator();
-            if (g_van_data == null) g_van_data = try sa_data.load(g_van_data_arena.allocator());
-            const d = &g_van_data.?;
+            const d = try nauvisData();
             const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
             const pr = try sa_program.compile(va, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
             g_van = .{ .seed = zone_seed, .program = pr, .ws = try pr.workspaceN(va, 1) };
@@ -489,13 +507,24 @@ fn generateZone(
         var cfgs: std.ArrayList(vanilla_ore.ResourceAutoplaceConfig) = .empty;
         var ctrls: std.ArrayList(vanilla_ore.AutoplaceControls) = .empty;
         for (all) |e| {
-            if (ores_only and e[1].random_probability < 1.0) continue;
             try cfgs.append(a, e[1]);
             try summary_names.append(a, e[0]);
             const ov = res.fsrOverride(z, e[0]) orelse [3]f64{ 1, 1, 1 };
             try ctrls.append(a, .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] });
         }
-        var placed = try vanilla_ore.computeOresInRect(a, zone_seed, xa, ya, xb, yb, cfgs.items, summary_names.items, .{}, .{ .elev = &elev_gate, .lakes = &lakes_gate }, ctrls.items);
+        if (g_rolls == null or g_rolls.?.seed != zone_seed) {
+            g_rolls = null;
+            _ = g_rolls_arena.reset(.retain_capacity);
+            const d = try nauvisData();
+            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+            g_rolls = .{ .seed = zone_seed, .rolls = try sa_surface.EntityRolls.init(g_rolls_arena.allocator(), d, nauvis, zone_seed, .{}, null) };
+        }
+        var placed = try vanilla_ore.computeOresInRect(a, zone_seed, xa, ya, xb, yb, cfgs.items, summary_names.items, .{}, .{
+            .elev = &elev_gate,
+            .lakes = &lakes_gate,
+            .extras_fn = nauvisExtras,
+            .extras_ctx = &g_rolls.?.rolls,
+        }, ctrls.items);
         defer placed.deinit(a);
         for (placed.items) |o| try ores.append(a, .{ .x = o.x, .y = o.y, .resource_name = o.resource_name, .amount = o.amount });
     } else if (need_ores) {
@@ -586,7 +615,9 @@ fn generateZone(
             if (ore.x < xa or ore.x >= xb or ore.y < ya or ore.y >= yb) continue;
             const lpx: usize = @intCast(ore.x - xa);
             const lpy: usize = @intCast(ore.y - ya);
-            const oc = res.MapColors.get(ore.resource_name);
+            // base-game crude oil uses the game's own pink map colour (the
+            // table's orange is the SE/K2 look)
+            const oc: [3]u8 = if (vanilla_ground and std.mem.eql(u8, ore.resource_name, "crude-oil")) .{ 199, 51, 196 } else res.MapColors.get(ore.resource_name);
             const idx = (lpy * cw + lpx) * 4;
             pixels[idx] = oc[0];
             pixels[idx + 1] = oc[1];

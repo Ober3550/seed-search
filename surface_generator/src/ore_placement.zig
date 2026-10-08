@@ -71,6 +71,9 @@ pub const ResourceAutoplaceConfig = struct {
     /// RNG. Vanilla: group 0 = order "b" (iron/copper/coal/stone), group 1 =
     /// order "c" (uranium, crude-oil).
     order_group: u8 = 0,
+    /// Collision footprint in tiles (ores 1; fluid patches 3). An entity is
+    /// only placed where its whole footprint is free of other resources.
+    footprint: u8 = 1,
 };
 
 pub const iron_ore_default = ResourceAutoplaceConfig{
@@ -114,6 +117,7 @@ pub const crude_oil_default = ResourceAutoplaceConfig{
     .candidate_spot_count = 21, .regular_rq_factor_multiplier = 1.0,
     .has_starting_area_placement = .no, .regular_patch_set_index = 4,
     .random_probability = 1.0 / 48.0,
+    .footprint = 3,
     .random_spot_size_minimum = 1.0, .random_spot_size_maximum = 1.0,
     .additional_richness = 220000.0,
     .order_group = 1,
@@ -463,6 +467,10 @@ pub const TerrainCtx = struct {
     /// Per-chunk jitter-placement extras (each placed tree/rock/fish consumes 2
     /// extra draws): map key = (cx<<32)|cy packed, value = [before_b, b_to_c].
     extras: ?*const std.AutoHashMapUnmanaged(u64, [2]u32) = null,
+    /// Alternative to `extras`: compute a chunk's [before_b, b_to_c] attempt
+    /// counts on demand from its water mask (see sa_surface.EntityRolls).
+    extras_fn: ?*const fn (ctx: *anyopaque, cx: i32, cy: i32, water: *const [32 * 32]bool) [2]u32 = null,
+    extras_ctx: *anyopaque = undefined,
     /// Water gate threshold. The game picks tiles by autoplace competition:
     /// water_base(0,100) = 100*(-elev) must beat the best LAND tile probability
     /// (plateau ~1 + per-tile noise_layer_noise), so the effective water
@@ -558,7 +566,7 @@ pub fn computeOresInRect(
                 if (water[i]) water_count += 1;
             }
             const land_count: u32 = @as(u32, CHUNK * CHUNK) - water_count;
-            const extras: [2]u32 = if (ctx.extras) |ex| blk: {
+            const extras: [2]u32 = if (ctx.extras_fn) |f| f(ctx.extras_ctx, cx, cy, &water) else if (ctx.extras) |ex| blk: {
                 const k = (@as(u64, @as(u32, @bitCast(cx))) << 32) | @as(u64, @as(u32, @bitCast(cy)));
                 break :blk ex.get(k) orelse .{ 0, 0 };
             } else .{ 0, 0 };
@@ -577,6 +585,8 @@ pub fn computeOresInRect(
 
             var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
             var penalty_done = false;
+            // tiles covered by a resource placed earlier in this chunk
+            var occupied = [_]bool{false} ** (CHUNK * CHUNK);
 
             var group: u8 = 0;
             while (group < 2) : (group += 1) {
@@ -647,6 +657,33 @@ pub fn computeOresInRect(
                     if (draw < win_prob[idx]) {
                         const amount: u32 = @intFromFloat(@floor(@max(win_rich[idx], 0.0)));
                         if (amount > 0) {
+                            // the game refuses an entity whose collision box
+                            // overlaps one already placed (two oil wells
+                            // rolled on neighbouring tiles: only the first
+                            // stays). Checked within the chunk.
+                            const half: i32 = @divTrunc(@as(i32, rstates[@intCast(win_res[idx])].field.config.footprint), 2);
+                            var free = true;
+                            var dy: i32 = -half;
+                            while (dy <= half) : (dy += 1) {
+                                var dx: i32 = -half;
+                                while (dx <= half) : (dx += 1) {
+                                    const nx = lx + dx;
+                                    const ny = ly + dy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    if (occupied[@intCast(ny * CHUNK + nx)]) free = false;
+                                }
+                            }
+                            if (!free) continue;
+                            dy = -half;
+                            while (dy <= half) : (dy += 1) {
+                                var dx: i32 = -half;
+                                while (dx <= half) : (dx += 1) {
+                                    const nx = lx + dx;
+                                    const ny = ly + dy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    occupied[@intCast(ny * CHUNK + nx)] = true;
+                                }
+                            }
                             try results.append(alloc, .{ .x = tx, .y = ty, .resource_name = rstates[@intCast(win_res[idx])].name, .amount = amount });
                         }
                     }

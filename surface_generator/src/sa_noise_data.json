@@ -22,6 +22,17 @@
    "size": 1,
    "type": "tree"
   },
+  "behemoth-worm-turret": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-b[worm]",
+   "size": 3,
+   "type": "turret"
+  },
   "big-fulgora-rock": {
    "color": [
     129,
@@ -65,6 +76,39 @@
    "order": "a[landscape]-c[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
+  },
+  "big-worm-turret": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-b[worm]",
+   "size": 3,
+   "type": "turret"
+  },
+  "biter-spawner": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-a[spawner]",
+   "size": 5,
+   "type": "unit-spawner"
+  },
+  "boompuff": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-d",
+   "size": 2,
+   "type": "tree"
   },
   "calcite": {
    "color": [
@@ -131,6 +175,72 @@
    "order": "c",
    "size": 3,
    "type": "resource"
+  },
+  "cuttlepop": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-k",
+   "size": 2,
+   "type": "tree"
+  },
+  "dead-dry-hairy-tree": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-d[dead]-c[dead-hairy]",
+   "size": 2,
+   "type": "tree"
+  },
+  "dead-grey-trunk": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-d[dead]-d[grey]",
+   "size": 2,
+   "type": "tree"
+  },
+  "dead-tree-desert": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-d[dead]-a[desert]",
+   "size": 2,
+   "type": "tree"
+  },
+  "dry-hairy-tree": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-d[dead]-c[hairy]",
+   "size": 2,
+   "type": "tree"
+  },
+  "dry-tree": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-d[dead]-e[dry-tree]",
+   "size": 1,
+   "type": "tree"
   },
   "fish": {
    "color": [
@@ -253,6 +363,50 @@
    "size": 2,
    "type": "simple-entity"
   },
+  "funneltrunk": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-h",
+   "size": 2,
+   "type": "tree"
+  },
+  "gleba-spawner": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_enemy_base",
+   "order": "b[enemy]-c[spawner]-a[large]",
+   "size": 5,
+   "type": "unit-spawner"
+  },
+  "gleba-spawner-small": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_enemy_base",
+   "order": "b[enemy]-c[spawner]-b[small]",
+   "size": 3,
+   "type": "unit-spawner"
+  },
+  "hairyclubnub": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-j",
+   "size": 2,
+   "type": "tree"
+  },
   "huge-rock": {
    "color": [
     129,
@@ -297,6 +451,28 @@
    "size": 1,
    "type": "simple-entity"
   },
+  "jellystem": {
+   "color": [
+    255,
+    255,
+    255
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-b",
+   "size": 2,
+   "type": "plant"
+  },
+  "lickmaw": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-f",
+   "size": 2,
+   "type": "tree"
+  },
   "lithium-brine": {
    "color": [
     178,
@@ -330,6 +506,17 @@
    "size": 4,
    "type": "simple-entity"
   },
+  "medium-worm-turret": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-b[worm]",
+   "size": 3,
+   "type": "turret"
+  },
   "scrap": {
    "color": [
     230,
@@ -340,6 +527,50 @@
    "order": "b",
    "size": 1,
    "type": "resource"
+  },
+  "slipstack": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-i",
+   "size": 2,
+   "type": "tree"
+  },
+  "small-worm-turret": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-b[worm]",
+   "size": 2,
+   "type": "turret"
+  },
+  "spitter-spawner": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "enemy-base",
+   "order": "b[enemy]-a[spawner]",
+   "size": 5,
+   "type": "unit-spawner"
+  },
+  "stingfrond": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-e",
+   "size": 2,
+   "type": "tree"
   },
   "stone": {
    "color": [
@@ -362,6 +593,193 @@
    "order": "c",
    "size": 3,
    "type": "resource"
+  },
+  "sunnycomb": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-c",
+   "size": 2,
+   "type": "tree"
+  },
+  "teflilly": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-g",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-01": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-a[wet]-c[cold]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-02": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-b[moist]-b[cold]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-02-red": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-c[medium]-b[cold]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-03": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-b[moist]-c[hot]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-04": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-a[wet]-b[medium]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-05": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-a[wet]-a[hot]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-06": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-d[dry]-c[cold]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-06-brown": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-e[verydry]-c[cold]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-07": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-b[moist]-a[medium]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-08": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-c[medium]-a[medium]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-08-brown": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-d[dry]-b[medium]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-08-red": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-e[verydry]-b[medium]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-09": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-c[medium]-c[hot]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-09-brown": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-d[dry]-a[hot]",
+   "size": 1,
+   "type": "tree"
+  },
+  "tree-09-red": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "trees",
+   "order": "a[tree]-b[forest]-e[verydry]-a[hot]",
+   "size": 1,
+   "type": "tree"
   },
   "tungsten-ore": {
    "color": [
@@ -439,6 +857,28 @@
    "order": "a[landscape]-b[chimney]-b[truncated]-d",
    "size": 2,
    "type": "simple-entity"
+  },
+  "water-cane": {
+   "color": [
+    0,
+    0,
+    0
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-d[decorative]-a[water-cane]",
+   "size": 1,
+   "type": "tree"
+  },
+  "yumako-tree": {
+   "color": [
+    255,
+    255,
+    255
+   ],
+   "control": "gleba_plants",
+   "order": "a[tree]-b[forest]-a",
+   "size": 2,
+   "type": "plant"
   }
  },
  "expressions": {
@@ -1236,6 +1676,12 @@
   "entity:ashland-lichen-tree:probability": {
    "expression": "vulcanus_tree"
   },
+  "entity:behemoth-worm-turret:probability": {
+   "expression": "(enemy_autoplace_base(8, 5)) * (1 - no_enemies_mode)"
+  },
+  "entity:behemoth-worm-turret:richness": {
+   "expression": 1
+  },
   "entity:big-fulgora-rock:probability": {
    "expression": "(1 - fulgora_oil_mask) * (fulgora_natural_mask + fulgora_mesa)* min(0.05,0.3 * 1 - 2.4 + fulgora_rock - 0.5 * fulgora_mix_oil + 0.7 * fulgora_basis_oil)"
   },
@@ -1261,6 +1707,24 @@
   },
   "entity:big-volcanic-rock:probability": {
    "expression": "vulcanus_rock_big"
+  },
+  "entity:big-worm-turret:probability": {
+   "expression": "(enemy_autoplace_base(5, 4)) * (1 - no_enemies_mode)"
+  },
+  "entity:big-worm-turret:richness": {
+   "expression": 1
+  },
+  "entity:biter-spawner:probability": {
+   "expression": "enemy_autoplace_base(0, 6)"
+  },
+  "entity:biter-spawner:richness": {
+   "expression": 1
+  },
+  "entity:boompuff:probability": {
+   "expression": "gleba_boompuff_region"
+  },
+  "entity:boompuff:richness": {
+   "expression": "random_penalty_at(3, 1)"
   },
   "entity:calcite:probability": {
    "expression": 0
@@ -1288,6 +1752,50 @@
   },
   "entity:crude-oil:richness": {
    "expression": "(var('control:crude-oil:size') > 0) * (1*var('control:crude-oil:richness')*(var('default-crude-oil-patches')/0.020833333333333+220000)*max((1000+distance)/2600,1))"
+  },
+  "entity:cuttlepop:probability": {
+   "expression": "main_probability",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0.35, 0.65, 0.1, -10, 1) - 1",
+    "main_probability": "min(0.03, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise_b - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:cuttlepop:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0.35, 0.65, 0.1, -10, 1) - 1",
+    "main_probability": "min(0.03, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise_b - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:dead-dry-hairy-tree:probability": {
+   "expression": "tree_dead_dry_hairy"
+  },
+  "entity:dead-dry-hairy-tree:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:dead-grey-trunk:probability": {
+   "expression": "tree_dead_grey_trunk"
+  },
+  "entity:dead-grey-trunk:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:dead-tree-desert:probability": {
+   "expression": "tree_dead_desert"
+  },
+  "entity:dead-tree-desert:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:dry-hairy-tree:probability": {
+   "expression": "tree_dry_hairy"
+  },
+  "entity:dry-hairy-tree:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:dry-tree:probability": {
+   "expression": "tree_dry"
+  },
+  "entity:dry-tree:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
   },
   "entity:fish:probability": {
    "expression": 0.01
@@ -1325,6 +1833,38 @@
   "entity:fulgurite:probability": {
    "expression": "min(0.1, fulgora_natural_mask * max(0, -fulgora_scrap_medium - fulgora_rock - 0.8))"
   },
+  "entity:funneltrunk:probability": {
+   "expression": "gleba_funnel_trunk_region"
+  },
+  "entity:funneltrunk:richness": {
+   "expression": "random_penalty_at(3, 1)"
+  },
+  "entity:gleba-spawner-small:probability": {
+   "expression": "gleba_spawner_small"
+  },
+  "entity:gleba-spawner-small:richness": {
+   "expression": 1
+  },
+  "entity:gleba-spawner:probability": {
+   "expression": "gleba_spawner"
+  },
+  "entity:gleba-spawner:richness": {
+   "expression": 1
+  },
+  "entity:hairyclubnub:probability": {
+   "expression": "main_probability",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0, 0.3, 0.15, -10, 1) - 1",
+    "main_probability": "min(0.02, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:hairyclubnub:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0, 0.3, 0.15, -10, 1) - 1",
+    "main_probability": "min(0.02, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
   "entity:huge-rock:probability": {
    "expression": "multiplier * control * (region_box + rock_density - penalty)",
    "local_expressions": {
@@ -1346,6 +1886,26 @@
   "entity:iron-stromatolite:probability": {
    "expression": "gleba_select(gleba_iron_stromatolite - clamp(gleba_decorative_knockout, 0, 1), 1.3, 2, 0.2, 0, 1)"
   },
+  "entity:jellystem:probability": {
+   "expression": "min(0.2, 0.3 * (1 - gleba_plants_noise) * control:gleba_plants:size)"
+  },
+  "entity:jellystem:richness": {
+   "expression": "random_penalty_at(3, 1)"
+  },
+  "entity:lickmaw:probability": {
+   "expression": "main_probability",
+   "local_expressions": {
+    "main_box": "min(gleba_select(gleba_aux, 0.7, 1, 0.15, -10, 1), gleba_select(gleba_moisture, 0.5, 0.75, 0.01, -10, 1)) - 1",
+    "main_probability": "min(0.02, 0.1 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:lickmaw:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "main_box": "min(gleba_select(gleba_aux, 0.7, 1, 0.15, -10, 1), gleba_select(gleba_moisture, 0.5, 0.75, 0.01, -10, 1)) - 1",
+    "main_probability": "min(0.02, 0.1 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
   "entity:lithium-brine:probability": {
    "expression": "aquilo_lithium_brine_probability"
   },
@@ -1357,6 +1917,12 @@
   },
   "entity:lithium-iceberg-huge:probability": {
    "expression": "(aquilo_high_frequency_peaks - 0.8) * 0.1"
+  },
+  "entity:medium-worm-turret:probability": {
+   "expression": "(enemy_autoplace_base(2, 3)) * (1 - no_enemies_mode)"
+  },
+  "entity:medium-worm-turret:richness": {
+   "expression": 1
   },
   "entity:scrap:probability": {
    "expression": "(control:scrap:size > 0)* (1 - fulgora_starting_mask)* (min((fulgora_structure_cells < min(0.1 * frequency, 0.05 + 0.05 * frequency))* (1 + fulgora_structure_subnoise) * abs_mult_height_over * fulgora_artificial_mask+ (fulgora_spots_prebanding < (1.2 + 0.4 * linear_size)) * fulgora_vaults_and_starting_vault * 10,0.5) * (1 - fulgora_road_paving_2c))",
@@ -1378,6 +1944,50 @@
     "size": "control:scrap:size"
    }
   },
+  "entity:slipstack:probability": {
+   "expression": "main_probability",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0.7, 1, 0.1, -10, 1) - 1",
+    "main_probability": "min(0.02, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:slipstack:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "main_box": "gleba_select(gleba_aux, 0.7, 1, 0.1, -10, 1) - 1",
+    "main_probability": "min(0.02, gleba_water_plant_ramp * 0.2 * (main_box + gleba_plants_noise - 0.2) * control:gleba_plants:size)"
+   }
+  },
+  "entity:small-worm-turret:probability": {
+   "expression": "(enemy_autoplace_base(0, 2)) * (1 - no_enemies_mode)"
+  },
+  "entity:small-worm-turret:richness": {
+   "expression": 1
+  },
+  "entity:spitter-spawner:probability": {
+   "expression": "enemy_autoplace_base(0, 7)"
+  },
+  "entity:spitter-spawner:richness": {
+   "expression": 1
+  },
+  "entity:stingfrond:probability": {
+   "expression": "max(main_probability, invasion_top_probability)",
+   "local_expressions": {
+    "invasion_top_box": "min(gleba_select(gleba_aux, 0, 0.5, 0.15, -10, 1), gleba_select(gleba_moisture, 0.1, 0.25, 0.01, -10, 1)) - 1",
+    "invasion_top_probability": "min(0.05, 0.1 * (invasion_top_box + gleba_plants_noise - 0.55) * control:gleba_plants:size)",
+    "main_box": "min(gleba_select(gleba_aux, 0, 0.5, 0.15, -10, 1), gleba_select(gleba_moisture, 0.25, 0.5, 0.01, -10, 1)) - 1",
+    "main_probability": "min(0.05, 0.1 * (main_box + gleba_plants_noise - 0.25) * control:gleba_plants:size)"
+   }
+  },
+  "entity:stingfrond:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "invasion_top_box": "min(gleba_select(gleba_aux, 0, 0.5, 0.15, -10, 1), gleba_select(gleba_moisture, 0.1, 0.25, 0.01, -10, 1)) - 1",
+    "invasion_top_probability": "min(0.05, 0.1 * (invasion_top_box + gleba_plants_noise - 0.55) * control:gleba_plants:size)",
+    "main_box": "min(gleba_select(gleba_aux, 0, 0.5, 0.15, -10, 1), gleba_select(gleba_moisture, 0.25, 0.5, 0.01, -10, 1)) - 1",
+    "main_probability": "min(0.05, 0.1 * (main_box + gleba_plants_noise - 0.25) * control:gleba_plants:size)"
+   }
+  },
   "entity:stone:probability": {
    "expression": "(var('control:stone:size') > 0) * (clamp(var('default-stone-patches'), 0, 1))"
   },
@@ -1386,6 +1996,120 @@
   },
   "entity:sulfuric-acid-geyser:probability": {
    "expression": 0
+  },
+  "entity:sunnycomb:probability": {
+   "expression": "max(main_probability, invasion_tall_probability)",
+   "local_expressions": {
+    "invasion_tall_box": "gleba_select(gleba_moisture, 0, 0.35, 0.01, -10, 1) - 1",
+    "invasion_tall_probability": "min(0.05, 0.15 * (invasion_tall_box + gleba_plants_noise_b - 0.4) * control:gleba_plants:size)",
+    "main_box": "gleba_select(gleba_moisture, 0, 0.25, 0.01, -10, 1) - 1",
+    "main_probability": "min(0.08, 0.15 * (main_box + gleba_plants_noise_b - 0.45) * control:gleba_plants:size)"
+   }
+  },
+  "entity:sunnycomb:richness": {
+   "expression": "random_penalty_at(3, 1)",
+   "local_expressions": {
+    "invasion_tall_box": "gleba_select(gleba_moisture, 0, 0.35, 0.01, -10, 1) - 1",
+    "invasion_tall_probability": "min(0.05, 0.15 * (invasion_tall_box + gleba_plants_noise_b - 0.4) * control:gleba_plants:size)",
+    "main_box": "gleba_select(gleba_moisture, 0, 0.25, 0.01, -10, 1) - 1",
+    "main_probability": "min(0.08, 0.15 * (main_box + gleba_plants_noise_b - 0.45) * control:gleba_plants:size)"
+   }
+  },
+  "entity:teflilly:probability": {
+   "expression": "gleba_teflilly_region"
+  },
+  "entity:teflilly:richness": {
+   "expression": "random_penalty_at(3, 1)"
+  },
+  "entity:tree-01:probability": {
+   "expression": "tree_01"
+  },
+  "entity:tree-01:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-02-red:probability": {
+   "expression": "tree_02_red"
+  },
+  "entity:tree-02-red:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-02:probability": {
+   "expression": "tree_02"
+  },
+  "entity:tree-02:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-03:probability": {
+   "expression": "tree_03"
+  },
+  "entity:tree-03:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-04:probability": {
+   "expression": "tree_04"
+  },
+  "entity:tree-04:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-05:probability": {
+   "expression": "tree_05"
+  },
+  "entity:tree-05:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-06-brown:probability": {
+   "expression": "tree_06_brown"
+  },
+  "entity:tree-06-brown:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-06:probability": {
+   "expression": "tree_06"
+  },
+  "entity:tree-06:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-07:probability": {
+   "expression": "tree_07"
+  },
+  "entity:tree-07:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-08-brown:probability": {
+   "expression": "tree_08_brown"
+  },
+  "entity:tree-08-brown:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-08-red:probability": {
+   "expression": "tree_08_red"
+  },
+  "entity:tree-08-red:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-08:probability": {
+   "expression": "tree_08"
+  },
+  "entity:tree-08:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-09-brown:probability": {
+   "expression": "tree_09_brown"
+  },
+  "entity:tree-09-brown:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-09-red:probability": {
+   "expression": "tree_09_red"
+  },
+  "entity:tree-09-red:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
+  },
+  "entity:tree-09:probability": {
+   "expression": "tree_09"
+  },
+  "entity:tree-09:richness": {
+   "expression": "clamp(random_penalty_at(6, 1), 0, 1)"
   },
   "entity:tungsten-ore:probability": {
    "expression": 0
@@ -1410,6 +2134,18 @@
   },
   "entity:vulcanus-chimney:probability": {
    "expression": "vulcanus_chimney_sulfuric"
+  },
+  "entity:water-cane:probability": {
+   "expression": "min(0.8, (min(1, 1.5 * gleba_water_plant_ramp) + 0.5 * gleba_decal_noise - gleba_plants_noise - 0.5 * gleba_select(gleba_aux, 0.45, 0.55, 0.2, 0, 1) - 0.7) * control:gleba_plants:size)"
+  },
+  "entity:water-cane:richness": {
+   "expression": 1
+  },
+  "entity:yumako-tree:probability": {
+   "expression": "min(0.2, 0.3 * (1 - gleba_plants_noise) * control:gleba_plants:size)"
+  },
+  "entity:yumako-tree:richness": {
+   "expression": "random_penalty_at(3, 1)"
   },
   "forest_path_billows": {
    "expression": "abs(multioctave_noise{x = x,y = y,persistence = 0.5,seed0 = map_seed,seed1 = 1800,octaves = 4,input_scale = nauvis_segmentation_multiplier / 100})"
@@ -4087,7 +4823,21 @@
    "entities": [
     "stone",
     "iron-stromatolite",
-    "copper-stromatolite"
+    "copper-stromatolite",
+    "gleba-spawner",
+    "gleba-spawner-small",
+    "cuttlepop",
+    "slipstack",
+    "funneltrunk",
+    "hairyclubnub",
+    "teflilly",
+    "lickmaw",
+    "stingfrond",
+    "boompuff",
+    "sunnycomb",
+    "water-cane",
+    "yumako-tree",
+    "jellystem"
    ],
    "property_expression_names": {
     "aux": "gleba_aux",
@@ -4229,7 +4979,33 @@
     "fish",
     "big-sand-rock",
     "huge-rock",
-    "big-rock"
+    "big-rock",
+    "small-worm-turret",
+    "medium-worm-turret",
+    "big-worm-turret",
+    "behemoth-worm-turret",
+    "biter-spawner",
+    "spitter-spawner",
+    "tree-01",
+    "tree-02",
+    "tree-02-red",
+    "tree-03",
+    "tree-04",
+    "tree-05",
+    "tree-06",
+    "tree-06-brown",
+    "tree-07",
+    "tree-08",
+    "tree-08-brown",
+    "tree-08-red",
+    "tree-09",
+    "tree-09-brown",
+    "tree-09-red",
+    "dry-tree",
+    "dead-tree-desert",
+    "dead-grey-trunk",
+    "dead-dry-hairy-tree",
+    "dry-hairy-tree"
    ],
    "property_expression_names": {},
    "resources": [

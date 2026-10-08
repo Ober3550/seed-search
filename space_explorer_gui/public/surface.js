@@ -260,6 +260,10 @@
     var ctx = els.canvas.getContext("2d");
     els.canvas.width = npx;
     els.canvas.height = npx;
+    // layered: terrain draws go to the offscreen terrain layer, ore to the
+    // ore layer, and the visible canvas is composited from both
+    var L = layersBegin(npx, null);
+    if (L) ctx = L.terrain.getContext("2d");
     var fullRect = { x0: -R, y0: -R, x1: R, y1: R };
     var diskR = zoneDiskRadius(zoneObj, R); // clip radius for the wasm + cell plan
     var plan = planSurfaceCells(R, diskR);
@@ -281,6 +285,7 @@
         var sy = cell.y0 + R;
         var w = cell.x1 - cell.x0;
         var h = cell.y1 - cell.y0;
+        if (L) { compositeSA(sx, sy, w, h); return; }
         // source-over: ore pixels are opaque only where patches are, so terrain
         // under the transparent pixels stays visible.
         ctx.drawImage(oreCanvas, sx, sy, w, h, sx, sy, w, h);
@@ -314,7 +319,11 @@
             var img = octx.createImageData(r.summary.width, r.summary.height);
             img.data.set(r.pixels);
             octx.putImageData(img, 0, 0);
+            if (L) L.ore = oreCanvas;
             oreReady();
+          } else if (L) {
+            putImg(L.ore.getContext("2d"), r.summary.width, r.summary.height, r.pixels, 0, 0);
+            compositeSA();
           } else {
             // layer 2 ore-only view: whole-rect blit (transparent background).
             var cimg = ctx.createImageData(r.summary.width, r.summary.height);
@@ -336,6 +345,7 @@
           var img = ctx.createImageData(r.summary.width, r.summary.height);
           img.data.set(r.pixels);
           ctx.putImageData(img, cell.x0 + R, cell.y0 + R);
+          if (L) compositeSA(cell.x0 + R, cell.y0 + R, cell.x1 - cell.x0, cell.y1 - cell.y0);
           if (oreDone) blitOreRect(cell);
           else landed.push(cell);
           done++;
@@ -421,6 +431,24 @@
       }
     }
     return Promise.all(jobs).then(function () {
+      // an oil well is a 3x3 patch: grow each well's single pixel to its
+      // footprint (done here, after stitching, so wells on a cell edge are
+      // not clipped)
+      var wells = [];
+      for (var i = 0; i < out.length; i += 4) {
+        if (out[i + 3] && out[i] === 199 && out[i + 1] === 51 && out[i + 2] === 196) wells.push(i >> 2);
+      }
+      wells.forEach(function (k) {
+        var wx = k % W, wy = (k - wx) / W;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            var nx = wx + dx, ny = wy + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            var j = (ny * W + nx) * 4;
+            out[j] = 199; out[j + 1] = 51; out[j + 2] = 196; out[j + 3] = 255;
+          }
+        }
+      });
       Object.keys(totals).forEach(function (rn) {
         var v = totals[rn].amount;
         totals[rn].display = v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : String(v);
@@ -447,7 +475,8 @@
       var oi = octx.createImageData(r.summary.width, r.summary.height);
       oi.data.set(r.pixels);
       octx.putImageData(oi, 0, 0);
-      els.canvas.getContext("2d").drawImage(ov, 0, 0);
+      if (sa && sa.ore.width === ov.width) { sa.ore = ov; compositeSA(); }
+      else els.canvas.getContext("2d").drawImage(ov, 0, 0);
       var totals = {};
       Object.keys(res).forEach(function (rn) {
         totals[rn] = { amount: res[rn].amount, display: res[rn].display };
@@ -491,7 +520,7 @@
   function adaptForKind() {
     els.badge.textContent = kind === "sa" ? "planet" : kind === "nauvis" ? "planet (base)" : "zone";
     els.layerWrap.hidden = false;
-    if (els.dimWrap) els.dimWrap.hidden = kind !== "sa";
+    if (els.dimWrap) els.dimWrap.hidden = false;
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
     // ?r=N drives the radius on this page directly (disk radius; the seed page
@@ -504,6 +533,7 @@
   // ── Space Age planet layers ───────────────────────────────────────────────
   var sa = null;   // { R, terrain, ore, done } - offscreen layers of the last render
   var SA_LAYER_MAX = 5000; // px per side of each layer canvas
+  var LAYERED_MAX = 6000;  // zones/Nauvis: keep layers up to this canvas size
 
   function fmtAmount(v) {
     if (v >= 1e9) return (v / 1e9).toFixed(1) + "B";
@@ -512,24 +542,44 @@
     return String(v);
   }
 
+  // Start a layered render for a canvas of `px` x `px`: terrain and ore are
+  // kept on separate offscreen canvases so the "Terrain" slider can darken the
+  // terrain under the ore without regenerating. Returns null (plain drawing,
+  // slider inactive) when the canvases would be too large to keep three of.
+  function layersBegin(px, key) {
+    if (px > LAYERED_MAX) { sa = null; return null; }
+    var mk = function () { var c = document.createElement("canvas"); c.width = px; c.height = px; return c; };
+    sa = { R: key, terrain: mk(), ore: mk(), done: false };
+    return sa;
+  }
+
   // Draw the visible canvas from the two layers (optionally just one rect).
-  // The "Terrain" slider darkens the terrain (drawn over black at reduced
-  // alpha) so the resources stand out.
+  // The "Terrain" slider darkens the terrain only where it has pixels, so a
+  // disk's transparent corners stay transparent.
   function compositeSA(x, y, w, h) {
     if (!sa) return;
     var ctx = els.canvas.getContext("2d");
     if (x == null) { x = 0; y = 0; w = els.canvas.width; h = els.canvas.height; }
     var layer = parseInt(els.layer.value, 10) || 0;
     var dim = els.dim ? parseInt(els.dim.value, 10) / 100 : 1;
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#000";
-    ctx.fillRect(x, y, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.clearRect(x, y, w, h);
     if (layer !== 2) {
-      ctx.globalAlpha = layer === 1 ? 1 : dim;
       ctx.drawImage(sa.terrain, x, y, w, h, x, y, w, h);
+      if (layer === 0 && dim < 1) {
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.globalAlpha = 1 - dim;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x, y, w, h);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+      }
     }
-    ctx.globalAlpha = 1;
     if (layer !== 1) ctx.drawImage(sa.ore, x, y, w, h, x, y, w, h);
+    ctx.restore();
   }
 
   function run() {
@@ -592,6 +642,7 @@
         var downscaled = scaleS > 1;
         els.canvas.width = disp;
         els.canvas.height = disp;
+        var GL = layersBegin(disp, null);
         var gpuKind, backend, label;
         if (kind === "nauvis") { gpuKind = "tiles"; backend = "nauvis-tiles"; label = "nauvis tiles"; }
         else if (z.t === "asteroid-field") { gpuKind = "field-color"; backend = "se-field"; label = "asteroid field"; }
@@ -604,7 +655,7 @@
         return window.generateSurfaceProgressive({
           seed: seed, zone: z, kind: gpuKind, radius: R, diskR: diskR, cell: 512,
           onCell: function (c) {
-            var ctx = els.canvas.getContext("2d");
+            var ctx = (GL ? GL.terrain : els.canvas).getContext("2d");
             if (scaleS === 1) {
               var img = ctx.createImageData(c.w, c.h);
               img.data.set(c.rgba);
@@ -619,6 +670,7 @@
               ctx.drawImage(cellCv, 0, 0, c.w, c.h,
                 c.x / scaleS, c.y / scaleS, c.w / scaleS, c.h / scaleS);
             }
+            if (GL) compositeSA(Math.floor(c.x / scaleS), Math.floor(c.y / scaleS), Math.ceil(c.w / scaleS) + 1, Math.ceil(c.h / scaleS) + 1);
             status("gpu: " + label + " " + c.done + "/" + c.total + " cells…");
             setProgress(c.total ? c.done / c.total : 0);
           }
