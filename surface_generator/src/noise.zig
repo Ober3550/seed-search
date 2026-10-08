@@ -708,7 +708,7 @@ pub const VoronoiDistanceType = enum(u8) {
 
 /// Engine's fast Math::exp2f (bit-level approx, f32 arithmetic) used by the
 /// minkowski3 cube root: cbrt(s) = exp2f(log2(s) * 0.33333334).
-fn fastExp2f(x_in: f32) f32 {
+pub fn fastExp2f(x_in: f32) f32 {
     var x = x_in;
     var f: f32 = if (x < 0.0) 1.0 else 0.0;
     if (x <= -126.0) x = -126.0;
@@ -961,6 +961,149 @@ pub fn terrace(value: f64, offset: f32, width: f32, strength: f32) f64 {
     if (strength < frac) t = (frac - strength) / (1.0 - strength);
     return @as(f64, offset + width * (qf + t));
 }
+
+// ============================================================
+// Engine-exact noise kernels (f32 operation order of the 2.0 binary)
+// ============================================================
+//
+// Ported operation-for-operation from the decompiled arm64 engine
+// (ghidra/export/terrain_noise.c, multioctave_core.c): Noise::noise,
+// Noise::fastVectorMultioctaveNoise, QuickMultioctaveNoise::run and
+// VariablePersistenceMultioctaveNoise::run. These are the "vector" paths the
+// engine takes for arbitrary position lists (calculate_tile_properties, and
+// any op whose x/y inputs are not the raw position registers). The older
+// helpers above are algebraically the same but round differently in the
+// last bits, and the multioctave normalisation there is the ideal RMS value
+// while the engine derives it from its approximate Math::log2 / Math::exp2f.
+
+pub const exact = struct {
+    /// Noise::noise kernel: the unscaled basis value at noise-space (X, Y).
+    pub fn basis(gen: *const BasisNoiseGen, X: f32, Y: f32) f32 {
+        const fxi = @floor(X);
+        const fyi = @floor(Y);
+        const ix: i32 = @intFromFloat(fxi);
+        const iy: i32 = @intFromFloat(fyi);
+        const fx: f32 = X - fxi;
+        const fy: f32 = Y - fyi;
+        const fx1: f32 = fx + -1.0;
+        const fy1: f32 = fy + -1.0;
+        const wa: f32 = 1.0 - fy * fy;
+        const wb: f32 = 1.0 - fy1 * fy1;
+        const r0: u8 = gen.perm1[@as(u8, @truncate(@as(u32, @bitCast(iy))))] ^ gen.seed_byte;
+        const r1: u8 = gen.perm1[@as(u8, @truncate(@as(u32, @bitCast(iy +% 1))))] ^ gen.seed_byte;
+        const c0: u8 = gen.perm2[@as(u8, @truncate(@as(u32, @bitCast(ix))))];
+        const c1: u8 = gen.perm2[@as(u8, @truncate(@as(u32, @bitCast(ix +% 1))))];
+        const g00 = gen.grad[r0 ^ c0];
+        const g10 = gen.grad[r0 ^ c1];
+        const g01 = gen.grad[r1 ^ c0];
+        const g11 = gen.grad[r1 ^ c1];
+        const w00: f32 = @max(wa - fx * fx, 0.0);
+        const w10: f32 = @max(wa - fx1 * fx1, 0.0);
+        const w01: f32 = @max(wb - fx * fx, 0.0);
+        const w11: f32 = @max(wb - fx1 * fx1, 0.0);
+        return (fx * g00[0] + g00[1] * fy) * w00 * w00 * w00 +
+            (fx * g01[0] + g01[1] * fy1) * w01 * w01 * w01 +
+            (fx1 * g10[0] + g10[1] * fy) * w10 * w10 * w10 +
+            (fx1 * g11[0] + g11[1] * fy1) * w11 * w11 * w11;
+    }
+
+    /// basis_noise op: ((x + offset) * input_scale) sampled, times output_scale.
+    pub fn basisScaled(gen: *const BasisNoiseGen, x: f32, y: f32, is: f32, os: f32, ox: f32, oy: f32) f32 {
+        return basis(gen, (x + ox) * is, (y + oy) * is) * os;
+    }
+
+    /// multioctave_noise configuration, normalised once like the op does.
+    pub const Multioctave = struct {
+        n: u32,
+        scale: f32, // input scale of octave 0
+        os: f32, // output scale of octave 0 (normalised)
+        inv: f32, // 1 / persistence: amplitude step per (coarser) octave
+        ox: f32,
+        oy: f32,
+
+        pub fn init(octaves: f32, persistence: f32, is: f32, os_in: f32, ox: f32, oy: f32) Multioctave {
+            const nf: f32 = @floatFromInt(@as(u32, @intFromFloat(octaves)));
+            const inv: f32 = 1.0 / persistence;
+            const f3 = fastExp2f(nf - octaves);
+            const frac: f32 = if (f3 >= 1.0) @min(f3, 1.99999) else 1.0;
+            var os = os_in;
+            if (inv == 1.0) {
+                os = os / @sqrt(nf);
+            } else if (inv != 0.0) {
+                const t = fastExp2f(fastLog2(inv * inv) * nf);
+                os = @sqrt((inv * inv + -1.0) / (t + -1.0)) * os;
+            }
+            return .{ .n = @intFromFloat(nf), .scale = frac * is, .os = os, .inv = inv, .ox = ox, .oy = oy };
+        }
+
+        /// Octaves get coarser (scale halves) and stronger (x 1/persistence);
+        /// octave k is shifted by k * 17.17 in noise space.
+        pub fn eval(self: *const Multioctave, gen: *const BasisNoiseGen, x: f32, y: f32) f32 {
+            var out: f32 = 0.0;
+            var scale = self.scale;
+            var os = self.os;
+            var k: f64 = 0.0;
+            var i: u32 = 0;
+            while (i < self.n) : (i += 1) {
+                const X: f32 = @floatCast(k * 17.17 + @as(f64, scale * x));
+                const Y: f32 = scale * y;
+                out = out + basis(gen, (X + self.ox) * 1.0, (Y + self.oy) * 1.0) * os;
+                scale = scale * 0.5;
+                os = self.inv * os;
+                k += 1.0;
+            }
+            return out;
+        }
+    };
+
+    /// quick_multioctave_noise: one generator per octave, scales stepped in f32.
+    pub fn quickMultioctave(gens: []const BasisNoiseGen, idx: []const u32, x: f32, y: f32, is0: f32, os0: f32, oism: f32, oosm: f32, ox: f32, oy: f32) f32 {
+        var out: f32 = 0.0;
+        var is = is0;
+        var os = os0;
+        for (idx) |g| {
+            out = out + basisScaled(&gens[g], x, y, is, os, ox, oy);
+            is = is * oism;
+            os = os * oosm;
+        }
+        return out;
+    }
+
+    /// variable_persistence_multioctave_noise: Horner accumulation over
+    /// octaves with a per-position persistence.
+    pub const VariablePersistence = struct {
+        n: u32,
+        scale: f32,
+        os: f32,
+        ox: f32,
+        oy: f32,
+
+        pub fn init(octaves: f64, is: f32, os: f32, ox: f32, oy: f32) VariablePersistence {
+            const n: u32 = @intFromFloat(octaves);
+            return .{
+                .n = n,
+                .scale = is * 0.5,
+                .os = @floatCast(std.math.pow(f64, 2.0, @floatFromInt(n)) * @as(f64, os)),
+                .ox = ox,
+                .oy = oy,
+            };
+        }
+
+        pub fn eval(self: *const VariablePersistence, gen: *const BasisNoiseGen, x: f32, y: f32, persistence: f32) f32 {
+            if (self.n == 0) return 0.0;
+            var out: f32 = 0.0;
+            var scale = self.scale;
+            var i: u32 = 1;
+            while (i < self.n) : (i += 1) {
+                out = out + basisScaled(gen, x, y, scale, 1.0, self.ox, self.oy);
+                out = persistence * out;
+                scale = scale * 0.5;
+            }
+            out = out + basisScaled(gen, x, y, scale, 1.0, self.ox, self.oy);
+            return out * self.os;
+        }
+    };
+};
 
 // ============================================================
 // Tests

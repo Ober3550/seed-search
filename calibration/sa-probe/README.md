@@ -1,4 +1,31 @@
-# sa-probe — live-game oracle for the Space Age voronoi/terrace ports
+# sa-probe — live-game oracles for the Space Age generator
+
+Two harnesses live here:
+
+- **Whole surfaces** (`probe_surface.py`, `diff_surface.py`) — the oracle for
+  the data-driven planet generator. Boots a headless game at a map seed,
+  creates the planet's surface from its prototype
+  (`game.planets[p].create_surface()`), and over a tile grid dumps any named
+  noise expressions (`calculate_tile_properties` accepts every registered
+  expression name) plus the generated tiles. See `docs/space-age.md`.
+
+  ```sh
+  python3 probe_surface.py fulgora 341 -480:480:-480:480:20 game.json \
+      --tiles --names fulgora_elevation,fulgora_coastline
+  ../../surface_generator/zig-out/bin/sa_main fulgora probe 341 \
+      -480:480:-480:480:20 ours.json --tiles fulgora_elevation fulgora_coastline
+  python3 diff_surface.py game.json ours.json
+  ```
+
+  Notes: a planet surface's seed is the map seed + crc32(planet name);
+  `--map-gen-settings` ignores `autoplace_settings`, so a Nauvis surface with
+  a planet's settings does **not** produce that planet's tiles — the surface
+  must be created from the planet prototype.
+
+- **Single ops** (the rest of this file) — pins the `noise.zig`
+  `voronoi_*`/`terrace` ports.
+
+## Voronoi / terrace op probes
 
 Probes Factorio 2.0.77 (`/Applications/factorio.app`) with `calculate_tile_properties`
 to pin and regression-test the `noise.zig` `voronoi_*`/`terrace` ops bit-exactly.

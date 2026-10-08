@@ -89,11 +89,12 @@
     if (Number.isFinite(_rv)) RADIUS_INIT = _rv;
   } catch (e) {}
 
+  // Space Age planets: every one in sa.wasm's data file renders the same way.
   var PLANETS = {
-    vulcanus: { label: "🌋 Vulcanus", ok: false, why: "Vulcanus terrain needs the multisample autoplace op — not ported yet" },
-    fulgora:  { label: "⚡ Fulgora",  ok: true },
-    gleba:    { label: "🍄 Gleba",    ok: false, why: "Gleba terrain needs spot_noise sub-expression evaluation — not ported yet" },
-    aquilo:   { label: "🧊 Aquilo",   ok: false, why: "Aquilo terrain needs spot_noise sub-expression evaluation — not ported yet" }
+    vulcanus: { label: "🌋 Vulcanus" },
+    fulgora:  { label: "⚡ Fulgora" },
+    gleba:    { label: "🍄 Gleba" },
+    aquilo:   { label: "🧊 Aquilo" }
   };
 
   var els = {
@@ -136,7 +137,7 @@
   // ── Worker pool ───────────────────────────────────────────────────────────
   var pool = null;
   var pending = {};   // id -> { resolve, reject }
-  var queue = [];     // [{ id, req, resolve, reject }]
+  var queue = [];     // [{ id, type, req, resolve, reject }]
   var nextId = 1;
 
   function spawnPool() {
@@ -158,7 +159,7 @@
           if (queue.length) {
             var j = queue.shift();
             pending[j.id] = { resolve: j.resolve, reject: j.reject };
-            worker.postMessage({ id: j.id, type: "surface", req: j.req });
+            worker.postMessage({ id: j.id, type: j.type, req: j.req });
           } else worker.idle = true;
         };
       })(w);
@@ -166,7 +167,8 @@
     }
   }
 
-  function sendToPool(req) {
+  function sendToPool(req, type) {
+    type = type || "surface";
     return new Promise(function (resolve, reject) {
       var id = nextId++;
       var free = null;
@@ -174,9 +176,9 @@
       if (free) {
         free.idle = false;
         pending[id] = { resolve: resolve, reject: reject };
-        free.postMessage({ id: id, type: "surface", req: req });
+        free.postMessage({ id: id, type: type, req: req });
       } else {
-        queue.push({ id: id, req: req, resolve: resolve, reject: reject });
+        queue.push({ id: id, type: type, req: req, resolve: resolve, reject: reject });
       }
     });
   }
@@ -563,79 +565,64 @@
     }
 
     if (kind === "sa") {
+      // Space Age planet: the tile map straight from the game's own map-gen
+      // data (sa.wasm compiles the planet's tile expressions once per worker).
+      // Square cells over [-R,R)², dispatched centre-out across the pool.
       var p = PLANETS[planetKey];
-      if (!p.ok) {
-        doneUI();
-        els.res.innerHTML = '<span class="hint">' + esc(p.why) + "</span>";
-        status("not supported yet");
-        return;
-      }
-      if (planetKey === "fulgora" && layer !== 2) {
-        // fulgora tile layer: centre-out CPU cells (property "tiles" renders
-        // the real tile map colours)
-        var R = radius;
-        els.canvas.width = 2 * R;
-        els.canvas.height = 2 * R;
-        var ctx = els.canvas.getContext("2d");
-        var CELL = 129; // odd; cell half
-        var h = Math.floor(CELL / 2);
-        var cells = [];
-        for (var yc = -R + h; yc < R; yc += CELL) {
-          for (var xc = -R + h; xc < R; xc += CELL) {
-            cells.push({ cx: xc, cy: yc });
-          }
+      if (!pool) spawnPool();
+      var R = radius;
+      els.canvas.width = 2 * R;
+      els.canvas.height = 2 * R;
+      var ctx = els.canvas.getContext("2d");
+      var CELL = 128;
+      var cells = [];
+      for (var yc = -R; yc < R; yc += CELL) {
+        for (var xc = -R; xc < R; xc += CELL) {
+          cells.push({ x0: xc, y0: yc, w: Math.min(CELL, R - xc), h: Math.min(CELL, R - yc) });
         }
-        cells.sort(function (a, b) { return (a.cx * a.cx + a.cy * a.cy) - (b.cx * b.cx + b.cy * b.cy); });
-        status("fulgora tiles: rendering " + cells.length + " cells (centre-out)…");
-        var doneCells = 0;
-        var stepCell = function (i) {
-          if (i >= cells.length) {
-            doneUI();
-            window.__LAST_SURF__ = { zone: "Fulgora", type: "planet", resources: {}, layer: layer, gpu: false };
-            window.__SURF_MS__ = Date.now() - t0;
-            els.res.innerHTML = '<span class="hint">· ' + (2 * R) + "×" + (2 * R) + " · fulgora tiles (CPU) · " + window.__SURF_MS__ + " ms</span>";
-            status("fulgora · r" + radius + " · tiles");
-            return;
-          }
-          var c = cells[i];
-          window.generateSA({ seed: SEED, planet: "fulgora", property: "tiles", cx: c.cx, cy: c.cy, radius: h })
-            .then(function (r) {
-              var w = r.summary.width;
-              var img = ctx.createImageData(w, r.summary.height);
-              img.data.set(r.pixels);
-              var x0 = c.cx - h + R;
-              var y0 = c.cy - h + R;
-              ctx.putImageData(img, x0, y0);
-              doneCells++;
-              status("fulgora tiles " + doneCells + "/" + cells.length + " cells…");
-              setProgress(doneCells / cells.length);
-              stepCell(i + 1);
-            }).catch(function (e) {
-              doneUI();
-              status("error: " + e.message);
-              console.error(e);
-            });
-        };
-        stepCell(0);
-        return;
       }
-      window.generateSA({ seed: SEED, planet: planetKey, radius: radius })
-        .then(function (r) {
-          doneUI();
-          var canvas = els.canvas;
-          canvas.width = r.summary.width;
-          canvas.height = r.summary.height;
-          var ctx = canvas.getContext("2d");
-          var img = ctx.createImageData(r.summary.width, r.summary.height);
-          img.data.set(r.pixels);
-          ctx.putImageData(img, 0, 0);
-          window.__SURF_MS__ = Date.now() - t0;
-          els.res.textContent =
-            p.label + " · seed " + r.summary.seed + " · " + r.summary.width + "×" + r.summary.height +
-            " · elevation height-map (the planet's tile layer isn't modelled yet) · " + window.__SURF_MS__ + " ms";
-          status("ok");
-        })
-        .catch(function (e) { fail(e, "error"); });
+      var mid = function (c) { var mx = c.x0 + c.w / 2, my = c.y0 + c.h / 2; return mx * mx + my * my; };
+      cells.sort(function (a, b) { return mid(a) - mid(b); });
+      status(p.label + ": rendering " + cells.length + " cells…");
+      var doneCells = 0;
+      var counts = {};   // tile name -> { color, count }
+      var failed = false;
+      cells.forEach(function (c) {
+        sendToPool({ seed: SEED, planet: planetKey, x0: c.x0, y0: c.y0, width: c.w, height: c.h }, "sa")
+          .then(function (r) {
+            if (failed) return;
+            putImg(ctx, r.summary.width, r.summary.height, r.pixels, c.x0 + R, c.y0 + R);
+            (r.summary.tiles || []).forEach(function (t) {
+              if (!counts[t.name]) counts[t.name] = { color: t.color, count: 0 };
+              counts[t.name].count += t.count;
+            });
+            doneCells++;
+            setProgress(doneCells / cells.length);
+            if (doneCells < cells.length) {
+              status(p.label + " " + doneCells + "/" + cells.length + " cells…");
+              return;
+            }
+            doneUI();
+            window.__SURF_MS__ = Date.now() - t0;
+            window.__LAST_SURF__ = { zone: p.label, type: "planet", resources: {}, layer: layer, gpu: false, tiles: counts };
+            var total = 4 * R * R;
+            var legend = Object.keys(counts).sort(function (a, b) { return counts[b].count - counts[a].count; })
+              .map(function (n) {
+                var t = counts[n];
+                return '<span class="res-chip" title="' + esc(n) + '"><span style="display:inline-block;width:10px;height:10px;' +
+                  "border-radius:2px;margin-right:4px;background:rgb(" + t.color.join(",") + ')"></span>' + esc(n) +
+                  " <strong>" + (100 * t.count / total).toFixed(1) + "%</strong></span>";
+              }).join(" ");
+            els.res.innerHTML = legend + ' <span class="hint">· ' + (2 * R) + "×" + (2 * R) + " tiles · " +
+              pool.length + " workers · " + window.__SURF_MS__ + " ms</span>";
+            status(p.label + " · r" + radius + " · tiles");
+          })
+          .catch(function (e) {
+            if (failed) return;
+            failed = true;
+            fail(e, "error");
+          });
+      });
       return;
     }
 
@@ -707,8 +694,8 @@
     els.layer.addEventListener("change", run);
     if (kind === "sa") {
       var p = PLANETS[planetKey];
-      els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet terrain (sa.wasm).</span>";
-      els.badge.textContent = p.ok ? "planet" : "pending";
+      els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet tiles, generated from the game's map-gen data (sa.wasm).</span>";
+      els.badge.textContent = "planet";
     } else if (kind === "nauvis") {
       var vanilla = MOD !== "se" && MOD !== "k2se";
       els.meta.innerHTML = "🌍 Nauvis <span class=\"hint\">· seed " + SEED + " · game-default map settings" +

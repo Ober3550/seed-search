@@ -1,253 +1,172 @@
 # Space Age (Factorio 2.0) Surface Generation
 
-Goal: generate the five Space Age DLC planet surfaces — **Nauvis, Vulcanus,
-Fulgora, Gleba, Aquilo** — with the same pipeline the SE surface generator
-already uses (Zig → `surface.wasm` → browser /analyze panel), bit-identical to
-what the game produces.
+A general, data-driven surface generator: it reads the same map-generation data
+the game does (noise expressions, noise functions, tile autoplace expressions,
+planet `map_gen_settings`) and runs it through one engine. There is no
+per-planet code — Fulgora, Vulcanus, Gleba and Aquilo all go through the same
+path, and so would a mod's planets after regenerating the data file.
 
-Target game: `2.0.77` (mac-arm64) installed at
-`/Applications/factorio.app/Contents/data` (base + core + space-age + SE 0.7.57
-+ K2). The ghidra project (`ghidra/`) was built from an earlier 2.0.x binary —
-symbols/patterns transfer, addresses shift.
+Target game: `2.0.77` (mac-arm64) at `/Applications/factorio.app`.
 
-## TL;DR — why this is easier than SE was
+## Status
 
-SE's ore autoplace had to be reverse-engineered from the SE mod's Lua + the
-engine's `all_patches` op (hardcoded in `se_ore_placement.zig`). **In 2.0,
-almost everything is data**: the planet surfaces are defined by noise
-*expressions* in the game's Lua files, and even
-`resource_autoplace_all_patches` is now a data-defined noise-function in
-`core/prototypes/noise-functions.lua`. The engine primitive set is small; the
-rest is expression composition.
+Tile maps, checked against the live game at map seed 341 (2,401 sample points
+over ±480 tiles per planet; Fulgora additionally against a full 785,456-tile
+in-game dump of the r500 disk):
 
-So the core new component is a **generic noise-expression parser + evaluator**,
-plus the handful of 2.0 engine primitives we don't have yet. Everything else —
-terrain, tiles, resources, starting areas — is data.
+| Planet   | Tiles matching the game  | Notes                                    |
+| -------- | ------------------------ | ---------------------------------------- |
+| Aquilo   | 99.7%                    |                                          |
+| Fulgora  | 98.9% (98.66% full r500) |                                          |
+| Gleba    | 97.0%                    |                                          |
+| Vulcanus | 95.5%                    |                                          |
+| Nauvis   | not through this engine  | needs `expression_in_range`, lake points |
 
-## What's already here and reusable
+Every named expression the tiles depend on matches `calculate_tile_properties`
+to float rounding (worst case a few parts in 10^5 on values in the hundreds).
+The remaining tile differences sit on the borders between tile regions: the
+game runs a tile-transition correction pass after the per-tile competition
+(the same pass the SE generator skips), which this generator does not model.
+A dense in-game dump confirms the game's own expression values predict its
+tiles at the same ~96% on Vulcanus.
 
-| Piece | Where | Status |
-| ----- | ----- | ------ |
-| Triple-LFSR RNG | `surface_generator/src/rng.zig` | bit-verified vs 1.1/2.0 |
-| `basis_noise` (perlin/simplex) | `noise.zig` `BasisNoiseGen` | verified |
-| `multioctave_noise` | `noise.zig` `multioctaveNoise*` | verified |
-| `quick_multioctave_noise` | `terrain.zig` `qmoGens` | verified |
-| `random_penalty` | `noise.zig` `randomPenalty*` | verified |
-| `spot_noise` (spot fields) | `noise.zig` `SpotNoiseField` | verified |
-| Noise VM RE notes (op table, ctor addrs) | `surface_generator/docs/noise-system.md` | 2.0-era binary, addresses stale |
-| WASM build + browser panel + worker + e2e | `se_wasm.zig`, `public/*`, `e2e/` | reuse as-is |
-| Ground-truth harness (headless game, probes) | `verifier/`, `calibration/` | extend to 2.0 planets |
+Speed: about 2 µs per tile native, 1.6–5.7 µs in wasm — an r500 disk renders
+in 0.2–2.2 s in the browser across the worker pool.
 
-## The noise expression DSL
+Not done yet:
 
-Expressions are Lua strings evaluated by the engine's compiled expression VM.
-Grammar features seen in the data:
+- Resources and other entities. Their autoplace expressions are in the data
+  file and compile (`sa_main <planet> check`), but there is no placement pass.
+- Cliffs, decoratives.
+- The tile-transition correction pass.
+- Nauvis through this engine (it still uses the dedicated generator):
+  `expression_in_range` and `starting_lake_positions` are not implemented.
+- `random_penalty` batching. The op draws from one RNG stream per evaluated
+  batch; tile generation's batch shape is not pinned, so expressions that use
+  it per tile (Vulcanus tungsten probability) do not match yet. No tile map
+  depends on it except through `vulcanus_metal_tile`.
 
-- Table-style calls: `multioctave_noise{x = x, y = y, seed0 = map_seed, seed1 = 'name', octaves = 4, input_scale = 1/9}`
-- Paren calls: `max(a, b)`, `min(...)`, `clamp(v, lo, hi)`, `abs(x)`, `if(cond, a, b)`
-- Arithmetic: `+ - * / % ^`, comparisons `> < >= <= ==`, `and or not`
-- Variables: `x`, `y`, `map_seed`, `x_from_start`, `y_from_start`, `starting_area`
-- Control lookups: `control:iron-ore:frequency` (also `:size`, `:richness`, `:bias`)
-- References: `var('name')`, bare names of other expressions
-- String seeds: `seed1 = 'fulgora_wobble_x'` (hashed to a number)
-- `\z` line continuations (already resolved by Lua when we extract)
-- `local_expressions`: per-function local names
-
-## Engine primitives needed (vs what noise.zig has)
-
-Builtins the planet expressions call **directly** (everything else in
-`noise-functions.json` is composition):
-
-| Primitive | noise.zig today |
-| --------- | --------------- |
-| `basis_noise` | ✅ `basisNoise` |
-| `multioctave_noise` | ✅ |
-| `quick_multioctave_noise` | ✅ |
-| `random_penalty` | ✅ |
-| `spot_noise` | ✅ `SpotNoiseField` |
-| `amplitude_corrected_multioctave_noise` | ⚠️ data-defined in core (uses `multioctave_noise`+`basis_noise`); verify matches `variablePersistence` |
-| **`voronoi_cell_id`** | ❌ NEW — grid cell ID with jitter (Fulgora) |
-| **`voronoi_pyramid_noise`** | ❌ NEW — pyramid cells (Fulgora/Gleba) |
-| **`voronoi_spot_noise`** | ❌ NEW — spot cones per cell (Fulgora) |
-| **`voronoi_facet_noise`** | ❌ NEW — facet/edge noise (Fulgora) |
-| **`terrace`** | ❌ NEW — quantize into steps (Vulcanus?) |
-
-`voronoi_*`/`terrace` are the only engine RE work. The older binary's
-`ComplexExpression<VoronoiNoise, 2, 5, 0>` ctor (`0x10015eca60`) and `Terrace,
-2, 2, 0` are the starting points — re-import `ghidra/factorio-arm64` from the
-current 2.0.77 binary, diff the op registration table, and check how the 2.0
-data-stage maps `voronoi_cell_id{grid_size, distance_type, jitter}` etc. to ops.
-Verify against in-game probes (`calculate_tile_properties`) rather than trusting
-the decompiler.
-
-## Data extraction (done — this repo)
-
-`scripts/extract-sa-data.lua` shims `data:extend` / `require` /
-`data.raw.*` and loads the pure-data game files under stock Lua (system
-`lua`; the repo's `runner/bin/lua` is Linux-only). Output lands in
-`surface_generator/sa-data/`:
-
-| File | Content |
-| ---- | ------- |
-| `noise-functions.json` | 41 helper functions (core + base + space-age), source expressions verbatim |
-| `expressions.json` | 351 named noise expressions (base + 4 planets) |
-| `planets.json` | 5 planet `map_gen_settings`: `property_expression_names`, `autoplace_controls`, `autoplace_settings` (tile/decorative/entity lists), `cliff_settings`, `territory_settings` (Vulcanus demolishers) |
-| `resource-autoplace.json` | direct `data.raw.resource.<name>.autoplace` overrides (fulgora scrap) |
-| `surfaces/<planet>.json` | per-surface config (split by `scripts/split-sa-surfaces.mjs`): map_gen_settings + the closure of noise functions/expressions the surface's property expressions reference |
-
-Regenerate with: `lua scripts/extract-sa-data.lua` then `node scripts/split-sa-surfaces.mjs` (override the game dir / out dir as args). Files must be re-run when the game updates (add the version to the header comment).
-
-### Not yet extracted (needs the lualib helper environment)
-
-The **tile / resource / decorative prototypes** (`base/prototypes/tile/*.lua`,
-`base/prototypes/resource/*.lua`, `space-age/prototypes/tile/*.lua`, …) define
-autoplace via `data:extend{type="tile", ...}` with
-`autoplace = { probability_expression = "..." }`, but their files call lualib
-helpers (`tile_variations_template_with_transitions`, …). Two options:
-1. Load them through the shim with the helper functions shimmed too (more
-   shim work, gets every field: `layer`, `map_color`, `collision_mask`, …).
-2. Extract only the fields the generator needs via a targeted Lua script that
-   `require`s the lualib (`core/lualib/...`) for real — those are pure Lua.
-
-For rendering we need each tile's **map_color**; for placement its
-**probability_expression**, **layer**, **collision_mask**. Resource prototypes
-similarly need their autoplace (or the `property_expression_names` from
-`planets.json` + `resource-autoplace.json` overrides are enough for the SA
-planets, since vanilla resources are wired via the lualib shown below).
-
-## Architecture
+## Pipeline
 
 ```
-surface_generator/
-├── noise.zig            + voronoi_cell_id/pyramid/spot/facet, terrace
-├── noise_expr.zig        NEW: expression parser + evaluator (compiled program)
-├── sa_data.zig           NEW: loads sa-data/*.json (embedded at build time)
-├── sa_planet.zig         NEW: planet driver (per-tile pipeline, like se_wasm)
-└── sa_wasm.zig           NEW: WASM entry, same output contract as se_wasm.zig
-                          (RGBA pixels + per-resource summary) → browser panel
+factorio --dump-data                      the game's own data stage (any mods)
+        │  scripts/sa-build-data.py
+        ▼
+surface_generator/src/sa_noise_data.json  expressions, functions, tiles, planets
+        │  @embedFile
+        ▼
+sa_data.zig      load definitions + planet wiring
+sa_expr.zig      parse the noise-expression DSL
+sa_program.zig   compile roots to one straight-line program; evaluate in batches
+sa_surface.zig   tile competition = argmax of tile:<name>:probability
+        │
+        ├─ sa_main.zig   native CLI (info / check / deps / probe / render)
+        └─ sa_wasm.zig   browser module → space_explorer_gui /surface page
 ```
 
-`noise_expr.zig` should mirror the game's own architecture (documented in
-`docs/noise-system.md`): parse the expression into a tree, compile to a flat
-op program with register caching, evaluate per (x, y, seed, controls). Bit-exact
-reproduction is the target; the game's `calculate_tile_properties` / chunk dumps
-are the oracle.
+Regenerate the data after a game update or to target a different mod set:
 
-Per-tile pipeline per planet (mirrors the game):
+```sh
+python3 scripts/sa-build-data.py            # runs factorio --dump-data
+python3 scripts/sa-build-data.py --mods base,quality,elevated-rails,space-age
+node install.mjs                            # rebuilds sa.wasm
+```
 
-1. **Terrain properties** — evaluate `property_expression_names.{elevation,
-   moisture, aux, temperature}` (+ `cliffiness`/`cliff_elevation` for cliffs).
-2. **Tile placement** — evaluate every tile's `probability_expression`
-   (from the tile prototypes in `autoplace_settings.tile`), highest wins;
-   overlays respect tile `layer` ordering; starting area overrides via
-   `starting_area`/`starting_spot_at_angle`.
-3. **Resource placement** — per entity in `autoplace_settings.entity`:
-   `probability_expression` + `richness_expression` (from
-   `property_expression_names["entity:X:probability"]` or the prototype
-   autoplace); place where probability passes (per-tile RNG draw like the SE
-   pass). Controls from `autoplace_controls` (defaults from the map-gen
-   settings; the analyze page already has sliders for this).
-4. **Render** — tile map colors + resource overlay → RGBA (reuse the segen
-   renderer contract).
+### The data file
 
-Nauvis = base game, so its data comes from `base/prototypes/...` + the
-`planets.json` nauvis entry (mostly empty overrides — the defaults live in the
-prototypes, which is why the tile/resource extraction matters for P1).
+| Section       | Content                                                                                                                                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `expressions` | every named noise-expression, plus one entry per autoplaced prototype under the engine's property names: `tile:<name>:probability`, `entity:<name>:probability`, `entity:<name>:richness`, `decorative:<name>:probability` |
+| `functions`   | every noise-function                                                                                                                                                                                                       |
+| `tiles`       | layer and map colour of each autoplaced tile                                                                                                                                                                               |
+| `planets`     | per planet: `seed_offset`, `property_expression_names`, autoplace controls, cliff settings, and the tile / entity / decorative lists of its `autoplace_settings`                                                           |
 
-## Verification strategy
+### The engine (`sa_program.zig`)
 
-Extend the existing verifier harness (`verifier/` runs the headless game +
-dumps JSON via RCON). Per planet:
+Mirrors how the game compiles noise programs:
 
-1. `game.create_surface` with the planet's `map_gen_settings` at a fixed seed
-   (map exchange string), or probe the planet surface directly.
-2. Dump per-tile: `surface.find_tiles_filtered` / `get_tile` over a small
-   region, and per-entity: `surface.find_entities_filtered`.
-3. Probe noise fields with `surface.calculate_tile_properties('elevation'|…,
-   x, y)` for exact value comparison (like the SE `--zone-field-probe` path).
-4. Compare against the Zig output — tile identities and resource
-   positions/amounts must match exactly.
+- **Lowering.** Named expressions and function calls are inlined into a DAG of
+  primitive ops. Scoping follows the data stage: parameters and local
+  expressions / local functions of the current definition, then the surface's
+  `property_expression_names` overrides (so a bare `elevation` inside
+  `water_base` means the planet's elevation), then engine variables, then
+  global definitions. Arguments are bound lazily in the caller's scope.
+- **Sharing.** Identical sub-expressions are hash-consed, so the elevation
+  chain every tile probability references is evaluated once per position.
+- **Constant folding.** Anything that depends only on the seed and controls
+  folds at compile time, which is how noise-op parameters (seeds, octaves,
+  grid sizes) become prebuilt generators. A program is compiled per
+  (planet, seed, controls).
+- **Evaluation.** Straight-line, over a column of positions, f32 registers.
+- **Position contexts.** `multisample(expr, dx, dy)` lowers `expr` again with
+  `x`/`y` shifted. `spot_noise` evaluates its density / quantity / radius /
+  favorability sub-expressions at a region's candidate points, so those are
+  compiled into their own sub-program (which may itself contain spot noise).
 
-The e2e test (`e2e/analyze-surface.test.mjs`) extends to click a planet and
-cross-check against the native binary's output for that planet (same pattern as
-the current segen cross-check).
+Ops: arithmetic, comparisons, `min`/`max` (n-ary), `clamp`, `if`, `&`, `sin`,
+`cos`, `sqrt`, `floor`, `ceil`, `exp`, `log2`, `pow`, `var`, `basis_noise`,
+`multioctave_noise`, `quick_multioctave_noise`,
+`variable_persistence_multioctave_noise`, `random_penalty`, the four
+`voronoi_*` outputs, `terrace`, `spot_noise`, `multisample`,
+`distance_from_nearest_point[_x|_y]` (starting positions only).
 
-## Phased plan
+## Facts pinned against the live game
 
-- **P0 — expression engine.** `noise_expr.zig`: parser + evaluator over the
-  existing verified primitives; validate by evaluating expressions that reduce
-  to primitives already verified (e.g. a `multioctave_noise{...}` expression
-  vs `noise.zig`'s output, `lerp`, `slider_to_linear`, `spot_at_angle`). Add
-  `voronoi_*` + `terrace` to `noise.zig`; RE from the current binary; verify
-  each against in-game probes on Nauvis.
-- **P1 — Nauvis.** Tile + resource prototype extraction; full vanilla 2.0
-  surface (grass/dirt/sand/water + iron/copper/coal/stone/uranium/crude-oil +
-  starting area). Exercises the whole pipeline on the simplest planet.
-- **P2 — Vulcanus + Aquilo.** Lava/volcanic tiles + tungsten/coal/calcite +
-  sulfuric acid geysers; frozen ocean + ammonia/lithium. Simple expression
-  sets (359–923 lines).
-- **P3 — Fulgora + Gleba.** Voronoi island terrain, oil ocean, scrap/ruins,
-  holmium-via-scrap; swamp/soil + agriculture resources. Most complex
-  (601–1271 lines), needs the voronoi ops.
-- **P4 — Integration.** Planet selector on the analyze page (browser WASM),
-  controls (frequency/size/richness sliders), e2e cross-checks per planet.
+- **Planet seeds.** A planet's surface seed is `map_seed + crc32(planet name)`
+  (mod 2^32); Nauvis uses the map seed. Fulgora at map seed 341 is
+  2967579351. Comparing a planet at the raw map seed compares two unrelated
+  maps — this was the cause of the earlier 37% Fulgora agreement.
+- **Sampling position.** Tile generation evaluates a tile at its integer
+  coordinate (top-left corner), not its centre.
+- **Ties.** Equal probabilities are common by design (Gleba's clamped range
+  selectors). The first tile in prototype order — `(order, name)` — wins.
+- **Constants.** Constant sub-expressions fold in f32, not double: the
+  starting-area angle `map_seed / 360 / 180 * pi` only reproduces the game's
+  sin/cos when computed in f32.
+- **Multioctave noise.** The octave normalisation is
+  `sqrt((q - 1) / (exp2f(log2(q) * n) - 1))` with `q = 1/persistence²` and the
+  engine's *approximate* `Math::log2` / `Math::exp2f`, about 1 part in 10^4
+  away from the ideal RMS value. `noise.exact` ports the kernels
+  operation-for-operation from `ghidra/export/terrain_noise.c`.
+- **Voronoi `grid_size`** truncates to an integer (Fulgora's `175 / 8`).
+- **Spot noise.** Default candidate count 256, default spacing
+  `sqrt(region² / points) / 2`, `hard_region_target_quantity` defaults true;
+  candidates are stable-sorted by favorability; spot placement is f32 with
+  the engine's approximate cube root.
+- **Two engine paths.** Ops whose inputs are the raw position registers take
+  a rectangle fast path during map generation; `calculate_tile_properties`
+  (the oracle) takes the vector path. They round differently in the last
+  bits. The generator implements the vector path.
 
-## Key files in the game data
+## Verifying
 
-| Path (under `<data>`) | Content |
-| --------------------- | ------- |
-| `core/prototypes/noise-functions.lua` | engine helper functions (incl. `resource_autoplace_all_patches`!) |
-| `core/lualib/resource-autoplace.lua` | how vanilla resources wire controls → expressions |
-| `base/prototypes/noise-expressions.lua` | Nauvis terrain/tile/resource expressions |
-| `base/prototypes/planet/planet-map-gen.lua` | Nauvis map_gen_settings |
-| `space-age/prototypes/planet/planet-map-gen.lua` | 4 planet map_gen_settings |
-| `space-age/prototypes/planet/planet-{vulcanus,gleba,fulgora,aquilo}-map-gen.lua` | per-planet expressions + resource autoplace overrides |
-| `base/prototypes/tile/tiles.lua`, `space-age/prototypes/tile/tiles-*.lua` | tile prototypes (autoplace, layer, map_color) |
-| `base/prototypes/resource/*.lua` | resource prototypes |
+`calibration/sa-probe/probe_surface.py` boots a headless game, creates the
+planet's surface from its prototype, and dumps any named expressions plus the
+generated tiles over a grid. `sa_main <planet> probe` writes the same layout,
+and `diff_surface.py` compares them expression by expression.
 
-## RE status (2026-09-02)
+```sh
+cd surface_generator && zig build
+./zig-out/bin/sa_main fulgora deps | sort > /tmp/names.txt
+python3 ../calibration/sa-probe/probe_surface.py fulgora 341 -480:480:-480:480:20 \
+    /tmp/game.json --tiles --names-file /tmp/names.txt
+./zig-out/bin/sa_main fulgora probe 341 -480:480:-480:480:20 /tmp/ours.json \
+    --tiles $(cat /tmp/names.txt)
+python3 ../calibration/sa-probe/diff_surface.py /tmp/game.json /tmp/ours.json
+```
 
-**Voronoi + Terrace are reverse-engineered** — the arm64 slice ships full C++
-symbols (that's why the prior SE work was so productive). Key findings (details
-+ symbol addresses in `docs/noise-system.md`, decompiled C in
-`ghidra/export/voronoi.c` / `ghidra/export/terrace.c`, re-export script
-`ghidra/scripts/ExportVoronoiTerrace.java`):
+`zig build test` runs the regression vectors in `src/sa_test.zig` (game tiles
+and elevation values for all four planets) without needing the game.
 
-- `NoiseOperations::VoronoiNoise` is one op with 4 distance types
-  (chebyshev=0 manhattan=1 euclidean=2 minkowski3=3) and 4 outputs: nearest
-  distance, d1−d0, bisector (pyramid) distance, and the winning cell's hash id.
-  `voronoi_spot_noise`=out A, `voronoi_facet_noise`=out B,
-  `voronoi_pyramid_noise`=out C (throws for minkowski3), `voronoi_cell_id`=out D.
-- **Hash pinned + ported + verified** (2026-09-02, this branch): see
-  `surface_generator/docs/noise-system.md` for the exact u32 sequence (raw
-  coordinate into a fold+mix; row axis through ror16; per-use salts
-  0x7ed55d16/0x6d17/0x7d18 — the salts step by 0x1001, not +1/+2). Ported to
-  `noise.zig` (`voronoiMix/voronoiCellM/voronoiSaltF32/voronoiPoint` +
-  `VoronoiNoise.evalAt`, `terrace`). Verified **exact (f32)** against the live
-  2.0.77 game via `calibration/sa-probe` (registered-noise-expression probe
-  harness + calculate_tile_properties oracle): all four distance types (incl.
-  minkowski3's engine fast log2/exp2f), jitter 0..1, grids 10..384, numeric +
-  crc32(name) seeds, all four outputs — ~200k in-game samples across every
-  config the four SA planets use (fulgora islands/roads/structure, aquilo
-  cracks, vulcanus demolisher, gleba terraces).
-- `Terrace` (inputs value+blend, consts offset+step):
-  out = offset + step·(⌊(v−offset)/step⌋ + remap(frac, blend)); blend 0 =
-  identity, 1 = pure quantization to step boundaries; integer part FLOORS.
+Other tools: `sa_main <planet> render <seed> <radius> out.png`,
+`sa_main <planet> check` (what compiles), `sa_main <planet> info`.
 
-**Expression engine WIP (2026-09-02, feat/universe-wasm)**: `noise_expr.zig`
-is in progress as `sa_expr.zig` (DSL lexer/parser/evaluator over the embedded
-per-planet closures) + `sa_json.zig` (tiny JSON reader) + `sa_data.zig`/
-`sa_embedded.zig` (per-planet closures regenerated from sa-data via
-`scripts/gen-sa-embed.mjs`) + `sa_main.zig` (native CLI) +
-`calibration/sa-probe/probe_planet.py` (live-game property probes). Verified
-bit-exact against the live game so far: lerp/slider/controls, multioctave
-wobble+basis, voronoi cells, coastline, wobble mask; **fulgora_elevation
-mismatches remain** — the engine's voronoi *pyramid* output for non-euclidean
-metrics (manhattan is what fulgora uses) is metric-specific and only the
-euclidean pyramid formula was pinned (see calibration/sa-probe + the
-`ghidra/export/manhattan-asm.txt` block @0x1016141a0 to decode next).
+## Reverse-engineering references
 
-**Still to do**: pin the non-euclidean (manhattan/chebyshev) pyramid in the
-runInternal templates; then evaluate each planet's elevation to bit-exactness;
-extract tile/resource prototypes + map colors (needs the lualib helper
-environment); `sa_wasm.zig` + GUI planet terrain panel.
+- `surface_generator/docs/noise-system.md` — noise VM notes, voronoi hash.
+- `ghidra/export/terrain_noise.c`, `multioctave_core.c` — basis / multioctave
+  / quick / variable-persistence kernels.
+- `ghidra/export/spot_noise.c` — spot list generation, placement, op run.
+- `ghidra/export/voronoi.c`, `terrace.c` — voronoi and terrace ops.
+- `calibration/sa-probe/README.md` — the per-op probe harness used to pin the
+  voronoi and terrace ports.

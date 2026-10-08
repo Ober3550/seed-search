@@ -22,14 +22,14 @@
   // Space Age / base surfaces — static row descriptors (the SA data stage has
   // no universe generator; these five surfaces always exist for any seed).
   // kind: "se" = SE universe zone; "surface-nauvis" = Nauvis via the game's
-  // default map-gen path (terrain + ores); "sa" = SA planet terrain (ok when
-  // the engine has every op the planet's expressions need).
+  // default map-gen path (terrain + ores); "sa" = SA planet tile map from the
+  // data-driven generator (sa.wasm).
   var SA_SURFACES = [
     { n: "Nauvis",   icon: "🌍", t: "planet", water: "some", enemy: "some", kind: "surface-nauvis" },
-    { n: "Vulcanus", icon: "🌋", t: "planet", water: "none", enemy: "yes",  kind: "sa", planet: "vulcanus", ok: false, why: "needs the multisample autoplace op (not ported yet)" },
+    { n: "Vulcanus", icon: "🌋", t: "planet", water: "none", enemy: "yes",  kind: "sa", planet: "vulcanus", ok: true },
     { n: "Fulgora",  icon: "⚡", t: "planet", water: "none", enemy: "none", kind: "sa", planet: "fulgora",  ok: true },
-    { n: "Gleba",    icon: "🍄", t: "planet", water: "some", enemy: "yes",  kind: "sa", planet: "gleba",    ok: false, why: "needs spot_noise sub-expression evaluation (not ported yet)" },
-    { n: "Aquilo",   icon: "🧊", t: "planet", water: "none", enemy: "none", kind: "sa", planet: "aquilo",   ok: false, why: "needs spot_noise sub-expression evaluation (not ported yet)" }
+    { n: "Gleba",    icon: "🍄", t: "planet", water: "some", enemy: "yes",  kind: "sa", planet: "gleba",    ok: true },
+    { n: "Aquilo",   icon: "🧊", t: "planet", water: "none", enemy: "none", kind: "sa", planet: "aquilo",   ok: true }
   ];
 
   function listSurfaces() {

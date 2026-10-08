@@ -1,91 +1,204 @@
-//! sa_main.zig — native CLI for the Space Age planet surface generator (P0:
-//! property-expression evaluation). Validates the expression engine against
-//! live-game probes tile by tile before the WASM/GUI integration.
+//! sa_main.zig — native CLI for the data-driven planet surface generator.
 //!
-//! Usage:
-//!   sa_main <planet> <property|entry> <x0> <y0> <x1> <y1> [step] [seed] <out>
-//!     planet   = vulcanus|fulgora|gleba|aquilo
-//!     property = map-gen property key ("elevation", "moisture", "aux", …) or
-//!                a closure entry name
-//!     out      = file to write "x y value" lines (%.9g)
-//!   sa_main <planet> --names
+//!   sa_main <planet> info
+//!       planet wiring (seed offset, property names, tiles, controls)
+//!   sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles]
+//!       evaluate named expressions (and/or the winning tiles) over a grid;
+//!       same JSON layout as calibration/sa-probe/probe_surface.py so the two
+//!       can be diffed (calibration/sa-probe/diff_surface.py)
+//!   sa_main <planet> render <map-seed> <radius> <out.png>
+//!       tile map, one tile per pixel
+//!   sa_main <planet> deps
+//!       names of every expression the planet's tiles depend on
+//!   sa_main <planet> check
+//!       compile every expression the planet's tiles/properties need and
+//!       report what is not supported
+//!
+//! `map-seed` is the MAP seed; the planet's surface-seed offset is applied
+//! internally.
 const std = @import("std");
-const sa_data = @import("sa_data.zig");
-const sa_expr = @import("sa_expr.zig");
+const sg = @import("surface_generator");
+const sa_data = sg.sa_data;
+const prog = sg.sa_program;
+const surface = sg.sa_surface;
+const png = sg.png;
 
-fn ctrlLookup(_: *const anyopaque, _: []const u8, field: []const u8) f64 {
-    // Default map-gen autoplace controls: frequency/size/richness = 1, bias = 0.
-    return if (std.mem.eql(u8, field, "bias")) 0.0 else 1.0;
+fn usage() void {
+    std.debug.print(
+        \\usage: sa_main <planet> info
+        \\       sa_main <planet> probe <map-seed> <x0:x1:y0:y1:step> <out.json> [names...] [--tiles]
+        \\       sa_main <planet> render <map-seed> <radius> <out.png>
+        \\       sa_main <planet> check
+        \\
+    , .{});
 }
-const defaultControls = sa_expr.Controls{ .lookup = ctrlLookup };
+
+fn writeFile(init: std.process.Init, path: []const u8, bytes: []const u8) !void {
+    const file = try std.Io.Dir.createFile(.cwd(), init.io, path, .{});
+    defer file.close(init.io);
+    try file.writePositionalAll(init.io, bytes, 0);
+}
 
 pub fn main(init: std.process.Init) !void {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
     const args = try init.minimal.args.toSlice(a);
+    if (args.len < 3) return usage();
 
-    if (args.len < 2) {
-        std.debug.print("usage: sa_main <planet> <property|x0 y0 x1 y1> ... | --names <planet>\n", .{});
-        return;
-    }
-    const planetName: sa_data.PlanetName = blk: {
-        if (std.mem.eql(u8, args[1], "vulcanus")) break :blk .vulcanus;
-        if (std.mem.eql(u8, args[1], "fulgora")) break :blk .fulgora;
-        if (std.mem.eql(u8, args[1], "gleba")) break :blk .gleba;
-        if (std.mem.eql(u8, args[1], "aquilo")) break :blk .aquilo;
-        if (std.mem.eql(u8, args[1], "nauvis")) break :blk .nauvis;
-        std.debug.print("unknown planet {s}\n", .{args[1]});
-        return;
-    };
-    const planet = try sa_data.load(a, planetName);
-    const closure = &planet.closure;
-
-    if (args.len >= 3 and std.mem.eql(u8, args[2], "--names")) {
-        std.debug.print("== {s}: {d} closure entries, property names:\n", .{ planetName.asStr(), closure.entries.len });
-        for (planet.properties) |p| std.debug.print("   {s} → {s}\n", .{ p.key, p.entry });
-        std.debug.print("controls: ", .{});
-        for (planet.controls) |c| std.debug.print("{s} ", .{c});
+    const data = try sa_data.load(a);
+    const planet = data.planet(args[1]) orelse {
+        std.debug.print("unknown planet '{s}'; known:", .{args[1]});
+        for (data.planets) |p| std.debug.print(" {s}", .{p.name});
         std.debug.print("\n", .{});
         return;
-    }
-    if (args.len < 9) {
-        std.debug.print("usage: sa_main <planet> <property> <x0> <y0> <x1> <y1> <step> <seed> <out>\n", .{});
-        return;
-    }
-    const property = args[2];
-    const entryName = planet.prop(property) orelse blk: {
-        if (closure.find(args[2]) != null) break :blk args[2];
-        std.debug.print("no property/entry {s}\n", .{property});
-        return;
     };
-    const x0 = try std.fmt.parseFloat(f64, args[3]);
-    const y0 = try std.fmt.parseFloat(f64, args[4]);
-    const x1 = try std.fmt.parseFloat(f64, args[5]);
-    const y1 = try std.fmt.parseFloat(f64, args[6]);
-    const step: i64 = try std.fmt.parseInt(i64, args[7], 10);
-    const seed: u32 = try std.fmt.parseInt(u32, args[8], 10);
-    const outPath = args[9];
+    const cmd = args[2];
 
-    var buf: std.ArrayList(u8) = .empty;
-    var line: [64]u8 = undefined;
-    var xi: i64 = @intFromFloat(x0);
-    while (@as(f64, @floatFromInt(xi)) <= x1) : (xi += step) {
-        var yi: i64 = @intFromFloat(y0);
-        while (@as(f64, @floatFromInt(yi)) <= y1) : (yi += step) {
-            const x: f64 = @floatFromInt(xi);
-            const y: f64 = @floatFromInt(yi);
-            const s = sa_expr.Scalars{ .x = x, .y = y, .seed = seed, .x_from_start = x, .y_from_start = y };
-            const v = sa_expr.evalRoot(closure, s, defaultControls, a, entryName) catch |e| {
-                std.debug.print("eval fail at ({d},{d}) {s}: {s}\n", .{ xi, yi, entryName, @errorName(e) });
-                return;
-            };
-            const n = (try std.fmt.bufPrint(&line, "{d} {d} {d:.9}\n", .{ xi, yi, v })).len;
-            try buf.appendSlice(a, line[0..n]);
-        }
+    if (std.mem.eql(u8, cmd, "info")) {
+        std.debug.print("{s} (game {s}): seed offset {d}\n", .{ planet.name, data.game_version, planet.seed_offset });
+        for (planet.props) |p| switch (p.value) {
+            .src => |s| std.debug.print("  {s} -> {s}\n", .{ p.key, s }),
+            .num => |n| std.debug.print("  {s} -> {d}\n", .{ p.key, n }),
+        };
+        std.debug.print("controls:", .{});
+        for (planet.controls) |c| std.debug.print(" {s}", .{c});
+        std.debug.print("\ntiles:\n", .{});
+        for (planet.tiles) |t| std.debug.print("  {d:3} {s}\n", .{ t.layer, t.name });
+        return;
     }
-    const file = try std.Io.Dir.createFile(.cwd(), init.io, outPath, .{});
-    defer file.close(init.io);
-    try file.writePositionalAll(init.io, buf.items, 0);
-    std.debug.print("# wrote {s} ({d} bytes)\n", .{ outPath, buf.items.len });
+
+    if (std.mem.eql(u8, cmd, "check")) {
+        var bad: usize = 0;
+        var names: std.ArrayList([]const u8) = .empty;
+        for (planet.tiles) |t| try names.append(a, try std.fmt.allocPrint(a, "tile:{s}:probability", .{t.name}));
+        for (planet.entities) |e| {
+            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e}));
+            const rich = try std.fmt.allocPrint(a, "entity:{s}:richness", .{e});
+            if (data.def(rich) != null) try names.append(a, rich);
+        }
+        for ([_][]const u8{ "elevation", "moisture", "aux", "temperature", "cliffiness", "cliff_elevation" }) |p| try names.append(a, p);
+        for (names.items) |nm| {
+            var c = try prog.Compiler.init(a, &data, planet, 0, .{});
+            if (c.root(nm)) |_| {
+                std.debug.print("  ok   {s} ({d} ops)\n", .{ nm, c.insts.items.len });
+            } else |e| {
+                bad += 1;
+                std.debug.print("  FAIL {s}: {s}: {s}\n", .{ nm, @errorName(e), c.errorMessage() });
+            }
+        }
+        std.debug.print("{s}: {d}/{d} roots compile\n", .{ planet.name, names.items.len - bad, names.items.len });
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "deps")) {
+        // every named expression the planet's tiles reach (for oracle probes)
+        var c = try prog.Compiler.init(a, &data, planet, 0, .{});
+        for (planet.tiles) |t| _ = c.root(try std.fmt.allocPrint(a, "tile:{s}:probability", .{t.name})) catch {};
+        var out: std.ArrayList(u8) = .empty;
+        var it = c.globals.keyIterator();
+        while (it.next()) |k| {
+            const def: *const sa_data.Def = @ptrFromInt(k.def);
+            if (k.ctx == 0 and std.mem.indexOfScalar(u8, def.name, ':') == null) try out.print(a, "{s}\n", .{def.name});
+        }
+        try std.Io.File.stdout().writeStreamingAll(init.io, out.items);
+        return;
+    }
+
+    if (args.len < 6) return usage();
+    const map_seed = try std.fmt.parseInt(u32, args[3], 10);
+
+    if (std.mem.eql(u8, cmd, "render")) {
+        const radius = try std.fmt.parseInt(i32, args[4], 10);
+        var msg: []const u8 = "";
+        var s = surface.Surface.init(a, &data, planet, map_seed, .{}, &msg) catch |e| {
+            std.debug.print("cannot compile {s}: {s}: {s}\n", .{ planet.name, @errorName(e), msg });
+            return;
+        };
+        const w: usize = @intCast(2 * radius);
+        const rgba = try a.alloc(u8, w * w * 4);
+        var timer = std.Io.Clock.Timestamp.now(init.io, .awake);
+        try s.renderRgba(a, -radius, -radius, w, w, rgba);
+        const ns = timer.untilNow(init.io).raw.toNanoseconds();
+        const bytes = try png.encodeRgba(a, @intCast(w), @intCast(w), rgba);
+        try writeFile(init, args[5], bytes);
+        std.debug.print("{s}: {d}x{d} tiles, {d} ops, {d} ms ({d:.2} us/tile) -> {s}\n", .{
+            planet.name,                                                     w,       w, s.program.insts.len,
+            @divTrunc(ns, 1_000_000),                                        @as(f64, @floatFromInt(ns)) / 1000.0 / @as(f64, @floatFromInt(w * w)),
+            args[5],
+        });
+        return;
+    }
+
+    if (std.mem.eql(u8, cmd, "probe")) {
+        var it = std.mem.splitScalar(u8, args[4], ':');
+        var g: [5]i32 = undefined;
+        for (&g) |*v| v.* = try std.fmt.parseInt(i32, it.next() orelse return usage(), 10);
+        var want_tiles = false;
+        var names: std.ArrayList([]const u8) = .empty;
+        for (args[6..]) |n| {
+            if (std.mem.eql(u8, n, "--tiles")) want_tiles = true else try names.append(a, n);
+        }
+        var out: std.ArrayList(u8) = .empty;
+        try out.print(a, "{{\"planet\":\"{s}\",\"seed\":{d},\"grid\":[{d},{d},{d},{d},{d}],\"values\":{{", .{ planet.name, map_seed, g[0], g[1], g[2], g[3], g[4] });
+        var errors: std.ArrayList(u8) = .empty;
+        var first = true;
+        for (names.items) |nm| {
+            var c = try prog.Compiler.init(a, &data, planet, map_seed, .{});
+            const r = c.root(nm) catch |e| {
+                if (errors.items.len > 0) try errors.append(a, ',');
+                try errors.print(a, "\"{s}\":\"{s}: {s}\"", .{ nm, @errorName(e), c.errorMessage() });
+                continue;
+            };
+            const p = try c.finish(&.{r});
+            var ws = try p.workspace(a);
+            if (!first) try out.append(a, ',');
+            first = false;
+            try out.print(a, "\"{s}\":[", .{nm});
+            var k: usize = 0;
+            var y = g[2];
+            while (y <= g[3]) : (y += g[4]) {
+                var x = g[0];
+                while (x <= g[1]) : (x += g[4]) {
+                    const xs = [1]f32{@as(f32, @floatFromInt(x)) + surface.SAMPLE_OFFSET};
+                    const ys = [1]f32{@as(f32, @floatFromInt(y)) + surface.SAMPLE_OFFSET};
+                    p.eval(&ws, &xs, &ys);
+                    if (k > 0) try out.append(a, ',');
+                    k += 1;
+                    const v = p.out(&ws, 0)[0];
+                    if (std.math.isFinite(v)) try out.print(a, "{e}", .{v}) else try out.appendSlice(a, if (v > 0) "1e999" else if (v < 0) "-1e999" else "null");
+                }
+            }
+            try out.append(a, ']');
+        }
+        try out.append(a, '}');
+        if (want_tiles) {
+            var msg: []const u8 = "";
+            if (surface.Surface.init(a, &data, planet, map_seed, .{}, &msg)) |s0| {
+                var s = s0;
+                try out.appendSlice(a, ",\"tiles\":[");
+                var k: usize = 0;
+                var y = g[2];
+                while (y <= g[3]) : (y += g[4]) {
+                    var x = g[0];
+                    while (x <= g[1]) : (x += g[4]) {
+                        var t: [1]u16 = undefined;
+                        s.tileRow(x, y, &t);
+                        if (k > 0) try out.append(a, ',');
+                        k += 1;
+                        try out.print(a, "\"{s}\"", .{planet.tiles[t[0]].name});
+                    }
+                }
+                try out.append(a, ']');
+            } else |e| {
+                if (errors.items.len > 0) try errors.append(a, ',');
+                try errors.print(a, "\"tiles\":\"{s}: {s}\"", .{ @errorName(e), msg });
+            }
+        }
+        try out.print(a, ",\"errors\":{{{s}}}}}\n", .{errors.items});
+        try writeFile(init, args[5], out.items);
+        std.debug.print("wrote {s}\n", .{args[5]});
+        return;
+    }
+    usage();
 }
