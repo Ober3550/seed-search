@@ -13,10 +13,9 @@ mods are enabled) and keeps just the map-generation slice:
                   entity:<name>:probability / entity:<name>:richness
                   decorative:<name>:probability
   functions     every noise-function
-  tiles         layer + map colour of each autoplaced tile, and whether it
-                blocks resources
-  entities      type, autoplace order, map colour and footprint of each
-                autoplaced entity
+  tiles         layer, map colour and collision layers of each autoplaced tile
+  entities      type, autoplace order, map colour, footprint, collision
+                layers and tile restriction of each autoplaced entity
   planets       per planet: property_expression_names, autoplace controls,
                 cliff settings, its resources, and the tile/entity/decorative lists of its
                 autoplace_settings (tiles in prototype order: ties go to the first)
@@ -84,6 +83,7 @@ def noise_def(src, expr_key="expression"):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dump"); ap.add_argument("--mods", default=",".join(DEFAULT_MODS))
+    ap.add_argument("--out", default=str(OUT), help="output file (default: the embedded Space Age data file)")
     a = ap.parse_args()
     raw = json.loads(Path(a.dump).read_text()) if a.dump else dump_data(a.mods.split(","))
 
@@ -102,6 +102,7 @@ def main():
             by_name[kind][name] = (typ, p)
 
     tile_order = {n: (t.get("order", ""), n) for n, t in raw["tile"].items()}
+    default_masks = raw["utility-constants"]["default"]["default_collision_masks"]
     tiles, entities, planets = {}, {}, {}
     for pname, planet in raw["planet"].items():
         mgs = planet.get("map_gen_settings") or {}
@@ -143,13 +144,21 @@ def main():
                     layers = (p.get("collision_mask") or {}).get("layers") or {}
                     tiles[n] = {"layer": p.get("layer", 0), "color": rgb(p.get("map_color")),
                                 # resources collide with the "resource" layer
-                                "blocks_resource": bool(layers.get("resource"))}
+                                # collision layers: an entity cannot stand on a
+                                # tile that shares one with its own mask
+                                "layers": sorted(k for k, v in layers.items() if v)}
                 elif kind == "entity":
                     box = p.get("collision_box") or [[-0.1, -0.1], [0.1, 0.1]]
+                    mask = (p.get("collision_mask") or default_masks.get(typ) or {}).get("layers") or {}
                     entities[n] = {"type": typ, "control": ap_.get("control"),
                                    "order": ap_.get("order", ""), "color": rgb(p.get("map_color")),
                                    # footprint in tiles (ore 1, fluid patches 3)
                                    "size": max(1, math.ceil(max(box[1][0] - box[0][0], box[1][1] - box[0][1])))}
+                    # tiles the entity may stand on (absent = any)
+                    entities[n]["layers"] = sorted(k for k, v in mask.items() if v)
+                    restr = [t for t in (ap_.get("tile_restriction") or []) if isinstance(t, str)]
+                    if restr:
+                        entities[n]["tile_restriction"] = restr
             if kind == "tile":
                 # equal probabilities are common by design (Gleba's clamped
                 # range selectors); the engine then keeps the first tile in
@@ -165,9 +174,10 @@ def main():
     out = {"game_version": game_version(), "mods": a.mods.split(","),
            "planets": planets, "tiles": tiles, "entities": entities,
            "functions": functions, "expressions": expressions}
-    OUT.write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")
-    print(f"wrote {OUT.relative_to(ROOT)}: {len(expressions)} expressions, {len(functions)} functions, "
-          f"{len(tiles)} tiles, {len(planets)} planets ({OUT.stat().st_size // 1024} KB)")
+    out_path = Path(a.out).resolve()
+    out_path.write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")
+    print(f"wrote {out_path}: {len(expressions)} expressions, {len(functions)} functions, "
+          f"{len(tiles)} tiles, {len(planets)} planets ({out_path.stat().st_size // 1024} KB)")
     for n, c in planets.items():
         print(f"  {n:9s} tiles={len(c['tiles']):3d} entities={len(c['entities']):3d} seed_offset={c['seed_offset']}")
 

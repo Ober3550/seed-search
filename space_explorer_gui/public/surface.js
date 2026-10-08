@@ -403,8 +403,44 @@
   // chunk and costs more per tile, so the rect is split into chunk-aligned
   // cells across the pool and stitched back together - the union is identical
   // to one whole call.
+  // Fluid patches (oil wells and the like) are 3x3 entities but the generator
+  // reports one pixel each: grow every fluid-coloured pixel to its footprint.
+  // Done on the whole stitched image so a well on a cell edge is not clipped.
+  var FLUID_COLORS = [
+    [199, 51, 196],  // crude oil, base game
+    [255, 153, 0],   // crude oil, Space Exploration / Krastorio 2
+    [89, 127, 191],  // kr-mineral-water
+    [255, 127, 255]  // kr-imersite
+  ];
+  function growFluids(px, W, H) {
+    var wells = [];
+    for (var i = 0; i < px.length; i += 4) {
+      if (!px[i + 3]) continue;
+      for (var c = 0; c < FLUID_COLORS.length; c++) {
+        var f = FLUID_COLORS[c];
+        if (px[i] === f[0] && px[i + 1] === f[1] && px[i + 2] === f[2]) { wells.push(i >> 2, c); break; }
+      }
+    }
+    for (var k = 0; k < wells.length; k += 2) {
+      var wx = wells[k] % W, wy = (wells[k] - wx) / W, col = FLUID_COLORS[wells[k + 1]];
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          var nx = wx + dx, ny = wy + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          var j = (ny * W + nx) * 4;
+          px[j] = col[0]; px[j + 1] = col[1]; px[j + 2] = col[2]; px[j + 3] = 255;
+        }
+      }
+    }
+  }
+
   function orePass(req) {
-    if (!req.square) return sendToPool(req);
+    if (!req.square) {
+      return sendToPool(req).then(function (r) {
+        growFluids(r.pixels, r.summary.width, r.summary.height);
+        return r;
+      });
+    }
     var rc = req.rect, W = rc.x1 - rc.x0, H = rc.y1 - rc.y0, CELL = 256;
     var out = new Uint8Array(W * H * 4);
     var totals = {};
@@ -431,24 +467,7 @@
       }
     }
     return Promise.all(jobs).then(function () {
-      // an oil well is a 3x3 patch: grow each well's single pixel to its
-      // footprint (done here, after stitching, so wells on a cell edge are
-      // not clipped)
-      var wells = [];
-      for (var i = 0; i < out.length; i += 4) {
-        if (out[i + 3] && out[i] === 199 && out[i + 1] === 51 && out[i + 2] === 196) wells.push(i >> 2);
-      }
-      wells.forEach(function (k) {
-        var wx = k % W, wy = (k - wx) / W;
-        for (var dy = -1; dy <= 1; dy++) {
-          for (var dx = -1; dx <= 1; dx++) {
-            var nx = wx + dx, ny = wy + dy;
-            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-            var j = (ny * W + nx) * 4;
-            out[j] = 199; out[j + 1] = 51; out[j + 2] = 196; out[j + 3] = 255;
-          }
-        }
-      });
+      growFluids(out, W, H);
       Object.keys(totals).forEach(function (rn) {
         var v = totals[rn].amount;
         totals[rn].display = v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : String(v);

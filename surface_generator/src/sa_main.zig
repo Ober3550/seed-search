@@ -48,7 +48,12 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(a);
     if (args.len < 3) return usage();
 
-    const data = try sa_data.load(a);
+    // SA_DATA=<file>: use another data file from scripts/sa-build-data.py
+    // (e.g. built from a Space Exploration dump) instead of the embedded one
+    const data = if (init.environ_map.get("SA_DATA")) |path|
+        try sa_data.loadFrom(a, try std.Io.Dir.readFileAlloc(.cwd(), init.io, path, a, .unlimited))
+    else
+        try sa_data.load(a);
     const planet = data.planet(args[1]) orelse {
         std.debug.print("unknown planet '{s}'; known:", .{args[1]});
         for (data.planets) |p| std.debug.print(" {s}", .{p.name});
@@ -143,9 +148,31 @@ pub fn main(init: std.process.Init) !void {
         for (&g) |*v| v.* = try std.fmt.parseInt(i32, it.next() orelse return usage(), 10);
         var want_tiles = false;
         var want_entities = false;
+        var tiles_from: ?[]const u8 = null;
         var names: std.ArrayList([]const u8) = .empty;
         for (args[6..]) |n| {
-            if (std.mem.eql(u8, n, "--tiles")) want_tiles = true else if (std.mem.eql(u8, n, "--entities")) want_entities = true else try names.append(a, n);
+            if (std.mem.eql(u8, n, "--tiles")) want_tiles = true else if (std.mem.eql(u8, n, "--entities")) want_entities = true else if (std.mem.startsWith(u8, n, "--tiles-from=")) tiles_from = n["--tiles-from=".len..] else try names.append(a, n);
+        }
+        // --tiles-from=<game.json>: place entities on the GAME's tiles (a
+        // step-1 probe_surface.py --tiles dump) instead of the generated
+        // ones, to separate placement differences from tile differences
+        var game_tiles: ?[]u16 = null;
+        var gt_grid: [4]i32 = undefined;
+        if (tiles_from) |path| {
+            const text = try std.Io.Dir.readFileAlloc(.cwd(), init.io, path, a, .unlimited);
+            const parsed = try std.json.parseFromSliceLeaky(std.json.Value, a, text, .{});
+            const gg = parsed.object.get("grid").?.array.items;
+            for (0..4) |k| gt_grid[k] = @intCast(gg[k].integer);
+            if (gg[4].integer != 1) return error.TilesFromNeedsStep1;
+            const arr = parsed.object.get("tiles").?.array.items;
+            const gt = try a.alloc(u16, arr.len);
+            for (arr, 0..) |v, k| {
+                gt[k] = std.math.maxInt(u16);
+                for (planet.tiles, 0..) |t, ti| {
+                    if (std.mem.eql(u8, t.name, v.string)) gt[k] = @intCast(ti);
+                }
+            }
+            game_tiles = gt;
         }
         var out: std.ArrayList(u8) = .empty;
         try out.print(a, "{{\"planet\":\"{s}\",\"seed\":{d},\"grid\":[{d},{d},{d},{d},{d}],\"values\":{{", .{ planet.name, map_seed, g[0], g[1], g[2], g[3], g[4] });
@@ -216,6 +243,18 @@ pub fn main(init: std.process.Init) !void {
                     var cx = @divFloor(g[0], surface.CHUNK);
                     while (cx * surface.CHUNK <= g[1]) : (cx += 1) {
                         w.chunk(cx, cy, &chunk);
+                        if (game_tiles) |gt| {
+                            var tiles = chunk.tile;
+                            const gw: i32 = gt_grid[1] - gt_grid[0] + 1;
+                            for (0..surface.CHUNK * surface.CHUNK) |i| {
+                                const tx = cx * surface.CHUNK + @as(i32, @intCast(i % surface.CHUNK));
+                                const ty = cy * surface.CHUNK + @as(i32, @intCast(i / surface.CHUNK));
+                                if (tx < gt_grid[0] or tx > gt_grid[1] or ty < gt_grid[2] or ty > gt_grid[3]) continue;
+                                const v = gt[@intCast((ty - gt_grid[2]) * gw + (tx - gt_grid[0]))];
+                                if (v != std.math.maxInt(u16)) tiles[i] = v;
+                            }
+                            w.chunkWith(cx, cy, &tiles, &chunk);
+                        }
                         for (chunk.amount, 0..) |am, i| {
                             if (am == 0) continue;
                             const tx = cx * surface.CHUNK + @as(i32, @intCast(i % surface.CHUNK));

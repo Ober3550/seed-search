@@ -7,6 +7,15 @@
     0
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[tree]-b[normal]",
    "size": 1,
    "type": "tree"
@@ -18,6 +27,15 @@
     0
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[tree]-a[flaming]",
    "size": 1,
    "type": "tree"
@@ -29,6 +47,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
@@ -40,6 +67,15 @@
     78
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "r[rock]-1",
    "size": 2,
    "type": "simple-entity"
@@ -51,6 +87,15 @@
     78
    ],
    "control": "rocks",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[doodad]-a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
@@ -62,6 +107,15 @@
     78
    ],
    "control": "rocks",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[doodad]-a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
@@ -73,6 +127,15 @@
     78
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
@@ -84,6 +147,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
@@ -95,6 +167,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-a[spawner]",
    "size": 5,
    "type": "unit-spawner"
@@ -106,6 +187,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-d",
    "size": 2,
    "type": "tree"
@@ -117,6 +207,9 @@
     178
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -128,6 +221,9 @@
     0
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -139,6 +235,9 @@
     55
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -150,6 +249,13 @@
     78
    ],
    "control": null,
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "player",
+    "train"
+   ],
    "order": "",
    "size": 1,
    "type": "simple-entity"
@@ -161,6 +267,12 @@
     87
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-a[cliff]-b[crater]",
    "size": 2,
    "type": "cliff"
@@ -172,6 +284,9 @@
     196
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "c",
    "size": 3,
    "type": "resource"
@@ -183,6 +298,13 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "player",
+    "train"
+   ],
    "order": "a[tree]-b[forest]-k",
    "size": 2,
    "type": "tree"
@@ -194,6 +316,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-d[dead]-c[dead-hairy]",
    "size": 2,
    "type": "tree"
@@ -205,6 +336,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-d[dead]-d[grey]",
    "size": 2,
    "type": "tree"
@@ -216,6 +356,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-d[dead]-a[desert]",
    "size": 2,
    "type": "tree"
@@ -227,6 +376,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-d[dead]-c[hairy]",
    "size": 2,
    "type": "tree"
@@ -238,6 +396,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-d[dead]-e[dry-tree]",
    "size": 1,
    "type": "tree"
@@ -249,6 +416,9 @@
     0
    ],
    "control": null,
+   "layers": [
+    "ground_tile"
+   ],
    "order": "",
    "size": 2,
    "type": "fish"
@@ -260,6 +430,9 @@
     255
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "a[resources]-a[fluorine]",
    "size": 3,
    "type": "resource"
@@ -271,6 +444,16 @@
     0
    ],
    "control": null,
+   "layers": [
+    "elevated_rail",
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-b[attractor]",
    "size": 3,
    "type": "lightning-attractor"
@@ -282,6 +465,15 @@
     120
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-e[big]",
    "size": 4,
    "type": "simple-entity"
@@ -293,6 +485,15 @@
     130
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-c[colossal]",
    "size": 7,
    "type": "simple-entity"
@@ -304,6 +505,15 @@
     125
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-d[huge]",
    "size": 6,
    "type": "simple-entity"
@@ -315,6 +525,15 @@
     115
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-g[medium]",
    "size": 3,
    "type": "simple-entity"
@@ -326,6 +545,15 @@
     110
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-h[small]",
    "size": 2,
    "type": "simple-entity"
@@ -337,6 +565,15 @@
     120
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-f[stonehenge]",
    "size": 4,
    "type": "simple-entity"
@@ -348,6 +585,15 @@
     255
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[ruin]-a[vault]",
    "size": 14,
    "type": "simple-entity"
@@ -359,6 +605,15 @@
     116
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "",
    "size": 2,
    "type": "simple-entity"
@@ -370,6 +625,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-h",
    "size": 2,
    "type": "tree"
@@ -381,6 +645,13 @@
     0
    ],
    "control": "gleba_enemy_base",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "object",
+    "player"
+   ],
    "order": "b[enemy]-c[spawner]-a[large]",
    "size": 5,
    "type": "unit-spawner"
@@ -392,6 +663,13 @@
     0
    ],
    "control": "gleba_enemy_base",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "object",
+    "player"
+   ],
    "order": "b[enemy]-c[spawner]-b[small]",
    "size": 3,
    "type": "unit-spawner"
@@ -403,6 +681,13 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "player",
+    "train"
+   ],
    "order": "a[tree]-b[forest]-j",
    "size": 2,
    "type": "tree"
@@ -414,6 +699,15 @@
     78
    ],
    "control": "rocks",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[doodad]-a[rock]-a[huge]",
    "size": 3,
    "type": "simple-entity"
@@ -425,6 +719,15 @@
     78
    ],
    "control": null,
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[rock]-a[huge]",
    "size": 3,
    "type": "simple-entity"
@@ -436,6 +739,9 @@
     148
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -447,6 +753,13 @@
     78
    ],
    "control": null,
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "player",
+    "train"
+   ],
    "order": "",
    "size": 1,
    "type": "simple-entity"
@@ -458,8 +771,22 @@
     255
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-b",
    "size": 2,
+   "tile_restriction": [
+    "natural-jellynut-soil",
+    "artificial-jellynut-soil",
+    "overgrowth-jellynut-soil"
+   ],
    "type": "plant"
   },
   "lickmaw": {
@@ -469,6 +796,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-f",
    "size": 2,
    "type": "tree"
@@ -480,6 +816,9 @@
     153
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "a[resources]-b[lithium]",
    "size": 3,
    "type": "resource"
@@ -491,6 +830,12 @@
     211
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
@@ -502,6 +847,12 @@
     211
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[rock]-a[huge]",
    "size": 4,
    "type": "simple-entity"
@@ -513,6 +864,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
@@ -524,6 +884,9 @@
     230
    ],
    "control": "scrap",
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -535,6 +898,13 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "player",
+    "train"
+   ],
    "order": "a[tree]-b[forest]-i",
    "size": 2,
    "type": "tree"
@@ -546,6 +916,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-b[worm]",
    "size": 2,
    "type": "turret"
@@ -557,6 +936,15 @@
     0
    ],
    "control": "enemy-base",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "b[enemy]-a[spawner]",
    "size": 5,
    "type": "unit-spawner"
@@ -568,6 +956,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-e",
    "size": 2,
    "type": "tree"
@@ -579,6 +976,9 @@
     109
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -590,6 +990,9 @@
     26
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "c",
    "size": 3,
    "type": "resource"
@@ -601,6 +1004,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-c",
    "size": 2,
    "type": "tree"
@@ -612,6 +1024,15 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-g",
    "size": 1,
    "type": "tree"
@@ -623,6 +1044,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-a[wet]-c[cold]",
    "size": 1,
    "type": "tree"
@@ -634,6 +1064,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-b[moist]-b[cold]",
    "size": 1,
    "type": "tree"
@@ -645,6 +1084,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-c[medium]-b[cold]",
    "size": 1,
    "type": "tree"
@@ -656,6 +1104,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-b[moist]-c[hot]",
    "size": 1,
    "type": "tree"
@@ -667,6 +1124,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-a[wet]-b[medium]",
    "size": 1,
    "type": "tree"
@@ -678,6 +1144,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-a[wet]-a[hot]",
    "size": 1,
    "type": "tree"
@@ -689,6 +1164,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-d[dry]-c[cold]",
    "size": 1,
    "type": "tree"
@@ -700,6 +1184,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-e[verydry]-c[cold]",
    "size": 1,
    "type": "tree"
@@ -711,6 +1204,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-b[moist]-a[medium]",
    "size": 1,
    "type": "tree"
@@ -722,6 +1224,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-c[medium]-a[medium]",
    "size": 1,
    "type": "tree"
@@ -733,6 +1244,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-d[dry]-b[medium]",
    "size": 1,
    "type": "tree"
@@ -744,6 +1264,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-e[verydry]-b[medium]",
    "size": 1,
    "type": "tree"
@@ -755,6 +1284,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-c[medium]-c[hot]",
    "size": 1,
    "type": "tree"
@@ -766,6 +1304,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-d[dry]-a[hot]",
    "size": 1,
    "type": "tree"
@@ -777,6 +1324,15 @@
     0
    ],
    "control": "trees",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-e[verydry]-a[hot]",
    "size": 1,
    "type": "tree"
@@ -788,6 +1344,9 @@
     149
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "b",
    "size": 1,
    "type": "resource"
@@ -799,6 +1358,9 @@
     0
    ],
    "control": null,
+   "layers": [
+    "resource"
+   ],
    "order": "c",
    "size": 1,
    "type": "resource"
@@ -810,6 +1372,12 @@
     78
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[chimney]-a[full]-a",
    "size": 3,
    "type": "simple-entity"
@@ -821,6 +1389,12 @@
     78
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[chimney]-a[full]-c",
    "size": 3,
    "type": "simple-entity"
@@ -832,6 +1406,12 @@
     78
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[chimney]-a[full]-b",
    "size": 3,
    "type": "simple-entity"
@@ -843,6 +1423,12 @@
     78
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-c[chimney]-b[truncated]-e",
    "size": 2,
    "type": "simple-entity"
@@ -854,6 +1440,12 @@
     78
    ],
    "control": null,
+   "layers": [
+    "item",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[landscape]-b[chimney]-b[truncated]-d",
    "size": 2,
    "type": "simple-entity"
@@ -865,6 +1457,12 @@
     0
    ],
    "control": "gleba_plants",
+   "layers": [
+    "ground_tile",
+    "is_lower_object",
+    "is_object",
+    "train"
+   ],
    "order": "a[tree]-d[decorative]-a[water-cane]",
    "size": 1,
    "type": "tree"
@@ -876,8 +1474,22 @@
     255
    ],
    "control": "gleba_plants",
+   "layers": [
+    "is_lower_object",
+    "is_object",
+    "item",
+    "meltable",
+    "object",
+    "player",
+    "water_tile"
+   ],
    "order": "a[tree]-b[forest]-a",
    "size": 2,
+   "tile_restriction": [
+    "natural-yumako-soil",
+    "artificial-yumako-soil",
+    "overgrowth-yumako-soil"
+   ],
    "type": "plant"
   }
  },
@@ -5147,904 +5759,1166 @@
  },
  "tiles": {
   "ammoniacal-ocean": {
-   "blocks_resource": false,
    "color": [
     15,
     13,
     25
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "water_tile"
+   ]
   },
   "ammoniacal-ocean-2": {
-   "blocks_resource": false,
    "color": [
     17,
     15,
     30
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "water_tile"
+   ]
   },
   "brash-ice": {
-   "blocks_resource": false,
    "color": [
     21,
     42,
     56
    ],
-   "layer": 0
+   "layer": 0,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "water_tile"
+   ]
   },
   "deepwater": {
-   "blocks_resource": true,
    "color": [
     38,
     64,
     73
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "resource",
+    "water_tile"
+   ]
   },
   "dirt-1": {
-   "blocks_resource": false,
    "color": [
     141,
     104,
     60
    ],
-   "layer": 19
+   "layer": 19,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-2": {
-   "blocks_resource": false,
    "color": [
     136,
     96,
     59
    ],
-   "layer": 20
+   "layer": 20,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-3": {
-   "blocks_resource": false,
    "color": [
     133,
     92,
     53
    ],
-   "layer": 21
+   "layer": 21,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-4": {
-   "blocks_resource": false,
    "color": [
     103,
     72,
     43
    ],
-   "layer": 22
+   "layer": 22,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-5": {
-   "blocks_resource": false,
    "color": [
     91,
     63,
     38
    ],
-   "layer": 23
+   "layer": 23,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-6": {
-   "blocks_resource": false,
    "color": [
     80,
     55,
     31
    ],
-   "layer": 24
+   "layer": 24,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dirt-7": {
-   "blocks_resource": false,
    "color": [
     80,
     54,
     28
    ],
-   "layer": 25
+   "layer": 25,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "dry-dirt": {
-   "blocks_resource": false,
    "color": [
     94,
     66,
     37
    ],
-   "layer": 18
+   "layer": 18,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-conduit": {
-   "blocks_resource": false,
    "color": [
     100,
     79,
     68
    ],
-   "layer": 11
+   "layer": 11,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-dunes": {
-   "blocks_resource": false,
    "color": [
     125,
     71,
     59
    ],
-   "layer": 7
+   "layer": 7,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-dust": {
-   "blocks_resource": false,
    "color": [
     112,
     65,
     50
    ],
-   "layer": 6
+   "layer": 6,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-machinery": {
-   "blocks_resource": false,
    "color": [
     89,
     79,
     68
    ],
-   "layer": 12
+   "layer": 12,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-paving": {
-   "blocks_resource": false,
    "color": [
     120,
     94,
     67
    ],
-   "layer": 5
+   "layer": 5,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-rock": {
-   "blocks_resource": false,
    "color": [
     131,
     85,
     66
    ],
-   "layer": 9
+   "layer": 9,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-sand": {
-   "blocks_resource": false,
    "color": [
     118,
     68,
     56
    ],
-   "layer": 8
+   "layer": 8,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "fulgoran-walls": {
-   "blocks_resource": false,
    "color": [
     114,
     75,
     65
    ],
-   "layer": 10
+   "layer": 10,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "gleba-deep-lake": {
-   "blocks_resource": true,
    "color": [
     18,
     37,
     51
    ],
-   "layer": 1
+   "layer": 1,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "resource",
+    "water_tile"
+   ]
   },
   "grass-1": {
-   "blocks_resource": false,
    "color": [
     55,
     53,
     11
    ],
-   "layer": 26
+   "layer": 26,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "grass-2": {
-   "blocks_resource": false,
    "color": [
     66,
     57,
     15
    ],
-   "layer": 28
+   "layer": 28,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "grass-3": {
-   "blocks_resource": false,
    "color": [
     65,
     52,
     28
    ],
-   "layer": 29
+   "layer": 29,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "grass-4": {
-   "blocks_resource": false,
    "color": [
     59,
     40,
     18
    ],
-   "layer": 30
+   "layer": 30,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "highland-dark-rock": {
-   "blocks_resource": false,
    "color": [
     52,
     55,
     48
    ],
-   "layer": 81
+   "layer": 81,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "highland-dark-rock-2": {
-   "blocks_resource": false,
    "color": [
     52,
     55,
     48
    ],
-   "layer": 82
+   "layer": 82,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "highland-yellow-rock": {
-   "blocks_resource": false,
    "color": [
     52,
     55,
     48
    ],
-   "layer": 83
+   "layer": 83,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "ice-rough": {
-   "blocks_resource": false,
    "color": [
     100,
     135,
     177
    ],
-   "layer": 51
+   "layer": 51,
+   "layers": [
+    "ground_tile",
+    "meltable"
+   ]
   },
   "ice-smooth": {
-   "blocks_resource": false,
    "color": [
     100,
     135,
     177
    ],
-   "layer": 50
+   "layer": 50,
+   "layers": [
+    "ground_tile",
+    "meltable"
+   ]
   },
   "lava": {
-   "blocks_resource": true,
    "color": [
     150,
     49,
     30
    ],
-   "layer": 6
+   "layer": 6,
+   "layers": [
+    "doodad",
+    "item",
+    "lava_tile",
+    "player",
+    "rail",
+    "resource",
+    "water_tile"
+   ]
   },
   "lava-hot": {
-   "blocks_resource": true,
    "color": [
     255,
     138,
     57
    ],
-   "layer": 5
+   "layer": 5,
+   "layers": [
+    "doodad",
+    "item",
+    "lava_tile",
+    "player",
+    "rail",
+    "resource",
+    "water_tile"
+   ]
   },
   "lowland-brown-blubber": {
-   "blocks_resource": false,
    "color": [
     66,
     82,
     11
    ],
-   "layer": 33
+   "layer": 33,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-cream-cauliflower": {
-   "blocks_resource": false,
    "color": [
     95,
     93,
     88
    ],
-   "layer": 40
+   "layer": 40,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-cream-cauliflower-2": {
-   "blocks_resource": false,
    "color": [
     95,
     93,
     88
    ],
-   "layer": 39
+   "layer": 39,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-cream-red": {
-   "blocks_resource": false,
    "color": [
     95,
     83,
     78
    ],
-   "layer": 43
+   "layer": 43,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-dead-skin": {
-   "blocks_resource": false,
    "color": [
     95,
     93,
     88
    ],
-   "layer": 37
+   "layer": 37,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-dead-skin-2": {
-   "blocks_resource": false,
    "color": [
     95,
     93,
     88
    ],
-   "layer": 38
+   "layer": 38,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-olive-blubber": {
-   "blocks_resource": false,
    "color": [
     66,
     82,
     11
    ],
-   "layer": 36
+   "layer": 36,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-olive-blubber-2": {
-   "blocks_resource": false,
    "color": [
     66,
     82,
     11
    ],
-   "layer": 35
+   "layer": 35,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-olive-blubber-3": {
-   "blocks_resource": false,
    "color": [
     66,
     82,
     11
    ],
-   "layer": 40
+   "layer": 40,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-pale-green": {
-   "blocks_resource": false,
    "color": [
     66,
     82,
     11
    ],
-   "layer": 34
+   "layer": 34,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-infection": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 48
+   "layer": 48,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-vein": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 45
+   "layer": 45,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-vein-2": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 44
+   "layer": 44,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-vein-3": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 46
+   "layer": 46,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-vein-4": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 47
+   "layer": 47,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "lowland-red-vein-dead": {
-   "blocks_resource": false,
    "color": [
     115,
     53,
     66
    ],
-   "layer": 39
+   "layer": 39,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-cracked-lichen": {
-   "blocks_resource": false,
    "color": [
     81,
     77,
     44
    ],
-   "layer": 73
+   "layer": 73,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-cracked-lichen-dark": {
-   "blocks_resource": false,
    "color": [
     61,
     57,
     30
    ],
-   "layer": 65
+   "layer": 65,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-cracked-lichen-dull": {
-   "blocks_resource": false,
    "color": [
     71,
     67,
     40
    ],
-   "layer": 74
+   "layer": 74,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-turquoise-bark": {
-   "blocks_resource": false,
    "color": [
     46,
     68,
     48
    ],
-   "layer": 76
+   "layer": 76,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-turquoise-bark-2": {
-   "blocks_resource": false,
    "color": [
     46,
     68,
     48
    ],
-   "layer": 75
+   "layer": 75,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-yellow-crust": {
-   "blocks_resource": false,
    "color": [
     114,
     86,
     40
    ],
-   "layer": 79
+   "layer": 79,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-yellow-crust-2": {
-   "blocks_resource": false,
    "color": [
     114,
     86,
     40
    ],
-   "layer": 78
+   "layer": 78,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-yellow-crust-3": {
-   "blocks_resource": false,
    "color": [
     114,
     86,
     40
    ],
-   "layer": 77
+   "layer": 77,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "midland-yellow-crust-4": {
-   "blocks_resource": false,
    "color": [
     114,
     86,
     40
    ],
-   "layer": 80
+   "layer": 80,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "natural-jellynut-soil": {
-   "blocks_resource": false,
    "color": [
     185,
     5,
     166
    ],
-   "layer": 86
+   "layer": 86,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "natural-yumako-soil": {
-   "blocks_resource": false,
    "color": [
     185,
     166,
     5
    ],
-   "layer": 85
+   "layer": 85,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "oil-ocean-deep": {
-   "blocks_resource": true,
    "color": [
     56,
     36,
     40
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "rail_support",
+    "resource",
+    "water_tile"
+   ]
   },
   "oil-ocean-shallow": {
-   "blocks_resource": true,
    "color": [
     74,
     42,
     43
    ],
-   "layer": 4
+   "layer": 4,
+   "layers": [
+    "resource",
+    "water_tile"
+   ]
   },
   "pit-rock": {
-   "blocks_resource": false,
    "color": [
     50,
     50,
     58
    ],
-   "layer": 64
+   "layer": 64,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "red-desert-0": {
-   "blocks_resource": false,
    "color": [
     103,
     70,
     32
    ],
-   "layer": 31
+   "layer": 31,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "red-desert-1": {
-   "blocks_resource": false,
    "color": [
     116,
     81,
     39
    ],
-   "layer": 14
+   "layer": 14,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "red-desert-2": {
-   "blocks_resource": false,
    "color": [
     116,
     84,
     43
    ],
-   "layer": 15
+   "layer": 15,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "red-desert-3": {
-   "blocks_resource": false,
    "color": [
     128,
     93,
     52
    ],
-   "layer": 16
+   "layer": 16,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "sand-1": {
-   "blocks_resource": false,
    "color": [
     138,
     103,
     58
    ],
-   "layer": 8
+   "layer": 8,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "sand-2": {
-   "blocks_resource": false,
    "color": [
     128,
     93,
     52
    ],
-   "layer": 9
+   "layer": 9,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "sand-3": {
-   "blocks_resource": false,
    "color": [
     115,
     83,
     47
    ],
-   "layer": 10
+   "layer": 10,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "snow-crests": {
-   "blocks_resource": false,
    "color": [
     180,
     186,
     192
    ],
-   "layer": 53
+   "layer": 53,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "snow-flat": {
-   "blocks_resource": false,
    "color": [
     190,
     194,
     197
    ],
-   "layer": 52
+   "layer": 52,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "snow-lumpy": {
-   "blocks_resource": false,
    "color": [
     166,
     174,
     186
    ],
-   "layer": 54
+   "layer": 54,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "snow-patchy": {
-   "blocks_resource": false,
    "color": [
     156,
     166,
     181
    ],
-   "layer": 55
+   "layer": 55,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-ash-cracks": {
-   "blocks_resource": false,
    "color": [
     67,
     67,
     67
    ],
-   "layer": 46
+   "layer": 46,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-ash-dark": {
-   "blocks_resource": false,
    "color": [
     53,
     53,
     53
    ],
-   "layer": 53
+   "layer": 53,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-ash-flats": {
-   "blocks_resource": false,
    "color": [
     53,
     53,
     53
    ],
-   "layer": 52
+   "layer": 52,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-ash-light": {
-   "blocks_resource": false,
    "color": [
     53,
     53,
     53
    ],
-   "layer": 54
+   "layer": 54,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-ash-soil": {
-   "blocks_resource": false,
    "color": [
     48,
     48,
     43
    ],
-   "layer": 51
+   "layer": 51,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-cracks": {
-   "blocks_resource": false,
    "color": [
     43,
     42,
     43
    ],
-   "layer": 44
+   "layer": 44,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-cracks-hot": {
-   "blocks_resource": false,
    "color": [
     58,
     33,
     23
    ],
-   "layer": 42
+   "layer": 42,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-cracks-warm": {
-   "blocks_resource": false,
    "color": [
     58,
     38,
     33
    ],
-   "layer": 43
+   "layer": 43,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-folds": {
-   "blocks_resource": false,
    "color": [
     43,
     43,
     43
    ],
-   "layer": 58
+   "layer": 58,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-folds-flat": {
-   "blocks_resource": false,
    "color": [
     44,
     43,
     44
    ],
-   "layer": 56
+   "layer": 56,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-folds-warm": {
-   "blocks_resource": false,
    "color": [
     65,
     45,
     45
    ],
-   "layer": 57
+   "layer": 57,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-jagged-ground": {
-   "blocks_resource": false,
    "color": [
     58,
     58,
     48
    ],
-   "layer": 45
+   "layer": 45,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-pumice-stones": {
-   "blocks_resource": false,
    "color": [
     46,
     46,
     46
    ],
-   "layer": 55
+   "layer": 55,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-smooth-stone": {
-   "blocks_resource": false,
    "color": [
     50,
     50,
     58
    ],
-   "layer": 41
+   "layer": 41,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-smooth-stone-warm": {
-   "blocks_resource": false,
    "color": [
     54,
     50,
     50
    ],
-   "layer": 40
+   "layer": 40,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-soil-dark": {
-   "blocks_resource": false,
    "color": [
     48,
     51,
     43
    ],
-   "layer": 47
+   "layer": 47,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "volcanic-soil-light": {
-   "blocks_resource": false,
    "color": [
     58,
     48,
     43
    ],
-   "layer": 48
+   "layer": 48,
+   "layers": [
+    "ground_tile"
+   ]
   },
   "water": {
-   "blocks_resource": true,
    "color": [
     51,
     83,
     95
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "doodad",
+    "floor",
+    "item",
+    "player",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-blue-slime": {
-   "blocks_resource": true,
    "color": [
     25,
     49,
     58
    ],
-   "layer": 1
+   "layer": 1,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-dead-skin": {
-   "blocks_resource": true,
    "color": [
     46,
     45,
     51
    ],
-   "layer": 7
+   "layer": 7,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-green-slime": {
-   "blocks_resource": true,
    "color": [
     25,
     53,
     25
    ],
-   "layer": 6
+   "layer": 6,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-jellynut": {
-   "blocks_resource": true,
    "color": [
     132,
     7,
     119
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-light-dead-skin": {
-   "blocks_resource": true,
    "color": [
     51,
     50,
     56
    ],
-   "layer": 7
+   "layer": 7,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-light-green-slime": {
-   "blocks_resource": true,
    "color": [
     35,
     63,
     35
    ],
-   "layer": 6
+   "layer": 6,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-pink-tentacle": {
-   "blocks_resource": true,
    "color": [
     64,
     19,
     34
    ],
-   "layer": 5
+   "layer": 5,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-red-tentacle": {
-   "blocks_resource": true,
    "color": [
     54,
     15,
     24
    ],
-   "layer": 5
+   "layer": 5,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   },
   "wetland-yumako": {
-   "blocks_resource": true,
    "color": [
     132,
     119,
     7
    ],
-   "layer": 3
+   "layer": 3,
+   "layers": [
+    "floor",
+    "resource",
+    "water_tile"
+   ]
   }
  }
 }

@@ -697,6 +697,8 @@ const Worker = struct {
                 var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
                 if (seed < 342) seed = 341;
                 var prng = rng.Rng.init(seed);
+                // tiles covered by a resource already placed in this chunk
+                var occupied = [_]bool{false} ** (CHUNK * CHUNK);
                 var ii: i32 = CHUNK * CHUNK - 1;
                 while (ii >= 0) : (ii -= 1) {
                     const idx: usize = @intCast(ii);
@@ -707,6 +709,32 @@ const Worker = struct {
                         if (amount > 0) {
                             const lx = @mod(ii, CHUNK);
                             const ly = @divFloor(ii, CHUNK);
+                            // The game refuses an entity whose collision box
+                            // overlaps one already placed. Fluid patches (the
+                            // thinned resources) are 3x3; ores are one tile.
+                            const half: i32 = if (self.states[@intCast(win_res[idx])].config.random_probability < 1.0) 1 else 0;
+                            var free = true;
+                            var oy: i32 = -half;
+                            while (oy <= half) : (oy += 1) {
+                                var ox: i32 = -half;
+                                while (ox <= half) : (ox += 1) {
+                                    const nx = lx + ox;
+                                    const ny = ly + oy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    if (occupied[@intCast(ny * CHUNK + nx)]) free = false;
+                                }
+                            }
+                            if (!free) continue;
+                            oy = -half;
+                            while (oy <= half) : (oy += 1) {
+                                var ox: i32 = -half;
+                                while (ox <= half) : (ox += 1) {
+                                    const nx = lx + ox;
+                                    const ny = ly + oy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    occupied[@intCast(ny * CHUNK + nx)] = true;
+                                }
+                            }
                             self.out.append(a, .{
                                 .x = cx * CHUNK + lx,
                                 .y = cy * CHUNK + ly,

@@ -38,7 +38,10 @@ pub const Tile = struct {
     name: []const u8,
     layer: i32,
     color: [3]u8,
-    /// the tile's collision mask has the "resource" layer (water, lava, ...)
+    /// collision layers as a bit set (see Data.layerBit): an entity cannot
+    /// stand on a tile that shares a layer with its own mask
+    mask: u64,
+    /// shorthand: the mask has the "resource" layer (water, lava, ...)
     blocks_resource: bool,
 };
 
@@ -57,6 +60,19 @@ pub const Entity = struct {
     name: []const u8,
     order: []const u8,
     kind: enum { resource, water, land },
+    /// collision layers (same bit set as Tile.mask)
+    mask: u64,
+    /// allowed[t] for each of the planet's tiles when the entity has a
+    /// tile_restriction; null = any tile
+    allowed: ?[]const bool,
+    /// index into planet.resources for resources
+    resource: ?u8,
+
+    pub fn canStandOn(self: *const Entity, tile_index: usize, tile: *const Tile) bool {
+        if (self.mask & tile.mask != 0) return false;
+        if (self.allowed) |al| return al[tile_index];
+        return true;
+    }
 };
 
 pub const Prop = struct { key: []const u8, value: Body };
@@ -144,6 +160,41 @@ fn strings(a: std.mem.Allocator, o: json.Object, key: []const u8) LoadError![]co
     return out.items;
 }
 
+/// Collision layer names -> bits, shared by tiles and entities of one load.
+const Layers = struct {
+    names: [64][]const u8 = undefined,
+    n: usize = 0,
+
+    fn mask(self: *Layers, o: json.Object) u64 {
+        var m: u64 = 0;
+        const v = json.get(o, "layers") orelse return 0;
+        if (v != .array) return 0;
+        for (v.array) |e| {
+            if (e != .string) continue;
+            var bit: ?usize = null;
+            for (self.names[0..self.n], 0..) |nm, i| {
+                if (std.mem.eql(u8, nm, e.string)) bit = i;
+            }
+            if (bit == null and self.n < 64) {
+                self.names[self.n] = e.string;
+                bit = self.n;
+                self.n += 1;
+            }
+            if (bit) |b| m |= @as(u64, 1) << @intCast(b);
+        }
+        return m;
+    }
+};
+
+fn hasLayer(o: json.Object, name: []const u8) bool {
+    const v = json.get(o, "layers") orelse return false;
+    if (v != .array) return false;
+    for (v.array) |e| {
+        if (e == .string and std.mem.eql(u8, e.string, name)) return true;
+    }
+    return false;
+}
+
 fn color(o: json.Object) [3]u8 {
     var col: [3]u8 = .{ 0, 0, 0 };
     if (json.get(o, "color")) |cv| {
@@ -178,7 +229,12 @@ fn parseDef(a: std.mem.Allocator, name: []const u8, o: json.Object, is_function:
 /// Parse the embedded data file. `arena` must outlive every program compiled
 /// from the result (definitions cache their parsed trees in it).
 pub fn load(arena: std.mem.Allocator) LoadError!Data {
-    const root = try json.parse(arena, embedded);
+    return loadFrom(arena, embedded);
+}
+
+/// Parse a data file produced by scripts/sa-build-data.py (any mod set).
+pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
+    const root = try json.parse(arena, text);
     if (root != .object) return error.BadData;
     const ro = root.object;
     var d = Data{ .arena = arena };
@@ -200,6 +256,7 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
     const entity_meta = obj(ro, "entities") orelse return error.BadData;
     const planets = obj(ro, "planets") orelse return error.BadData;
     var list: std.ArrayList(Planet) = .empty;
+    var layers = Layers{};
     for (planets) |kv| {
         if (kv.value != .object) continue;
         const po = kv.value.object;
@@ -210,8 +267,7 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
         var tiles: std.ArrayList(Tile) = .empty;
         for (try strings(arena, po, "tiles")) |tn| {
             const tm = obj(tile_meta, tn) orelse return error.BadData;
-            const blocks = if (json.get(tm, "blocks_resource")) |v| v == .boolean and v.boolean else false;
-            try tiles.append(arena, .{ .name = tn, .layer = @intFromFloat(num(tm, "layer", 0)), .color = color(tm), .blocks_resource = blocks });
+            try tiles.append(arena, .{ .name = tn, .layer = @intFromFloat(num(tm, "layer", 0)), .color = color(tm), .mask = layers.mask(tm), .blocks_resource = hasLayer(tm, "resource") });
         }
         var resources: std.ArrayList(Resource) = .empty;
         for (try strings(arena, po, "resources")) |rn| {
@@ -224,10 +280,31 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
             const em = obj(entity_meta, en) orelse continue;
             const order = if (json.get(em, "order")) |v| (if (v == .string) v.string else "") else "";
             const typ = if (json.get(em, "type")) |v| (if (v == .string) v.string else "") else "";
+            var allowed: ?[]bool = null;
+            if (json.get(em, "tile_restriction")) |rv| {
+                if (rv == .array) {
+                    const al = try arena.alloc(bool, tiles.items.len);
+                    @memset(al, false);
+                    for (rv.array) |tv| {
+                        if (tv != .string) continue;
+                        for (tiles.items, 0..) |t, ti| {
+                            if (std.mem.eql(u8, t.name, tv.string)) al[ti] = true;
+                        }
+                    }
+                    allowed = al;
+                }
+            }
+            var res_index: ?u8 = null;
+            for (resources.items, 0..) |r, ri| {
+                if (std.mem.eql(u8, r.name, en)) res_index = @intCast(ri);
+            }
             try placed.append(arena, .{
                 .name = en,
                 .order = order,
                 .kind = if (std.mem.eql(u8, typ, "resource")) .resource else if (std.mem.eql(u8, typ, "fish")) .water else .land,
+                .mask = layers.mask(em),
+                .allowed = allowed,
+                .resource = res_index,
             });
         }
         std.mem.sort(Entity, placed.items, {}, struct {

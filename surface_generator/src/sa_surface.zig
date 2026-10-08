@@ -99,42 +99,67 @@ pub const ChunkData = struct {
 ///
 /// Entity placement (EntityMapGenerationTask::generateEntities): the chunk is
 /// one column of 1024 positions, so `random_penalty` draws from a single
-/// stream seeded at the chunk origin. Resources are placed group by group in
-/// autoplace-order; within a group the highest probability wins a tile (ties:
-/// higher richness) and is placed when a draw from the chunk's placement RNG
-/// falls below it. A tile whose collision mask has the "resource" layer
-/// (water, lava, oil) takes no resources.
+/// stream seeded at the chunk origin. Every autoplaced entity of the surface
+/// belongs to a group (its autoplace order); groups are placed in order and
+/// share ONE random stream per chunk. A group sweeps the tiles last to first:
+/// on each tile, among its entities that may stand there (collision layers
+/// and tile restriction), the highest probability wins (ties: higher
+/// richness); the tile takes one draw, and the winner is placed when the draw
+/// falls below its probability. Rocks, trees, ruins and enemies then take two
+/// more draws for their sub-tile offset; resources are centre-placed.
 ///
-/// Approximations: the placement RNG is shared with every other entity group
-/// (rocks, trees, ruins) which are not generated, so the draws used here are
-/// not the game's; that only matters where probability is between 0 and 1
-/// (patch edges and sparse fluid patches). Multi-tile patches only avoid
-/// overlaps within their own chunk.
+/// Only resources are kept, but every group up to the last resource group is
+/// replayed, because where a resource's rolls start in the stream depends on
+/// the groups before it. Overlap between entities is only tracked for
+/// resources, within their chunk.
 pub const World = struct {
     planet: *const sa_data.Planet,
     program: prog.Program,
     ws: prog.Program.Workspace,
-    /// root index of each resource's probability / richness (null = none)
-    res_prob: []const usize,
-    res_rich: []const ?usize,
+    /// planet.placed entities taking part (through the last resource group)
+    n_placed: usize,
+    /// root index of each entity's probability / richness (null = none)
+    ent_prob: []const usize,
+    ent_rich: []const ?usize,
+    /// tiles come from the caller (chunkWith) instead of the tile competition
+    external_tiles: bool,
     xs: []f32,
     ys: []f32,
 
+    pub const Options = struct {
+        /// do not compile the tile competition; chunkWith() is given the tiles
+        external_tiles: bool = false,
+    };
+
     pub fn init(a: std.mem.Allocator, data: *const sa_data.Data, planet: *const sa_data.Planet, map_seed: u32, controls: prog.Controls, err_out: ?*[]const u8) !World {
+        return initWith(a, data, planet, map_seed, controls, .{}, err_out);
+    }
+
+    pub fn initWith(a: std.mem.Allocator, data: *const sa_data.Data, planet: *const sa_data.Planet, map_seed: u32, controls: prog.Controls, opts: Options, err_out: ?*[]const u8) !World {
         if (planet.tiles.len == 0) return error.NoTiles;
         if (planet.resources.len >= NO_RESOURCE) return error.TooManyResources;
         var names: std.ArrayList([]const u8) = .empty;
-        for (planet.tiles) |t| try names.append(a, try std.fmt.allocPrint(a, "tile:{s}:probability", .{t.name}));
-        const res_prob = try a.alloc(usize, planet.resources.len);
-        const res_rich = try a.alloc(?usize, planet.resources.len);
-        for (planet.resources, 0..) |r, i| {
-            res_prob[i] = names.items.len;
-            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{r.name}));
-            const rich = try std.fmt.allocPrint(a, "entity:{s}:richness", .{r.name});
+        if (!opts.external_tiles) {
+            for (planet.tiles) |t| try names.append(a, try std.fmt.allocPrint(a, "tile:{s}:probability", .{t.name}));
+        }
+        // nothing after the last resource group can affect a resource
+        var n_placed: usize = 0;
+        for (planet.placed, 0..) |e, i| {
+            if (e.kind == .resource) n_placed = i + 1;
+        }
+        while (n_placed < planet.placed.len and std.mem.eql(u8, planet.placed[n_placed].order, planet.placed[n_placed - 1].order)) n_placed += 1;
+        const ent_prob = try a.alloc(usize, n_placed);
+        const ent_rich = try a.alloc(?usize, n_placed);
+        for (planet.placed[0..n_placed], 0..) |e, i| {
+            ent_prob[i] = names.items.len;
+            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e.name}));
+            ent_rich[i] = null;
+            if (e.kind != .resource) continue;
+            const rich = try std.fmt.allocPrint(a, "entity:{s}:richness", .{e.name});
             if (data.def(rich) != null or planet.prop(rich) != null) {
-                res_rich[i] = names.items.len;
+                ent_rich[i] = names.items.len;
                 try names.append(a, rich);
-            } else res_rich[i] = null;
+            }
         }
         const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
         var ws = try program.workspaceN(a, AREA);
@@ -143,8 +168,10 @@ pub const World = struct {
             .planet = planet,
             .program = program,
             .ws = ws,
-            .res_prob = res_prob,
-            .res_rich = res_rich,
+            .n_placed = n_placed,
+            .ent_prob = ent_prob,
+            .ent_rich = ent_rich,
+            .external_tiles = opts.external_tiles,
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
         };
@@ -152,28 +179,38 @@ pub const World = struct {
 
     /// Generate chunk (cx, cy): tiles (cx*32 .. cx*32+31, cy*32 .. cy*32+31).
     pub fn chunk(self: *World, cx: i32, cy: i32, out: *ChunkData) void {
+        self.chunkWith(cx, cy, null, out);
+    }
+
+    /// As chunk(), with the chunk's tiles (indices into planet.tiles) supplied
+    /// by the caller - required when the world was built with external_tiles.
+    pub fn chunkWith(self: *World, cx: i32, cy: i32, tiles: ?*const [AREA]u16, out: *ChunkData) void {
         for (0..AREA) |i| {
             self.xs[i] = @as(f32, @floatFromInt(cx * CHUNK + @as(i32, @intCast(i % CHUNK)))) + SAMPLE_OFFSET;
             self.ys[i] = @as(f32, @floatFromInt(cy * CHUNK + @as(i32, @intCast(i / CHUNK)))) + SAMPLE_OFFSET;
         }
         self.program.eval(&self.ws, self.xs, self.ys);
 
-        // tile competition
-        var best: [AREA]f32 = undefined;
-        @memset(&best, -std.math.inf(f32));
-        @memset(&out.tile, 0);
-        for (0..self.planet.tiles.len) |t| {
-            const p = self.program.out(&self.ws, t);
-            for (0..AREA) |i| {
-                if (p[i] > best[i]) {
-                    best[i] = p[i];
-                    out.tile[i] = @intCast(t);
+        if (tiles) |t| {
+            out.tile = t.*;
+        } else {
+            // tile competition
+            var best: [AREA]f32 = undefined;
+            @memset(&best, -std.math.inf(f32));
+            @memset(&out.tile, 0);
+            for (0..self.planet.tiles.len) |t| {
+                const p = self.program.out(&self.ws, t);
+                for (0..AREA) |i| {
+                    if (p[i] > best[i]) {
+                        best[i] = p[i];
+                        out.tile[i] = @intCast(t);
+                    }
                 }
             }
         }
         @memset(&out.resource, NO_RESOURCE);
         @memset(&out.amount, 0);
-        if (self.planet.resources.len == 0) return;
+        if (self.n_placed == 0) return;
 
         var blocked: [AREA]bool = undefined;
         for (0..AREA) |i| blocked[i] = self.planet.tiles[out.tile[i]].blocks_resource;
@@ -183,34 +220,44 @@ pub const World = struct {
         if (seed < 342) seed = 341;
         var prng = rng.Rng.init(seed);
 
-        const res = self.planet.resources;
+        const placed = self.planet.placed[0..self.n_placed];
         var g0: usize = 0;
-        while (g0 < res.len) {
+        while (g0 < placed.len) {
             var g1 = g0 + 1;
-            while (g1 < res.len and std.mem.eql(u8, res[g1].order, res[g0].order)) g1 += 1;
-            // tiles are swept last to first; every unblocked tile takes a draw
+            while (g1 < placed.len and std.mem.eql(u8, placed[g1].order, placed[g0].order)) g1 += 1;
             var i: usize = AREA;
             while (i > 0) {
                 i -= 1;
-                if (blocked[i]) continue;
-                const draw: f32 = @floatCast(prng.float());
+                const ti = out.tile[i];
+                const tile = &self.planet.tiles[ti];
                 var win: ?usize = null;
-                var win_p: f32 = 0;
+                var win_p: f32 = -std.math.inf(f32);
                 var win_rich: f32 = 0;
-                for (g0..g1) |r| {
-                    const p = self.program.out(&self.ws, self.res_prob[r])[i];
-                    if (!(p > 0)) continue;
-                    const rich: f32 = if (self.res_rich[r]) |ri| self.program.out(&self.ws, ri)[i] else 1;
+                for (g0..g1) |e| {
+                    if (!placed[e].canStandOn(ti, tile)) continue;
+                    var p = self.program.out(&self.ws, self.ent_prob[e])[i];
+                    if (!(p == p)) p = -std.math.inf(f32);
+                    const rich: f32 = if (self.ent_rich[e]) |ri| self.program.out(&self.ws, ri)[i] else 1;
                     if (win == null or p > win_p or (p == win_p and rich > win_rich)) {
-                        win = r;
+                        win = e;
                         win_p = p;
                         win_rich = rich;
                     }
                 }
-                const r = win orelse continue;
-                if (!(draw < win_p) or !(win_rich > 0)) continue;
-                if (!self.footprintFree(out, &blocked, i, res[r].size)) continue;
-                self.stamp(out, i, @intCast(r), res[r].size);
+                // a tile nothing in the group can stand on takes no draw
+                const e = win orelse continue;
+                const draw: f32 = @floatCast(prng.float());
+                if (!(draw < win_p)) continue;
+                const r = placed[e].resource orelse {
+                    // sub-tile offset of a non-centred entity
+                    _ = prng.next();
+                    _ = prng.next();
+                    continue;
+                };
+                if (!(win_rich > 0)) continue;
+                const size = self.planet.resources[r].size;
+                if (!self.footprintFree(out, &blocked, i, size)) continue;
+                self.stamp(out, i, r, size);
                 out.amount[i] = @intFromFloat(@min(@max(win_rich, 1), 4.0e9));
             }
             g0 = g1;

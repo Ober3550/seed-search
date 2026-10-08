@@ -354,14 +354,16 @@ fn generateZone(
         .enemy = tagOf(data.Enemy, z, "enemy"),
     };
     // Build resource inputs: our shared config table + the zone's controls.
-    const ores_only = layer == 2 and !terrainless; // ore-only layer skips fluids (matches --ores-only)
+    // The ore-only layer used to leave fluids out; they are part of the
+    // surface's resources, so every layer places them now.
+    const ores_only = false;
     var inputs_buf: [res.RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
     var ninputs: usize = 0;
     if (is_nauvis) {
         // Nauvis under SE: SE's data stage re-derives EVERY base ore with the SE
         // autoplace function (verified in-game). Base ores only, default 1/1/1
         // controls (plus K2 rare-metal under K2), r=5000 → frequency mult 1.
-        const nauvis_ores = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore" };
+        const nauvis_ores = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" };
         for (res.RESOURCE_ENTRIES) |e| {
             var is_base = false;
             for (nauvis_ores) |nm| {
@@ -370,7 +372,7 @@ fn generateZone(
                     break;
                 }
             }
-            if (has_k2 and std.mem.eql(u8, e.name, "kr-rare-metal-ore")) is_base = true;
+            if (has_k2 and (std.mem.eql(u8, e.name, "kr-rare-metal-ore") or std.mem.eql(u8, e.name, "kr-mineral-water"))) is_base = true;
             if (!is_base) continue;
             if (ores_only and e.cfg.random_probability < 1.0) continue;
             var ctrl = se.Controls{ .frequency = 1.0, .size = 1.0, .richness = 1.0 };

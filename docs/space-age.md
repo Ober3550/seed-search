@@ -40,29 +40,41 @@ r500 square at map seed 341 (position = same tile, amount = total):
 
 | Planet   | Resource             | Game / ours | Same tile | Amount |
 | -------- | -------------------- | ----------- | --------- | ------ |
-| Vulcanus | calcite              | 5104 / 5105 | 100%      | x1.000 |
-| Vulcanus | coal                 | 3576 / 3574 | 99.9%     | x1.000 |
-| Vulcanus | tungsten-ore         | 3896 / 3895 | 99.9%     | x1.000 |
-| Vulcanus | sulfuric-acid-geyser | 70 / 71     | 3%        | x1.109 |
+| Vulcanus | calcite              | 5104 / 5104 | 100%      | x1.000 |
+| Vulcanus | coal                 | 3576 / 3576 | 100%      | x1.000 |
+| Vulcanus | tungsten-ore         | 3896 / 3896 | 100%      | x1.000 |
+| Vulcanus | sulfuric-acid-geyser | 70 / 71     | 100%      | x1.003 |
 | Gleba    | stone                | 620 / 620   | 100%      | x1.000 |
 | Aquilo   | fluorine-vent        | 26 / 26     | 100%      | x1.000 |
 | Aquilo   | lithium-brine        | 33 / 34     | 100%      | x1.035 |
-| Aquilo   | crude-oil            | 45 / 61     | 9%        | x1.140 |
-| Fulgora  | scrap                | 3307 / 3247 | 47%       | x0.957 |
+| Aquilo   | crude-oil            | 45 / 49     | 36%       | x1.151 |
+| Fulgora  | scrap                | 3307 / 3298 | 81.5%     | x0.987 |
 
-Placement (`sa_surface.World`) follows the game's chunk pass: a 32x32 chunk
-is one evaluation column (so `random_penalty` draws from one stream seeded at
-the chunk origin — confirmed by tungsten matching tile for tile), resources
-compete group by group in autoplace order, the highest probability wins a
-tile, and it is placed when a draw from the chunk's placement stream falls
-below it. Tiles whose collision mask has the `resource` layer take none.
+Placement (`sa_surface.World`) follows the game's chunk pass
+(`EntityMapGenerationTask::generateEntities`): a 32x32 chunk is one
+evaluation column (so `random_penalty` draws from one stream seeded at the
+chunk origin). Every autoplaced entity belongs to a group (its autoplace
+order); groups are placed in order and share ONE random stream per chunk. A
+group sweeps the tiles last to first; on each tile, among its entities that
+may stand there (collision layers and tile restriction, both from the data
+file), the highest probability wins, the tile takes one draw, and the winner
+is placed when the draw is below its probability. Non-resource entities
+(rocks, trees, ruins, enemies) then take two more draws for their sub-tile
+offset.
 
-Resources whose probability saturates at 1 are exact. The three that are not
-(scrap is capped at probability 0.5; geysers and Aquilo crude oil are sparse
-by design) depend on the placement stream, which the game shares with every
-other entity group in the chunk (ruins, rocks, trees); those groups are not
-generated, so the draws differ. Their patches are in the right places with
-the right density, but not the same individual tiles.
+Only resources are kept, but every group up to the last resource group is
+replayed, because where a resource's rolls start depends on the groups before
+it. That is what makes the sparse and probability-capped resources work:
+Vulcanus geysers went from 3% to 100% and Fulgora scrap from 47% to 81.5%.
+
+What still differs is whole chunks, not individual tiles: one wrong tile on a
+coastline changes how many tiles a group can use, which shifts every later
+roll in that chunk. On Fulgora the chunks that fail are the ones where the
+generated land/oil boundary differs from the game's; Aquilo's small ice
+islands make that proportionally worse. Replaying on the game's own final
+tiles (`sa_main probe --entities --tiles-from=game.json`) fixes those Fulgora
+chunks (89.9%) but makes Aquilo worse, so the game evidently places entities
+on tiles from before its border-correction pass.
 
 ### Nauvis (base game) resources
 
@@ -77,8 +89,8 @@ resource entities on the same tile, crude oil 108 of 114 wells (115 placed).
 
 Not done yet:
 
-- Non-resource entities (ruins, rocks, trees, enemy bases) — also what would
-  make scrap, geysers and Aquilo crude oil tile-exact.
+- Drawing the non-resource entities (their rolls are replayed, but nothing
+  is output for them).
 - Cliffs, decoratives.
 - The tile-transition correction pass.
 - Nauvis through this engine (it still uses the dedicated generator):
