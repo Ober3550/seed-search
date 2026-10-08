@@ -227,6 +227,32 @@ repo is the manual step that makes it live. The job / database pages (Seeds,
 Filter Presets, …) are not part of the static site; they still need
 `npm start`.
 
+## Full-range seed scan
+
+A universe is fully reproducible from its seed, so the big search stores only
+seed numbers. `scripts/scan-se.sh` (Space Exploration) and
+`scripts/scan-k2se.sh` (SE + Krastorio 2) scan the whole seed space with a
+loose "extreme tails" criterion and keep about 1 universe in 1,500
+(~1.4M seeds, ~5.5 MB per config). Anything finer is done afterwards by
+regenerating the kept seeds.
+
+```sh
+scripts/scan-se.sh            # on one machine
+scripts/scan-k2se.sh          # on another, after pulling this repo
+WORKERS=8 scripts/scan-se.sh  # optional: limit the cores used
+```
+
+- Needs Node >= 18 and Zig 0.16; the script builds `seedgen` itself.
+- Resumable: stop with Ctrl-C and run the same command again. Finished chunks
+  live in `seedlists/<mod>/`; the final list is `seedlists/<mod>.u32` (raw
+  little-endian 4-byte seed numbers, ascending).
+- `node scripts/seed-scan.mjs --mod se --status` shows progress.
+- About two days per config on a 10-core machine.
+- Only even seeds are generated: the game's random generator ignores a seed's
+  lowest bit, so the 4.29 billion seed numbers hold about 2.147 billion
+  distinct universes. (Surfaces do differ between an even/odd pair.)
+- The criteria and how they were tuned are in `scripts/seed-criteria/`.
+
 ## Analysis
 
 ```bash

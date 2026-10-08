@@ -102,7 +102,6 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
-    var seed = start_seed;
     var passed: u32 = 0;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
     var last_t = t_start;
@@ -115,7 +114,11 @@ pub fn main(init: std.process.Init) !void {
     var stdout_fw = std.Io.File.stdout().writer(io, &stdout_buf);
     const stdout_w = &stdout_fw.interface;
 
-    while (seed <= end_seed) : (seed += 2) {
+    // Counted in u64 so a range ending at the top of the u32 seed space
+    // (END_SEED=4294967295) terminates instead of wrapping around.
+    var seed_iter: u64 = start_seed;
+    while (seed_iter <= end_seed) : (seed_iter += 2) {
+        const seed: u32 = @intCast(seed_iter);
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
         // A degenerate RNG draw (gen.zig, Rng.int1) is a point where SE's own

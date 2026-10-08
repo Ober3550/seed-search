@@ -70,3 +70,7 @@ ghidra/headless-*.out
 
 # static site build (scripts/build-pages.mjs)
 /dist/
+
+# coarse seed scan working chunks (scripts/seed-scan.mjs); the packed
+# seedlists/<mod>.u32 files are deliberately NOT ignored
+/seedlists/*/

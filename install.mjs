@@ -378,7 +378,7 @@ function installServer(npm) {
 // Main
 // ---------------------------------------------------------------------------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Usage: node install.mjs [--build-only | --wasm-only] [--help]
+  console.log(`Usage: node install.mjs [--build-only | --wasm-only | --seedgen-only] [--help]
 
 Builds the Zig components and installs the web server's dependencies:
   1. seedgen   (universe_generator)
@@ -387,6 +387,7 @@ Builds the Zig components and installs the web server's dependencies:
   4. htmx      (the web GUI's front-end dependency — always fetched)
   5. web server dependencies (space_explorer_gui)   [skipped with --build-only]
 
+--seedgen-only Build only the native seedgen binary (for scripts/scan-seeds.sh).
 --wasm-only   Build only universe.wasm, surface.wasm and sa.wasm (the static
               site's browser modules; see scripts/build-pages.mjs).
 --build-only  Build the Zig components only; skip the server npm install. Used
@@ -412,6 +413,15 @@ async function main() {
   step("Checking prerequisites");
   checkNode();
   checkZig();
+
+  // --seedgen-only: just the native universe generator (what the seed scans
+  // in scripts/scan-seeds.sh need).
+  if (process.argv.includes("--seedgen-only")) {
+    step("Building seedgen (universe generator)");
+    buildSeedgen();
+    console.log("\n" + bold("Done."));
+    return;
+  }
 
   // --wasm-only: just the three browser modules (what the static site needs);
   // no native binaries, no wgpu download, no npm.
