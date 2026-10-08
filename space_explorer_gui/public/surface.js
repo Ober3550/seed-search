@@ -644,7 +644,10 @@
         els.canvas.height = disp;
         var GL = layersBegin(disp, null);
         var gpuKind, backend, label;
-        if (kind === "nauvis") { gpuKind = "tiles"; backend = "nauvis-tiles"; label = "nauvis tiles"; }
+        // Nauvis: base-game tiles, except under Space Exploration, where the
+        // ground is alien-biomes like every other SE surface
+        var seNauvis = kind === "nauvis" && (MOD === "se" || MOD === "k2se");
+        if (kind === "nauvis" && !seNauvis) { gpuKind = "tiles"; backend = "nauvis-tiles"; label = "nauvis tiles"; }
         else if (z.t === "asteroid-field") { gpuKind = "field-color"; backend = "se-field"; label = "asteroid field"; }
         else { gpuKind = "se-color"; backend = "se-alien-biomes"; label = "alien biomes"; }
         // field kernel seeds its billows gen with the ZONE's map seed
@@ -674,6 +677,27 @@
             status("gpu: " + label + " " + c.done + "/" + c.total + " cells…");
             setProgress(c.total ? c.done / c.total : 0);
           }
+        }).then(function (cells) {
+          // The alien-biomes kernel has no starting lake (SE moons have none),
+          // but Nauvis does. The lake sits within ~105 tiles of spawn, so the
+          // square around spawn is redrawn from the CPU renderer, which has it.
+          if (!seNauvis || scaleS !== 1) return cells;
+          var h = Math.min(128, R);
+          return sendToPool({
+            seed: SEED, k2: K2, zone: z, layer: 1, radius: R, palette: "se",
+            rect: { x0: -h, y0: -h, x1: h, y1: h }
+          }).then(function (r) {
+            var W = r.summary.width;
+            for (var py = 0; py < W; py++) {
+              for (var px = 0; px < W; px++) {
+                var dx = px - h, dy = py - h;
+                if (dx * dx + dy * dy > diskR * diskR) r.pixels[(py * W + px) * 4 + 3] = 0;
+              }
+            }
+            putImg((GL ? GL.terrain : els.canvas).getContext("2d"), W, r.summary.height, r.pixels, R - h, R - h);
+            if (GL) compositeSA(R - h, R - h, 2 * h, 2 * h);
+            return cells;
+          }, function (e) { console.error("lake patch failed:", e); return cells; });
         }).then(function (cells) {
           var out = { cells: cells, backend: backend, width: disp, height: disp, scale: scaleS, downscaled: downscaled };
           if (downscaled && layer === 0) {

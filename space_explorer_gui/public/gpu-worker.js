@@ -365,7 +365,9 @@ async function runSEZone(mapSeed, zone, rect, mode) {
   // uniform: 26 floats then width/height/mode u32s (116 bytes)
   const tags = (zone && zone.tags) || {};
   const wtag = (zone && zone.water) || tags.water || "";
-  const hasWater = wtag.length > 0 && wtag !== "none";
+  // the CPU renderer's own verdict when it gives one (Nauvis always has
+  // water, whatever the row's tag says); the tag otherwise
+  const hasWater = typeof cp.has_water === "boolean" ? cp.has_water : (wtag.length > 0 && wtag !== "none");
   const arr = new ArrayBuffer(116);
   const f = new Float32Array(arr);
   const v = [rect.x0, rect.y0, nsm, seg, waterLevel,
