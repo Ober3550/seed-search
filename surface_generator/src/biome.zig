@@ -304,6 +304,187 @@ pub const water: [3]u8 = .{ 51, 83, 95 };
 pub const water_shallow: [3]u8 = .{ 53, 97, 110 };
 pub const water_mud: [3]u8 = .{ 54, 88, 90 };
 
+// ── Base-game (vanilla 2.0) Nauvis ground ──────────────────────────────────
+// Nauvis under the base / Space Age configs must NOT use the alien-biomes
+// tilesheet (that is Space-Exploration-only ground). This is a data-driven
+// port of the base tile autoplace competition (base/prototypes/tile/tiles.lua,
+// 2.0.77): each tile prototype carries
+//   probability_expression = moisture/aux band(s) + noise_layer_noise(seed)
+// and water/deepwater use water_base(elevation) — all competing in one argmax,
+// exactly the engine's basic-tiles task. Real map_colours are used verbatim.
+// The one engine primitive not ported yet is expression_in_range (band-edge
+// shape), so bands use the same linear plateau as the alien-biomes classifier
+// (verified shape) — selection is therefore approximate until it's RE'd, but
+// the tile set / palette / competition structure is the real data.
+
+/// Base-Nauvis palette (index → { name, map_colour }); index order == the
+/// per-pixel tile ids the classifier returns.
+pub const NauvisTile = struct { name: []const u8, color: [3]u8 };
+
+pub const NB_WATER: u8 = 0;
+pub const NB_DEEPWATER: u8 = 1;
+pub const NB_SAND1: u8 = 2;
+pub const NB_SAND2: u8 = 3;
+pub const NB_SAND3: u8 = 4;
+pub const NB_DRY_DIRT: u8 = 5;
+pub const NB_DIRT1: u8 = 6;
+pub const NB_DIRT2: u8 = 7;
+pub const NB_DIRT3: u8 = 8;
+pub const NB_DIRT4: u8 = 9;
+pub const NB_DIRT5: u8 = 10;
+pub const NB_DIRT6: u8 = 11;
+pub const NB_DIRT7: u8 = 12;
+pub const NB_GRASS1: u8 = 13;
+pub const NB_GRASS2: u8 = 14;
+pub const NB_GRASS3: u8 = 15;
+pub const NB_GRASS4: u8 = 16;
+pub const NB_REDDESERT0: u8 = 17;
+pub const NB_REDDESERT1: u8 = 18;
+pub const NB_REDDESERT2: u8 = 19;
+pub const NB_REDDESERT3: u8 = 20;
+
+pub const nauvis_base_palette = [_]NauvisTile{
+    .{ .name = "water", .color = .{ 51, 83, 95 } },
+    .{ .name = "deepwater", .color = .{ 38, 64, 73 } },
+    .{ .name = "sand-1", .color = .{ 138, 103, 58 } },
+    .{ .name = "sand-2", .color = .{ 128, 93, 52 } },
+    .{ .name = "sand-3", .color = .{ 115, 83, 47 } },
+    .{ .name = "dry-dirt", .color = .{ 94, 66, 37 } },
+    .{ .name = "dirt-1", .color = .{ 141, 104, 60 } },
+    .{ .name = "dirt-2", .color = .{ 136, 96, 59 } },
+    .{ .name = "dirt-3", .color = .{ 133, 92, 53 } },
+    .{ .name = "dirt-4", .color = .{ 103, 72, 43 } },
+    .{ .name = "dirt-5", .color = .{ 91, 63, 38 } },
+    .{ .name = "dirt-6", .color = .{ 80, 55, 31 } },
+    .{ .name = "dirt-7", .color = .{ 80, 54, 28 } },
+    .{ .name = "grass-1", .color = .{ 55, 53, 11 } },
+    .{ .name = "grass-2", .color = .{ 66, 57, 15 } },
+    .{ .name = "grass-3", .color = .{ 65, 52, 28 } },
+    .{ .name = "grass-4", .color = .{ 59, 40, 18 } },
+    .{ .name = "red-desert-0", .color = .{ 103, 70, 32 } },
+    .{ .name = "red-desert-1", .color = .{ 116, 81, 39 } },
+    .{ .name = "red-desert-2", .color = .{ 116, 84, 43 } },
+    .{ .name = "red-desert-3", .color = .{ 128, 93, 52 } },
+};
+
+const NB_Band = struct { lo: f64, hi: f64 };
+const NauvisRule = struct {
+    idx: u8,
+    /// primary aux×moisture band (range args of expression_in_range_base)
+    aux: NB_Band,
+    moist: NB_Band,
+    /// optional second band under max(...) (dirt-1/4, sand-2/3)
+    aux2: ?NB_Band = null,
+    moist2: ?NB_Band = null,
+    /// noise_layer_noise seed1 (per-tile layer speckle)
+    noise_seed: u32 = 0,
+    /// sand-1's shoreline term: expression_in_range(5, inf, elevation, aux,
+    /// -1.5, 0.5, 1.5, 1) — an elevation×aux band centred on sea level.
+    shore: bool = false,
+};
+
+/// Land-tile rules, verbatim from base tiles.lua autoplace expressions.
+const nauvis_rules = [_]NauvisRule{
+    .{ .idx = NB_SAND1, .aux = .{ .lo = -10, .hi = 0.25 }, .moist = .{ .lo = -10, .hi = 0.15 }, .noise_seed = 36, .shore = true },
+    .{ .idx = NB_SAND2, .aux = .{ .lo = -10, .hi = 0.3 }, .moist = .{ .lo = 0.15, .hi = 0.2 }, .aux2 = .{ .lo = 0.25, .hi = 0.3 }, .moist2 = .{ .lo = -10, .hi = 0.15 }, .noise_seed = 37 },
+    .{ .idx = NB_SAND3, .aux = .{ .lo = -10, .hi = 0.4 }, .moist = .{ .lo = 0.2, .hi = 0.25 }, .aux2 = .{ .lo = 0.3, .hi = 0.4 }, .moist2 = .{ .lo = -10, .hi = 0.2 }, .noise_seed = 38 },
+    .{ .idx = NB_DRY_DIRT, .aux = .{ .lo = 0.45, .hi = 0.55 }, .moist = .{ .lo = -10, .hi = 0.35 }, .noise_seed = 13 },
+    .{ .idx = NB_DIRT1, .aux = .{ .lo = -10, .hi = 0.45 }, .moist = .{ .lo = 0.25, .hi = 0.3 }, .aux2 = .{ .lo = 0.4, .hi = 0.45 }, .moist2 = .{ .lo = -10, .hi = 0.25 }, .noise_seed = 6 },
+    .{ .idx = NB_DIRT2, .aux = .{ .lo = -10, .hi = 0.45 }, .moist = .{ .lo = 0.3, .hi = 0.35 }, .noise_seed = 7 },
+    .{ .idx = NB_DIRT3, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.35, .hi = 0.4 }, .noise_seed = 8 },
+    .{ .idx = NB_DIRT4, .aux = .{ .lo = 0.55, .hi = 0.6 }, .moist = .{ .lo = -10, .hi = 0.35 }, .aux2 = .{ .lo = 0.6, .hi = 11 }, .moist2 = .{ .lo = 0.3, .hi = 0.35 }, .noise_seed = 9 },
+    .{ .idx = NB_DIRT5, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.4, .hi = 0.45 }, .noise_seed = 10 },
+    .{ .idx = NB_DIRT6, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.45, .hi = 0.5 }, .noise_seed = 11 },
+    .{ .idx = NB_DIRT7, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.5, .hi = 0.55 }, .noise_seed = 12 },
+    .{ .idx = NB_GRASS1, .aux = .{ .lo = -10, .hi = 11 }, .moist = .{ .lo = 0.7, .hi = 11 }, .noise_seed = 19 },
+    .{ .idx = NB_GRASS2, .aux = .{ .lo = 0.45, .hi = 11 }, .moist = .{ .lo = 0.45, .hi = 0.8 }, .noise_seed = 20 },
+    .{ .idx = NB_GRASS3, .aux = .{ .lo = -10, .hi = 0.65 }, .moist = .{ .lo = 0.6, .hi = 0.9 }, .noise_seed = 21 },
+    .{ .idx = NB_GRASS4, .aux = .{ .lo = -10, .hi = 0.55 }, .moist = .{ .lo = 0.5, .hi = 0.7 }, .noise_seed = 22 },
+    .{ .idx = NB_REDDESERT0, .aux = .{ .lo = 0.55, .hi = 11 }, .moist = .{ .lo = 0.35, .hi = 0.5 }, .noise_seed = 30 },
+    .{ .idx = NB_REDDESERT1, .aux = .{ .lo = 0.6, .hi = 0.7 }, .moist = .{ .lo = -10, .hi = 0.3 }, .aux2 = .{ .lo = 0.7, .hi = 11 }, .moist2 = .{ .lo = 0.25, .hi = 0.3 }, .noise_seed = 31 },
+    .{ .idx = NB_REDDESERT2, .aux = .{ .lo = 0.7, .hi = 0.8 }, .moist = .{ .lo = -10, .hi = 0.25 }, .aux2 = .{ .lo = 0.8, .hi = 11 }, .moist2 = .{ .lo = 0.2, .hi = 0.25 }, .noise_seed = 32 },
+    .{ .idx = NB_REDDESERT3, .aux = .{ .lo = 0.8, .hi = 11 }, .moist = .{ .lo = -10, .hi = 0.2 }, .noise_seed = 33 },
+};
+
+/// Base-Nauvis tile competition. One basis-noise gen per land rule (the
+/// per-layer noise_layer_noise), precomputed from the map seed.
+pub const BaseNauvis = struct {
+    gens: [nauvis_rules.len]noise.BasisNoiseGen,
+
+    pub fn init(map_seed: u32) BaseNauvis {
+        var c: BaseNauvis = undefined;
+        for (nauvis_rules, 0..) |r, i| c.gens[i] = noise.BasisNoiseGen.init(map_seed, r.noise_seed);
+        return c;
+    }
+
+    /// ExpressionInRange (engine op, RE'd 2.0.77): per-dim linear tent
+    ///   peak(v, lo, hi) = (hi-lo)/2 - |v - (lo+hi)/2|   scaled by A, capped at
+    ///   B when finite, then min across dims (no lower clamp). The base tile
+    ///   autoplace bands are expression_in_range(20, 1, aux, moisture,
+    ///   aux_lo, m_lo, aux_hi, m_hi). Verified bit-exact vs live-game probes
+    ///   (mse 0 on 4 banded datasets). All f32: the engine evaluates the tile
+    //    competition in f32 noise registers (tile_gen.c reads float*), so the
+    //    peaks/water/noise compare in f32 like the game.
+    fn peak(v: f32, lo: f64, hi: f64, mult: f32, cap: f32) f32 {
+        const half: f32 = @floatCast((hi - lo) / 2.0);
+        const center: f32 = @floatCast((lo + hi) / 2.0);
+        var p: f32 = (half - @abs(v - center)) * mult;
+        if (cap != std.math.inf(f32) and p > cap) p = cap;
+        return p;
+    }
+    fn eirDim(aux: f32, m: f32, lo_aux: f64, hi_aux: f64, lo_m: f64, hi_m: f64) f32 {
+        // expression_in_range(20, 1, aux, moisture, lo_aux, lo_m, hi_aux, hi_m)
+        return @min(peak(aux, lo_aux, hi_aux, 20.0, 1.0), peak(m, lo_m, hi_m, 20.0, 1.0));
+    }
+    fn bandEir(aux: f32, m: f32, r: *const NauvisRule) f32 {
+        var p = eirDim(aux, m, r.aux.lo, r.aux.hi, r.moist.lo, r.moist.hi);
+        if (r.aux2 != null) {
+            const alt = eirDim(aux, m, r.aux2.?.lo, r.aux2.?.hi, r.moist2.?.lo, r.moist2.?.hi);
+            p = @max(p, alt);
+        }
+        return p;
+    }
+
+    /// Winning tile index into nauvis_base_palette at (x, y) given elevation,
+    /// moisture, aux. Water/deepwater (water_base) compete in the same argmax
+    /// as every land tile — the effective shoreline falls where water_base
+    /// (~100·-e) stops beating the land plateau, i.e. e ≈ −0.01 (the game
+    /// calibrates ≈ −0.012).
+    pub fn classify(self: *const BaseNauvis, x: f64, y: f64, e: f64, m: f64, aux: f64) u8 {
+        // engine evaluates properties + tile probs in f32 registers
+        const ef: f32 = @floatCast(e);
+        const mf: f32 = @floatCast(m);
+        const af: f32 = @floatCast(aux);
+        // water_base(0,100) / water_base(-2,200): influence·min(max_elev-e,1)
+        const water_p: f32 = if (ef < 0.0) 100.0 * @min(-ef, 1.0) else -std.math.inf(f32);
+        const deep_p: f32 = if (ef < -2.0) 200.0 * @min(-2.0 - ef, 1.0) else -std.math.inf(f32);
+        var best = water_p;
+        var best_idx: u8 = NB_WATER;
+        if (deep_p > best) {
+            best = deep_p;
+            best_idx = NB_DEEPWATER;
+        }
+        for (&nauvis_rules, 0..) |*r, i| {
+            var p = bandEir(af, mf, r);
+            if (r.shore) {
+                // sand-1 shoreline: expression_in_range(5, inf, elevation,
+                // aux, -1.5, 0.5, 1.5, 1)
+                const shore = @min(peak(ef, -1.5, 1.5, 5.0, std.math.inf(f32)),
+                    peak(af, 0.5, 1.0, 5.0, std.math.inf(f32)));
+                p = @max(p, shore);
+            }
+            // noise_layer_noise(seed) = multioctave, 4 octaves, 0.7 persist,
+            // input_scale 1/6, output_scale 2/3 — makes patchy tile speckle.
+            p += @as(f32, @floatCast(noise.multioctaveNoisePrebuilt(&self.gens[i], x, y, 4, 0.7, 1.0 / 6.0, 2.0 / 3.0)));
+            if (p > best) {
+                best = p;
+                best_idx = r.idx;
+            }
+        }
+        return best_idx;
+    }
+};
+
 // Unified tile-index space for the tile-correction pass: 0..biomes.len-1 are land
 // biomes; the following are the water/wetland tiles; BG = outside the disk.
 pub const IDX_WATER: u16 = 60000;

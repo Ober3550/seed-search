@@ -221,3 +221,10 @@ Compare Zig output against Lua (requires Docker):
 ```bash
 ./verifier/verify/compare-zig-lua.sh --count 5
 ```
+
+### Web — analyze any seed fully in the browser
+
+`/seed?seed=…` generates a seed's universe AND any surface (SE zone, Nauvis, or
+Space Age planet) entirely in the browser — `/surface/:seed/:name` renders one
+surface full-page, chunked into centre-out ~1 s cells across all cores
+(universe.wasm + surface.wasm, no backend per-seed work).

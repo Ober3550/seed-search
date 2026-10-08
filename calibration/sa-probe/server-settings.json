@@ -1,0 +1,7 @@
+{
+  "name": "vanilla-sweep",
+  "description": "calibration",
+  "visibility": {"public": false, "lan": false},
+  "require_user_verification": false,
+  "max_players": 1
+}

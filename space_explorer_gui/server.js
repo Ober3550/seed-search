@@ -120,33 +120,63 @@ const LIVERELOAD_SNIPPET = DEV ? `
   })();
   </script>` : "";
 
+// ── Mod configuration (base | sa | se | k2se) ─────────────────────────────
+// k2se = SE + Krastorio 2. Written without '+' so URLs don't need it encoded;
+// the legacy "se+k2" query value is accepted and treated as k2se.
+const MODS = ["base", "sa", "se", "k2se"];
+function navMod(req) {
+  let m = String(req.query.mod || "");
+  if (m === "se+k2") m = "k2se"; // legacy alias
+  return MODS.includes(m) ? m : "k2se"; // default = K2 on
+}
+function modLabel(m) { return { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" }[m] || m; }
+function modHref(path, mod) { return path + (mod ? (path.includes("?") ? "&" : "?") + "mod=" + encodeURIComponent(mod) : ""); }
+
 // ── Layout ───────────────────────────────────────────────────────────────
 
-function htmxPage(title, content) {
+
+function htmxPage(title, content, mod, backSeed) {
+  mod = mod || "k2se";
+  const seedHref = backSeed != null ? "/seed?seed=" + encodeURIComponent(backSeed) + "&mod=" + encodeURIComponent(mod) : modHref("/seed", mod);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} — SE Explorer</title>
+  <title>${title} — Surface Explorer</title>
   <script src="/static/htmx.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">${LIVERELOAD_SNIPPET}
+  <script>
+  // Mod-config selector: navigate to the same page path with ?mod= preserved
+  // (and keep any other query params such as ?seed=).
+  document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "mod-nav") {
+      var params = new URLSearchParams(location.search);
+      params.set("mod", e.target.value);
+      var q = params.toString();
+      location.href = location.pathname + (q ? "?" + q : "");
+    }
+  });
+  </script>
 </head>
 <body>
   <div class="app">
     <nav class="sidebar">
-      <h1>🌌 SE Explorer</h1>
+      <h1>🌌 Surface Explorer</h1>
+      <label class="modcfg">Mod config
+        <select id="mod-nav">
+          ${MODS.map(m => `<option value="${m}"${m === mod ? " selected" : ""}>${modLabel(m)}</option>`).join("")}
+        </select>
+      </label>
       <ul class="nav-links">
-        <li><a href="/universe" hx-get="/universe" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Universe Buckets</a></li>
-        <li><a href="/seeds" hx-get="/seeds" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
-        <li><a href="/presets" hx-get="/presets" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
-        <li><a href="/surfaces" hx-get="/surfaces" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Surface Jobs</a></li>
-        <li><a href="/workers" hx-get="/workers" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Workers</a></li>
+        <li><a href="${seedHref}" title="Seed → universe → surface, entirely in your browser">🌍 Seed</a></li>
+        <li><a href="${modHref("/seeds", mod)}" hx-get="${modHref("/seeds", mod)}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Seeds</a></li>
+        <li><a href="${modHref("/presets", mod)}" hx-get="${modHref("/presets", mod)}" hx-target="#main" hx-push-url="true" hx-sync="#main:replace">Filter Presets</a></li>
       </ul>
       <div class="sidebar-footer">
         <button type="button" class="btn danger wipe-btn" hx-post="/api/system/wipe" hx-swap="none"
           hx-confirm="⚠️ Wipe the whole system? This deletes ALL jobs, seeds, and generated surfaces (the database AND the output/ folder). This cannot be undone."
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           🗑 Wipe system
         </button>
         ${GIT_INFO ? `<small class="git-info" title="Commit ${GIT_INFO.short} · ${GIT_INFO.ts}">git: ${GIT_INFO.short}</small>` : ""}
@@ -160,12 +190,13 @@ function htmxPage(title, content) {
 </html>`;
 }
 
-function page(req, res, title, content) {
+function page(req, res, title, content, backSeed) {
   // htmx history restore (Back on a cache miss) sets hx-request too, but needs the
   // full page to rebuild the body — only serve the bare fragment for live swaps.
+  const mod = navMod(req);
   if (req.headers["hx-request"] && !req.headers["hx-history-restore-request"])
     res.send(content);
-  else res.send(htmxPage(title, content));
+  else res.send(htmxPage(title, content, mod, backSeed));
 }
 
 function fmtAmount(n) {
@@ -331,7 +362,7 @@ function crumbs(parts) {
   ).join(" ")}</div>`;
 }
 
-app.get("/", (req, res) => res.redirect("/universe"));
+app.get("/", (req, res) => res.redirect("/seed"));
 
 // ── Level 1: Universe buckets ──────────────────────────────────────────
 
@@ -359,12 +390,12 @@ function renderUniversePage(jobsList, statusFilter) {
       <div class="head-actions">
         <button type="button" class="btn danger" hx-post="/api/jobs/cancel-all" hx-swap="none"
           hx-confirm="Cancel ALL queued and running jobs (universe + surface) and kill their processes?"
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           ✖ Cancel all jobs
         </button>
         <button type="button" class="btn" hx-post="/api/jobs/clear-cancelled" hx-swap="none"
           hx-confirm="Delete all CANCELLED job entries and their on-disk bucket data? (surviving buckets are kept)"
-          hx-on::after-request="htmx.ajax('GET','/universe',{target:'#main'})">
+          hx-on::after-request="htmx.ajax('GET','/seed',{target:'#main'})">
           🧹 Clear cancelled
         </button>
       </div>
@@ -796,6 +827,94 @@ function renderFsrPanel(zone) {
         </script>
       </form>`;
 }
+
+// Client-side seed analysis page. Serves ONLY a static shell — the seed's zones
+// and estimates are generated in the browser (universe.wasm + estimate-core.js),
+// so this route touches no DB and does no per-seed work. The optional :seed and
+// ?k2 seed it; otherwise the user types a seed in.
+// The client-side seed → universe → surface explorer. Lives at /seed so it is
+// the app's primary page; /analyze is kept as a redirect for old links.
+app.get("/analyze", (req, res) => res.redirect("/seed" + (req.url.includes("?") ? "?" + req.url.split("?")[1] : "")));
+app.get("/analyze/:seed", (req, res) => res.redirect("/seed?seed=" + encodeURIComponent(req.params.seed) + (req.url.split("?").length > 1 ? "&" + req.url.split("?")[1] : "")));
+
+app.get("/seed", (req, res) => {
+  const mod = navMod(req);
+  const seed = /^\d+$/.test(req.query.seed || "") ? parseInt(req.query.seed) : null;
+  const k2 = mod === "k2se";
+  const content = `
+  <div class="page" data-mod="${mod}">
+    <div class="crumbs"><span>Seed (client-side · ${modLabel(mod)})</span></div>
+    <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+    <div class="filter-bar">
+      <label>Seed: <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
+      <button type="button" class="btn" id="gen-btn">Generate</button>
+      <span id="gen-status" class="hint"></span><br/>
+      <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
+      <label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label>
+    </div>
+    <table class="data-table" id="zone-table">
+      <thead id="zt-head"><tr>
+        <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="type" style="cursor:pointer">Type <span class="sort-ind"></span></th>
+        <th class="sortable" data-key="radius" style="cursor:pointer">Radius <span class="sort-ind"></span></th>
+        <th title="Travel Δv to Nauvis (km)" class="sortable" data-key="dv" style="cursor:pointer">Δv <span class="sort-ind"></span></th>
+        <th>Water</th><th>Enemy</th>
+        <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
+        <th>Estimated resources</th>
+        <th title="Open this surface on its own page (/surface/:seed/:name)">Open</th>
+      </tr></thead>
+      <tbody id="zt-body"><tr><td colspan="9" class="hint">Enter a seed and press Generate.</td></tr></tbody>
+    </table>
+  </div>
+  <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed}; window.__ANALYZE_MOD__ = "${mod}";</script>
+  <script src="/static/gen-bridge.js"></script>
+  <script src="/static/universe-wasm.js"></script>
+  <script src="/static/estimate-core.js"></script>
+  <script src="/static/analyze.js"></script>`;
+  page(req, res, "Seed", content);
+});
+
+// Dedicated surface page: generates ONE surface (SE zone, Nauvis, or SA
+// planet) on its own route instead of in a modal. Client-side only — the
+// worker runs the same WASM generators as the seed table.
+app.get("/surface/:seed/:target", (req, res) => {
+  const mod = navMod(req);
+  const seed = /^\d+$/.test(req.params.seed || "") ? parseInt(req.params.seed) : null;
+  const target = String(req.params.target || "").trim();
+  const escH = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  if (seed == null || !target)
+    return res.status(404).send(htmxPage("Not Found", "<h2>Surface not found</h2>", mod));
+  const content = `
+  <div class="page">
+    <div class="crumbs"><a href="/seed?seed=${seed}&mod=${encodeURIComponent(mod)}">🌍 Seed ${seed}</a> <span>→</span> <span>${escH(target)}</span></div>
+    <h2>🗺️ <span id="sf-name">${escH(target)}</span> <span id="sf-badge" class="badge zone-type">…</span> <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+    <div id="sf-meta" class="hint"></div>
+    <div class="filter-bar">
+      <label>Preview radius <input type="number" id="sf-radius" min="10" max="10000" step="50" value="2000" style="width:7em"></label>
+      <label id="sf-layer-wrap">Layer <select id="sf-layer">
+        <option value="0">Terrain + ore</option>
+        <option value="1">Terrain only</option>
+        <option value="2">Ore only</option>
+      </select></label>
+      <label id="sf-dim-wrap" hidden title="terrain brightness under the resources">Terrain <input type="range" id="sf-dim" min="0" max="100" value="100" style="width:8em;vertical-align:middle"></label>
+      <button type="button" class="btn" id="sf-go">Generate</button>
+      <span id="sf-status" class="hint"></span>
+    </div>
+    <div class="progress-wrap" id="sf-progress-wrap"><div id="sf-progress" class="progress-fill"></div></div>
+    <div class="surf-box">
+      <canvas id="sf-canvas" width="600" height="600"></canvas>
+      <div id="sf-res" class="hint"></div>
+    </div>
+  </div>
+  <script>window.__SURF_SEED__ = ${seed}; window.__SURF_TARGET__ = ${JSON.stringify(target)}; window.__SURF_MOD__ = "${mod}";</script>
+  <script src="/static/gen-bridge.js"></script>
+  <script src="/static/universe-wasm.js"></script>
+  <script src="/static/surface-wasm.js"></script>
+  <script src="/static/sa-wasm.js"></script>
+  <script src="/static/gpu-surface.js"></script>
+  <script src="/static/surface.js"></script>`;
+  page(req, res, `Seed ${seed} · ${target}`, content, seed);
+});
 
 app.get("/seed/:seed", (req, res) => {
   const s = db.getSeed(parseInt(req.params.seed));

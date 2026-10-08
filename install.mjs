@@ -286,6 +286,54 @@ function buildSeedgen() {
   ok(`seedgen → universe_generator/zig/${out}`);
 }
 
+function buildUniverseWasm() {
+  // The universe generator, compiled to WebAssembly so the web GUI can generate
+  // a seed's zones + FSR entirely client-side (no backend). Reuses gen.zig via
+  // wasm.zig's exported generate()/resultPtr()/resultLen(). Emitted straight
+  // into the GUI's static dir. freestanding + no libc (the wasm path doesn't use
+  // getenv/stdout), -fno-entry (no main), -rdynamic to keep the exports.
+  const dir = path.join(ROOT, "universe_generator", "zig");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "universe.wasm");
+  const args = ["build-exe", "wasm.zig", "-target", "wasm32-freestanding",
+    "-O", "ReleaseSmall", "-fno-entry", "-rdynamic", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("universe.wasm → space_explorer_gui/public/universe.wasm");
+}
+
+function buildSurfaceWasm() {
+  // The SE surface generator, compiled to WebAssembly so the web GUI can render
+  // a zone's surface (terrain/biome/water + ore) entirely client-side — the
+  // same pure modules (se_ore_placement/terrain/biome/asteroid + universe
+  // gen.zig) and shared calibration (se_resources.zig) as native segen, so spot
+  // positions/amounts and colors match segen bit-for-bit. se_wasm.zig imports
+  // the universe generator as a separate module (gen.zig). The surface pipeline
+  // has deep worker/noise frames, so the wasm stack is raised to 8 MiB (virtual
+  // memory — pages are only committed on use). Emitted into the GUI's static
+  // dir; freestanding + no libc, -fno-entry (no main), -rdynamic for exports.
+  const dir = path.join(ROOT, "surface_generator", "src");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "surface.wasm");
+  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
+    "--dep", "universe_gen", "-Mroot=se_wasm.zig",
+    "-Muniverse_gen=../../universe_generator/zig/gen.zig",
+    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("surface.wasm → space_explorer_gui/public/surface.wasm");
+}
+
+function buildSAWasm() {
+  // The data-driven planet surface generator (sa_program/sa_surface) compiled
+  // to WASM for the browser — same exported-buffer protocol as surface.wasm.
+  // It embeds src/sa_noise_data.json (regenerate with scripts/sa-build-data.py
+  // after a game update) and renders any planet in that file.
+  const dir = path.join(ROOT, "surface_generator", "src");
+  const out = path.join(ROOT, "space_explorer_gui", "public", "sa.wasm");
+  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
+    "-Mroot=sa_wasm.zig",
+    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+  run("zig", args, dir);
+  ok("sa.wasm → space_explorer_gui/public/sa.wasm");
+}
+
 function buildSegen() {
   const dir = path.join(ROOT, "surface_generator");
   run("zig", ["build", "-Doptimize=ReleaseFast"], dir);
@@ -366,6 +414,14 @@ async function main() {
 
   step("Building seedgen (universe generator)");
   buildSeedgen();
+
+  step("Building universe.wasm (client-side seed analysis)");
+  buildUniverseWasm();
+
+  step("Building surface.wasm (client-side zone surface render)");
+  buildSurfaceWasm();
+  step("Building sa.wasm (client-side Space Age planet terrain)");
+  buildSAWasm();
 
   step("Building segen (surface generator)");
   buildSegen();

@@ -1,0 +1,162 @@
+==== 0x1025eac10 log2 ====
+1025eac10  fmov w8,s0
+1025eac14  mov w9,#0x3f000000
+1025eac18  bfxil w9,w8,#0x0,#0x17
+1025eac1c  ucvtf s0,w8
+1025eac20  movi v1.2S,#0x34, LSL #24
+1025eac24  fmul s0,s0,s1
+1025eac28  mov w8,#0x7377
+1025eac2c  movk w8,#0xc2f8, LSL #16
+1025eac30  fmov s1,w8
+1025eac34  fadd s0,s0,s1
+1025eac38  fmov s1,w9
+1025eac3c  mov w8,#0xbf75
+1025eac40  movk w8,#0xbfbf, LSL #16
+1025eac44  fmov s2,w8
+1025eac48  fmul s2,s1,s2
+1025eac4c  fadd s0,s0,s2
+1025eac50  mov w8,#0x44f9
+1025eac54  movk w8,#0x3eb4, LSL #16
+1025eac58  fmov s2,w8
+1025eac5c  fadd s1,s1,s2
+1025eac60  mov w8,#0xe9a3
+1025eac64  movk w8,#0xbfdc, LSL #16
+1025eac68  fmov s2,w8
+1025eac6c  fdiv s1,s2,s1
+1025eac70  fadd s0,s0,s1
+1025eac74  ret
+1025eac78  fmov x8,d0
+1025eac7c  tbnz x8,#0x3f,0x1025eacb4
+1025eac80  lsr x9,x8,#0x20
+1025eac84  lsr w10,w9,#0x14
+1025eac88  cbz w10,0x1025eacb4
+1025eac8c  fmov d1,d0
+1025eac90  cmp w10,#0x7fe
+1025eac94  b.hi 0x1025eae74
+1025eac98  mov w10,#0x3ff00000
+1025eac9c  cmp w9,w10
+1025eaca0  b.ne 0x1025eacf0
+1025eaca4  cbz w8,0x1025eae7c
+1025eaca8  mov w10,#0xfffffc01
+1025eacac  mov w9,#0x3ff00000
+1025eacb0  b 0x1025eacf4
+1025eacb4  ands x9,x8,#0x7fffffffffffffff
+1025eacb8  mov x10,#-0x10000000000000
+1025eacbc  fmov d1,x10
+1025eacc0  mov x10,#0x7ff8000000000000
+1025eacc4  fmov d2,x10
+1025eacc8  fcsel d1,d2,d1,ne
+1025eaccc  tbnz x8,#0x3f,0x1025eae74
+1025eacd0  cbz x9,0x1025eae74
+1025eacd4  mov x8,#0x4350000000000000
+1025eacd8  fmov d1,x8
+1025eacdc  fmul d0,d0,d1
+1025eace0  fmov x8,d0
+1025eace4  lsr x9,x8,#0x20
+1025eace8  mov w10,#0xfffffbcb
+1025eacec  b 0x1025eacf4
+1025eacf0  mov w10,#0xfffffc01
+1025eacf4  add w9,w9,#0x95, LSL #12
+1025eacf8  add w11,w9,#0xf62
+1025eacfc  add w9,w10,w11, LSR #0x14
+1025ead00  and w10,w11,#0xfffff
+1025ead04  mov w11,#0xa09e
+1025ead08  movk w11,#0x3fe6, LSL #16
+1025ead0c  add w10,w10,w11
+1025ead10  and x8,x8,#0xffffffff
+1025ead14  orr x8,x8,x10, LSL #0x20
+1025ead18  fmov d0,x8
+1025ead1c  fmov d1,-0x4010000000000000
+1025ead20  fadd d0,d0,d1
+1025ead24  fmov d1,0x3fe0000000000000
+1025ead28  fmul d1,d0,d1
+1025ead2c  fmul d1,d0,d1
+1025ead30  fmov d2,0x4000000000000000
+1025ead34  fadd d2,d0,d2
+1025ead38  fdiv d2,d0,d2
+1025ead3c  fmul d3,d2,d2
+1025ead40  fmul d4,d3,d3
+1025ead44  mov x8,#0xc69f
+1025ead48  movk x8,#0xd078, LSL #16
+1025ead4c  movk x8,#0x9a09, LSL #32
+==== 0x1025ea988 exp2f ====
+1025ea988  fcmp s0,#0.0
+1025ea98c  movi d1,#0x0
+1025ea990  fmov s2,0x3f800000
+1025ea994  fcsel s1,s2,s1,mi
+1025ea998  mov w8,#0xc2fc0000
+1025ea99c  fmov s2,w8
+1025ea9a0  fmax s0,s0,s2
+1025ea9a4  fcvtzs s2,s0
+1025ea9a8  scvtf s2,s2
+1025ea9ac  fsub s2,s0,s2
+1025ea9b0  fadd s1,s1,s2
+1025ea9b4  mov w8,#0x8c51
+1025ea9b8  movk w8,#0x42f2, LSL #16
+1025ea9bc  fmov s2,w8
+1025ea9c0  fadd s0,s0,s2
+1025ea9c4  mov w8,#0xf5f8
+1025ea9c8  movk w8,#0x409a, LSL #16
+1025ea9cc  fmov s2,w8
+1025ea9d0  fsub s2,s2,s1
+1025ea9d4  mov w8,#0xd2fe
+1025ea9d8  movk w8,#0x41dd, LSL #16
+1025ea9dc  fmov s3,w8
+1025ea9e0  fdiv s2,s3,s2
+1025ea9e4  fadd s0,s0,s2
+1025ea9e8  mov w8,#0xbc8d
+1025ea9ec  movk w8,#0xbfbe, LSL #16
+1025ea9f0  fmov s2,w8
+1025ea9f4  fmul s1,s1,s2
+1025ea9f8  fadd s0,s0,s1
+1025ea9fc  fcvtzs x8,s0,#0x17
+1025eaa00  fmov s0,w8
+1025eaa04  ret
+1025eaa08  mov w8,#0x83dc
+1025eaa0c  movk w8,#0x40b3, LSL #16
+1025eaa10  fmov s1,w8
+1025eaa14  fmul s1,s0,s1
+1025eaa18  fmul s2,s0,s0
+1025eaa1c  fmul s2,s2,s2
+1025eaa20  fabs s1,s1
+1025eaa24  fneg s3,s1
+1025eaa28  mov w8,#0x762f
+1025eaa2c  movk w8,#0x4056, LSL #16
+1025eaa30  fmov s4,w8
+1025eaa34  fmul s4,s0,s4
+1025eaa38  fcmp s4,#0.0
+1025eaa3c  movi d5,#0x0
+1025eaa40  fmov s6,0x3f800000
+1025eaa44  fcsel s7,s6,s5,mi
+1025eaa48  mov w8,#0xc2fc0000
+1025eaa4c  fmov s16,w8
+1025eaa50  fmax s4,s4,s16
+1025eaa54  fcvtzs s17,s4
+1025eaa58  scvtf s17,s17
+1025eaa5c  fsub s17,s4,s17
+1025eaa60  fadd s7,s7,s17
+1025eaa64  mov w8,#0x8c51
+1025eaa68  movk w8,#0x42f2, LSL #16
+1025eaa6c  fmov s17,w8
+1025eaa70  fadd s4,s4,s17
+1025eaa74  mov w8,#0xf5f8
+1025eaa78  movk w8,#0x409a, LSL #16
+1025eaa7c  fmov s18,w8
+1025eaa80  fsub s19,s18,s7
+1025eaa84  mov w8,#0xd2fe
+1025eaa88  movk w8,#0x41dd, LSL #16
+1025eaa8c  fmov s20,w8
+1025eaa90  fdiv s19,s20,s19
+1025eaa94  fadd s4,s4,s19
+1025eaa98  mov w8,#0xbc8d
+1025eaa9c  movk w8,#0x3fbe, LSL #16
+1025eaaa0  fmov s19,w8
+1025eaaa4  fmul s7,s7,s19
+1025eaaa8  fsub s4,s4,s7
+1025eaaac  fcvtzs x8,s4,#0x17
+1025eaab0  fmov s4,w8
+1025eaab4  fadd s4,s4,s6
+1025eaab8  fmov s7,0x40000000
+1025eaabc  fdiv s4,s7,s4
+1025eaac0  mov w8,#0xd8a3
+1025eaac4  movk w8,#0xbd93, LSL #16

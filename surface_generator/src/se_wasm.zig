@@ -1,0 +1,689 @@
+// WebAssembly entry for the SE surface generator: generate one zone's surface
+// (biome/terrain/water tiles + ore placement) entirely in the browser, so the
+// "Analyze seed" page can render a zone's surface client-side with no backend.
+//
+// Reuses the SAME pure modules as the native segen CLI (se_ore_placement.zig,
+// terrain.zig, biome.zig, asteroid.zig + universe gen.zig for the zone mapgen
+// controls) and the SHARED calibration in se_resources.zig, so spot positions,
+// amounts and colors are identical to a native `segen` run for the same zone /
+// radius. Only the plumbing differs: the request arrives as JSON in linear
+// memory instead of argv, and the output is an RGBA pixel buffer (+ ore summary
+// JSON) instead of PNG files.
+//
+// Build (install.mjs): zig build-exe se_wasm.zig -target wasm32-freestanding
+//   -O ReleaseFast -fno-entry -rdynamic -femit-bin=public/surface.wasm
+//
+// Request JSON (written into the exported input buffer):
+//   { "seed": <world seed u32>,
+//     "k2": <bool>,
+//     "zone": { ...one universe z-array element (n,t,s,r,p,tags, nauvis?)... },
+//     "radius": <render half-extent in tiles, optional>,
+//     "square": <bool, optional: do not clip terrain to the zone disk>,
+//     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only> }
+//
+// Response: resultPtr()/resultLen() = UTF-8 JSON
+//   { "ok": true, "zone", "zone_seed", "type", "radius", "width", "height",
+//     "layer", "resources": { name: { amount, display, tiles } } }
+//   plus pixelsPtr()/pixelsLen() = width*height*4 RGBA8 (top-left origin,
+//   north-up like the native cell render). Valid until the next call.
+const std = @import("std");
+const se = @import("se_ore_placement.zig");
+const vanilla_ore = @import("ore_placement.zig");
+const terrain = @import("terrain.zig");
+const biome = @import("biome.zig");
+const asteroid = @import("asteroid.zig");
+const universe = @import("universe_gen");
+const data = universe.data;
+const res = @import("se_resources.zig");
+// Vanilla-Nauvis ground: the base property expressions (moisture / aux) are
+// compiled from the game's map-gen data by the generic noise-program engine.
+const sa_data = @import("sa_data.zig");
+const sa_program = @import("sa_program.zig");
+const sa_surface = @import("sa_surface.zig");
+
+var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+// vanilla-ground moisture/aux program, kept between calls
+var g_van_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_van_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_van_data: ?sa_data.Data = null;
+var g_van: ?struct { seed: u32, program: sa_program.Program, ws: sa_program.Program.Workspace } = null;
+// replay of Nauvis's rock / tree / enemy placement rolls (positions the ore
+// groups in each chunk's placement stream), kept between calls
+var g_rolls_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_rolls: ?struct { seed: u32, rolls: sa_surface.EntityRolls } = null;
+
+fn nauvisData() !*sa_data.Data {
+    if (g_van_data == null) g_van_data = try sa_data.load(g_van_data_arena.allocator());
+    return &g_van_data.?;
+}
+
+/// ore_placement.TerrainCtx.extras_fn: passing rolls before group "b" and
+/// between "b" and "c" for one chunk.
+fn nauvisExtras(ctx: *anyopaque, cx: i32, cy: i32, water: *const [32 * 32]bool) [2]u32 {
+    const rolls: *sa_surface.EntityRolls = @ptrCast(@alignCast(ctx));
+    var out: [2]u32 = undefined;
+    rolls.attempts(cx, cy, water, &out);
+    return out;
+}
+var g_result: []u8 = &.{};
+var g_pixels: []u8 = &.{};
+var input_buf: []u8 = &.{};
+
+export fn inputPtr() [*]u8 {
+    return input_buf.ptr;
+}
+export fn inputCap() usize {
+    return input_buf.len;
+}
+export fn growInput(cap: usize) bool {
+    const a = std.heap.page_allocator;
+    const nb = a.realloc(input_buf, cap) catch return false;
+    input_buf = nb;
+    return true;
+}
+export fn resultPtr() [*]const u8 {
+    return g_result.ptr;
+}
+export fn resultLen() usize {
+    return g_result.len;
+}
+export fn pixelsPtr() [*]const u8 {
+    return g_pixels.ptr;
+}
+export fn pixelsLen() usize {
+    return g_pixels.len;
+}
+
+export fn generateSurface(len: usize) void {
+    _ = arena_state.reset(.retain_capacity);
+    const a = arena_state.allocator();
+    g_pixels = &.{};
+    const req = if (len <= input_buf.len) input_buf[0..len] else &.{};
+    g_result = run(a, req) catch |e| blk: {
+        g_pixels = &.{};
+        break :blk std.fmt.allocPrint(a, "{{\"ok\":false,\"error\":\"{s}\"}}", .{@errorName(e)}) catch &.{};
+    };
+}
+
+// ── surfaceParams ──────────────────────────────────────────────────────────
+// Export the per-zone surface params the CPU renderer derives (mirror of the
+// derivation at the top of generateZone — keep in sync). The GPU worker calls
+// this on the same zone JSON so the WGSL kernel uses EXACTLY the params the
+// wasm renderer uses: elevation water freq/size, ZoneTerrain control scalars
+// (temperature climate already scaled by the zone frequency multiplier).
+const ZoneSurfaceParams = struct {
+    zone_seed: u32,
+    radius: f64,
+    has_water: bool,
+    water_frequency: f64,
+    water_size: f64,
+    moisture_frequency: f64,
+    moisture_bias: f64,
+    aux_frequency: f64,
+    aux_bias: f64,
+    cold_size: f64,
+    hot_size: f64,
+    cold_frequency: f64,
+    hot_frequency: f64,
+};
+
+fn zoneSurfaceParams(z: std.json.ObjectMap) !ZoneSurfaceParams {
+    const ztype_str = (z.get("t") orelse return error.NoZoneType).string;
+    const ztype: data.ZoneType = blk: {
+        inline for (@typeInfo(data.ZoneType).@"enum".fields) |fld| {
+            if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
+        }
+        return error.UnsupportedZoneType;
+    };
+    if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") return error.NotGeneratable;
+    const is_field = ztype == .@"asteroid-field";
+    const zone_seed: u32 = @intCast((z.get("s") orelse return error.NoZoneSeed).integer);
+    const radius: f64 = blk: {
+        if (z.get("r")) |rv| {
+            switch (rv) {
+                .integer => |v| break :blk @floatFromInt(v),
+                .float => |v| break :blk v,
+                else => {},
+            }
+        }
+        if (is_field) break :blk 5000.0;
+        return error.NoZoneRadius;
+    };
+    const is_nauvis = if (z.get("nauvis")) |v| (v == .bool and v.bool) else false;
+    const tags = universe.Tags{
+        .temperature = tagOf(data.Temperature, z, "temperature"),
+        .water = tagOf(data.Water, z, "water"),
+        .moisture = tagOf(data.Moisture, z, "moisture"),
+        .trees = tagOf(data.Trees, z, "trees"),
+        .aux = tagOf(data.Aux, z, "aux"),
+        .cliff = tagOf(data.Cliff, z, "cliff"),
+        .enemy = tagOf(data.Enemy, z, "enemy"),
+    };
+    const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
+    const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+    const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
+    const fm = universe.zoneFrequencyMultiplier(radius);
+    return .{
+        .zone_seed = zone_seed,
+        .radius = radius,
+        .has_water = has_water,
+        .water_frequency = 1.0,
+        .water_size = water_size,
+        .moisture_frequency = 1.0,
+        .moisture_bias = 0.0,
+        .aux_frequency = 1.0,
+        .aux_bias = 0.0,
+        .cold_size = tc.cold_size,
+        .hot_size = tc.hot_size,
+        .cold_frequency = tc.cold_freq * fm,
+        .hot_frequency = tc.hot_freq * fm,
+    };
+}
+
+export fn surfaceParams(len: usize) void {
+    _ = arena_state.reset(.retain_capacity);
+    const a = arena_state.allocator();
+    const req = if (len <= input_buf.len) input_buf[0..len] else &.{};
+    g_result = paramsRun(a, req) catch |e| blk: {
+        break :blk std.fmt.allocPrint(a, "{{\"ok\":false,\"error\":\"{s}\"}}", .{@errorName(e)}) catch &.{};
+    };
+}
+
+fn paramsRun(a: std.mem.Allocator, req: []const u8) ![]u8 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, req, .{});
+    const obj = parsed.value.object;
+    const seed: u64 = switch (obj.get("seed") orelse return error.NoSeed) {
+        .integer => |v| @intCast(v),
+        .float => |v| @intFromFloat(v),
+        else => return error.BadSeed,
+    };
+    const z = (obj.get("zone") orelse return error.NoZone).object;
+    const p = try zoneSurfaceParams(z);
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "{\"ok\":true,\"seed\":");
+    var num: [64]u8 = undefined;
+    const f = struct { fn fmt(buf: []u8, v: f64) []const u8 { return std.fmt.bufPrint(buf, "{d:.6}", .{v}) catch "0"; } }.fmt;
+    const i = struct { fn fmt(buf: []u8, v: u32) []const u8 { return std.fmt.bufPrint(buf, "{d}", .{v}) catch "0"; } }.fmt;
+    try out.appendSlice(a, i(&num, @intCast(seed)));
+    try out.appendSlice(a, ",\"zone_seed\":");
+    try out.appendSlice(a, i(&num, p.zone_seed));
+    try out.appendSlice(a, ",\"radius\":");
+    try out.appendSlice(a, f(&num, p.radius));
+    try out.appendSlice(a, ",\"has_water\":");
+    try out.appendSlice(a, if (p.has_water) "true" else "false");
+    try out.appendSlice(a, ",\"water_frequency\":");
+    try out.appendSlice(a, f(&num, p.water_frequency));
+    try out.appendSlice(a, ",\"water_size\":");
+    try out.appendSlice(a, f(&num, p.water_size));
+    try out.appendSlice(a, ",\"moisture_frequency\":");
+    try out.appendSlice(a, f(&num, p.moisture_frequency));
+    try out.appendSlice(a, ",\"moisture_bias\":");
+    try out.appendSlice(a, f(&num, p.moisture_bias));
+    try out.appendSlice(a, ",\"aux_frequency\":");
+    try out.appendSlice(a, f(&num, p.aux_frequency));
+    try out.appendSlice(a, ",\"aux_bias\":");
+    try out.appendSlice(a, f(&num, p.aux_bias));
+    try out.appendSlice(a, ",\"cold_size\":");
+    try out.appendSlice(a, f(&num, p.cold_size));
+    try out.appendSlice(a, ",\"hot_size\":");
+    try out.appendSlice(a, f(&num, p.hot_size));
+    try out.appendSlice(a, ",\"cold_frequency\":");
+    try out.appendSlice(a, f(&num, p.cold_frequency));
+    try out.appendSlice(a, ",\"hot_frequency\":");
+    try out.appendSlice(a, f(&num, p.hot_frequency));
+    try out.appendSlice(a, "}");
+    return out.toOwnedSlice(a);
+}
+
+
+/// Parse the request and generate the zone surface. Writes g_pixels (RGBA) and
+/// returns the summary JSON. Mirrors se_main.zig's runZoneDriver per-zone path
+/// (the pure part) — keep the two in sync when the algorithm changes.
+fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, req, .{});
+    const obj = parsed.value.object;
+
+    const seed: u64 = switch (obj.get("seed") orelse return error.NoSeed) {
+        .integer => |v| @intCast(v),
+        .float => |v| @intFromFloat(v),
+        else => return error.BadSeed,
+    };
+    const k2 = if (obj.get("k2")) |v| (v == .bool and v.bool) else false;
+    const layer: i32 = if (obj.get("layer")) |v| blk: {
+        break :blk switch (v) {
+            .integer => |i| @intCast(@min(@max(i, 0), 2)),
+            else => 0,
+        };
+    } else 0;
+    const override_radius: ?i32 = if (obj.get("radius")) |v| blk: {
+        break :blk switch (v) {
+            .integer => |i| @intCast(i),
+            .float => |f| @intFromFloat(f),
+            else => null,
+        };
+    } else null;
+    const z = (obj.get("zone") orelse return error.NoZone).object;
+    // palette: "vanilla" renders Nauvis ground with the base-game look for the
+    // base / Space Age configs (alien-biomes tiles are SE-only). Default "se".
+    const vanilla_ground = if (obj.get("palette")) |v| blk: {
+        break :blk (v == .string and std.mem.eql(u8, v.string, "vanilla"));
+    } else false;
+    // Optional absolute tile rectangle {x0,y0,x1,y1} (half-open). When given,
+    // render exactly that rect instead of the centered radius disk — used for
+    // chunked/parallel big-map rendering. Semantics are otherwise identical
+    // (same disk clip / ore pass), so a union of chunks == one whole call.
+    // terrainless: compute + return ore pixels only (inputs still the full
+    // terrain+ore set). Lets the JS chunk terrain into parallel bands while one
+    // worker does the whole-rect ore pass — ore placement is rect-dependent
+    // (starting-area enrichment), so ores can't be split across band calls.
+    const terrainless = if (obj.get("terrainless")) |v| (v == .bool and v.bool) else false;
+    // square: fill the whole rect instead of clipping terrain to the zone's
+    // disk. SE surfaces are finite disks; a base-game Nauvis is unbounded.
+    const square = if (obj.get("square")) |v| (v == .bool and v.bool) else false;
+    const rect: ?[4]i32 = if (obj.get("rect")) |v| blk: {
+        const o = v.object;
+        const gv = struct { fn g(oo: std.json.ObjectMap, k: []const u8) !i32 {
+            const f = oo.get(k) orelse return error.BadRect;
+            return switch (f) {
+                .integer => |i| @intCast(i),
+                .float => |fl| @intFromFloat(fl),
+                else => error.BadRect,
+            };
+        } }.g;
+        break :blk .{ try gv(o, "x0"), try gv(o, "y0"), try gv(o, "x1"), try gv(o, "y1") };
+    } else null;
+    const g_pixels_ptr: *[]u8 = &g_pixels;
+
+    return generateZone(a, seed, k2, z, override_radius, rect, layer, terrainless, vanilla_ground, square, g_pixels_ptr);
+}
+
+/// The pure zone driver — same math as segen's runZoneDriver for one zone.
+fn generateZone(
+    a: std.mem.Allocator,
+    world_seed: u64,
+    has_k2: bool,
+    z: std.json.ObjectMap,
+    override_radius: ?i32,
+    rect: ?[4]i32,
+    layer: i32,
+    terrainless: bool,
+    vanilla_ground: bool,
+    square: bool,
+    out_pixels: *[]u8,
+) ![]u8 {
+    _ = world_seed; // output paths only in the native CLI
+    const name = (z.get("n") orelse return error.NoZoneName).string;
+    const ztype_str = (z.get("t") orelse return error.NoZoneType).string;
+    const ztype: data.ZoneType = blk: {
+        inline for (@typeInfo(data.ZoneType).@"enum".fields) |fld| {
+            if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
+        }
+        return error.UnsupportedZoneType;
+    };
+    if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") return error.NotGeneratable;
+    const is_field = ztype == .@"asteroid-field";
+    const zone_seed: u32 = @intCast((z.get("s") orelse return error.NoZoneSeed).integer);
+    // Asteroid fields carry no radius in the universe data; SE places their
+    // resources against the field's effective radius (gen.FIELD_EFFECTIVE_RADIUS).
+    const radius: f64 = blk: {
+        if (z.get("r")) |rv| {
+            switch (rv) {
+                .integer => |v| break :blk @floatFromInt(v),
+                .float => |v| break :blk v,
+                else => {},
+            }
+        }
+        if (is_field) break :blk 5000.0;
+        return error.NoZoneRadius;
+    };
+    const primary: ?[]const u8 = if (z.get("p")) |pv| (if (pv == .string) pv.string else null) else null;
+
+    // Synthetic Nauvis entry (the universe generator never emits it): the home
+    // planet uses the GAME's default map-gen settings — vanilla autoplace at
+    // default 1/1/1 controls, map seed = world seed, default water (size 1.0).
+    const is_nauvis = if (z.get("nauvis")) |v| (v == .bool and v.bool) else false;
+
+    // tags (strings, optional — bare enum names, like universe.wasm emits)
+    const tags = universe.Tags{
+        .temperature = tagOf(data.Temperature, z, "temperature"),
+        .water = tagOf(data.Water, z, "water"),
+        .moisture = tagOf(data.Moisture, z, "moisture"),
+        .trees = tagOf(data.Trees, z, "trees"),
+        .aux = tagOf(data.Aux, z, "aux"),
+        .cliff = tagOf(data.Cliff, z, "cliff"),
+        .enemy = tagOf(data.Enemy, z, "enemy"),
+    };
+    // Build resource inputs: our shared config table + the zone's controls.
+    // The ore-only layer used to leave fluids out; they are part of the
+    // surface's resources, so every layer places them now.
+    const ores_only = false;
+    var inputs_buf: [res.RESOURCE_ENTRIES.len]se.ResourceInput = undefined;
+    var ninputs: usize = 0;
+    if (is_nauvis) {
+        // Nauvis under SE: SE's data stage re-derives EVERY base ore with the SE
+        // autoplace function (verified in-game). Base ores only, default 1/1/1
+        // controls (plus K2 rare-metal under K2), r=5000 → frequency mult 1.
+        const nauvis_ores = [_][]const u8{ "iron-ore", "copper-ore", "coal", "stone", "uranium-ore", "crude-oil" };
+        for (res.RESOURCE_ENTRIES) |e| {
+            var is_base = false;
+            for (nauvis_ores) |nm| {
+                if (std.mem.eql(u8, e.name, nm)) {
+                    is_base = true;
+                    break;
+                }
+            }
+            if (has_k2 and (std.mem.eql(u8, e.name, "kr-rare-metal-ore") or std.mem.eql(u8, e.name, "kr-mineral-water"))) is_base = true;
+            if (!is_base) continue;
+            if (ores_only and e.cfg.random_probability < 1.0) continue;
+            var ctrl = se.Controls{ .frequency = 1.0, .size = 1.0, .richness = 1.0 };
+            if (res.fsrOverride(z, e.name)) |ov| ctrl = .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] };
+            inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
+            ninputs += 1;
+        }
+    } else {
+        const controls = universe.computeZoneMapgenControls(zone_seed, ztype, primary, tags, radius, false);
+        for (res.RESOURCE_ENTRIES) |e| {
+            if (!has_k2 and std.mem.startsWith(u8, e.name, "kr-")) continue;
+            // K2 resources carry SE field controls but K2 never places them in
+            // space — the live game has 0 kr-* entities on asteroid fields.
+            if (is_field and std.mem.startsWith(u8, e.name, "kr-")) continue;
+            if (ores_only and e.cfg.random_probability < 1.0) continue;
+            var ctrl = se.Controls{ .frequency = 0, .size = 0, .richness = 0 };
+            for (universe.resource_order, 0..) |rn, ri| {
+                if (std.mem.eql(u8, rn, e.name)) {
+                    const c = controls[ri];
+                    if (c.present) ctrl = .{ .frequency = c.frequency, .size = c.size, .richness = c.richness };
+                    break;
+                }
+            }
+            if (res.fsrOverride(z, e.name)) |ov| ctrl = .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] };
+            if (ctrl.size <= 0) continue;
+            inputs_buf[ninputs] = .{ .name = e.name, .config = e.cfg, .controls = ctrl };
+            ninputs += 1;
+        }
+    }
+    const inputs = inputs_buf[0..ninputs];
+
+    // terrain: water tag "none" => no water gate; otherwise approximate the SE
+    // water control (freq 1, size 1.5 — the calibrated Horaerratum point).
+    // Nauvis always has water at the game DEFAULT size 1.0.
+    // (Elevation/ZoneTerrain/Classifier are large — heap-allocated so the wasm
+    // stack stays small; the arena owns them for the duration of the call.)
+    const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
+    const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+    var elev: ?*terrain.Elevation = null;
+    if (has_water) {
+        const e = try a.create(terrain.Elevation);
+        e.* = terrain.Elevation.init(zone_seed, 1.0, water_size);
+        elev = e;
+    }
+    // Nauvis (base and SE configs alike) has the engine's starting-area lake;
+    // register its centre so the elevation carves the spawn lake like the game.
+    if (is_nauvis) {
+        const c = terrain.startingLakeCenter(zone_seed);
+        if (elev) |e| e.addStartingLake(c[0], c[1]);
+    }
+
+    // Per-zone temperature control from the SE tag (midrange→0.65, extreme→6).
+    const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
+    const fm = universe.zoneFrequencyMultiplier(radius);
+    const zt = try a.create(terrain.ZoneTerrain);
+    zt.* = terrain.ZoneTerrain.init(.{
+        .map_seed = zone_seed,
+        .moisture_frequency = 1.0,
+        .moisture_bias = 0.0,
+        .aux_frequency = 1.0,
+        .aux_bias = 0.0,
+        .cold_size = tc.cold_size,
+        .hot_size = tc.hot_size,
+        .cold_frequency = tc.cold_freq * fm,
+        .hot_frequency = tc.hot_freq * fm,
+        .water_frequency = 1.0,
+        .water_size = if (has_water) water_size else 0.0,
+    });
+    const classifier = try a.create(biome.Classifier);
+    classifier.* = biome.Classifier.init(zone_seed);
+    // Base (vanilla) Nauvis ground for the base/Space Age configs — a separate
+    // tile competition + palette from the SE alien-biomes classifier above.
+    var base_nauvis: ?*biome.BaseNauvis = null;
+    // Vanilla property evaluator (moisture/aux from the embedded base closure).
+    var van_prog: ?sa_program.Program = null;
+    var van_ws: sa_program.Program.Workspace = undefined;
+    if (vanilla_ground) {
+        const bc = try a.create(biome.BaseNauvis);
+        bc.* = biome.BaseNauvis.init(zone_seed);
+        base_nauvis = bc;
+        // compiled once per seed and kept across calls (a render is many
+        // small cell requests)
+        if (g_van == null or g_van.?.seed != zone_seed) {
+            g_van = null;
+            _ = g_van_arena.reset(.retain_capacity);
+            const va = g_van_arena.allocator();
+            const d = try nauvisData();
+            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+            const pr = try sa_program.compile(va, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
+            g_van = .{ .seed = zone_seed, .program = pr, .ws = try pr.workspaceN(va, 1) };
+        }
+        van_prog = g_van.?.program;
+        van_ws = g_van.?.ws;
+    }
+
+    // The render/ore RECT half-extent. --radius caps it (so we can generate
+    // just the inner disk) while `radius` above stays the zone's true radius
+    // for the resource-control + frequency math.
+    const r: i32 = if (override_radius) |o| o else @intFromFloat(radius);
+
+    // Render bounds: centered square [-r,r) by default, or an absolute rect for
+    // chunked/parallel renders. The disk clip below is identical either way so
+    // chunk unions match a single whole-image call bit-for-bit.
+    const bounds = rect orelse [_]i32{ -r, -r, r, r };
+    const xa = bounds[0];
+    const ya = bounds[1];
+    const xb = bounds[2];
+    const yb = bounds[3];
+
+    var ores: std.ArrayList(se.OreEntity) = .empty;
+    defer ores.deinit(a);
+
+    // terrain-only renders don't touch ore at all.
+    const need_ores = layer != 1;
+    // Resource names reported in the summary, in order.
+    var summary_names: std.ArrayList([]const u8) = .empty;
+    for (inputs) |inp| try summary_names.append(a, inp.name);
+    if (need_ores and is_nauvis and vanilla_ground) {
+        // Nauvis WITHOUT Space Exploration: the base game's own resource
+        // autoplace (ore_placement.zig - resource_autoplace_all_patches with
+        // starting patches, the water gate and the per-chunk placement roll),
+        // not SE's re-derived one above.
+        summary_names.clearRetainingCapacity();
+        const lake = terrain.startingLakeCenter(zone_seed);
+        var elev_gate = terrain.Elevation.init(zone_seed, 1.0, 1.0);
+        var lakes_gate = terrain.ElevationLakes.init(zone_seed, 1.0, 1.0);
+        elev_gate.addStartingLake(lake[0], lake[1]);
+        lakes_gate.addStartingLake(lake[0], lake[1]);
+        const all = [_]struct { []const u8, vanilla_ore.ResourceAutoplaceConfig }{
+            .{ "iron-ore", vanilla_ore.iron_ore_default },       .{ "copper-ore", vanilla_ore.copper_ore_default },
+            .{ "coal", vanilla_ore.coal_default },               .{ "stone", vanilla_ore.stone_default },
+            .{ "uranium-ore", vanilla_ore.uranium_ore_default }, .{ "crude-oil", vanilla_ore.crude_oil_default },
+        };
+        var cfgs: std.ArrayList(vanilla_ore.ResourceAutoplaceConfig) = .empty;
+        var ctrls: std.ArrayList(vanilla_ore.AutoplaceControls) = .empty;
+        for (all) |e| {
+            try cfgs.append(a, e[1]);
+            try summary_names.append(a, e[0]);
+            const ov = res.fsrOverride(z, e[0]) orelse [3]f64{ 1, 1, 1 };
+            try ctrls.append(a, .{ .frequency = ov[0], .size = ov[1], .richness = ov[2] });
+        }
+        if (g_rolls == null or g_rolls.?.seed != zone_seed) {
+            g_rolls = null;
+            _ = g_rolls_arena.reset(.retain_capacity);
+            const d = try nauvisData();
+            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+            g_rolls = .{ .seed = zone_seed, .rolls = try sa_surface.EntityRolls.init(g_rolls_arena.allocator(), d, nauvis, zone_seed, .{}, null) };
+        }
+        var placed = try vanilla_ore.computeOresInRect(a, zone_seed, xa, ya, xb, yb, cfgs.items, summary_names.items, .{}, .{
+            .elev = &elev_gate,
+            .lakes = &lakes_gate,
+            .extras_fn = nauvisExtras,
+            .extras_ctx = &g_rolls.?.rolls,
+        }, ctrls.items);
+        defer placed.deinit(a);
+        for (placed.items) |o| try ores.append(a, .{ .x = o.x, .y = o.y, .resource_name = o.resource_name, .amount = o.amount });
+    } else if (need_ores) {
+        ores = try se.computeSEOresInRect(
+            a,
+            zone_seed,
+            radius,
+            xa,
+            ya,
+            xb,
+            yb,
+            inputs,
+            1,
+            if (elev) |e| e else null,
+            zt,
+            classifier,
+        );
+
+        // Asteroid fields place resources only on se-asteroid tiles; drop
+        // everything that landed on space.
+        if (is_field) {
+            const field = asteroid.AsteroidField.initField(zone_seed);
+            var kept: usize = 0;
+            for (ores.items) |oe| {
+                if (field.tileAt(@floatFromInt(oe.x), @floatFromInt(oe.y)) == .asteroid) {
+                    ores.items[kept] = oe;
+                    kept += 1;
+                }
+            }
+            ores.shrinkRetainingCapacity(kept);
+        }
+    }
+
+    // Render a disk (grid=1) into an RGBA buffer: terrain/biome/water tiles
+    // (opaque), ore overlay (opaque), everything outside the zone's disk fully
+    // transparent so the browser canvas shows just the disk.
+    const cw: u32 = @intCast(xb - xa);
+    const ch: u32 = @intCast(yb - ya);
+    const pixels = try a.alloc(u8, @as(usize, cw) * ch * 4);
+    @memset(pixels, 0); // transparent
+    var el_s = terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
+    if (is_nauvis) {
+        const c = terrain.startingLakeCenter(zone_seed);
+        el_s.addStartingLake(c[0], c[1]);
+    }
+    // Asteroid fields draw se-space/se-asteroid tiles (field model), not the
+    // alien-biomes classifier — matches asteroid_render.zig / the game belt.
+    var field: ?asteroid.AsteroidField = null;
+    if (is_field) field = asteroid.AsteroidField.initField(zone_seed);
+    if (!terrainless and layer != 2) {
+        var iy: i32 = ya;
+        while (iy < yb) : (iy += 1) {
+            var ix: i32 = xa;
+            while (ix < xb) : (ix += 1) {
+                const fx: f64 = @floatFromInt(ix);
+                const fy: f64 = @floatFromInt(iy);
+                if (!square and fx * fx + fy * fy > radius * radius) continue;
+                const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                var mo_van: f64 = 0.0;
+                var aux_van: f64 = 0.0;
+                if (vanilla_ground) {
+                    // base moisture/aux from the compiled base expressions
+                    const vp = &van_prog.?;
+                    vp.eval(&van_ws, &.{@as(f32, @floatCast(fx))}, &.{@as(f32, @floatCast(fy))});
+                    mo_van = vp.out(&van_ws, 0)[0];
+                    aux_van = vp.out(&van_ws, 1)[0];
+                }
+                const color: [3]u8 = if (field) |f|
+                    f.colorAt(fx, fy)
+                else if (vanilla_ground)
+                    biome.nauvis_base_palette[base_nauvis.?.classify(fx, fy, e, mo_van, aux_van)].color
+                else if (has_water and e < 0.0)
+                    (if (e < -5.0) biome.deepwater else biome.water)
+                else
+                    classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                const lpx: usize = @intCast(ix - xa);
+                const lpy: usize = @intCast(iy - ya);
+                const idx = (lpy * cw + lpx) * 4;
+                pixels[idx] = color[0];
+                pixels[idx + 1] = color[1];
+                pixels[idx + 2] = color[2];
+                pixels[idx + 3] = 255;
+            }
+        }
+    }
+    if (layer != 1) {
+        for (ores.items) |ore| {
+            if (ore.x < xa or ore.x >= xb or ore.y < ya or ore.y >= yb) continue;
+            const lpx: usize = @intCast(ore.x - xa);
+            const lpy: usize = @intCast(ore.y - ya);
+            // base-game crude oil uses the game's own pink map colour (the
+            // table's orange is the SE/K2 look)
+            const oc: [3]u8 = if (vanilla_ground and std.mem.eql(u8, ore.resource_name, "crude-oil")) .{ 199, 51, 196 } else res.MapColors.get(ore.resource_name);
+            const idx = (lpy * cw + lpx) * 4;
+            pixels[idx] = oc[0];
+            pixels[idx + 1] = oc[1];
+            pixels[idx + 2] = oc[2];
+            pixels[idx + 3] = 255;
+        }
+    }
+    out_pixels.* = pixels;
+
+    // per-resource totals (matches segen summary.json; "display" is the
+    // human-readable amount).
+    var summary: std.ArrayList(u8) = .empty;
+    try summary.appendSlice(a, "{\"ok\":true");
+    try appendFmt(a, &summary, ",\"zone\":\"{s}\",\"zone_seed\":{d},\"type\":\"{s}\"", .{ name, zone_seed, ztype_str });
+    try appendFmt(a, &summary, ",\"radius\":{d},\"width\":{d},\"height\":{d},\"layer\":{d}", .{ r, cw, ch, layer });
+    try appendFmt(a, &summary, ",\"palette\":\"{s}\"", .{if (vanilla_ground) "nauvis-base" else "se-alien-biomes"});
+    if (rect != null)
+        try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
+    try summary.appendSlice(a, ",\"resources\":{");
+    {
+        var first = true;
+        for (summary_names.items) |rname| {
+            var cnt: u64 = 0;
+            var amount: u64 = 0;
+            for (ores.items) |o| {
+                if (std.mem.eql(u8, o.resource_name, rname)) {
+                    cnt += 1;
+                    amount += o.amount;
+                }
+            }
+            if (cnt == 0) continue;
+            var abuf: [32]u8 = undefined;
+            const disp = fmtAmount(&abuf, amount);
+            if (!first) try summary.appendSlice(a, ",");
+            first = false;
+            try appendFmt(a, &summary, "\"{s}\":{{\"amount\":{d},\"display\":\"{s}\",\"tiles\":{d}}}", .{ rname, amount, disp, cnt });
+        }
+    }
+    try summary.appendSlice(a, "}}");
+    return summary.toOwnedSlice(a);
+}
+
+/// Parse a tag string into the SE enum. Accepts both bare enum names ("vcold",
+/// "max" — what universe.wasm emits) and prefixed prototype tags
+/// ("temperature_vcold", "aux_very_high").
+fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {
+    const v = z.get(key) orelse return null;
+    if (v != .string) return null;
+    inline for (@typeInfo(E).@"enum".fields) |fld| {
+        if (std.mem.eql(u8, v.string, fld.name)) return @enumFromInt(fld.value);
+    }
+    return universe.parseTagEnum(E, v.string);
+}
+
+/// Human-readable ore amount: >=1e9 -> "X.XXB", >=1e6 -> "X.XXM", else raw.
+fn fmtAmount(buf: []u8, amount: u64) []const u8 {
+    const f: f64 = @floatFromInt(amount);
+    if (f >= 1e9) return std.fmt.bufPrint(buf, "{d:.2}B", .{f / 1e9}) catch "?";
+    if (f >= 1e6) return std.fmt.bufPrint(buf, "{d:.2}M", .{f / 1e6}) catch "?";
+    return std.fmt.bufPrint(buf, "{d}", .{amount}) catch "?";
+}
+
+fn appendFmt(a: std.mem.Allocator, list: *std.ArrayList(u8), comptime fmt: []const u8, args: anytype) !void {
+    var buf: [1024]u8 = undefined;
+    const sl = try std.fmt.bufPrint(&buf, fmt, args);
+    try list.appendSlice(a, sl);
+}

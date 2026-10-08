@@ -14,6 +14,7 @@
 //! yet handled.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const noise = @import("noise.zig");
 const terrain = @import("terrain.zig");
 const biome = @import("biome.zig");
@@ -651,7 +652,7 @@ const Worker = struct {
                                     ore.chunkPenaltyColumn(cx * CHUNK, cy * CHUNK, &penalty_draws);
                                     penalty_done = true;
                                 }
-                                const r_draw = penalty_draws[CHUNK * CHUNK - 1 - idx];
+                                const r_draw = penalty_draws[@as(usize, @intCast(CHUNK * CHUNK - 1)) - idx];
                                 p *= 1.0 - r_draw / st.config.random_probability;
                                 if (p <= 0.0) continue;
                             }
@@ -696,6 +697,8 @@ const Worker = struct {
                 var seed: u32 = @bitCast(cy *% 7907 +% cx *% 7919 +% 0x3fbe2c);
                 if (seed < 342) seed = 341;
                 var prng = rng.Rng.init(seed);
+                // tiles covered by a resource already placed in this chunk
+                var occupied = [_]bool{false} ** (CHUNK * CHUNK);
                 var ii: i32 = CHUNK * CHUNK - 1;
                 while (ii >= 0) : (ii -= 1) {
                     const idx: usize = @intCast(ii);
@@ -706,6 +709,32 @@ const Worker = struct {
                         if (amount > 0) {
                             const lx = @mod(ii, CHUNK);
                             const ly = @divFloor(ii, CHUNK);
+                            // The game refuses an entity whose collision box
+                            // overlaps one already placed. Fluid patches (the
+                            // thinned resources) are 3x3; ores are one tile.
+                            const half: i32 = if (self.states[@intCast(win_res[idx])].config.random_probability < 1.0) 1 else 0;
+                            var free = true;
+                            var oy: i32 = -half;
+                            while (oy <= half) : (oy += 1) {
+                                var ox: i32 = -half;
+                                while (ox <= half) : (ox += 1) {
+                                    const nx = lx + ox;
+                                    const ny = ly + oy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    if (occupied[@intCast(ny * CHUNK + nx)]) free = false;
+                                }
+                            }
+                            if (!free) continue;
+                            oy = -half;
+                            while (oy <= half) : (oy += 1) {
+                                var ox: i32 = -half;
+                                while (ox <= half) : (ox += 1) {
+                                    const nx = lx + ox;
+                                    const ny = ly + oy;
+                                    if (nx < 0 or ny < 0 or nx >= CHUNK or ny >= CHUNK) continue;
+                                    occupied[@intCast(ny * CHUNK + nx)] = true;
+                                }
+                            }
                             self.out.append(a, .{
                                 .x = cx * CHUNK + lx,
                                 .y = cy * CHUNK + ly,
@@ -867,8 +896,11 @@ pub fn computeSEOresInRect(
     // Decide worker count from the row (step) budget and CPU cores. For the
     // per-chunk path (sample_step==1) bands are whole 32-row chunk rows so a
     // chunk is never split across workers (its RNG stream must be sequential).
+    // WebAssembly (freestanding) has no threads: pin to 1 worker there, which
+    // also keeps std.Thread out of the analyzed code for that target.
+    const use_threads = comptime builtin.os.tag != .freestanding;
     const total_steps: usize = @intCast(@divTrunc(y1 - y0 - 1, sample_step) + 1);
-    const cores = std.Thread.getCpuCount() catch 1;
+    const cores = if (use_threads) (std.Thread.getCpuCount() catch 1) else 1;
     const nthreads = @max(@as(usize, 1), @min(cores, total_steps));
 
     const workers = try alloc.alloc(Worker, nthreads);
@@ -900,8 +932,9 @@ pub fn computeSEOresInRect(
         };
     }
 
-    // Run band 0 on this thread, spawn the rest.
-    if (nthreads == 1) {
+    // Run band 0 on this thread, spawn the rest (single worker on wasm — the
+    // spawn branch is comptime-eliminated there so std.Thread never compiles).
+    if (nthreads == 1 or !use_threads) {
         workers[0].run();
     } else {
         const threads = try alloc.alloc(std.Thread, nthreads - 1);
@@ -911,7 +944,7 @@ pub fn computeSEOresInRect(
     }
 
     // Aggregate + report profiling (CPU-time across workers; wall time is
-    // roughly cpu/threads).
+    // roughly cpu/threads). Print is skipped on wasm (no stderr).
     {
         var ne: u64 = 0;
         var nf: u64 = 0;
@@ -921,7 +954,9 @@ pub fn computeSEOresInRect(
             nf += w.n_field;
             nb += w.n_biome;
         }
-        std.debug.print("# profile counts: field evals {d}, elevation evals {d}, biome classifies {d}\n", .{ nf, ne, nb });
+        if (comptime builtin.os.tag != .freestanding) {
+            std.debug.print("# profile counts: field evals {d}, elevation evals {d}, biome classifies {d}\n", .{ nf, ne, nb });
+        }
     }
 
     // Merge worker outputs (in band order) and surface any worker error.

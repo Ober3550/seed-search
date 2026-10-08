@@ -1117,20 +1117,13 @@ function writeSeedZonesFile(seedRow, zoneNames, fsr) {
 
 // ── Tiled surface planning ─────────────────────────────────────────────
 // Cells are composed in the browser (CSS grid) — no server-side stitching.
-
-// Static cell edge (tiles). Grid is chosen so every cell is ~this size on ANY
-// planet, so each surface job processes a near-constant tile count and finishes
-// in roughly the same time (cellW = ceil(2r/N) ≈ SURFACE_CELL_TILES).
-//
-// The terrain render costs ~9.6 µs/tile (measured: a 951² cell = 8.5 s, and it
-// scales cleanly with cell AREA), so a ~320-tile cell ≈ 320² × 9.6 µs ≈ 1 s.
-// That is the target: one render job ≈ 1 second. Bump this to trade fewer/larger
-// (slower) jobs for more/smaller (faster) ones.
-const SURFACE_CELL_TILES = 320;
-// Safety cap on N (grid is N×N). Sized so the largest bodies (radius ~10000 →
-// 2r/320 ≈ 63) still get ~320-tile, ~1 s cells rather than being forced into
-// bigger, slower ones; guards pathological huge bodies from exploding further.
-const SURFACE_GRID_CAP = 64;
+// Cell edge (tiles). Grid is chosen so every cell is ~this size on ANY
+// planet; per-cell time is directly comparable to in-game chunk generation.
+// (r~5000 -> 10k tiles wide) needs a 313x313 grid; the SURFACE_GRID_CAP below
+// bounds pathological huge bodies.
+const SURFACE_CELL_TILES = 32;
+// Grid cap: allows up to a 512x512 grid at CELL_TILES=32 (r up to ~8000).
+const SURFACE_GRID_CAP = 512;
 
 // Grid size for a zone: N×N cells of ~SURFACE_CELL_TILES, at least 1 (whole).
 function surfaceGridFor(radius) {
