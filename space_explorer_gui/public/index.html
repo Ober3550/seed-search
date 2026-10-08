@@ -20,6 +20,25 @@
           <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
           <label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label>
         </div>
+        <details id="featured" hidden style="margin:0.5em 0 1em">
+          <summary style="cursor:pointer"><strong>Top seeds</strong> <span id="featured-note" class="hint"></span></summary>
+          <div style="max-height:24em;overflow:auto;margin-top:0.5em">
+          <table class="data-table">
+            <thead style="position:sticky;top:0;background:var(--bg,#0d1117)"><tr>
+              <th>Seed</th>
+              <th title="Search score: planet count first, then field distance, hostility and water">Score</th>
+              <th title="Planets in the Calidus home system, including Nauvis">Planets</th>
+              <th title="Planets and moons in the Calidus home system">Bodies</th>
+              <th title="Travel Δv to the nearest asteroid field whose primary resource is naquium">Naquium Δv</th>
+              <th title="Travel Δv to the nearest asteroid field of any kind">Field Δv</th>
+              <th title="Share of home-system bodies with enemies">Hostile</th>
+              <th title="Share of home-system bodies with water">Water</th>
+              <th title="Loot sequence">Loot</th>
+            </tr></thead>
+            <tbody id="featured-body"></tbody>
+          </table>
+          </div>
+        </details>
         <table class="data-table" id="zone-table">
           <thead id="zt-head"><tr>
             <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>

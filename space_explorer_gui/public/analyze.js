@@ -152,6 +152,34 @@
     if (active) active.textContent = state.sortDir === "asc" ? " ▲" : " ▼";
   }
 
+  // Best seeds of the seed-search runs for this mod config
+  // (featured-seeds.json, exported from the explorer database by
+  // scripts/export-featured-seeds.mjs). Shown open until a seed is chosen.
+  function loadFeatured() {
+    var box = document.getElementById("featured");
+    if (!box) return;
+    fetch(window.Shell.asset("featured-seeds.json")).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        var cfg = data && data.configs && data.configs[state.mod];
+        if (!cfg || !cfg.seeds || !cfg.seeds.length) return;
+        var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
+        var pct = function (v) { return v == null ? "—" : v + "%"; };
+        document.getElementById("featured-note").textContent =
+          "· best " + cfg.seeds.length + " of " + num(cfg.searched) + " seeds searched (" + window.Shell.modLabel(state.mod) + ")";
+        document.getElementById("featured-body").innerHTML = cfg.seeds.map(function (f) {
+          return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
+            '<td><a style="color:var(--accent)" href="' + esc(window.Shell.seedHref(f.seed, state.mod)) + '">' + f.seed + "</a></td>" +
+            "<td><strong>" + num(f.score) + "</strong></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
+            "<td>" + num(f.naquiumDv) + "</td><td>" + num(f.fieldDv) + "</td>" +
+            "<td>" + pct(f.hostile) + "</td><td>" + pct(f.water) + "</td>" +
+            '<td><code>' + esc(f.loot || "") + "</code></td></tr>";
+        }).join("");
+        box.hidden = false;
+        box.open = state.seed == null;
+      })
+      .catch(function () {}); // optional data: the page works without it
+  }
+
   function generate() {
     var seedVal = parseInt(document.getElementById("seed-input").value, 10);
     if (!Number.isFinite(seedVal) || seedVal < 0) return;
@@ -208,12 +236,23 @@
         if (st) st.textContent = closed.getAttribute("data-why") || "enter a seed first";
       }
     });
+    var featuredBody = document.getElementById("featured-body");
+    if (featuredBody) featuredBody.addEventListener("click", function (e) {
+      if (e.target.closest("a")) return; // the link navigates by itself
+      var row = e.target.closest("tr[data-seed]");
+      if (!row) return;
+      document.getElementById("seed-input").value = row.dataset.seed;
+      document.getElementById("featured").open = false;
+      generate();
+    });
     window.preloadUniverseWasm && window.preloadUniverseWasm();
     applyMod();
     var crumb = document.getElementById("seed-crumb");
     if (crumb) crumb.textContent = "Seed (client-side · " + window.Shell.modLabel(state.mod) + ")";
     // Auto-generate / list if a seed was in the URL (?seed=...).
     var pre = window.Shell.seed;
+    if (pre != null) state.seed = pre;
+    loadFeatured();
     if (pre != null) {
       document.getElementById("seed-input").value = pre;
       generate();

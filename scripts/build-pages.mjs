@@ -44,7 +44,7 @@ const FILES = [
   "gen-bridge.js", "gen-worker.js", "universe-wasm.js", "surface-wasm.js", "sa-wasm.js",
   "estimate-core.js", "analyze.js", "surface.js",
   "gpu-surface.js", "gpu-worker.js", "ab-table.js",
-  "ore-model.json",
+  "ore-model.json", "featured-seeds.json",
   "universe.wasm", "surface.wasm", "sa.wasm",
   "shaders/elevation.wgsl", "shaders/nauvis.wgsl", "shaders/se_field.wgsl", "shaders/se_zone.wgsl",
 ];
