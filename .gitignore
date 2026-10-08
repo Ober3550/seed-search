@@ -67,3 +67,6 @@ space_explorer_gui/public/sa.wasm
 # Ghidra headless logs
 ghidra/headless-*.log
 ghidra/headless-*.out
+
+# static site build (scripts/build-pages.mjs)
+/dist/

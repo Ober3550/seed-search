@@ -6,12 +6,17 @@
 // root of a site, under a project path (GitHub Pages) or under the Node
 // server's /static/ mount.
 //
-//   window.Shell = { base, mod, seed, target, modLabel(m), asset(name),
+// A published build keeps the two HTML pages at the top and everything else
+// in a versioned sub-folder (scripts/build-pages.mjs), so page links resolve
+// against the document and assets against this script.
+//
+//   window.Shell = { base, pages, mod, seed, target, modLabel(m), asset(name),
 //                    seedHref(seed, mod), surfaceHref(seed, target, mod, r) }
 (function () {
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
   var here = document.currentScript && document.currentScript.src;
   var base = here ? new URL(".", here).href : new URL(".", location.href).href;
+  var pages = new URL(".", location.href).href; // where index.html / surface.html live
   var q = new URLSearchParams(location.search);
 
   var mod = q.get("mod") || "";
@@ -22,12 +27,12 @@
   var target = (q.get("target") || "").trim();
 
   function seedHref(s, m) {
-    var u = base + "index.html?mod=" + encodeURIComponent(m || mod);
+    var u = pages + "index.html?mod=" + encodeURIComponent(m || mod);
     if (s != null) u += "&seed=" + encodeURIComponent(s);
     return u;
   }
   function surfaceHref(s, t, m, r) {
-    var u = base + "surface.html?seed=" + encodeURIComponent(s) + "&target=" + encodeURIComponent(t) +
+    var u = pages + "surface.html?seed=" + encodeURIComponent(s) + "&target=" + encodeURIComponent(t) +
       "&mod=" + encodeURIComponent(m || mod);
     if (r) u += "&r=" + encodeURIComponent(r);
     return u;
@@ -35,6 +40,7 @@
 
   window.Shell = {
     base: base,
+    pages: pages,
     mod: mod,
     seed: seed,
     target: target,

@@ -378,7 +378,7 @@ function installServer(npm) {
 // Main
 // ---------------------------------------------------------------------------
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Usage: node install.mjs [--build-only] [--help]
+  console.log(`Usage: node install.mjs [--build-only | --wasm-only] [--help]
 
 Builds the Zig components and installs the web server's dependencies:
   1. seedgen   (universe_generator)
@@ -387,6 +387,8 @@ Builds the Zig components and installs the web server's dependencies:
   4. htmx      (the web GUI's front-end dependency — always fetched)
   5. web server dependencies (space_explorer_gui)   [skipped with --build-only]
 
+--wasm-only   Build only universe.wasm, surface.wasm and sa.wasm (the static
+              site's browser modules; see scripts/build-pages.mjs).
 --build-only  Build the Zig components only; skip the server npm install. Used
               by the package postinstall hook (npm resolves the server's deps).
               htmx is still fetched — it is not an npm dependency.
@@ -410,6 +412,17 @@ async function main() {
   step("Checking prerequisites");
   checkNode();
   checkZig();
+
+  // --wasm-only: just the three browser modules (what the static site needs);
+  // no native binaries, no wgpu download, no npm.
+  if (process.argv.includes("--wasm-only")) {
+    step("Building universe.wasm, surface.wasm, sa.wasm");
+    buildUniverseWasm();
+    buildSurfaceWasm();
+    buildSAWasm();
+    console.log("\n" + bold("Done."));
+    return;
+  }
   const npm = buildOnly ? null : checkNpm();
 
   step("Building seedgen (universe generator)");

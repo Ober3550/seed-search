@@ -204,6 +204,27 @@ sudo systemctl daemon-reload
 sudo systemctl restart seed-search
 ```
 
+## Static site
+
+The seed page and the surface page run entirely in the browser, so they can be
+hosted as plain files (no Node server, no database):
+
+```sh
+node install.mjs --wasm-only      # universe.wasm, surface.wasm, sa.wasm
+node scripts/build-pages.mjs      # -> dist/  (serve it with any static file server)
+```
+
+`dist/` holds `index.html`, `surface.html` and an `assets-<commit>/` folder
+with everything else; the folder name changes every build, so a deploy is
+never mixed with cached files from the previous one. The pages take their
+inputs from the query string, e.g.
+`surface.html?seed=341&target=Fulgora&mod=sa`.
+
+`.github/workflows/pages.yml` builds and publishes `dist/` to GitHub Pages on
+every push to `master` (one-time setup: repository Settings → Pages → Source:
+"GitHub Actions"). The job / database pages (Seeds, Filter Presets, …) are not
+part of the static site; they still need `npm start`.
+
 ## Analysis
 
 ```bash
