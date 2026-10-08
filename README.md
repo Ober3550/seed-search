@@ -243,8 +243,8 @@ WORKERS=8 scripts/scan-se.sh  # optional: limit the cores used
 ```
 
 - Needs Node >= 18 and Zig 0.16; the script builds `seedgen` itself.
-- Resumable: stop with Ctrl-C and run the same command again. Finished chunks
-  live in `seedlists/<mod>/`; the final list is `seedlists/<mod>.u32` (raw
+- Resumable: stop with Ctrl-C and run the same command again. Results are
+  appended every 100k seeds to 1M-seed files in `seedlists/<mod>/`; the final list is `seedlists/<mod>.u32` (raw
   little-endian 4-byte seed numbers, ascending).
 - `node scripts/seed-scan.mjs --mod se --status` shows progress.
 - About two days per config on a 10-core machine.
