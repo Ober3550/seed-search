@@ -220,10 +220,12 @@ never mixed with cached files from the previous one. The pages take their
 inputs from the query string, e.g.
 `surface.html?seed=341&target=Fulgora&mod=sa`.
 
-`.github/workflows/pages.yml` builds and publishes `dist/` to GitHub Pages on
-every push to `master` (one-time setup: repository Settings → Pages → Source:
-"GitHub Actions"). The job / database pages (Seeds, Filter Presets, …) are not
-part of the static site; they still need `npm start`.
+To publish, there is no automation on purpose: `node scripts/publish-pages.mjs`
+builds the site into the local clone of the Pages repo next to this one
+(`../Ober3550.github.io/seed-search/`) and stops. Committing and pushing that
+repo is the manual step that makes it live. The job / database pages (Seeds,
+Filter Presets, …) are not part of the static site; they still need
+`npm start`.
 
 ## Analysis
 
