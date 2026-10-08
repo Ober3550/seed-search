@@ -8,7 +8,7 @@
 #   RANGE     seed-number range lo:hi           (default: 0:4294967296 = everything)
 #
 # The scan is resumable: stop it with Ctrl-C and run the same command again;
-# finished chunks under seedlists/<mod>/ are skipped. When the whole range is
+# work is saved every 100k seeds into 1M-seed files under seedlists/<mod>/. When the whole range is
 # done the kept seeds are packed into seedlists/<mod>.u32 (4 bytes per seed).
 # Expect roughly two days on a 10-core machine for the full range.
 set -euo pipefail
@@ -32,5 +32,7 @@ fi
 
 ARGS=(--mod "$MOD" --range "${RANGE:-0:4294967296}")
 [ -n "${WORKERS:-}" ] && ARGS+=(--workers "$WORKERS")
+# seed-scan exits non-zero when interrupted or failed, so the packed list is
+# only written once the whole range has been scanned
 node scripts/seed-scan.mjs "${ARGS[@]}"
 node scripts/seed-scan.mjs --mod "$MOD" --pack
