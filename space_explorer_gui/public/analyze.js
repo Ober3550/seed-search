@@ -1,19 +1,18 @@
 // Client-side seed analysis. Generates a seed's universe in the browser (WASM),
 // estimates each zone's ore client-side, and renders the zone table — with NO
 // backend per-seed calls (only static assets: universe.wasm, ore-model.json).
-// Clicking a row opens that surface's dedicated page (/surface/:seed/:name),
-// which generates terrain + ore in the browser on its own route.
+// Clicking a row opens that surface's own page (surface.html?seed=&target=),
+// which generates terrain + ore in the browser. Seed and mod config come from
+// the query string (shell.js).
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var modQ = new URLSearchParams(location.search).get("mod");
-  if (modQ === "se+k2") modQ = "k2se"; // legacy alias
-  var state = { mod: MODS[modQ] ? modQ : (window.__ANALYZE_MOD__ || "k2se"), k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
     if (estimator) return Promise.resolve(estimator);
-    return fetch("/static/ore-model.json").then(function (r) { return r.json(); })
+    return fetch(window.Shell.asset("ore-model.json")).then(function (r) { return r.json(); })
       .then(function (m) { estimator = window.createEstimator(m); return estimator; });
   }
 
@@ -85,15 +84,13 @@
   // Dedicated route for generating one surface on its own page.
   function surfHref(z) {
     if (state.seed == null) return null;
-    var u = "/surface/" + state.seed + "/" + encodeURIComponent(z.n) + "?mod=" + encodeURIComponent(state.mod);
     // Open at the zone's ACTUAL radius (disk-cropped to it). Asteroid fields
     // carry no radius in the universe data — open them at 5000 (SE's default
     // field radius). Max SE zone radius is 10000, which is also the page
     // slider max; ?r is clamped to that only. Nauvis carries no ?r: it opens
     // at the surface page's default preview radius.
     var r0 = z.nauvis ? null : z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
-    if (r0) u += "&r=" + Math.min(r0, 10000);
-    return u;
+    return window.Shell.surfaceHref(state.seed, z.n, state.mod, r0 ? Math.min(r0, 10000) : null);
   }
   // True when the row can open a surface (seed present + engine support).
   function rowOpen(z) {
@@ -160,7 +157,7 @@
     if (!Number.isFinite(seedVal) || seedVal < 0) return;
     state.seed = seedVal;
     var q = "mod=" + encodeURIComponent(state.mod);
-    history.replaceState(null, "", "/seed?" + q + "&seed=" + seedVal);
+    history.replaceState(null, "", location.pathname + "?" + q + "&seed=" + seedVal);
     var status = document.getElementById("gen-status");
     if (status) status.textContent = "";
     // base / sa: the surfaces are static (no universe to enumerate) — list them.
@@ -213,8 +210,10 @@
     });
     window.preloadUniverseWasm && window.preloadUniverseWasm();
     applyMod();
-    // Auto-generate / list if a seed was in the URL (/seed?seed=...).
-    var pre = window.__ANALYZE_SEED__;
+    var crumb = document.getElementById("seed-crumb");
+    if (crumb) crumb.textContent = "Seed (client-side · " + window.Shell.modLabel(state.mod) + ")";
+    // Auto-generate / list if a seed was in the URL (?seed=...).
+    var pre = window.Shell.seed;
     if (pre != null) {
       document.getElementById("seed-input").value = pre;
       generate();

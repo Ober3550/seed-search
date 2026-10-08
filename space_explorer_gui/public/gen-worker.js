@@ -17,9 +17,10 @@
   // Kick off both fetches/instantiations immediately on worker startup so the
   // first user call is instant (messages that arrive before the load finishes
   // just await the same promise).
-  var uniP = loadWasm("/static/universe.wasm");
-  var surfP = loadWasm("/static/surface.wasm");
-  var saP = loadWasm("/static/sa.wasm");
+  // relative to this worker script, so the folder can be served from anywhere
+  var uniP = loadWasm("universe.wasm");
+  var surfP = loadWasm("surface.wasm");
+  var saP = loadWasm("sa.wasm");
 
   function generateUniverse(seed, k2) {
     return uniP.then(function (inst) {

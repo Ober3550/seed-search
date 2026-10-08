@@ -837,83 +837,28 @@ function renderFsrPanel(zone) {
 app.get("/analyze", (req, res) => res.redirect("/seed" + (req.url.includes("?") ? "?" + req.url.split("?")[1] : "")));
 app.get("/analyze/:seed", (req, res) => res.redirect("/seed?seed=" + encodeURIComponent(req.params.seed) + (req.url.split("?").length > 1 ? "&" + req.url.split("?")[1] : "")));
 
+// The seed page and the surface page are static files (public/index.html,
+// public/surface.html + shell.js): everything they need is in the query
+// string and they run entirely in the browser, so the same folder can be
+// published on any static host. These routes only keep the old URLs working.
+function staticRedirect(res, file, params) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== "") q.set(k, String(v));
+  res.redirect("/static/" + file + (q.toString() ? "?" + q.toString() : ""));
+}
+
 app.get("/seed", (req, res) => {
-  const mod = navMod(req);
-  const seed = /^\d+$/.test(req.query.seed || "") ? parseInt(req.query.seed) : null;
-  const k2 = mod === "k2se";
-  const content = `
-  <div class="page" data-mod="${mod}">
-    <div class="crumbs"><span>Seed (client-side · ${modLabel(mod)})</span></div>
-    <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
-    <div class="filter-bar">
-      <label>Seed: <input type="number" id="seed-input" min="0" step="1" value="${seed ?? ""}" placeholder="e.g. 32094082" style="width:12em"></label>
-      <button type="button" class="btn" id="gen-btn">Generate</button>
-      <span id="gen-status" class="hint"></span><br/>
-      <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
-      <label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label>
-    </div>
-    <table class="data-table" id="zone-table">
-      <thead id="zt-head"><tr>
-        <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="type" style="cursor:pointer">Type <span class="sort-ind"></span></th>
-        <th class="sortable" data-key="radius" style="cursor:pointer">Radius <span class="sort-ind"></span></th>
-        <th title="Travel Δv to Nauvis (km)" class="sortable" data-key="dv" style="cursor:pointer">Δv <span class="sort-ind"></span></th>
-        <th>Water</th><th>Enemy</th>
-        <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
-        <th>Estimated resources</th>
-        <th title="Open this surface on its own page (/surface/:seed/:name)">Open</th>
-      </tr></thead>
-      <tbody id="zt-body"><tr><td colspan="9" class="hint">Enter a seed and press Generate.</td></tr></tbody>
-    </table>
-  </div>
-  <script>window.__ANALYZE_SEED__ = ${seed == null ? "null" : seed}; window.__ANALYZE_MOD__ = "${mod}";</script>
-  <script src="/static/gen-bridge.js"></script>
-  <script src="/static/universe-wasm.js"></script>
-  <script src="/static/estimate-core.js"></script>
-  <script src="/static/analyze.js"></script>`;
-  page(req, res, "Seed", content);
+  const seed = /^\d+$/.test(req.query.seed || "") ? req.query.seed : null;
+  staticRedirect(res, "index.html", { ...req.query, mod: navMod(req), seed });
 });
 
-// Dedicated surface page: generates ONE surface (SE zone, Nauvis, or SA
-// planet) on its own route instead of in a modal. Client-side only — the
-// worker runs the same WASM generators as the seed table.
 app.get("/surface/:seed/:target", (req, res) => {
   const mod = navMod(req);
-  const seed = /^\d+$/.test(req.params.seed || "") ? parseInt(req.params.seed) : null;
+  const seed = /^\d+$/.test(req.params.seed || "") ? req.params.seed : null;
   const target = String(req.params.target || "").trim();
-  const escH = (x) => String(x).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   if (seed == null || !target)
     return res.status(404).send(htmxPage("Not Found", "<h2>Surface not found</h2>", mod));
-  const content = `
-  <div class="page">
-    <div class="crumbs"><a href="/seed?seed=${seed}&mod=${encodeURIComponent(mod)}">🌍 Seed ${seed}</a> <span>→</span> <span>${escH(target)}</span></div>
-    <h2>🗺️ <span id="sf-name">${escH(target)}</span> <span id="sf-badge" class="badge zone-type">…</span> <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
-    <div id="sf-meta" class="hint"></div>
-    <div class="filter-bar">
-      <label>Preview radius <input type="number" id="sf-radius" min="10" max="10000" step="50" value="2000" style="width:7em"></label>
-      <label id="sf-layer-wrap">Layer <select id="sf-layer">
-        <option value="0">Terrain + ore</option>
-        <option value="1">Terrain only</option>
-        <option value="2">Ore only</option>
-      </select></label>
-      <label id="sf-dim-wrap" hidden title="terrain brightness under the resources">Terrain <input type="range" id="sf-dim" min="0" max="100" value="100" style="width:8em;vertical-align:middle"></label>
-      <button type="button" class="btn" id="sf-go">Generate</button>
-      <span id="sf-status" class="hint"></span>
-    </div>
-    <div class="progress-wrap" id="sf-progress-wrap"><div id="sf-progress" class="progress-fill"></div></div>
-    <div class="surf-box">
-      <canvas id="sf-canvas" width="600" height="600"></canvas>
-      <div id="sf-res" class="hint"></div>
-    </div>
-  </div>
-  <script>window.__SURF_SEED__ = ${seed}; window.__SURF_TARGET__ = ${JSON.stringify(target)}; window.__SURF_MOD__ = "${mod}";</script>
-  <script src="/static/gen-bridge.js"></script>
-  <script src="/static/universe-wasm.js"></script>
-  <script src="/static/surface-wasm.js"></script>
-  <script src="/static/sa-wasm.js"></script>
-  <script src="/static/gpu-surface.js"></script>
-  <script src="/static/surface.js"></script>`;
-  page(req, res, `Seed ${seed} · ${target}`, content, seed);
+  staticRedirect(res, "surface.html", { ...req.query, seed, target, mod });
 });
 
 app.get("/seed/:seed", (req, res) => {

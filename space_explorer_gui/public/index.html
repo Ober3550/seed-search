@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seed — Surface Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main id="main">
+      <div class="page">
+        <div class="crumbs"><span id="seed-crumb">Seed (client-side)</span></div>
+        <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
+        <div class="filter-bar">
+          <label>Seed: <input type="number" id="seed-input" min="0" step="1" placeholder="e.g. 32094082" style="width:12em"></label>
+          <button type="button" class="btn" id="gen-btn">Generate</button>
+          <span id="gen-status" class="hint"></span><br/>
+          <label>Zone: <input type="text" id="zt-search" placeholder="Name / Resource" autocomplete="off"></label>
+          <label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label>
+        </div>
+        <table class="data-table" id="zone-table">
+          <thead id="zt-head"><tr>
+            <th class="sortable" data-key="name" style="cursor:pointer">Zone <span class="sort-ind"></span></th>
+            <th class="sortable" data-key="type" style="cursor:pointer">Type <span class="sort-ind"></span></th>
+            <th class="sortable" data-key="radius" style="cursor:pointer">Radius <span class="sort-ind"></span></th>
+            <th title="Travel Δv to Nauvis (km)" class="sortable" data-key="dv" style="cursor:pointer">Δv <span class="sort-ind"></span></th>
+            <th>Water</th><th>Enemy</th>
+            <th class="sortable" data-key="primary" style="cursor:pointer">Primary <span class="sort-ind"></span></th>
+            <th>Estimated resources</th>
+            <th title="Open this surface on its own page">Open</th>
+          </tr></thead>
+          <tbody id="zt-body"><tr><td colspan="9" class="hint">Enter a seed and press Generate.</td></tr></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <script src="shell.js"></script>
+  <script src="gen-bridge.js"></script>
+  <script src="universe-wasm.js"></script>
+  <script src="estimate-core.js"></script>
+  <script src="analyze.js"></script>
+</body>
+</html>
