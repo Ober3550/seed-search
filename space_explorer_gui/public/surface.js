@@ -1,4 +1,4 @@
-// Dedicated surface-generation page (/surface/:seed/:name). Renders ONE surface
+// Dedicated surface-generation page (surface.html?seed=&target=&mod=). Renders ONE surface
 // full-page. SE zones / Nauvis use surface.wasm; SA planets use sa.wasm.
 //
 // Why chunking: the surface.wasm work is split into SQUARE CELL chunks exactly
@@ -22,9 +22,10 @@
 // the segen code compiled to WASM, and each gen worker is one segen worker's
 // worth of parallelism; the pool replaces the backend's job queue.
 (function () {
-  var SEED = window.__SURF_SEED__;
-  var TARGET = window.__SURF_TARGET__ || "";
-  var MOD = window.__SURF_MOD__ || "k2se";
+  // seed, surface name and mod config come from the query string (shell.js)
+  var SEED = window.Shell.seed;
+  var TARGET = window.Shell.target;
+  var MOD = window.Shell.mod;
   var K2 = MOD === "k2se";
   // WebGPU is the DEFAULT terrain backend when the browser supports it;
   // ?cpu=1 forces the CPU wasm pipeline (ore always comes from CPU wasm).
@@ -148,7 +149,7 @@
     // one worker per logical core (safety-capped at 16 for very large hosts).
     try { n = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16)); } catch (e) {}
     for (var i = 0; i < n; i++) {
-      var w = new Worker("/static/gen-worker.js");
+      var w = new Worker(window.Shell.asset("gen-worker.js"));
       w.idle = true;
       (function (worker) {
         worker.onmessage = function (ev) {
@@ -882,6 +883,17 @@
   }
 
   function init() {
+    // the shell is a static file: fill in the names it cannot know
+    var nameEl = document.getElementById("sf-name");
+    if (nameEl) nameEl.textContent = TARGET;
+    var crumbName = document.getElementById("sf-crumb-name");
+    if (crumbName) crumbName.textContent = TARGET;
+    var crumbSeed = document.getElementById("sf-crumb-seed");
+    if (crumbSeed) {
+      crumbSeed.href = window.Shell.seedHref(SEED, MOD);
+      if (SEED != null) crumbSeed.textContent = "🌍 Seed " + SEED;
+    }
+    if (SEED != null && TARGET) document.title = "Seed " + SEED + " · " + TARGET + " — Surface Explorer";
     if (SEED == null || !TARGET) {
       status("missing seed or surface name in URL");
       return;

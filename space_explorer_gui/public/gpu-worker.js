@@ -14,7 +14,7 @@
 // gens (seed1 = 900,99584,700,1000,1100,500,600) into shared buffers.
 
 // ── triple-LFSR (rng.zig port) ─────────────────────────────────────────────
-importScripts("/static/ab-table.js");
+importScripts("ab-table.js"); // relative to this worker script
 const M32 = 0xffffffff;
 function lfsrInit(seed) {
   const s = Math.max(seed >>> 0, 341);
@@ -255,7 +255,7 @@ async function runNauvis(mapSeed, rect, mode) {
 let surfWasmP = null;
 function loadSurfaceWasm() {
   if (!surfWasmP) {
-    surfWasmP = fetch(location.origin + "/static/surface.wasm")
+    surfWasmP = fetch("surface.wasm")
       .then((r) => r.arrayBuffer())
       .then((b) => WebAssembly.instantiate(b, {}));
   }
@@ -510,7 +510,7 @@ async function getDevice() {
 
 async function fetchShader(name) {
   if (!shaders[name]) {
-    const r = await fetch("/static/shaders/" + name + "?_=" + Date.now(), { cache: "no-store" });
+    const r = await fetch("shaders/" + name + "?_=" + Date.now(), { cache: "no-store" });
     if (!r.ok) throw new Error("shader " + name + " fetch failed");
     shaders[name] = await r.text();
   }

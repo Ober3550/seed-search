@@ -8,13 +8,16 @@
 //   window.__genCall(t, payload) → Promise of { id, ok, universe|summary|pixels }
 //                                  (resolves with the full reply message)
 (function () {
+  // assets sit next to this script, wherever the folder is served from
+  var BASE = (window.Shell && window.Shell.base) ||
+    (document.currentScript && document.currentScript.src ? new URL(".", document.currentScript.src).href : "");
   var worker = null;
   var nextId = 1;
   var pending = {}; // id -> { resolve, reject }
 
   function ensure() {
     if (worker) return worker;
-    worker = new Worker("/static/gen-worker.js");
+    worker = new Worker(BASE + "gen-worker.js");
     worker.onmessage = function (ev) {
       var msg = ev.data;
       if (!msg || msg.id == null) return; // ignore worker-only notices

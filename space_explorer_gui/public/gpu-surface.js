@@ -24,7 +24,7 @@
 
   function ensure() {
     if (worker) return worker;
-    worker = new Worker(location.origin + "/static/gpu-worker.js");
+    worker = new Worker(((window.Shell && window.Shell.base) || "") + "gpu-worker.js");
     worker.onmessage = function (ev) {
       var m = ev.data;
       var p = pending[m.id];
