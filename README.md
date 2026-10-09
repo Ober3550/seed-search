@@ -9,9 +9,9 @@ JSONL for analysis.
 Install these first. `install.mjs` checks the first two before it builds
 anything and stops with an explanation if one is missing or the wrong version:
 
-- **[Zig 0.16.x](https://ziglang.org/download/)** — builds `seedgen`, `segen`
-  and the `gpu_*` binaries. 0.15 and 0.17 will not work; the installer rejects
-  anything outside 0.16.x. Verify with `zig version`.
+- **[Zig 0.16+](https://ziglang.org/download/)** — builds `seedgen`, `segen`
+  and the `gpu_*` binaries. 0.16 is the minimum; the installer rejects
+  anything older. Verify with `zig version`.
 - **[Node.js ≥18](https://nodejs.org/)** — runs the installer, the web server
   and the analyzer. Ships `npm`. Verify with `node --version`.
 - **[git](https://git-scm.com/)** — to clone the repo in the first place.
@@ -242,7 +242,7 @@ scripts/scan-k2se.sh          # on another, after pulling this repo
 WORKERS=8 scripts/scan-se.sh  # optional: limit the cores used
 ```
 
-- Needs Node >= 18 and Zig 0.16; the script builds `seedgen` itself.
+- Needs Node >= 18 and Zig 0.16+; the script builds `seedgen` itself.
 - Resumable: stop with Ctrl-C and run the same command again. Results are
   appended every 100k seeds to 1M-seed files in `seedlists/<mod>/`; the final list is `seedlists/<mod>.u32` (raw
   little-endian 4-byte seed numbers, ascending).

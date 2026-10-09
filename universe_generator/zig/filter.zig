@@ -360,11 +360,11 @@ const Tags = gen.Tags;
 /// fall back to recompute-on-demand. Caller owns this on the stack.
 pub const SurfaceCache = struct {
     tags: [MAX_SURFS]Tags = undefined,
-    tags_valid: [MAX_SURFS]bool = [_]bool{false} ** MAX_SURFS,
-    dv: [MAX_SURFS]u32 = [_]u32{0} ** MAX_SURFS,
-    dv_valid: [MAX_SURFS]bool = [_]bool{false} ** MAX_SURFS,
+    tags_valid: [MAX_SURFS]bool = @splat(false),
+    dv: [MAX_SURFS]u32 = @splat(0),
+    dv_valid: [MAX_SURFS]bool = @splat(false),
     res: [MAX_SURFS][18]f64 = undefined,
-    res_valid: [MAX_SURFS]bool = [_]bool{false} ** MAX_SURFS,
+    res_valid: [MAX_SURFS]bool = @splat(false),
 
     fn reset(self: *SurfaceCache, n: usize) void {
         const m = @min(n, MAX_SURFS);

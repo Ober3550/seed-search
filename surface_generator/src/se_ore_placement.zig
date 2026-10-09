@@ -698,7 +698,7 @@ const Worker = struct {
                 if (seed < 342) seed = 341;
                 var prng = rng.Rng.init(seed);
                 // tiles covered by a resource already placed in this chunk
-                var occupied = [_]bool{false} ** (CHUNK * CHUNK);
+                var occupied: [CHUNK * CHUNK]bool = @splat(false);
                 var ii: i32 = CHUNK * CHUNK - 1;
                 while (ii >= 0) : (ii -= 1) {
                     const idx: usize = @intCast(ii);

@@ -1,18 +1,13 @@
 //! Thin wrapper over the vendored wgpu-native (v29.0.1.1) C API.
 //!
-//! We deliberately use @cImport rather than hand-written bindings so the whole
+//! We deliberately translate the C headers (wgpu_c.h, via build.zig) rather than hand-write bindings so the whole
 //! webgpu.h / wgpu.h surface stays in sync with whatever release fetch-wgpu.sh
 //! pulled — the C API still shifts between versions (StringView, callback-info
 //! async, etc.), and auto-translation is the only sane way to track it.
 
 const std = @import("std");
 
-pub const c = @cImport({
-    @cInclude("webgpu/webgpu.h");
-    @cInclude("webgpu/wgpu.h");
-    @cInclude("time.h");
-    @cInclude("stdio.h");
-});
+pub const c = @import("wgpu_c");
 
 /// Write bytes to a file via libc (std.fs moved behind the Io interface in 0.16).
 pub fn writeFileC(path: [*:0]const u8, data: []const u8) !void {
