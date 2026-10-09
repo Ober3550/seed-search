@@ -586,7 +586,7 @@ pub fn computeOresInRect(
             var penalty_draws: [CHUNK * CHUNK]f64 = undefined;
             var penalty_done = false;
             // tiles covered by a resource placed earlier in this chunk
-            var occupied = [_]bool{false} ** (CHUNK * CHUNK);
+            var occupied: [CHUNK * CHUNK]bool = @splat(false);
 
             var group: u8 = 0;
             while (group < 2) : (group += 1) {

@@ -4,7 +4,7 @@
 // Builds the three Zig components the web server depends on and installs the
 // server's Node dependencies. Runs identically on macOS / Linux / Windows —
 // the only hard prerequisites are Node (>=18, which you already have since it's
-// running this) and Zig 0.16.x on PATH.
+// running this) and Zig 0.16+ on PATH.
 //
 //   node install.mjs            # build everything + npm install the server
 //   node install.mjs --build-only   # build the Zig components only (the web
@@ -75,16 +75,18 @@ function checkZig() {
   const r = spawnSync("zig", ["version"], { encoding: "utf8" });
   if (r.error || r.status !== 0) {
     fail(
-      "Zig 0.16.x not found on PATH.\n" +
-        "  Install it from https://ziglang.org/download/ (pick 0.16.x) and\n" +
+      "Zig not found on PATH.\n" +
+        "  Install it from https://ziglang.org/download/ (0.16 or newer) and\n" +
         "  make sure `zig version` works in a fresh shell, then re-run this installer."
     );
   }
   const ver = r.stdout.trim();
-  if (!/^0\.16\./.test(ver)) {
+  // Minimum only: the sources need 0.16's std.Io, and newer releases build them too.
+  const [major, minor] = ver.split(".").map(Number);
+  if (!(major > 0 || minor >= 16)) {
     fail(
-      `Zig 0.16.x required (found ${ver}).\n` +
-        "  Get a 0.16.x build from https://ziglang.org/download/ and put it first on PATH."
+      `Zig 0.16 or newer required (found ${ver}).\n` +
+        "  Get a current build from https://ziglang.org/download/ and put it first on PATH."
     );
   }
   ok(`zig ${ver}`);
@@ -394,7 +396,7 @@ Builds the Zig components and installs the web server's dependencies:
               by the package postinstall hook (npm resolves the server's deps).
               htmx is still fetched — it is not an npm dependency.
 
-Prerequisites: Node >=18 (running this) and Zig 0.16.x on PATH.
+Prerequisites: Node >=18 (running this) and Zig 0.16+ on PATH.
 Env: WGPU_VERSION overrides the pinned wgpu-native release.
      HTMX_VERSION overrides the pinned htmx release (skips the checksum check).
 

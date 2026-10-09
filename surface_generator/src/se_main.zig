@@ -183,10 +183,7 @@ fn runZoneDriver(
         const name = (z.get("n") orelse continue).string;
         if (!all_zones and wanted.get(name) == null) continue;
         const ztype_str = (z.get("t") orelse continue).string;
-        const ztype: universe.data.ZoneType = blk: {
-            inline for (@typeInfo(universe.data.ZoneType).@"enum".fields) |fld| {
-                if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
-            }
+        const ztype: universe.data.ZoneType = std.meta.stringToEnum(universe.data.ZoneType, ztype_str) orelse {
             std.debug.print("zone {s}: unsupported type {s}, skipping\n", .{ name, ztype_str });
             continue;
         };
@@ -698,10 +695,7 @@ fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {
     if (v != .string) return null;
     // seeds jsonl stores bare enum names ("very_high"), while tagStr() returns
     // the prefixed prototype tags ("aux_very_high") — match field names.
-    inline for (@typeInfo(E).@"enum".fields) |fld| {
-        if (std.mem.eql(u8, v.string, fld.name)) return @enumFromInt(fld.value);
-    }
-    return universe.parseTagEnum(E, v.string);
+    return std.meta.stringToEnum(E, v.string) orelse universe.parseTagEnum(E, v.string);
 }
 
 pub fn main(init: std.process.Init) !void {

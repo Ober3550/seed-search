@@ -1,11 +1,12 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     // zigimg for PNG encoding (src/png.zig).
-    const zigimg = b.dependency("zigimg", .{ .target = target, .optimize = optimize }).module("zigimg");
+    const zigimg = zigimgModule(b, target, optimize) orelse return;
 
     const mod = b.addModule("surface_generator", .{
         .root_source_file = b.path("src/root.zig"),
@@ -31,7 +32,7 @@ pub fn build(b: *std.Build) void {
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    passArgs(b, run_cmd);
 
     // Universe generator (zone controls from world seed + tags), shared with
     // the zone-driver mode of segen.
@@ -58,7 +59,7 @@ pub fn build(b: *std.Build) void {
     const se_run_cmd = b.addRunArtifact(se_exe);
     se_run_step.dependOn(&se_run_cmd.step);
     se_run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| se_run_cmd.addArgs(args);
+    passArgs(b, se_run_cmd);
 
     // Asteroid-field surface renderer (CPU ground-truth check).
     const ast_exe = b.addExecutable(.{
@@ -75,7 +76,7 @@ pub fn build(b: *std.Build) void {
     const ast_cmd = b.addRunArtifact(ast_exe);
     ast_step.dependOn(&ast_cmd.step);
     ast_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| ast_cmd.addArgs(args);
+    passArgs(b, ast_cmd);
 
     const mod_tests = b.addTest(.{ .root_module = mod });
     const run_mod_tests = b.addRunArtifact(mod_tests);
@@ -96,11 +97,24 @@ pub fn build(b: *std.Build) void {
     const sa_run_cmd = b.addRunArtifact(sa_exe);
     sa_run_step.dependOn(&sa_run_cmd.step);
     sa_run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| sa_run_cmd.addArgs(args);
+    passArgs(b, sa_run_cmd);
     const exe_tests = b.addTest(.{ .root_module = exe.root_module });
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+}
+
+// Forward `zig build <step> -- args`: `b.args` through 0.16, `addPassthruArgs` from 0.17.
+fn passArgs(b: *std.Build, run: *std.Build.Step.Run) void {
+    if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) run.addPassthruArgs() else if (b.args) |args| run.addArgs(args);
+}
+
+// zigimg pinned per compiler (see build.zig.zon). Null while the lazy package is
+// still being fetched: the build runner fetches it and re-runs build().
+fn zigimgModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ?*std.Build.Module {
+    const name = if (builtin.zig_version.major == 0 and builtin.zig_version.minor < 17) "zigimg" else "zigimg_017";
+    const dep = b.lazyDependency(name, .{ .target = target, .optimize = optimize }) orelse return null;
+    return dep.module("zigimg");
 }

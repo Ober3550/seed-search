@@ -129,12 +129,7 @@ const ZoneSurfaceParams = struct {
 
 fn zoneSurfaceParams(z: std.json.ObjectMap) !ZoneSurfaceParams {
     const ztype_str = (z.get("t") orelse return error.NoZoneType).string;
-    const ztype: data.ZoneType = blk: {
-        inline for (@typeInfo(data.ZoneType).@"enum".fields) |fld| {
-            if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
-        }
-        return error.UnsupportedZoneType;
-    };
+    const ztype: data.ZoneType = std.meta.stringToEnum(data.ZoneType, ztype_str) orelse return error.UnsupportedZoneType;
     if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") return error.NotGeneratable;
     const is_field = ztype == .@"asteroid-field";
     const zone_seed: u32 = @intCast((z.get("s") orelse return error.NoZoneSeed).integer);
@@ -314,12 +309,7 @@ fn generateZone(
     _ = world_seed; // output paths only in the native CLI
     const name = (z.get("n") orelse return error.NoZoneName).string;
     const ztype_str = (z.get("t") orelse return error.NoZoneType).string;
-    const ztype: data.ZoneType = blk: {
-        inline for (@typeInfo(data.ZoneType).@"enum".fields) |fld| {
-            if (std.mem.eql(u8, ztype_str, fld.name)) break :blk @enumFromInt(fld.value);
-        }
-        return error.UnsupportedZoneType;
-    };
+    const ztype: data.ZoneType = std.meta.stringToEnum(data.ZoneType, ztype_str) orelse return error.UnsupportedZoneType;
     if (ztype != .planet and ztype != .moon and ztype != .@"asteroid-field") return error.NotGeneratable;
     const is_field = ztype == .@"asteroid-field";
     const zone_seed: u32 = @intCast((z.get("s") orelse return error.NoZoneSeed).integer);
@@ -668,10 +658,7 @@ fn generateZone(
 fn tagOf(comptime E: type, z: std.json.ObjectMap, key: []const u8) ?E {
     const v = z.get(key) orelse return null;
     if (v != .string) return null;
-    inline for (@typeInfo(E).@"enum".fields) |fld| {
-        if (std.mem.eql(u8, v.string, fld.name)) return @enumFromInt(fld.value);
-    }
-    return universe.parseTagEnum(E, v.string);
+    return std.meta.stringToEnum(E, v.string) orelse universe.parseTagEnum(E, v.string);
 }
 
 /// Human-readable ore amount: >=1e9 -> "X.XXB", >=1e6 -> "X.XXM", else raw.

@@ -59,7 +59,7 @@ Detailed findings from Ghidra analysis:
 
 ## Dependencies
 
-- [Zig](https://ziglang.org/) 0.16.x
+- [Zig](https://ziglang.org/) 0.16 or newer
 - [Ghidra](https://ghidra-sre.org/) 12.1+ (for reverse engineering)
 - Factorio (for capturing test data)
 

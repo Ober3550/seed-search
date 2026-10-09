@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 // Maps a resolved target to the wgpu-native prebuilt directory under vendor/.
 // fetch-wgpu.sh downloads these; only the host triple is required to build.
@@ -31,8 +32,14 @@ pub fn build(b: *std.Build) void {
     const inc = b.fmt("vendor/{s}/include", .{triple});
     const lib = b.fmt("vendor/{s}/lib", .{triple});
 
+    // C bindings for src/wgpu.zig, translated by the build system (the
+    // @cImport builtin is gone from 0.17).
+    const wgpu_tc = b.addTranslateC(.{ .root_source_file = b.path("src/wgpu_c.h"), .target = target, .optimize = optimize });
+    wgpu_tc.addIncludePath(b.path(inc));
+    const wgpu_c = wgpu_tc.createModule();
+
     // zigimg for PNG encoding (surface_generator/src/png.zig imports it).
-    const zigimg = b.dependency("zigimg", .{ .target = target, .optimize = optimize }).module("zigimg");
+    const zigimg = zigimgModule(b, target, optimize) orelse return;
 
     // The CPU oracle: import surface_generator's root module (it re-exports
     // noise, terrain, png, etc. as one module — importing them as separate
@@ -49,8 +56,8 @@ pub fn build(b: *std.Build) void {
     // GCC DWARF2 unwinder (the _Unwind_* symbols) — pull in the static libgcc
     // unwinder archive on Linux so a fully-static link resolves them.
     const linkWgpu = struct {
-        fn apply(e: *std.Build.Step.Compile, bb: *std.Build, i: []const u8, l: []const u8) void {
-            e.root_module.addIncludePath(bb.path(i));
+        fn apply(e: *std.Build.Step.Compile, bb: *std.Build, c_mod: *std.Build.Module, l: []const u8) void {
+            e.root_module.addImport("wgpu_c", c_mod);
             e.root_module.addLibraryPath(bb.path(l));
             e.root_module.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
             if (bb.graph.host.result.os.tag == .macos) {
@@ -82,14 +89,14 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    linkWgpu(exe, b, inc, lib);
+    linkWgpu(exe, b, wgpu_c, lib);
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the Phase 0 wgpu compute proof");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
+    passArgs(b, run_cmd);
 
     // Phase 1 — CPU-vs-GPU multioctave noise conformance.
     const conf = b.addExecutable(.{
@@ -102,7 +109,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(conf, b, inc, lib);
+    linkWgpu(conf, b, wgpu_c, lib);
     b.installArtifact(conf);
 
     const conf_step = b.step("conformance", "Run the Phase 1 noise conformance test");
@@ -121,7 +128,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(elev, b, inc, lib);
+    linkWgpu(elev, b, wgpu_c, lib);
     b.installArtifact(elev);
 
     const elev_step = b.step("elevation", "Run the Phase 2 elevation conformance test");
@@ -140,7 +147,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(tma, b, inc, lib);
+    linkWgpu(tma, b, wgpu_c, lib);
     b.installArtifact(tma);
 
     const tma_step = b.step("tma", "Run the Phase 3a temperature/moisture/aux conformance test");
@@ -159,7 +166,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(bio, b, inc, lib);
+    linkWgpu(bio, b, wgpu_c, lib);
     b.installArtifact(bio);
 
     const bio_step = b.step("biome", "Run the Phase 3b biome classification conformance test");
@@ -178,7 +185,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(rnd, b, inc, lib);
+    linkWgpu(rnd, b, wgpu_c, lib);
     b.installArtifact(rnd);
 
     const rnd_step = b.step("render", "Chained GPU terrain render + CPU/GPU benchmark");
@@ -203,7 +210,7 @@ pub fn build(b: *std.Build) void {
                 .imports = &.{.{ .name = "surfgen", .module = surfgen }},
             }),
         });
-        linkWgpu(e, b, inc, lib);
+        linkWgpu(e, b, wgpu_c, lib);
         b.installArtifact(e);
     }
 
@@ -219,7 +226,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "surfgen", .module = surfgen }},
         }),
     });
-    linkWgpu(gore, b, inc, lib);
+    linkWgpu(gore, b, wgpu_c, lib);
     b.installArtifact(gore);
 
     // Stitch per-cell PNGs into one full-disk PNG (atomic). No GPU — just
@@ -235,4 +242,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.installArtifact(gstitch);
+}
+
+// Forward `zig build <step> -- args`: `b.args` through 0.16, `addPassthruArgs` from 0.17.
+fn passArgs(b: *std.Build, run: *std.Build.Step.Run) void {
+    if (@hasDecl(std.Build.Step.Run, "addPassthruArgs")) run.addPassthruArgs() else if (b.args) |args| run.addArgs(args);
+}
+
+// zigimg pinned per compiler (see build.zig.zon). Null while the lazy package is
+// still being fetched: the build runner fetches it and re-runs build().
+fn zigimgModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) ?*std.Build.Module {
+    const name = if (builtin.zig_version.major == 0 and builtin.zig_version.minor < 17) "zigimg" else "zigimg_017";
+    const dep = b.lazyDependency(name, .{ .target = target, .optimize = optimize }) orelse return null;
+    return dep.module("zigimg");
 }

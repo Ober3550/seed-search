@@ -309,8 +309,8 @@ fn tagAt(comptime E: type, table: []const E, idx: u32) ?E {
 
 pub fn parseTagEnum(comptime E: type, tag_str: ?[]const u8) ?E {
     if (tag_str) |s| {
-        inline for (@typeInfo(E).@"enum".fields) |f| {
-            if (std.mem.eql(u8, s, @field(E, f.name).tagStr())) return @enumFromInt(f.value);
+        inline for (comptime std.meta.fieldNames(E)) |name| {
+            if (std.mem.eql(u8, s, @field(E, name).tagStr())) return @field(E, name);
         }
     }
     return null;

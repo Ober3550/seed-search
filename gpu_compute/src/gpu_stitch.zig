@@ -14,8 +14,6 @@
 const std = @import("std");
 const surfgen = @import("surfgen");
 const png = surfgen.png;
-const c = @cImport(@cInclude("stdio.h")); // rename() — atomic on POSIX
-
 fn getStr(args: []const [:0]const u8, flag: []const u8) ?[]const u8 {
     var i: usize = 0;
     while (i + 1 < args.len) : (i += 1) if (std.mem.eql(u8, args[i], flag)) return args[i + 1];
@@ -93,9 +91,10 @@ pub fn main(init: std.process.Init) !void {
 
     var tzb: [1024]u8 = undefined;
     var fzb: [1024]u8 = undefined;
-    const tmp_z = try std.fmt.bufPrintZ(&tzb, "{s}/{s}.png.tmp", .{ dir, prefix });
-    const fin_z = try std.fmt.bufPrintZ(&fzb, "{s}/{s}.png", .{ dir, prefix });
-    if (c.rename(tmp_z.ptr, fin_z.ptr) != 0) return error.RenameFailed;
+    const tmp_z = try std.fmt.bufPrintSentinel(&tzb, "{s}/{s}.png.tmp", .{ dir, prefix }, 0);
+    const fin_z = try std.fmt.bufPrintSentinel(&fzb, "{s}/{s}.png", .{ dir, prefix }, 0);
+    // rename() — atomic on POSIX
+    if (std.c.rename(tmp_z.ptr, fin_z.ptr) != 0) return error.RenameFailed;
 
     std.debug.print("gpu_stitch: {s} — {d} cells → {d}x{d}\n", .{ prefix, count, full, full });
 }

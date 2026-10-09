@@ -26,7 +26,7 @@ SEEDGEN="universe_generator/zig/seedgen"
 [ -f "$SEEDGEN.exe" ] && SEEDGEN="$SEEDGEN.exe"
 # rebuild when missing or older than the generator's sources
 if [ ! -f "$SEEDGEN" ] || [ -n "$(find universe_generator/zig -name '*.zig' -newer "$SEEDGEN" -print -quit)" ]; then
-  command -v zig >/dev/null || { echo "zig 0.16 is required to build seedgen" >&2; exit 1; }
+  command -v zig >/dev/null || { echo "zig 0.16+ is required to build seedgen" >&2; exit 1; }
   node install.mjs --seedgen-only
 fi
 
