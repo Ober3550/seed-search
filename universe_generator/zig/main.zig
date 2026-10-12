@@ -10,7 +10,10 @@
 ///   PLANETS_LOW/HIGH    Calidus planets+moons extremity tails (0=off)
 ///   WATER_PCT_LOW/HIGH  Water share of Calidus bodies, % (0=off)
 ///   ENEMY_PCT_LOW/HIGH  Hostile share of Calidus bodies, % (0=off)
-///   METRICS_SCAN        Dump "seed,np,nw,ne,wp,ef,naqdv,fdv,ed", no JSONL
+///   METRICS_SCAN        Dump "seed,np,nw,ne,wp,ef,naqdv,fdv,ed,keep", no JSONL
+///   SEED_LIST           Generate the seeds of this file (raw u32 LE, as in
+///                       seedlists/<mod>.u32) instead of START_SEED..END_SEED
+///   SEED_LIST_SKIP / SEED_LIST_COUNT  Slice of that list, in seeds
 ///   OUTPUT_DIR          Output directory (default "output")
 ///   MAX_LINES_PER_FILE  Lines per JSONL file before rotating (default 10000)
 ///
@@ -100,7 +103,21 @@ pub fn main(init: std.process.Init) !void {
     else
         null;
 
-    std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
+    // SEED_LIST: re-generate an existing seed list (scripts/seed-scan.mjs
+    // --from) instead of a range. Read once on the page allocator - it must
+    // survive the per-seed arena resets.
+    const seed_list: ?[]const u8 = if (std.c.getenv("SEED_LIST")) |lenv| blk: {
+        const raw = try std.Io.Dir.readFileAlloc(.cwd(), io, std.mem.sliceTo(lenv, 0), std.heap.page_allocator, .unlimited);
+        const n = raw.len / 4;
+        const skip = @min(n, getEnvU32("SEED_LIST_SKIP", 0));
+        const count = @min(n - skip, getEnvU32("SEED_LIST_COUNT", std.math.maxInt(u32)));
+        break :blk raw[skip * 4 ..][0 .. count * 4];
+    } else null;
+
+    if (seed_list) |l|
+        std.debug.print("# Generating {d} listed seeds (K2={})\n", .{ l.len / 4, k2_enabled })
+    else
+        std.debug.print("# Generating seeds {d} to {d} (K2={})\n", .{ start_seed, end_seed, k2_enabled });
 
     var passed: u32 = 0;
     const t_start = std.Io.Clock.awake.now(io).nanoseconds;
@@ -117,8 +134,12 @@ pub fn main(init: std.process.Init) !void {
     // Counted in u64 so a range ending at the top of the u32 seed space
     // (END_SEED=4294967295) terminates instead of wrapping around.
     var seed_iter: u64 = start_seed;
-    while (seed_iter <= end_seed) : (seed_iter += 2) {
-        const seed: u32 = @intCast(seed_iter);
+    var list_i: usize = 0;
+    while (if (seed_list) |l| list_i < l.len else seed_iter <= end_seed) : ({
+        seed_iter += 2;
+        list_i += 4;
+    }) {
+        const seed: u32 = if (seed_list) |l| std.mem.readInt(u32, l[list_i..][0..4], .little) else @intCast(seed_iter);
         if (seed != start_seed) _ = arena.reset(.retain_capacity);
 
         // A degenerate RNG draw (gen.zig, Rng.int1) is a point where SE's own
@@ -312,23 +333,13 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        // --- Distribution scan (tuning aid) ---
-        // One CSV row per seed, emitted BEFORE the tail filters so the cutoffs
-        // below can be picked from the real population rather than guessed.
-        // Skips JSONL entirely. Columns: seed,np,nw,ne,naqdv,fdv,ed
-        if (getEnvBool("METRICS_SCAN")) {
-            var mb: [160]u8 = undefined;
-            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wp, ef, naqdv, fdv, ed }) catch unreachable;
-            _ = stdout_w.writeAll(ms) catch {};
-            continue;
-        }
-
         // --- Tail filters ---
         // No FILTER env → legacy UNION of up to eight extremity tails (below),
         // unchanged fast path (no cutoffs set → keep everything). FILTER env →
         // the generic JSON filter evaluator decides keep/discard; it parses once
         // at startup and evaluates per seed with no allocation, computing each
         // surface's deltaV / resource-FSR lazily only when a predicate queries it.
+        var keep = true;
         if (filter) |flt| {
             var cache: filter_mod.SurfaceCache = undefined;
             const ein = filter_mod.EvalInput{
@@ -344,7 +355,7 @@ pub fn main(init: std.process.Init) !void {
                 .cx = universe.zones.items[calidus_zi].stellar_x,
                 .cy = universe.zones.items[calidus_zi].stellar_y,
             };
-            if (!flt.eval(&ein, &cache)) continue;
+            keep = flt.eval(&ein, &cache);
         } else {
             // --- Tail filters: UNION of up to eight extremity tails ---
             // Each metric is roughly bell-shaped across seeds; these cutoffs keep the
@@ -368,7 +379,7 @@ pub fn main(init: std.process.Init) !void {
             const ef_hi = getEnvU32("ENEMY_PCT_HIGH", 0);
             const any_cut = naq_lo > 0 or naq_hi > 0 or pl_lo > 0 or pl_hi > 0 or
                 wp_lo > 0 or wp_hi > 0 or ef_lo > 0 or ef_hi > 0;
-            const keep = !any_cut or
+            keep = !any_cut or
                 (naq_lo > 0 and naqdv <= naq_lo) or
                 (naq_hi > 0 and fdv >= naq_hi) or
                 (pl_hi > 0 and np >= pl_hi) or
@@ -377,8 +388,20 @@ pub fn main(init: std.process.Init) !void {
                 (wp_lo > 0 and wp <= wp_lo) or
                 (ef_hi > 0 and ef >= ef_hi) or
                 (ef_lo > 0 and ef <= ef_lo);
-            if (!keep) continue;
         }
+
+        // --- Distribution scan (tuning aid) ---
+        // One CSV row per seed, kept or not, so cutoffs can be picked from the
+        // real population rather than guessed; the last column is what the
+        // filter above decided (1 = keep). Skips JSONL entirely.
+        // Columns: seed,np,nw,ne,wp,ef,naqdv,fdv,ed,keep
+        if (getEnvBool("METRICS_SCAN")) {
+            var mb: [160]u8 = undefined;
+            const ms = std.fmt.bufPrint(&mb, "{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n", .{ seed, np, nw, ne, wp, ef, naqdv, fdv, ed, @intFromBool(keep) }) catch unreachable;
+            _ = stdout_w.writeAll(ms) catch {};
+            continue;
+        }
+        if (!keep) continue;
 
         const min_prod = getEnvU32("MIN_PROD_MODULES", 0);
         if (min_prod > 0) {

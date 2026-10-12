@@ -253,6 +253,47 @@ WORKERS=8 scripts/scan-se.sh  # optional: limit the cores used
   distinct universes. (Surfaces do differ between an even/odd pair.)
 - The criteria and how they were tuned are in `scripts/seed-criteria/`.
 
+### Narrowing a finished list
+
+`--from` regenerates the seeds of an existing list instead of a range (a full
+list takes a few minutes), shows how their metrics are distributed, and can
+write the seeds passing tighter criteria as a smaller list:
+
+```sh
+# distribution, and how many seeds each tighter cutoff would keep
+node scripts/seed-scan.mjs --mod se --from seedlists/se.u32
+# count what a criteria file keeps; add --out to write it
+node scripts/seed-scan.mjs --mod se --from seedlists/se.u32 \
+  --criteria scripts/seed-criteria/se-web.json --out seedlists/se-web.u32
+```
+
+- The criteria file has `tails` like the base one (a seed in any tail is
+  kept), or a `filter`: a [Filter DSL](docs/filter-dsl-reference.md) document.
+- A tail cutoff only gives the complete answer when it is at least as tight
+  as the one the list was scanned with; the script warns otherwise.
+- `--out` also writes `<out>.json` recording the source list and criteria.
+- `--csv file` saves the per-seed metrics; `--limit N` uses the first N seeds
+  for a quick trial.
+
+### Searching a list for surfaces
+
+`scripts/seed-surfaces.mjs` searches a list for seeds whose home system has
+particular surfaces (say, vulcanite, cryonite and holmium on one watered moon
+or planet) and prints each match with the surfaces it selected: Δv from
+Nauvis, radius, enemies, water and the six largest resources.
+
+```sh
+node scripts/seed-surfaces.mjs --mod se --from seedlists/se.u32 \
+  --rules scripts/surface-rules/se-vulcanite-cryonite-holmium.json
+```
+
+The rules file sets the minimum planet count, the amount below which a
+resource counts as absent, and one entry per surface a seed must have; the
+fields are described at the top of the script. `--top N` limits what is
+printed, `--out` writes the matching seeds as a list and `--emit` their
+universes with only the selected surfaces. A full list takes about three
+minutes.
+
 ## Analysis
 
 ```bash

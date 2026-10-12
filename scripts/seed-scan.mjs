@@ -5,6 +5,7 @@
 //   node scripts/seed-scan.mjs --mod se [--range 0:4294967296] [--workers N]
 //   node scripts/seed-scan.mjs --mod se --status
 //   node scripts/seed-scan.mjs --mod se --pack
+//   node scripts/seed-scan.mjs --mod se --from seedlists/se.u32 [--criteria file --out seedlists/se-web.u32] [--csv file] [--limit N]
 // (scripts/scan-se.sh and scripts/scan-k2se.sh wrap this per config.)
 //
 // A universe is fully reproducible from its seed (seedgen natively,
@@ -27,6 +28,15 @@
 // a minute of work per worker. The next run continues every .part from its
 // .pos; a finished range is renamed to .u32 and skipped from then on.
 // --pack concatenates the finished ranges into seedlists/<mod>.u32.
+//
+// --from regenerates the seeds of an existing list instead of a range (about
+// two minutes for a full list on 10 cores, so nothing is saved along the way)
+// and prints how its metrics are distributed. With --criteria it also counts
+// the seeds that pass, and --out writes those as a smaller list (plus
+// <out>.json saying how it was made). The criteria are "tails" as above or a
+// "filter" (a Filter DSL document, docs/filter-dsl-reference.md). --csv saves
+// the per-seed metrics, --limit N looks at the first N seeds only. Paths are
+// relative to the repository root.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -43,7 +53,7 @@ const K2 = { se: 0, k2se: 1 };
 const TAIL_KEYS = ["PLANETS_HIGH", "PLANETS_LOW", "NAQ_DV_LOW", "NAQ_DV_HIGH", "ENEMY_PCT_LOW", "ENEMY_PCT_HIGH", "WATER_PCT_LOW", "WATER_PCT_HIGH"];
 const mod = arg("--mod", null);
 if (!(mod in K2)) {
-  console.error("usage: seed-scan.mjs --mod se|k2se [--range lo:hi] [--workers N] [--criteria file] | --status | --pack");
+  console.error("usage: seed-scan.mjs --mod se|k2se [--range lo:hi] [--workers N] [--criteria file] | --status | --pack | --from list.u32 [--criteria file] [--out list.u32] [--csv file] [--limit N]");
   process.exit(1);
 }
 const LISTS = process.env.SEEDLISTS_DIR ? path.resolve(process.env.SEEDLISTS_DIR) : path.join(ROOT, "seedlists"); // override for trial runs
@@ -114,24 +124,50 @@ if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi || lo < 0 || hi > S
   process.exit(1);
 }
 const workers = parseInt(arg("--workers", String(Math.max(1, os.cpus().length))), 10);
-const criteriaFile = path.resolve(ROOT, arg("--criteria", `scripts/seed-criteria/${mod}.json`));
-const criteria = JSON.parse(fs.readFileSync(criteriaFile, "utf8"));
-if (criteria.mod && criteria.mod !== mod) {
-  console.error(`${path.relative(ROOT, criteriaFile)} is for "${criteria.mod}", not "${mod}"`);
+const BASE_CRITERIA = `scripts/seed-criteria/${mod}.json`;
+function loadCriteria(file) {
+  const criteria = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (criteria.mod && criteria.mod !== mod) {
+    console.error(`${path.relative(ROOT, file)} is for "${criteria.mod}", not "${mod}"`);
+    process.exit(1);
+  }
+  const tails = {};
+  for (const [k, v] of Object.entries(criteria.tails || {})) {
+    if (!TAIL_KEYS.includes(k)) { console.error(`unknown tail "${k}" in criteria`); process.exit(1); }
+    if (v > 0) tails[k] = String(v);
+  }
+  return { criteria, tails };
+}
+const fromList = arg("--from", null);
+const criteriaArg = arg("--criteria", fromList ? null : BASE_CRITERIA);
+const criteriaFile = criteriaArg && path.resolve(ROOT, criteriaArg);
+const { criteria, tails } = criteriaFile ? loadCriteria(criteriaFile) : { criteria: null, tails: {} };
+if (criteria && !Object.keys(tails).length && !(fromList && criteria.filter)) {
+  console.error(fromList ? "criteria has neither tails nor a filter" : "criteria has no tails: refusing to keep every seed");
   process.exit(1);
 }
-const tails = {};
-for (const [k, v] of Object.entries(criteria.tails || {})) {
-  if (!TAIL_KEYS.includes(k)) { console.error(`unknown tail "${k}" in criteria`); process.exit(1); }
-  if (v > 0) tails[k] = String(v);
+if (criteria && criteria.filter && (!fromList || Object.keys(tails).length)) {
+  console.error(fromList ? "criteria has both tails and a filter: use one" : "a filter is only supported with --from: a range scan uses tails");
+  process.exit(1);
 }
-if (!Object.keys(tails).length) { console.error("criteria has no tails: refusing to keep every seed"); process.exit(1); }
 const bin = path.join(ROOT, "universe_generator", "zig", process.platform === "win32" ? "seedgen.exe" : "seedgen");
 if (!fs.existsSync(bin)) { console.error("seedgen not built (run: node install.mjs --seedgen-only)"); process.exit(1); }
+const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+
+// seedgen's own filter decides what is kept: the union of the tails, or the
+// FILTER document
+const baseEnv = { ...process.env, SE_K2: String(K2[mod]), SE_ENABLE_K2: String(K2[mod]), MIN_PROD_MODULES: "0", WORKER_ID: "0" };
+for (const k of ["FILTER", "METRICS_SCAN", "ALL_ZONES", "MIN_NAQ_DV", "SEED_LIST", "SEED_LIST_SKIP", "SEED_LIST_COUNT", ...TAIL_KEYS]) delete baseEnv[k];
+Object.assign(baseEnv, tails);
+if (criteria && criteria.filter) baseEnv.FILTER = JSON.stringify(criteria.filter);
+
+if (fromList) {
+  await rescanList();
+  process.exit(process.exitCode || 0);
+}
 
 // one list = one criterion: refuse to mix
 fs.mkdirSync(DIR, { recursive: true });
-const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
 if (fs.existsSync(MANIFEST)) {
   const m = JSON.parse(fs.readFileSync(MANIFEST, "utf8"));
   if (JSON.stringify(m.tails) !== JSON.stringify(tails)) {
@@ -154,11 +190,6 @@ for (let a = Math.floor(lo / CHUNK) * CHUNK; a < hi; a += CHUNK) {
 const total = todo.length;
 console.log(`${mod}: ${(totalNumbers / 1e6).toFixed(1)}M seed numbers left to scan in ${lo}:${hi} (${total} files of ${CHUNK.toLocaleString()}, saved every ${BLOCK.toLocaleString()}), ${workers} workers`);
 console.log(`criteria: ${Object.entries(tails).map(([k, v]) => `${k}=${v}`).join(" ")}`);
-
-// seedgen's own tail filter (no FILTER document): keep a seed in ANY tail
-const baseEnv = { ...process.env, SE_K2: String(K2[mod]), SE_ENABLE_K2: String(K2[mod]), MIN_PROD_MODULES: "0", WORKER_ID: "0" };
-for (const k of ["FILTER", "METRICS_SCAN", "ALL_ZONES", "MIN_NAQ_DV", ...TAIL_KEYS]) delete baseEnv[k];
-Object.assign(baseEnv, tails);
 
 let done = 0, kept = 0, stopping = false;
 const running = new Set();
@@ -233,3 +264,141 @@ await Promise.all(Array.from({ length: Math.min(workers, total) }, async () => {
 for (const f of fs.readdirSync(DIR)) if (f.endsWith(".tmp")) fs.rmSync(path.join(DIR, f));
 if (!stopping) console.log(`done: ${kept.toLocaleString()} seeds kept, ${done} files finished`);
 status();
+
+// --from: regenerate the seeds of an existing list, report how their metrics
+// are distributed and, given criteria, keep the ones that pass.
+async function rescanList() {
+  const listFile = path.resolve(ROOT, fromList);
+  const rel = (f) => path.relative(ROOT, f);
+  const raw = fs.readFileSync(listFile);
+  if (raw.length % 4) { console.error(`${rel(listFile)} is not a list of 4-byte seeds`); process.exit(1); }
+  const limit = parseInt(arg("--limit", "0"), 10);
+  const n = limit > 0 ? Math.min(limit, raw.length / 4) : raw.length / 4;
+  const list = new Uint32Array(n);
+  for (let i = 0; i < n; i++) list[i] = raw.readUInt32LE(i * 4);
+  const outArg = arg("--out", null), csvArg = arg("--csv", null);
+  const outFile = outArg && path.resolve(ROOT, outArg);
+  if (outFile && !criteria) { console.error("--out needs --criteria: without one every seed would be kept"); process.exit(1); }
+  if (outFile === listFile) { console.error("--out would overwrite the list being read"); process.exit(1); }
+  const workers = parseInt(arg("--workers", String(Math.max(1, os.cpus().length))), 10);
+  console.log(`${mod}: ${n.toLocaleString()} seeds of ${rel(listFile)}, ${workers} workers`);
+
+  // seedgen's METRICS_SCAN row: seed, then these, then whether its filter keeps it
+  const COLS = ["np", "nw", "ne", "wp", "ef", "naqdv", "fdv", "ed"];
+  const m = Object.fromEntries(COLS.map((c) => [c, new Int32Array(n)]));
+  const state = new Uint8Array(n); // 0 = no row (seedgen could not generate it), 1 = dropped, 2 = kept
+  const SLICE = 2_000; // per seedgen run: small enough for steady progress
+  const running = new Set();
+  let stopping = false, next = 0, doneSeeds = 0, lastLine = 0;
+  const t0 = Date.now();
+  process.on("SIGINT", () => { stopping = true; process.exitCode = 130; for (const c of running) c.kill(); });
+  const runSlice = (skip, count) => new Promise((resolve, reject) => {
+    const child = spawn(bin, [], {
+      env: { ...baseEnv, METRICS_SCAN: "1", SEED_LIST: listFile, SEED_LIST_SKIP: String(skip), SEED_LIST_COUNT: String(count) },
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    running.add(child);
+    let p = skip, stale = false;
+    readline.createInterface({ input: child.stdout }).on("line", (line) => {
+      const v = line.split(",").map(Number);
+      // a row is missing where a seed failed to generate, so match by seed
+      while (p < skip + count && list[p] !== v[0]) p++;
+      if (v.length !== COLS.length + 2 || p >= skip + count) { stale = true; return; }
+      COLS.forEach((c, i) => { m[c][p] = v[i + 1]; });
+      state[p++] = 1 + v[COLS.length + 1];
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      running.delete(child);
+      if (stopping) return resolve();
+      if (stale) return reject(new Error("seedgen does not understand SEED_LIST: rebuild it (node install.mjs --seedgen-only)"));
+      if (code !== 0) return reject(new Error(`seedgen exited ${code} on list entries ${skip}..${skip + count}`));
+      doneSeeds += count;
+      if (Date.now() - lastLine > 10_000 && doneSeeds < n) {
+        lastLine = Date.now();
+        const rate = doneSeeds / ((Date.now() - t0) / 1000);
+        console.log(`  ${doneSeeds.toLocaleString()} / ${n.toLocaleString()} (${(100 * doneSeeds / n).toFixed(0)}%), ${Math.round(rate).toLocaleString()}/s, ~${Math.ceil((n - doneSeeds) / rate / 60)} min left`);
+      }
+      resolve();
+    });
+  });
+  await Promise.all(Array.from({ length: workers }, async () => {
+    while (!stopping && next < n) { const skip = next; next += SLICE; await runSlice(skip, Math.min(SLICE, n - skip)); }
+  }));
+  if (stopping) return;
+
+  const rows = [];
+  for (let i = 0; i < n; i++) if (state[i]) rows.push(i);
+  if (rows.length < n) console.log(`WARNING: ${(n - rows.length).toLocaleString()} seeds could not be generated and are left out`);
+  const num = (v) => Number(v).toLocaleString();
+  const pad = (v, w) => String(v).padStart(w);
+
+  // --- distribution ---
+  const NO_NAQ = 10_000_000; // seedgen's "no such field"
+  const sorted = (c) => Int32Array.from(rows, (i) => m[c][i]).filter((v) => v < NO_NAQ).sort();
+  const QS = [0, 0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99, 1];
+  const LABELS = { np: "bodies (planets + moons)", wp: "bodies with water, %", ef: "bodies with enemies, %", ed: "enemy danger, -100..100", naqdv: "nearest naquium field, dv", fdv: "nearest field of any kind, dv" };
+  console.log(`\ndistribution over the ${num(rows.length)} seeds`);
+  console.log(pad("", 30) + ["min", "1%", "5%", "25%", "50%", "75%", "95%", "99%", "max"].map((h) => pad(h, 8)).join(""));
+  for (const [c, label] of Object.entries(LABELS)) {
+    const s = sorted(c);
+    if (!s.length) continue;
+    const none = rows.length - s.length;
+    console.log(label.padEnd(30) + QS.map((q) => pad(num(s[Math.round(q * (s.length - 1))]), 8)).join("") + (none ? `   (${num(none)} seeds have none)` : ""));
+  }
+
+  // --- tails: how many seeds each cutoff would keep ---
+  // [metric, keeps values at or below the cutoff?]
+  const TAILS = { PLANETS_HIGH: ["np", false], PLANETS_LOW: ["np", true], NAQ_DV_LOW: ["naqdv", true], NAQ_DV_HIGH: ["fdv", false], ENEMY_PCT_LOW: ["ef", true], ENEMY_PCT_HIGH: ["ef", false], WATER_PCT_LOW: ["wp", true], WATER_PCT_HIGH: ["wp", false] };
+  const inTail = (k, cut) => { const [c, low] = TAILS[k]; let cnt = 0; for (const i of rows) if (low ? m[c][i] <= cut : m[c][i] >= cut) cnt++; return cnt; };
+  const basePath = path.join(ROOT, BASE_CRITERIA);
+  const base = fs.existsSync(basePath) ? loadCriteria(basePath).tails : {};
+  console.log(`\nseeds a cutoff would keep, tightening from the one in ${BASE_CRITERIA} (a seed can be in several tails)`);
+  for (const k of TAIL_KEYS) {
+    if (!(k in base)) continue; // the list is not complete for a tail it was not scanned with
+    const [c, low] = TAILS[k];
+    // the tail's values, most extreme first
+    const vals = sorted(c).filter((v) => (low ? v <= base[k] : v >= base[k]));
+    if (!low) vals.reverse();
+    if (!vals.length) continue;
+    let cuts = [...new Set(vals)];
+    if (cuts.length > 12) cuts = [...new Set([1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001].map((f) => vals[Math.max(0, Math.ceil(f * vals.length) - 1)]))];
+    else cuts.reverse();
+    // count by the last position of the cutoff value: ties come along
+    const counts = cuts.map((cut) => vals.lastIndexOf(cut) + 1);
+    const w = Math.max(8, ...counts.map((v) => num(v).length + 2));
+    console.log(`${k} (${LABELS[c]} ${low ? "<=" : ">="} cutoff)`);
+    console.log("  cutoff" + cuts.map((v) => pad(v, w)).join(""));
+    console.log("  seeds " + counts.map((v) => pad(num(v), w)).join(""));
+  }
+
+  if (csvArg) {
+    const fd = fs.openSync(path.resolve(ROOT, csvArg), "w");
+    let chunk = ["seed," + COLS.join(",") + (criteria ? ",keep" : "")];
+    for (const i of rows) {
+      chunk.push(list[i] + "," + COLS.map((c) => m[c][i]).join(",") + (criteria ? "," + (state[i] - 1) : ""));
+      if (chunk.length >= 50_000) { fs.writeSync(fd, chunk.join("\n") + "\n"); chunk = []; }
+    }
+    if (chunk.length) fs.writeSync(fd, chunk.join("\n") + "\n");
+    fs.closeSync(fd);
+    console.log(`\nwrote the metrics of every seed to ${csvArg}`);
+  }
+  if (!criteria) return;
+
+  // --- the smaller list ---
+  const keptSeeds = Uint32Array.from(rows.filter((i) => state[i] === 2), (i) => list[i]);
+  console.log(`\n${rel(criteriaFile)}: ${num(keptSeeds.length)} of ${num(rows.length)} seeds kept (${(100 * keptSeeds.length / rows.length).toFixed(2)}%)`);
+  for (const [k, v] of Object.entries(tails)) {
+    console.log(`  ${k}=${v}`.padEnd(24) + pad(num(inTail(k, Number(v))), 10) + " seeds" +
+      (!(k in base) ? "   WARNING: not a tail of the base scan, so only what the list happens to hold"
+        : (TAILS[k][1] ? Number(v) > Number(base[k]) : Number(v) < Number(base[k])) ? `   WARNING: looser than the base scan (${base[k]}), so incomplete` : ""));
+  }
+  if (!outFile) return;
+  fs.writeFileSync(outFile, Buffer.from(keptSeeds.buffer));
+  const meta = outFile + ".json";
+  fs.writeFileSync(meta, JSON.stringify({
+    mod, from: rel(listFile), from_seeds: n, seeds: keptSeeds.length, generator_commit: commit,
+    description: criteria.description, ...(criteria.filter ? { filter: criteria.filter } : { tails }),
+  }, null, 1) + "\n");
+  console.log(`wrote ${num(keptSeeds.length)} seeds -> ${rel(outFile)} (how it was made: ${rel(meta)})`);
+}

@@ -1,0 +1,10 @@
+{
+ "mod": "se",
+ "description": "12+ planet systems with one watered surface, radius over 800, that holds vulcanite, cryonite and holmium together.",
+ "min_planets": 12,
+ "min_amount": 0.1,
+ "skip_waterless": true,
+ "surfaces": [
+  { "label": "vulc+cryo+holm", "has": ["se-vulcanite", "se-cryonite", "se-holmium-ore"], "radius_min": 800 }
+ ]
+}
