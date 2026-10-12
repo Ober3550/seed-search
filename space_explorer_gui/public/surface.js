@@ -590,7 +590,9 @@
     var gpu = gpuTerrainSupported();
     if ((kind === "zone" || kind === "nauvis") && !pool) spawnPool();
 
-    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); }
+    // finished: the progress text goes; the card and the line under the map
+    // already say what was generated
+    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); }
     function fail(e, tag) { busy = false; els.go.disabled = false; status(tag + ": " + e.message); console.error(e); }
 
     // CPU wasm pipeline (default for ore-only layers & SA planets; also the
@@ -615,7 +617,6 @@
               '<span class="hint">· ' + width + "×" + width + " · " + layerName +
               (nres ? " · " + nres + " resources" : "") +
               " · generated client-side (" + pool.length + " workers) · " + window.__SURF_MS__ + " ms</span>";
-            status("zone " + z.n + " · " + z.t + " · r" + radius + (USE_GPU ? " (CPU wasm)" : ""));
           });
         })
         .catch(function (e) { fail(e, "error"); });
@@ -810,7 +811,6 @@
             }).join(" ");
             els.res.innerHTML = oreChips + ' <span class="hint">· ' + (2 * R) + "×" + (2 * R) + " tiles" +
               (scale > 1 ? " (shown ×1/" + scale.toFixed(1) + ")" : "") + " · " + pool.length + " workers · " + window.__SURF_MS__ + " ms</span>";
-            status(p.label + " · r" + radius + " · tiles + resources");
           })
           .catch(function (e) {
             if (failed) return;
@@ -843,7 +843,6 @@
         '<span class="hint">· ' + out.width + "×" + out.height + (out.downscaled ? " (shown at 1/" + out.scale.toFixed(1) + " size: this device's canvas limit)" : "") + " · " + modeTxt + " (" +
         out.cells + (out.cells === 1 ? " cell dispatch" : " cell dispatches") + ") · " + ms + " ms · " +
         (px / ms / 1000).toFixed(2) + " Mpx/s</span>";
-      status("zone " + z.n + " · " + z.t + " · r" + radius + (layer === 0 ? " (WebGPU terrain + CPU ore" : " (WebGPU") + (out.downscaled ? ", downscaled)" : ")"));
     }, function (e) {
       // WebGPU unavailable / failure -> CPU wasm pipeline for the same request.
       console.error("WebGPU terrain failed, falling back to wasm:", e);
