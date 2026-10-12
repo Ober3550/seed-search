@@ -7,7 +7,7 @@
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true, hlCombined: true, hlPrimary: false, hlEnemyMax: "", hlWet: false };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true, hlCombined: true, hlPrimary: false, hlEnemyMax: "", hlWet: true };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -407,7 +407,7 @@
   // the same view.
   function pageHref(seed) {
     return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0") +
-      (state.hlCombined ? "" : "&cmb=0") + (state.hlPrimary ? "&pri=1" : "") + (state.hlEnemyMax ? "&en=" + state.hlEnemyMax : "") + (state.hlWet ? "&wet=1" : "");
+      (state.hlCombined ? "" : "&cmb=0") + (state.hlPrimary ? "&pri=1" : "") + (state.hlEnemyMax ? "&en=" + state.hlEnemyMax : "") + (state.hlWet ? "" : "&wet=0");
   }
   function syncUrl() {
     history.replaceState(null, "", pageHref(state.seed));
@@ -472,7 +472,7 @@
       });
     }
     // what is highlighted: both kept in the address, like "Only highlighted"
-    [["hl-combined", "hlCombined", "cmb", true], ["hl-primary", "hlPrimary", "pri", false], ["hl-wet", "hlWet", "wet", false]].forEach(function (spec) {
+    [["hl-combined", "hlCombined", "cmb", true], ["hl-primary", "hlPrimary", "pri", false], ["hl-wet", "hlWet", "wet", true]].forEach(function (spec) {
       var el = document.getElementById(spec[0]);
       if (!el) return;
       var v = new URLSearchParams(location.search).get(spec[2]);
