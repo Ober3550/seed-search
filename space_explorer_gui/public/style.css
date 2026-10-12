@@ -42,6 +42,36 @@ body {
   padding-left: 220px;
 }
 
+.page-title { display: flex; align-items: center; gap: 8px; }
+
+/* seed page controls: one setting per line */
+.seed-controls > div + div { margin-top: 8px; }
+
+/* surface page header: the seed, linking back to its zones */
+.seed-link a { color: var(--accent); text-decoration: none; }
+.seed-link a::before { content: "←"; display: inline-block; margin-right: 8px; }
+.seed-link a:hover { text-decoration: underline; }
+
+/* surface page: the zone's card, laid out like a zone row of the seed page */
+.zone-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; font-size: 0.95rem; }
+.zone-card > strong { font-size: 1.15rem; }
+.zone-card #sf-meta { display: contents; }
+.zone-card .k { color: var(--muted); }
+
+/* the terrain brightness slider takes a line of its own in the card */
+.zone-card .dim-row { flex-basis: 100%; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
+.zone-card .dim-row[hidden] { display: none; }
+.zone-card .dim-row #sf-dim-val { color: var(--text); min-width: 3em; }
+/* (no padding or border: the text-box styling of `input` above would leave
+   the track wider than the knob can travel) */
+.zone-card .dim-row input { flex: 1; max-width: 16em; padding: 0; border: 0; background: none; }
+.res-info { display: block; margin-top: 6px; }
+.surf-status:empty { display: none; }
+.surf-status { margin-bottom: 8px; }
+
+/* the static pages (index.html, surface.html) have no sidebar */
+.app.no-sidebar { padding-left: 0; }
+
 .sidebar {
   position: fixed;
   top: 0;
@@ -368,6 +398,34 @@ dd { font-weight: 500; }
 .res-chip { display: inline-block; background: #2a3446; border-radius: 4px; padding: 1px 5px; margin: 1px; font-size: 0.82rem; white-space: nowrap; }
 .res-chip.est { background: #2f2a20; opacity: 0.85; }
 .yields-cell { max-width: 520px; }
+/* ore colours on the seed page: the SE resources by their usual shorthand
+   colours, the base ores by their in-game map colours (lightened where the
+   game's would vanish on the dark background) */
+.ore { color: var(--ore, inherit); }
+.res-chip.ore { opacity: 1; background: color-mix(in srgb, var(--ore, #8b949e) 16%, var(--surface)); border-left: 3px solid var(--ore, #8b949e); }
+.res-chip.ore strong { color: var(--text); }
+.ore-holmium { --ore: #ff8fd8; }
+.ore-vulcanite { --ore: #f85149; }
+.ore-cryonite { --ore: #58a6ff; }
+.ore-beryllium { --ore: #39d3d3; }
+.ore-iridium { --ore: #e6b422; }
+.ore-vitamelange { --ore: #3fb950; }
+.ore-naquium { --ore: #a371f7; }
+.ore-iron { --ore: #8fb3c9; }
+.ore-copper { --ore: #e07a45; }
+.ore-stone { --ore: #c2ad7a; }
+.ore-coal { --ore: #9aa0a6; }
+.res-chip.ore-coal { background: #050505; }
+.ore-crude-oil { --ore: #d24fd0; }
+.ore-uranium { --ore: #a4e22a; }
+/* loot letters in the top seeds list: productivity, speed, efficiency */
+.loot-P { color: #ff8fd8; }
+.loot-S { color: #58a6ff; }
+.loot-E { color: #3fb950; }
+/* surfaces holding a resource combination (analyze.js COMBOS) */
+#zone-table tbody tr.row-combo { background: var(--combo); }
+#zone-table tbody tr.row-combo td { background: transparent; }
+#zone-table tbody tr.row-combo[data-href]:hover td { background: rgba(255,255,255,0.07); }
 
 /* generation status + in-flight feedback */
 .gen-status { display: inline-block; font-size: 0.8rem; padding: 1px 6px; border-radius: 4px; white-space: nowrap; margin-left: 2px; }
@@ -633,4 +691,30 @@ a.btn-sm {
   width: 0%;
   background: var(--accent, #58a6ff);
   transition: width 0.15s ease-out;
+}
+
+/* ── Seed page on a narrow screen ────────────────────────────────────────
+   A row of eight columns cannot fit a phone, so each zone becomes a card:
+   name and type, then radius / Δv / water / enemy / primary on one wrapping
+   line, then its resources across the full width. The header shrinks to the
+   sortable columns. */
+@media (max-width: 720px) {
+  main { padding: 12px; min-width: 0; }
+  #zone-table, #zone-table thead, #zone-table tbody { display: block; }
+  #zone-table thead tr { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 10px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  #zone-table th { display: none; padding: 0; border: 0; background: none; }
+  #zone-table th.sortable { display: block; }
+  #zone-table thead tr::before { content: "Sort:"; color: var(--muted); font-size: 0.85rem; }
+  #zone-table tbody tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  #zone-table td { padding: 0; border: 0; text-align: left; }
+  #zone-table td::before { color: var(--muted); }
+  #zone-table td:nth-child(3)::before { content: "r "; }
+  #zone-table td:nth-child(4)::before { content: "Δv "; }
+  #zone-table td:nth-child(5)::before { content: "water "; }
+  #zone-table td:nth-child(6)::before { content: "enemy "; }
+  #zone-table td:nth-child(7)::before { content: "primary "; }
+  #zone-table td.yields-cell { flex-basis: 100%; max-width: none; }
+  #zone-table td[colspan] { flex-basis: 100%; }
+  /* the top seeds table keeps its columns and scrolls sideways */
+  #featured table { min-width: 760px; }
 }

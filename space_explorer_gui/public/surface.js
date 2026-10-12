@@ -105,15 +105,24 @@
   var els = {
     badge: document.getElementById("sf-badge"),
     meta: document.getElementById("sf-meta"),
-    radius: document.getElementById("sf-radius"),
-    layerWrap: document.getElementById("sf-layer-wrap"),
-    layer: document.getElementById("sf-layer"),
+    // The surface is drawn once, at the radius in the address (?r=, which the
+    // seed page sets to the zone's radius): there is no radius box and no
+    // Generate button, so these two only hold state.
+    radius: { value: "2000" },
+    // The page always draws terrain + ore (0). There is no selector for it;
+    // ?layer=1 (terrain only) / ?layer=2 (ore only) remain for testing.
+    layer: { value: "0" },
     dimWrap: document.getElementById("sf-dim-wrap"),
     dim: document.getElementById("sf-dim"),
-    go: document.getElementById("sf-go"),
+    go: { disabled: false },
+    dimVal: document.getElementById("sf-dim-val"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
-    res: document.getElementById("sf-res"),
+    // The result line is written as "<resource chips> <hint>· size · timing…";
+    // the hint goes on a line of its own under the chips (no leading dot).
+    res: (function (el) {
+      return { set innerHTML(html) { el.innerHTML = html.replace('<span class="hint">· ', '<span class="hint res-info">'); } };
+    })(document.getElementById("sf-res")),
     progress: document.getElementById("sf-progress")
   };
   var busy = false;
@@ -137,7 +146,7 @@
     var keys = Object.keys(totals).sort(function (a, b) { return totals[b].amount - totals[a].amount; });
     if (!keys.length) return "";
     return keys.map(function (r) {
-      return '<span class="res-chip surf" title="exact — generated in your browser">' + nm(r) + " <strong>" + totals[r].display + "</strong></span>";
+      return '<span class="res-chip ore ore-' + nm(r) + '" title="exact — generated in your browser">' + nm(r) + " <strong>" + totals[r].display + "</strong></span>";
     }).join(" ");
   }
 
@@ -472,14 +481,18 @@
     return { n: "Nauvis", t: "planet", s: SEED, r: 5000, water: "none", enemy: "none", c: 1, nauvis: true };
   }
 
+  // The zone's line of the card, as the seed page's table shows it: radius,
+  // Δv from Nauvis, water, enemies and the primary resource in its colour.
   function zoneMeta(z) {
+    var item = function (k, v) { return '<span><span class="k">' + k + "</span> " + v + "</span>"; };
+    var dv = z.dv == null || isNaN(z.dv) ? null : z.dv >= 1e6 ? (z.dv / 1e6).toFixed(2) + "M" : z.dv >= 1000 ? (z.dv / 1000).toFixed(1) + "k" : String(z.dv);
     var bits = [];
-    if (z.t) bits.push('<span class="badge zone-type">' + esc(z.t) + "</span>");
-    if (z.r) bits.push("radius " + Math.round(z.r));
-    if (z.water) bits.push("water " + esc(z.water));
-    if (z.enemy) bits.push("enemy " + esc(z.enemy));
-    if (z.p) bits.push("primary " + esc(z.p));
-    return bits.join(" · ");
+    if (z.r) bits.push(item("r", Math.round(z.r)));
+    if (dv != null) bits.push(item("Δv", '<span class="num">' + dv + "</span>"));
+    bits.push(item("water", esc(z.water || "none")));
+    bits.push(item("enemy", esc((z.enemy || "none").replace("very_", "v"))));
+    if (z.p) bits.push(item("primary", '<span class="ore ore-' + esc(nm(z.p)) + '">' + esc(nm(z.p)) + "</span>"));
+    return bits.join("");
   }
 
   function radiusLimits() {
@@ -491,8 +504,7 @@
   }
 
   function adaptForKind() {
-    els.badge.textContent = kind === "sa" ? "planet" : kind === "nauvis" ? "planet (base)" : "zone";
-    els.layerWrap.hidden = false;
+    els.badge.textContent = kind === "zone" ? "…" : "planet";
     if (els.dimWrap) els.dimWrap.hidden = false;
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
@@ -850,12 +862,10 @@
     // the shell is a static file: fill in the names it cannot know
     var nameEl = document.getElementById("sf-name");
     if (nameEl) nameEl.textContent = TARGET;
-    var crumbName = document.getElementById("sf-crumb-name");
-    if (crumbName) crumbName.textContent = TARGET;
     var crumbSeed = document.getElementById("sf-crumb-seed");
     if (crumbSeed) {
       crumbSeed.href = window.Shell.seedHref(SEED, MOD);
-      if (SEED != null) crumbSeed.textContent = "🌍 Seed " + SEED;
+      if (SEED != null) crumbSeed.textContent = "Seed: " + SEED;
     }
     if (SEED != null && TARGET) document.title = "Seed " + SEED + " · " + TARGET + " — Surface Explorer";
     if (SEED == null || !TARGET) {
@@ -873,25 +883,26 @@
       if (_ly != null && ["0", "1", "2"].indexOf(_ly) !== -1) els.layer.value = _ly;
     } catch (e2) {}
     adaptForKind();
-    els.go.addEventListener("click", run);
-    els.radius.addEventListener("change", run);
-    els.layer.addEventListener("change", run);
-    if (els.dim) els.dim.addEventListener("input", function () { compositeSA(); });
+    if (els.dim) els.dim.addEventListener("input", function () {
+      if (els.dimVal) els.dimVal.textContent = els.dim.value + "%";
+      compositeSA();
+    });
     if (kind === "sa") {
       var p = PLANETS[planetKey];
-      els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet tiles, generated from the game's map-gen data (sa.wasm).</span>";
+      els.meta.innerHTML = '<span class="hint">Space Age planet tiles, generated from the game\'s map-gen data (sa.wasm).</span>';
       els.badge.textContent = "planet";
     } else if (kind === "nauvis") {
       var vanilla = MOD !== "se" && MOD !== "k2se";
-      els.meta.innerHTML = "🌍 Nauvis <span class=\"hint\">· seed " + SEED + " · game-default map settings" +
+      els.meta.innerHTML = "<span class=\"hint\">game-default map settings" +
         (vanilla
           ? ", base-game Nauvis tiles (real 2.0 tile palette; tile selection approximated until expression_in_range is ported)."
           : ", SE ground (alien-biomes, exact).") + "</span>";
     } else {
-      els.meta.innerHTML = "SE zone of seed " + SEED + " <span class=\"hint\">· resolving universe…</span>";
+      els.meta.innerHTML = '<span class="hint">resolving universe…</span>';
       fetchZone().then(function (z) {
         zone = z;
-        els.meta.innerHTML = zoneMeta(z) + ' <span class="hint">· seed ' + SEED + ", mod " + esc(MOD) + ".</span>";
+        els.badge.textContent = z.t;
+        els.meta.innerHTML = zoneMeta(z);
       }).catch(function (e) {
         status(e.message);
         console.error(e);
