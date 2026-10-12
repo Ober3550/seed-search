@@ -133,7 +133,7 @@
     var keys = Object.keys(totals).sort(function (a, b) { return totals[b].amount - totals[a].amount; });
     if (!keys.length) return "";
     return keys.map(function (r) {
-      return '<span class="res-chip surf" title="exact — generated in your browser">' + nm(r) + " <strong>" + totals[r].display + "</strong></span>";
+      return '<span class="res-chip ore ore-' + nm(r) + '" title="exact — generated in your browser">' + nm(r) + " <strong>" + totals[r].display + "</strong></span>";
     }).join(" ");
   }
 
@@ -519,14 +519,18 @@
     return { n: "Nauvis", t: "planet", s: SEED, r: 5000, water: "none", enemy: "none", c: 1, nauvis: true };
   }
 
+  // The zone's line of the card, as the seed page's table shows it: radius,
+  // Δv from Nauvis, water, enemies and the primary resource in its colour.
   function zoneMeta(z) {
+    var item = function (k, v) { return '<span><span class="k">' + k + "</span> " + v + "</span>"; };
+    var dv = z.dv == null || isNaN(z.dv) ? null : z.dv >= 1e6 ? (z.dv / 1e6).toFixed(2) + "M" : z.dv >= 1000 ? (z.dv / 1000).toFixed(1) + "k" : String(z.dv);
     var bits = [];
-    if (z.t) bits.push('<span class="badge zone-type">' + esc(z.t) + "</span>");
-    if (z.r) bits.push("radius " + Math.round(z.r));
-    if (z.water) bits.push("water " + esc(z.water));
-    if (z.enemy) bits.push("enemy " + esc(z.enemy));
-    if (z.p) bits.push("primary " + esc(z.p));
-    return bits.join(" · ");
+    if (z.r) bits.push(item("r", Math.round(z.r)));
+    if (dv != null) bits.push(item("Δv", '<span class="num">' + dv + "</span>"));
+    bits.push(item("water", esc(z.water || "none")));
+    bits.push(item("enemy", esc((z.enemy || "none").replace("very_", "v"))));
+    if (z.p) bits.push('<span class="ore ore-' + esc(nm(z.p)) + '">' + esc(nm(z.p)) + "</span>");
+    return bits.join("");
   }
 
   function radiusLimits() {
@@ -538,7 +542,7 @@
   }
 
   function adaptForKind() {
-    els.badge.textContent = kind === "sa" ? "planet" : kind === "nauvis" ? "planet (base)" : "zone";
+    els.badge.textContent = kind === "zone" ? "…" : "planet";
     els.layerWrap.hidden = false;
     if (els.dimWrap) els.dimWrap.hidden = false;
     var lim = radiusLimits();
@@ -915,19 +919,20 @@
     if (els.dim) els.dim.addEventListener("input", function () { compositeSA(); });
     if (kind === "sa") {
       var p = PLANETS[planetKey];
-      els.meta.innerHTML = p.label + ' <span class="hint">· seed ' + SEED + " · Space Age planet tiles, generated from the game's map-gen data (sa.wasm).</span>";
+      els.meta.innerHTML = '<span class="hint">Space Age planet tiles, generated from the game\'s map-gen data (sa.wasm).</span>';
       els.badge.textContent = "planet";
     } else if (kind === "nauvis") {
       var vanilla = MOD !== "se" && MOD !== "k2se";
-      els.meta.innerHTML = "🌍 Nauvis <span class=\"hint\">· seed " + SEED + " · game-default map settings" +
+      els.meta.innerHTML = "<span class=\"hint\">game-default map settings" +
         (vanilla
           ? ", base-game Nauvis tiles (real 2.0 tile palette; tile selection approximated until expression_in_range is ported)."
           : ", SE ground (alien-biomes, exact).") + "</span>";
     } else {
-      els.meta.innerHTML = "SE zone of seed " + SEED + " <span class=\"hint\">· resolving universe…</span>";
+      els.meta.innerHTML = '<span class="hint">resolving universe…</span>';
       fetchZone().then(function (z) {
         zone = z;
-        els.meta.innerHTML = zoneMeta(z) + ' <span class="hint">· seed ' + SEED + ", mod " + esc(MOD) + ".</span>";
+        els.badge.textContent = z.t;
+        els.meta.innerHTML = zoneMeta(z);
       }).catch(function (e) {
         status(e.message);
         console.error(e);
