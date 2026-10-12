@@ -260,6 +260,9 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .badge.done { background: rgba(63,185,80,0.15); color: var(--green); }
 .badge.failed { background: rgba(248,81,73,0.15); color: var(--red); }
 .badge.zone-type { background: rgba(163,113,247,0.15); color: var(--purple); }
+/* by kind: planets green, moons blue; asteroid fields (and belts) keep the purple */
+.badge.zone-type.zt-planet { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge.zone-type.zt-moon { background: rgba(88,166,255,0.15); color: var(--accent); }
 
 /* ── Zone Detail ────────────────────────────────────────────────────── */
 .zone-detail-grid {

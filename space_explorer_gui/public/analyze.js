@@ -227,7 +227,7 @@
       return '<tr' + (cls ? ' class="' + cls.trim() + '"' : "") + (rowOpen(z) ? ' data-href="' + esc(surfHref(z)) + '"' : (gated ? ' data-why="' + esc(gated) + '"' : '')) + rowStyle + ' title="' + ttl + '">' +
         "<td><strong>" + (z.icon ? z.icon + " " : "") + esc(z.n) + "</strong>" +
           "</td>" +
-        '<td><span class="badge zone-type">' + z.t + "</span></td>" +
+        '<td><span class="badge zone-type zt-' + esc(z.t) + '">' + z.t + "</span></td>" +
         "<td>" + (z.infinity ? "∞" : (z.r ? Math.round(z.r) : "—")) + "</td>" +
         "<td class=\"num\">" + fmtDv(z.dv) + "</td>" +
         "<td>" + cw(z.water) + "</td>" +
