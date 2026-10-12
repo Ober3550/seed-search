@@ -631,7 +631,7 @@
 
     // finished: the progress text goes; the card and the line under the map
     // already say what was generated
-    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); }
+    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); releasePool(); }
     // There is no Generate button to press again, so a failure offers a
     // reload: that restarts the workers and refetches the page's files (the
     // usual cause is a file that could not be loaded).
@@ -901,6 +901,17 @@
     if (!found) throw new Error("zone “" + TARGET + "” not found in seed " + SEED + "’s universe (mod " + MOD + ").");
     return found;
   }
+
+  // Stop the workers once the surface is drawn, and when the page is left.
+  // A browser allows only about a hundred live wasm instances per site
+  // process; workers that linger across a few reloads or tabs use that up, and
+  // the next page then fails with "Cannot allocate Wasm memory".
+  function releasePool() {
+    if (!pool) return;
+    for (var i = 0; i < pool.length; i++) pool[i].terminate();
+    pool = null;
+  }
+  window.addEventListener("pagehide", releasePool);
 
   function init() {
     // the shell is a static file: fill in the names it cannot know
