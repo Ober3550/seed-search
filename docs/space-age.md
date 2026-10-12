@@ -48,7 +48,7 @@ r500 square at map seed 341 (position = same tile, amount = total):
 | Aquilo   | fluorine-vent        | 26 / 26     | 100%      | x1.000 |
 | Aquilo   | lithium-brine        | 33 / 34     | 100%      | x1.035 |
 | Aquilo   | crude-oil            | 45 / 49     | 36%       | x1.151 |
-| Fulgora  | scrap                | 3307 / 3298 | 81.5%     | x0.987 |
+| Fulgora  | scrap                | 3307 / 3290 | 91.6%     | x0.987 |
 
 Placement (`sa_surface.World`) follows the game's chunk pass
 (`EntityMapGenerationTask::generateEntities`): a 32x32 chunk is one
@@ -75,6 +75,94 @@ islands make that proportionally worse. Replaying on the game's own final
 tiles (`sa_main probe --entities --tiles-from=game.json`) fixes those Fulgora
 chunks (89.9%) but makes Aquilo worse, so the game evidently places entities
 on tiles from before its border-correction pass.
+
+### Entities (rocks, trees, plants, cliffs, nests)
+
+`sa_surface.World` with `Options.entities` places every autoplaced entity of a
+planet and its cliffs, following the decompiled `EntityMapGenerationTask` and
+`CliffGenerator` (`ghidra/export/entity_placement.c`, `entity_cliffs.c`).
+
+Entities:
+
+- a tile's winner takes one draw; when it passes, an entity flagged
+  `placeable-off-grid` takes two more for its position within the tile (in
+  sixteenths) and any other snaps to the grid without drawing;
+- compute phase (`wouldCollide`): it is dropped when its collision box touches
+  a tile it collides with;
+- apply phase (`applyEntities` -> `Surface::mapGeneratorWouldCollide`): the
+  chunk's cliffs go onto the surface first, then its entities in generation
+  order, and one is dropped when its box overlaps something already there
+  that shares a collision layer. Only the chunk's own entities are known to
+  us.
+
+Cliffs sit on a grid of 4x4-tile cells. `cliff_elevation` and `cliffiness` are
+sampled at the cell corners and smoothed (by `cliff_smoothing`) towards the
+bilinear interpolation of every 4th corner; a cell edge is crossed where the
+elevation passes a cliff level (`cliff_elevation_0 + k * interval`) between its
+corners and their mean cliffiness is above one half; a cell with more than two
+crossed edges, or a pattern no piece fits, loses crossings one at a time
+(left, top, right, bottom, never one on the chunk border); the pattern left
+picks one of the 20 orientations. Three things only the comparison with the
+game showed: `cliff_smoothing` is 1 when a planet leaves it out (Vulcanus);
+`multisample()` offsets count steps of the grid being evaluated, so 4 tiles on
+the cliff grid; and the orientation enum's order (kept in the data file).
+
+At the game's position (to a sixteenth of a tile), map seed 341, r500:
+
+| Planet   | Cliffs game / ours | Cliffs same position | Other entities game / ours | Same position |
+| -------- | ------------------ | -------------------- | -------------------------- | ------------- |
+| Vulcanus | 7899 / 8061        | 99.1%                | 19797 / 19922              | 97.6%         |
+| Fulgora  | 2700 / 2755        | 99.1%                | 6335 / 6252                | 87.1%         |
+| Gleba    | 2581 / 2549        | 97.6%                | 29399 / 30071              | 24.7%         |
+| Aquilo   | none               |                      | 535 / 593                  | 36.8%         |
+
+On the game's own tiles Gleba's entities are 98.4%: the rules are right, and
+what is left is our tiles - one tile that differs changes how many draws a
+group takes and shifts the rest of that chunk. Counts are within a few percent
+everywhere. Units (pentapods, demolishers) are not autoplaced entities.
+
+Base-game Nauvis goes through the same code from `se_wasm.zig` (`layer: 3`),
+on the tiles the Nauvis generator produces (or, on the page, on the terrain
+already drawn by the GPU kernel, sent along with the request - working them
+out again on the CPU costs about 20 us a tile). The Nauvis resources are not
+evaluated there, only their draws. Against the game (seed 341, r480): trees
+98.2% and rocks 97.8% on the game's tile, every cliff and 97% of spawners
+within 2 tiles, worms 67% within 2.
+
+The surface page draws all this as its "Entities" layer for the Space Age
+planets and base-game Nauvis. Space Exploration surfaces show enemy base areas
+instead (below): the SE mod set is not in the data file.
+
+### Enemy base areas
+
+The surface page can shade where the game is able to place enemy nests
+(spawners and worms). It is the area, not the nests: a tile is shaded when an
+enemy building may stand on it and its placement probability is positive
+before the random penalty, with the opacity following the probability on a log
+scale (`sa_surface.enemyAlpha`).
+
+- Space Age planets: `World.render` evaluates the planet's own spawner / worm
+  probability expressions (a second small program, `no_penalty` workspace).
+  Only Gleba has autoplaced enemies; Vulcanus's demolishers are placed by
+  territory, not autoplace, and are not shown.
+- Nauvis and Space Exploration zones (`se_wasm.zig`, `layer: 3`): the base
+  game's `enemy_base_probability` with the surface's seed and enemy settings.
+  A zone takes its `enemy-base` frequency / size from its enemy tag
+  (`Universe.control_settings_from_tag`) and has a half-size starting area;
+  water is excluded with the zone's elevation. Sampled once per 4x4 block.
+
+Against the game at map seed 341 over a 1280x1280 area: on Nauvis all 181
+enemy buildings lie within 3 tiles of a shaded tile (177 on one), with 0.6% of
+the area shaded; on Gleba all 35 spawners lie on a shaded tile, with 5.3%
+shaded (most of it the faint 1-in-1000 coastal term). The Space Exploration
+settings are read from the mod's source and are not checked against a live
+SE game.
+
+Placing the nests themselves was tried by continuing the chunk's placement
+replay into the enemy groups. It lands in the right areas but places several
+times too many (Gleba: 134 against the game's 35): where a nest fits also
+depends on collisions with every tree, rock and cliff placed before it, and
+cliffs are not modelled.
 
 ### Nauvis (base game) resources
 

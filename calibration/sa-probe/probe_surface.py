@@ -20,6 +20,7 @@ Output JSON: {"planet","seed","grid":[x0,x1,y0,y1,step],
               "values":{name:[...row-major (y outer, x inner)...]},
               "tiles":[...names, same order...],
               "entities":[{"n":name,"x":..,"y":..,"a":amount}, ...]}
+              (a cliff's name carries its orientation: "cliff-gleba@west-to-east")
 Probe positions are the integer tile coordinates (x, y): tile generation
 evaluates each tile at its top-left corner, not its centre.
 """
@@ -116,6 +117,9 @@ def main():
             sys.exit("no rcon")
         c.s.settimeout(900)
         c.cmd('/silent-command rcon.print("warmup")')
+        # freeze the simulation: roaming enemies (Vulcanus demolishers) would
+        # otherwise eat cliffs and rocks between generation and the dump
+        c.cmd('/silent-command game.tick_paused=true rcon.print("paused")')
         if a.surface:
             resp = c.cmd(f"/silent-command local s=game.surfaces['{a.surface}'] "
                          f"rcon.print(s.name..' seed='..s.map_gen_settings.seed)").strip()
@@ -159,7 +163,7 @@ def main():
         if a.entities:
             c.cmd(f"/silent-command local s=game.surfaces['{a.planet}'] local o={{}} "
                   f"for _,e in pairs(s.find_entities_filtered{{area={{{{{x0},{y0}}},{{{x1 + 1},{y1 + 1}}}}}}}) do "
-                  f"if e.type~='character' then o[#o+1]=string.format('%s %.2f %.2f %d',e.name,e.position.x,e.position.y,e.type=='resource' and e.amount or 0) end end "
+                  f"if e.type~='character' then o[#o+1]=string.format('%s %.2f %.2f %d',e.type=='cliff' and (e.name..'@'..e.cliff_orientation) or e.name,e.position.x,e.position.y,e.type=='resource' and e.amount or 0) end end "
                   f"helpers.write_file('e.txt',table.concat(o,'\\n'),false) rcon.print('ok')")
             ents = []
             for l in (scr / "e.txt").read_text().splitlines():

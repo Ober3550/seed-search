@@ -18,10 +18,13 @@
 //! pixelsPtr/pixelsLen, one tile per pixel, row-major from (x0, y0).
 //!   "tiles"      one layer: opaque tile colours
 //!   "resources"  one layer: resource colours, transparent elsewhere
-//!   "all"        both layers back to back (terrain, then resources), so the
-//!                page can composite them with its own contrast
+//!   "all"        the layers back to back - terrain, resources and entities
+//!                (every rock, tree, plant and enemy building the planet
+//!                autoplaces, see sa_surface.World.render) - for the page to
+//!                stack
 //!   summary = { ok, planet, property, seed, surface_seed, x0, y0, width,
-//!               height, layers,
+//!               height, layers, entity_layer (bool),
+//!               entities: { tree, plant, rock, huge_rock, spawner, worm, cliff, other },
 //!               tiles: [{ name, color: [r,g,b], count }],
 //!               resources: [{ name, color, count, amount }] }
 //!
@@ -112,7 +115,7 @@ fn compiled(planet: *const sa_data.Planet, seed: u32, property: []const u8) !*Co
     const data = &g_data.?;
     var c = Compiled{ .planet = planet, .seed = seed, .property = try pa.dupe(u8, property), .world = null, .single = null };
     if (isWorld(property)) {
-        c.world = try surface.World.init(pa, data, planet, seed, .{}, &g_error);
+        c.world = try surface.World.initWith(pa, data, planet, seed, .{}, .{ .entities = true }, &g_error);
     } else {
         const p = try prog.compile(pa, data, planet, seed, .{}, &.{c.property}, &g_error);
         c.single = .{ .program = p, .ws = try p.workspace(pa) };
@@ -166,29 +169,35 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     const want_terrain = !std.mem.eql(u8, property, "resources");
     const want_overlay = c.world != null and !std.mem.eql(u8, property, "tiles");
     const layer = width * height * 4;
-    const layers: usize = @as(usize, @intFromBool(want_terrain)) + @intFromBool(want_overlay);
+    const want_enemies = c.world != null and std.mem.eql(u8, property, "all");
+    const layers: usize = @as(usize, @intFromBool(want_terrain)) + @intFromBool(want_overlay) + @intFromBool(want_enemies);
     const pixels = try a.alloc(u8, layer * layers);
     g_pixels = pixels;
 
     var sb: std.ArrayList(u8) = .empty;
-    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"tiles\":[", .{
-        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers,
+    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"entity_layer\":{},\"tiles\":[", .{
+        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers, want_enemies,
     });
+    var class_counts: [sa_data.Entity.class_count]u32 = @splat(0);
     var resources_json: std.ArrayList(u8) = .empty;
     if (c.world) |*w| {
         const counts = try a.alloc(u32, planet.tiles.len);
         @memset(counts, 0);
         const totals = try a.alloc(surface.World.Totals, planet.resources.len);
         @memset(totals, .{});
-        w.render(
+        // layer order: terrain, resources, enemies
+        const overlay_at: usize = @intFromBool(want_terrain);
+        _ = w.render(
             x0,
             y0,
             width,
             height,
             if (want_terrain) pixels[0..layer] else null,
-            if (want_overlay) pixels[layer * (layers - 1) ..] else null,
+            if (want_overlay) pixels[layer * overlay_at ..][0..layer] else null,
+            if (want_enemies) pixels[layer * (layers - 1) ..] else null,
             counts,
             totals,
+            &class_counts,
         );
         var first = true;
         for (planet.tiles, counts) |t, n| {
@@ -221,7 +230,19 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
             }
         }
     }
-    try sb.print(a, "],\"resources\":[{s}]}}", .{resources_json.items});
+    try sb.appendSlice(a, "],\"entities\":{");
+    {
+        var first = true;
+        inline for (@typeInfo(sa_data.Entity.Class).@"enum".fields) |f| {
+            const n = class_counts[f.value];
+            if (n > 0 and surface.classColor(@enumFromInt(f.value)) != null) {
+                if (!first) try sb.append(a, ',');
+                first = false;
+                try sb.print(a, "\"{s}\":{d}", .{ f.name, n });
+            }
+        }
+    }
+    try sb.print(a, "}},\"resources\":[{s}]}}", .{resources_json.items});
     return sb.items;
 }
 

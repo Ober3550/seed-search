@@ -67,12 +67,42 @@ pub const Entity = struct {
     allowed: ?[]const bool,
     /// index into planet.resources for resources
     resource: ?u8,
+    /// an enemy building (spawner or worm)
+    enemy: bool = false,
+    /// what it is, for drawing
+    class: Class = .other,
+    /// collision box around its position, in 1/256 tile: left, top, right, bottom
+    box: [4]i32 = .{ -26, -26, 26, 26 },
+    /// placed with a random sub-tile offset (two draws) instead of snapped
+    off_grid: bool = true,
+    /// placement attempts per winning tile
+    density: u32 = 1,
+
+    pub const Class = enum { resource, tree, plant, rock, huge_rock, spawner, worm, fish, cliff, other };
+    pub const class_count = @typeInfo(Class).@"enum".fields.len;
 
     pub fn canStandOn(self: *const Entity, tile_index: usize, tile: *const Tile) bool {
         if (self.mask & tile.mask != 0) return false;
         if (self.allowed) |al| return al[tile_index];
         return true;
     }
+};
+
+/// A cliff prototype: cliffs sit on a grid of cells, one piece per cell, in
+/// one of 20 orientations (the engine's CliffOrientation order).
+pub const Cliff = struct {
+    name: []const u8,
+    color: [3]u8,
+    mask: u64,
+    grid: [2]i32,
+    /// grid_offset in 1/256 tile
+    offset: [2]i32,
+    /// per orientation: bounds of the collision box in 1/256 tile (left,
+    /// top, right, bottom) ...
+    boxes: [20][4]i32,
+    /// ... and the box itself in tiles, with its rotation in turns
+    rects: [20][5]f32,
+    orientations: [20][]const u8,
 };
 
 pub const Prop = struct { key: []const u8, value: Body };
@@ -98,6 +128,12 @@ pub const Planet = struct {
     cliff_richness: f64,
     cliff_elevation_0: f64,
     cliff_elevation_interval: f64,
+    /// cliff_settings.cliff_smoothing. When a planet does not set it the
+    /// engine smooths fully (1): measured on Vulcanus, the one planet that
+    /// leaves it out, where only 1 reproduces the game's cliffs.
+    cliff_smoothing: f64 = 1,
+    /// the cliff prototype of cliff_settings.name (null: no cliffs)
+    cliff: ?*const Cliff = null,
 
     pub fn prop(self: *const Planet, key: []const u8) ?Body {
         for (self.props) |p| {
@@ -185,6 +221,60 @@ const Layers = struct {
         return m;
     }
 };
+
+fn loadCliff(arena: std.mem.Allocator, layers: *Layers, name: []const u8, o: json.Object) LoadError!*const Cliff {
+    const c = try arena.create(Cliff);
+    c.* = .{ .name = name, .color = color(o), .mask = layers.mask(o), .grid = .{ 4, 4 }, .offset = .{ 0, 0 }, .boxes = undefined, .rects = undefined, .orientations = undefined };
+    const pair = struct {
+        fn f(oo: json.Object, key: []const u8, i: usize, default: f64) f64 {
+            const v = json.get(oo, key) orelse return default;
+            if (v != .array or v.array.len <= i or v.array[i] != .number) return default;
+            return v.array[i].number;
+        }
+    }.f;
+    c.grid = .{ @intFromFloat(pair(o, "grid_size", 0, 4)), @intFromFloat(pair(o, "grid_size", 1, 4)) };
+    c.offset = .{ @intFromFloat(@round(pair(o, "grid_offset", 0, 0) * 256.0)), @intFromFloat(@round(pair(o, "grid_offset", 1, 0) * 256.0)) };
+    const names = json.get(o, "orientations") orelse return error.BadData;
+    const boxes = json.get(o, "boxes") orelse return error.BadData;
+    const rects = json.get(o, "rects") orelse return error.BadData;
+    if (names != .array or boxes != .array or rects != .array or names.array.len != 20 or boxes.array.len != 20 or rects.array.len != 20) return error.BadData;
+    for (0..20) |i| {
+        c.orientations[i] = if (names.array[i] == .string) names.array[i].string else "";
+        const b = boxes.array[i];
+        const r = rects.array[i];
+        if (b != .array or b.array.len < 4 or r != .array or r.array.len < 5) return error.BadData;
+        for (0..4) |k| c.boxes[i][k] = @intFromFloat(@round(b.array[k].number * 256.0));
+        for (0..5) |k| c.rects[i][k] = @floatCast(r.array[k].number);
+    }
+    return c;
+}
+
+fn classOf(typ: []const u8, name: []const u8) Entity.Class {
+    const eq = std.mem.eql;
+    // the "huge" rocks (and ruins) are worth telling apart: they hold far more
+    if (eq(u8, typ, "simple-entity") and std.mem.indexOf(u8, name, "huge") != null) return .huge_rock;
+    if (eq(u8, typ, "resource")) return .resource;
+    if (eq(u8, typ, "tree")) return .tree;
+    if (eq(u8, typ, "plant")) return .plant;
+    if (eq(u8, typ, "simple-entity")) return .rock;
+    if (eq(u8, typ, "unit-spawner")) return .spawner;
+    if (eq(u8, typ, "turret")) return .worm;
+    if (eq(u8, typ, "fish")) return .fish;
+    if (eq(u8, typ, "cliff")) return .cliff;
+    return .other;
+}
+
+/// "box": [left, top, right, bottom] in tiles -> 1/256 tile (the engine's
+/// fixed-point map positions)
+fn boxOf(o: json.Object) [4]i32 {
+    var out: [4]i32 = .{ -26, -26, 26, 26 };
+    const v = json.get(o, "box") orelse return out;
+    if (v != .array or v.array.len < 4) return out;
+    for (0..4) |i| {
+        if (v.array[i] == .number) out[i] = @intFromFloat(@round(v.array[i].number * 256.0));
+    }
+    return out;
+}
 
 fn hasLayer(o: json.Object, name: []const u8) bool {
     const v = json.get(o, "layers") orelse return false;
@@ -305,6 +395,11 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
                 .mask = layers.mask(em),
                 .allowed = allowed,
                 .resource = res_index,
+                .enemy = std.mem.eql(u8, typ, "unit-spawner") or std.mem.eql(u8, typ, "turret"),
+                .class = classOf(typ, en),
+                .box = boxOf(em),
+                .off_grid = if (json.get(em, "off_grid")) |v| (v == .boolean and v.boolean) else true,
+                .density = @intFromFloat(@max(1, num(em, "density", 1))),
             });
         }
         std.mem.sort(Entity, placed.items, {}, struct {
@@ -313,6 +408,14 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
             }
         }.lt);
         const cliff = obj(po, "cliff_settings") orelse &.{};
+        var cliff_proto: ?*const Cliff = null;
+        if (json.get(cliff, "name")) |nv| {
+            if (nv == .string) {
+                if (obj(ro, "cliffs")) |cs| {
+                    if (obj(cs, nv.string)) |co| cliff_proto = try loadCliff(arena, &layers, nv.string, co);
+                }
+            }
+        }
         try list.append(arena, .{
             .name = kv.key,
             .seed_offset = @intFromFloat(num(po, "seed_offset", 0)),
@@ -325,6 +428,8 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
             .cliff_richness = num(cliff, "richness", 1),
             .cliff_elevation_0 = num(cliff, "cliff_elevation_0", 10),
             .cliff_elevation_interval = num(cliff, "cliff_elevation_interval", 40),
+            .cliff_smoothing = num(cliff, "cliff_smoothing", 1),
+            .cliff = cliff_proto,
         });
     }
     d.planets = list.items;

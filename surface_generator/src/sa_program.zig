@@ -134,7 +134,15 @@ pub const SpotCfg = struct {
 pub const SpotOp = struct { cfg: SpotCfg, sub: Program };
 
 /// control:<name>:<field> values (frequency/size/richness/bias).
+/// Tiles per step of the grid a program is evaluated on. multisample()
+/// offsets count grid steps, not tiles: a program compiled for the cliff grid
+/// (4-tile cells) sets this to the cell size while it compiles.
+pub var multisample_step: f64 = 1;
+
 pub const Controls = struct {
+    /// the map's starting lake (engine-chosen per seed; Nauvis only), for
+    /// distance_from_nearest_point{points = starting_lake_positions}
+    starting_lake: ?[2]f64 = null,
     ctx: *const anyopaque = undefined,
     lookup: *const fn (ctx: *const anyopaque, name: []const u8, field: []const u8) f64 = defaultControl,
 
@@ -520,7 +528,9 @@ pub const Compiler = struct {
         if (eql(u8, name, "map_seed_small")) return self.konst(@floatFromInt(self.seed & 0xffff));
         if (eql(u8, name, "pi")) return self.konst(std.math.pi);
         if (eql(u8, name, "inf")) return self.konst(std.math.inf(f64));
-        if (eql(u8, name, "starting_area_radius")) return self.konst(150);
+        // 150 tiles at the default starting-area size; a surface with another
+        // size supplies it as the control "starting-area" (default 1)
+        if (eql(u8, name, "starting_area_radius")) return self.konst(150 * self.controls.lookup(self.controls.ctx, "starting-area", "size"));
         if (eql(u8, name, "cliff_richness")) return self.konst(self.planet.cliff_richness);
         if (eql(u8, name, "cliff_elevation_interval")) return self.konst(self.planet.cliff_elevation_interval);
         if (eql(u8, name, "no_enemies_mode")) return self.konst(0);
@@ -653,8 +663,8 @@ pub const Compiler = struct {
             const dx = try ar.num(name, "offset_x", 1, null);
             const dy = try ar.num(name, "offset_y", 2, null);
             const here = self.ctxs.items[self.cur_ctx];
-            const nx = try self.emit2(.add, here.x, try self.konst(dx));
-            const ny = try self.emit2(.add, here.y, try self.konst(dy));
+            const nx = try self.emit2(.add, here.x, try self.konst(dx * multisample_step));
+            const ny = try self.emit2(.add, here.y, try self.konst(dy * multisample_step));
             const saved = self.cur_ctx;
             self.cur_ctx = try self.posCtx(nx, ny);
             defer self.cur_ctx = saved;
@@ -663,10 +673,19 @@ pub const Compiler = struct {
         if (std.mem.startsWith(u8, name, "distance_from_nearest_point")) {
             // points = starting_positions; a planet surface starts at (0, 0)
             const pts = ar.node("points", 2) orelse return self.fail(error.BadCall, "{s}: missing points", .{name});
-            if (pts.kind != .name or !eql(u8, pts.kind.name, "starting_positions"))
-                return self.fail(error.Unsupported, "{s}: only starting_positions is supported", .{name});
-            const x = try ar.val(name, "x", 0);
-            const y = try ar.val(name, "y", 1);
+            var origin: [2]f64 = .{ 0, 0 };
+            if (pts.kind == .name and eql(u8, pts.kind.name, "starting_lake_positions")) {
+                origin = self.controls.starting_lake orelse
+                    return self.fail(error.Unsupported, "{s}: the starting lake position was not supplied", .{name});
+            } else if (pts.kind != .name or !eql(u8, pts.kind.name, "starting_positions")) {
+                return self.fail(error.Unsupported, "{s}: only starting_positions / starting_lake_positions are supported", .{name});
+            }
+            var x = try ar.val(name, "x", 0);
+            var y = try ar.val(name, "y", 1);
+            if (origin[0] != 0 or origin[1] != 0) {
+                x = try self.emit2(.sub, x, try self.konst(origin[0]));
+                y = try self.emit2(.sub, y, try self.konst(origin[1]));
+            }
             if (std.mem.endsWith(u8, name, "_x")) return x;
             if (std.mem.endsWith(u8, name, "_y")) return y;
             const d = try self.emit2(.hypot, x, y);
@@ -912,6 +931,9 @@ pub const Program = struct {
         /// random_penalty draws from one stream per column (how the engine
         /// evaluates spot candidates) instead of one stream per position
         column_rng: bool = false,
+        /// random_penalty returns its source unchanged: the value before the
+        /// random draw, i.e. the most the expression can be at a position
+        no_penalty: bool = false,
     };
 
     pub fn workspace(self: *const Program, a: std.mem.Allocator) error{OutOfMemory}!Workspace {
@@ -999,7 +1021,9 @@ pub const Program = struct {
                 },
                 .random_penalty => {
                     const p = self.payloads[inst.aux].randp;
-                    if (ws.column_rng and n > 0) {
+                    if (ws.no_penalty) {
+                        @memcpy(r, C);
+                    } else if (ws.column_rng and n > 0) {
                         // one stream seeded from the column's first position,
                         // consumed from the last element to the first
                         var prng = rng.Rng.init(penaltySeed(A[0], B[0], p.seed));
