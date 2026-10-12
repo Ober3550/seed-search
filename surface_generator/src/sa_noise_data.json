@@ -7125,10 +7125,10 @@
    ],
    "entities": [
     "crude-oil",
-    "lithium-brine",
-    "fluorine-vent",
+    "lithium-iceberg-big",
     "lithium-iceberg-huge",
-    "lithium-iceberg-big"
+    "lithium-brine",
+    "fluorine-vent"
    ],
    "property_expression_names": {
     "aux": "aquilo_aux",
@@ -7182,16 +7182,16 @@
    ],
    "entities": [
     "scrap",
-    "fulgoran-ruin-vault",
+    "big-fulgora-rock",
+    "fulgurite",
     "fulgoran-ruin-attractor",
+    "fulgoran-ruin-small",
+    "fulgoran-ruin-medium",
+    "fulgoran-ruin-stonehenge",
+    "fulgoran-ruin-big",
     "fulgoran-ruin-colossal",
     "fulgoran-ruin-huge",
-    "fulgoran-ruin-big",
-    "fulgoran-ruin-stonehenge",
-    "fulgoran-ruin-medium",
-    "fulgoran-ruin-small",
-    "fulgurite",
-    "big-fulgora-rock"
+    "fulgoran-ruin-vault"
    ],
    "property_expression_names": {
     "aux": "aux_basic",
@@ -7317,11 +7317,8 @@
    ],
    "entities": [
     "stone",
-    "iron-stromatolite",
-    "copper-stromatolite",
-    "gleba-spawner",
-    "gleba-spawner-small",
-    "cuttlepop",
+    "yumako-tree",
+    "jellystem",
     "slipstack",
     "funneltrunk",
     "hairyclubnub",
@@ -7330,9 +7327,12 @@
     "stingfrond",
     "boompuff",
     "sunnycomb",
+    "cuttlepop",
     "water-cane",
-    "yumako-tree",
-    "jellystem"
+    "copper-stromatolite",
+    "iron-stromatolite",
+    "gleba-spawner",
+    "gleba-spawner-small"
    ],
    "property_expression_names": {
     "aux": "gleba_aux",
@@ -7465,22 +7465,15 @@
     "small-sand-rock"
    ],
    "entities": [
-    "iron-ore",
-    "copper-ore",
-    "stone",
-    "coal",
     "crude-oil",
+    "coal",
+    "copper-ore",
+    "iron-ore",
+    "stone",
     "uranium-ore",
-    "fish",
     "big-sand-rock",
-    "huge-rock",
     "big-rock",
-    "small-worm-turret",
-    "medium-worm-turret",
-    "big-worm-turret",
-    "behemoth-worm-turret",
-    "biter-spawner",
-    "spitter-spawner",
+    "huge-rock",
     "tree-01",
     "tree-02",
     "tree-02-red",
@@ -7496,11 +7489,18 @@
     "tree-09",
     "tree-09-brown",
     "tree-09-red",
-    "dry-tree",
-    "dead-tree-desert",
-    "dead-grey-trunk",
     "dead-dry-hairy-tree",
-    "dry-hairy-tree"
+    "dead-grey-trunk",
+    "dead-tree-desert",
+    "dry-hairy-tree",
+    "dry-tree",
+    "fish",
+    "small-worm-turret",
+    "medium-worm-turret",
+    "big-worm-turret",
+    "behemoth-worm-turret",
+    "biter-spawner",
+    "spitter-spawner"
    ],
    "property_expression_names": {},
    "resources": [
@@ -7579,20 +7579,20 @@
     "waves-decal"
    ],
    "entities": [
-    "coal",
     "calcite",
-    "sulfuric-acid-geyser",
+    "coal",
     "tungsten-ore",
-    "huge-volcanic-rock",
+    "ashland-lichen-tree",
+    "ashland-lichen-tree-flaming",
+    "sulfuric-acid-geyser",
     "big-volcanic-rock",
-    "crater-cliff",
-    "vulcanus-chimney",
-    "vulcanus-chimney-faded",
-    "vulcanus-chimney-cold",
+    "huge-volcanic-rock",
     "vulcanus-chimney-short",
     "vulcanus-chimney-truncated",
-    "ashland-lichen-tree",
-    "ashland-lichen-tree-flaming"
+    "vulcanus-chimney",
+    "vulcanus-chimney-cold",
+    "vulcanus-chimney-faded",
+    "crater-cliff"
    ],
    "property_expression_names": {
     "aux": "vulcanus_aux",

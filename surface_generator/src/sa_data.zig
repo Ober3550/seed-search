@@ -53,6 +53,10 @@ pub const Resource = struct {
     color: [3]u8,
     /// footprint in tiles (1 for ores, 3 for fluid patches)
     size: u8,
+    /// collision layers and box (1/256 tile, around the tile's centre): an
+    /// entity placed later that shares a layer cannot overlap it
+    mask: u64 = 0,
+    box: [4]i32 = .{ -26, -26, 26, 26 },
 };
 
 /// Any autoplaced entity of a surface, for simulating the placement stream.
@@ -77,6 +81,9 @@ pub const Entity = struct {
     off_grid: bool = true,
     /// placement attempts per winning tile
     density: u32 = 1,
+    /// the autoplace control it belongs to ("" = none): a control whose size
+    /// is 0 switches its entities off
+    control: []const u8 = "",
 
     pub const Class = enum { resource, tree, plant, rock, huge_rock, spawner, worm, fish, cliff, other };
     pub const class_count = @typeInfo(Class).@"enum".fields.len;
@@ -322,6 +329,13 @@ pub fn load(arena: std.mem.Allocator) LoadError!Data {
     return loadFrom(arena, embedded);
 }
 
+/// The Space Exploration data file (base + SE + alien-biomes): Nauvis as SE
+/// makes it and "se-zone", the planet every other SE planet and moon is a
+/// variation of (see se_zone.zig).
+pub fn loadSe(arena: std.mem.Allocator) LoadError!Data {
+    return loadFrom(arena, @embedFile("se_noise_data.json"));
+}
+
 /// Parse a data file produced by scripts/sa-build-data.py (any mod set).
 pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
     const root = try json.parse(arena, text);
@@ -363,7 +377,7 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
         for (try strings(arena, po, "resources")) |rn| {
             const em = obj(entity_meta, rn) orelse return error.BadData;
             const order = if (json.get(em, "order")) |v| (if (v == .string) v.string else "") else "";
-            try resources.append(arena, .{ .name = rn, .order = order, .color = color(em), .size = @intFromFloat(num(em, "size", 1)) });
+            try resources.append(arena, .{ .name = rn, .order = order, .color = color(em), .size = @intFromFloat(num(em, "size", 1)), .mask = layers.mask(em), .box = boxOf(em) });
         }
         var placed: std.ArrayList(Entity) = .empty;
         for (try strings(arena, po, "entities")) |en| {
@@ -400,6 +414,7 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
                 .box = boxOf(em),
                 .off_grid = if (json.get(em, "off_grid")) |v| (v == .boolean and v.boolean) else true,
                 .density = @intFromFloat(@max(1, num(em, "density", 1))),
+                .control = if (json.get(em, "control")) |v| (if (v == .string) v.string else "") else "",
             });
         }
         std.mem.sort(Entity, placed.items, {}, struct {

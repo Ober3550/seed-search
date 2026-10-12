@@ -2,7 +2,7 @@
 # Run a post-script against the ALREADY-imported+analyzed program in the existing
 # Ghidra project — no re-import, no re-analysis (fast). Use this instead of
 # run-headless.sh once the binary has been analyzed once.
-# Usage: ./run-process.sh [postScript.java]   (default: ExportEntityPlacement.java)
+# Usage: ./run-process.sh [postScript.java [script arguments...]]   (default: ExportEntityPlacement.java)
 set -euo pipefail
 
 ROOT="/Users/olivermainey/Workspace/seed-search"
@@ -11,6 +11,7 @@ PROJDIR="$ROOT/ghidra/project"
 PROJNAME="factorio-surface-gen"
 SCRIPTS="$ROOT/ghidra/scripts"
 POST="${1:-ExportEntityPlacement.java}"
+[ $# -gt 0 ] && shift
 
 export GHIDRA_HEADLESS_MAXMEM=12G
 
@@ -18,6 +19,6 @@ export GHIDRA_HEADLESS_MAXMEM=12G
   -process "factorio-arm64" \
   -noanalysis \
   -scriptPath "$SCRIPTS" \
-  -postScript "$POST" \
+  -postScript "$POST" "$@" \
   -log "$ROOT/ghidra/headless.log" \
   -scriptlog "$ROOT/ghidra/headless-script.log"

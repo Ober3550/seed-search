@@ -19,6 +19,8 @@
 //     "zone": { ...one universe z-array element (n,t,s,r,p,tags, nauvis?)... },
 //     "radius": <render half-extent in tiles, optional>,
 //     "square": <bool, optional: do not clip terrain to the zone disk>,
+//     (4 = a Space Exploration planet's or moon's ore AND entities from the
+//      data-driven pass, as two images: ore, then entities - see se_zone.zig)
 //     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only,
 //               3=the entities (base-game Nauvis) or the enemy base areas
 //                 (Space Exploration surfaces) only> }
@@ -42,6 +44,7 @@ const res = @import("se_resources.zig");
 const sa_data = @import("sa_data.zig");
 const sa_program = @import("sa_program.zig");
 const sa_surface = @import("sa_surface.zig");
+const se_zone = @import("se_zone.zig");
 
 var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 // vanilla-ground moisture/aux program, kept between calls
@@ -82,6 +85,24 @@ var g_nv: ?struct {
     props: sa_program.Program,
     props_ws: sa_program.Program.Workspace,
 } = null;
+
+// Space Exploration surfaces: the SE data file and the surface last asked
+// for (kept between calls - a render is many cell requests)
+var g_se_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_se_data: ?sa_data.Data = null;
+var g_zone_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_zone: ?*se_zone.Zone = null;
+// the same surface for its ore alone (layer 4 without "entities")
+var g_ore_zone_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_ore_zone: ?*se_zone.Zone = null;
+var g_list: []const u8 = &.{};
+var g_want_entities = false;
+var g_entity_list = false;
+
+fn seData() !*sa_data.Data {
+    if (g_se_data == null) g_se_data = try sa_data.loadSe(g_se_data_arena.allocator());
+    return &g_se_data.?;
+}
 
 /// The map-gen settings the base game's enemy autoplace reads.
 const EnemyControls = struct {
@@ -225,7 +246,7 @@ fn zoneSurfaceParams(z: std.json.ObjectMap) !ZoneSurfaceParams {
         .enemy = tagOf(data.Enemy, z, "enemy"),
     };
     const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
-    const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+    const water_size: f64 = 1.0;
     const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
     const fm = universe.zoneFrequencyMultiplier(radius);
     return .{
@@ -316,7 +337,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     const k2 = if (obj.get("k2")) |v| (v == .bool and v.bool) else false;
     const layer: i32 = if (obj.get("layer")) |v| blk: {
         break :blk switch (v) {
-            .integer => |i| @intCast(@min(@max(i, 0), 3)),
+            .integer => |i| @intCast(@min(@max(i, 0), 4)),
             else => 0,
         };
     } else 0;
@@ -343,6 +364,11 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     // (starting-area enrichment), so ores can't be split across band calls.
     const terrainless = if (obj.get("terrainless")) |v| (v == .bool and v.bool) else false;
     g_tiles_given = if (obj.get("tiles_in")) |v| (v == .bool and v.bool) else false;
+    // layer 3 on a Space Exploration surface: "entities": true asks for the
+    // entities themselves (rocks, trees, cliffs, nests) instead of the enemy
+    // base areas; "entity_list": true also returns them in the summary.
+    g_want_entities = if (obj.get("entities")) |v| (v == .bool and v.bool) else false;
+    g_entity_list = if (obj.get("entity_list")) |v| (v == .bool and v.bool) else false;
     // square: fill the whole rect instead of clipping terrain to the zone's
     // disk. SE surfaces are finite disks; a base-game Nauvis is unbounded.
     const square = if (obj.get("square")) |v| (v == .bool and v.bool) else false;
@@ -465,22 +491,26 @@ fn generateZone(
     }
     const inputs = inputs_buf[0..ninputs];
 
-    // terrain: water tag "none" => no water gate; otherwise approximate the SE
-    // water control (freq 1, size 1.5 — the calibrated Horaerratum point).
-    // Nauvis always has water at the game DEFAULT size 1.0.
+    // terrain: water tag "none" => no water tiles (and no water gate for the
+    // ore). The water control itself is the map's own on every surface - SE
+    // writes the tag's frequency / size to map-gen settings the 2.0 engine no
+    // longer reads, and a live zone's control stays 1 / 1 - so the game's
+    // default applies: size 1. (Measured on a live moon away from its centre:
+    // 1.5, the old value, put water where the game has none.)
     // (Elevation/ZoneTerrain/Classifier are large — heap-allocated so the wasm
     // stack stays small; the arena owns them for the duration of the call.)
     const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
-    const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+    const water_size: f64 = 1.0;
     var elev: ?*terrain.Elevation = null;
     if (has_water) {
         const e = try a.create(terrain.Elevation);
         e.* = terrain.Elevation.init(zone_seed, 1.0, water_size);
         elev = e;
     }
-    // Nauvis (base and SE configs alike) has the engine's starting-area lake;
-    // register its centre so the elevation carves the spawn lake like the game.
-    if (is_nauvis) {
+    // Every surface has the engine's starting-area lake, placed from its own
+    // seed (measured on a live SE moon: its elevation only matches with it);
+    // register its centre so the elevation carves the lake like the game.
+    if (!is_field) {
         const c = terrain.startingLakeCenter(zone_seed);
         if (elev) |e| e.addStartingLake(c[0], c[1]);
     }
@@ -547,7 +577,8 @@ fn generateZone(
     defer ores.deinit(a);
 
     // terrain-only renders don't touch ore at all.
-    const need_ores = layer != 1 and layer != 3;
+    // (layer 4 takes its ore from the data-driven pass below)
+    const need_ores = layer != 1 and layer != 3 and layer != 4;
     // Resource names reported in the summary, in order.
     var summary_names: std.ArrayList([]const u8) = .empty;
     for (inputs) |inp| try summary_names.append(a, inp.name);
@@ -626,10 +657,15 @@ fn generateZone(
     // transparent so the browser canvas shows just the disk.
     const cw: u32 = @intCast(xb - xa);
     const ch: u32 = @intCast(yb - ya);
-    const pixels = try a.alloc(u8, @as(usize, cw) * ch * 4);
-    @memset(pixels, 0); // transparent
-    var el_s = terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
-    if (is_nauvis) {
+    // layer 4 returns two images: the ore, then the entities
+    const layer_bytes = @as(usize, cw) * ch * 4;
+    const all_pixels = try a.alloc(u8, layer_bytes * @as(usize, if (layer == 4) 2 else 1));
+    @memset(all_pixels, 0); // transparent
+    const pixels = all_pixels[0..layer_bytes];
+    // (a surface without water tiles still has its elevation: the land tiles'
+    // own rules read it)
+    var el_s = terrain.Elevation.init(zone_seed, 1.0, water_size);
+    if (!is_field) {
         const c = terrain.startingLakeCenter(zone_seed);
         el_s.addStartingLake(c[0], c[1]);
     }
@@ -726,6 +762,137 @@ fn generateZone(
                 }
             }
         }
+    } else if ((layer == 3 or layer == 4) and !is_field and (g_want_entities or layer == 4)) {
+        // A Space Exploration planet, moon or Nauvis: the entities, placed by
+        // the same pass with the SE data file and the settings SE gives the
+        // surface (se_zone.zig), on the tiles of this generator.
+        entity_layer = g_want_entities;
+        var rolls = se_zone.Rolls{};
+        if (z.get("rolls")) |rv| {
+            // the surface's own random controls, when known (a live game)
+            if (rv == .object) {
+                const num = struct {
+                    fn f(o: std.json.ObjectMap, k: []const u8, d: f64) f64 {
+                        const v = o.get(k) orelse return d;
+                        return switch (v) {
+                            .integer => |i| @floatFromInt(i),
+                            .float => |fl| fl,
+                            else => d,
+                        };
+                    }
+                }.f;
+                rolls.rocks_frequency = num(rv.object, "rocks_frequency", rolls.rocks_frequency);
+                rolls.cliff_frequency = num(rv.object, "cliff_frequency", rolls.cliff_frequency);
+                rolls.cliff_size = num(rv.object, "cliff_size", rolls.cliff_size);
+            }
+        }
+        const settings = if (is_nauvis) se_zone.homeSettings(zone_seed) else se_zone.zoneSettings(zone_seed, ztype, primary, tags, radius, rolls);
+        const slot = if (g_want_entities) &g_zone else &g_ore_zone;
+        if (slot.* == null or !slot.*.?.settings.eql(&settings)) {
+            slot.* = null;
+            const za = if (g_want_entities) &g_zone_arena else &g_ore_zone_arena;
+            _ = za.reset(.retain_capacity);
+            slot.* = try se_zone.Zone.init(za.allocator(), try seData(), settings, g_want_entities);
+        }
+        const zn = slot.*.?;
+        const ent_pixels = if (layer == 4) all_pixels[layer_bytes..] else pixels;
+        if (layer == 4) {
+            // the summary lists the resources this pass can place
+            summary_names.clearRetainingCapacity();
+            for (zn.planet.placed) |e| {
+                if (e.resource) |ri| try summary_names.append(a, zn.planet.resources[ri].name);
+            }
+        }
+        const chunk = try a.create(sa_surface.ChunkData);
+        const C = sa_surface.CHUNK;
+        var tiles: [C * C]u16 = undefined;
+        var counts: [sa_data.Entity.class_count]u32 = @splat(0);
+        const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
+        var list: std.ArrayList(u8) = .empty;
+        // the disk being drawn: the surface's own, or a smaller preview of it
+        const clip: f64 = @min(radius, @as(f64, @floatFromInt(r)));
+        var cy = @divFloor(ya, C);
+        while (cy * C < yb) : (cy += 1) {
+            var cx = @divFloor(xa, C);
+            while (cx * C < xb) : (cx += 1) {
+                {
+                    // nothing to draw for a chunk wholly outside that disk
+                    const nx: f64 = @floatFromInt(@max(cx * C, @min(0, cx * C + C - 1)));
+                    const ny: f64 = @floatFromInt(@max(cy * C, @min(0, cy * C + C - 1)));
+                    if (nx * nx + ny * ny > clip * clip) continue;
+                }
+                // Tiles: from the terrain the page sent (matched by map
+                // colour) where it covers the tile, worked out here otherwise
+                // (a chunk on the edge of a preview disk: the surface goes on
+                // past it).
+                for (0..C * C) |i| {
+                    const tx = cx * C + @as(i32, @intCast(i % C));
+                    const ty = cy * C + @as(i32, @intCast(i / C));
+                    const fx: f64 = @floatFromInt(tx);
+                    const fy: f64 = @floatFromInt(ty);
+                    if (fx * fx + fy * fy > radius * radius) {
+                        tiles[i] = zn.out_of_map;
+                        continue;
+                    }
+                    var found: ?u16 = null;
+                    if (have_tiles and tx >= xa and tx < xb and ty >= ya and ty < yb) {
+                        const q = (@as(usize, @intCast(ty - ya)) * cw + @as(usize, @intCast(tx - xa))) * 4;
+                        if (tiles_in[q + 3] == 255) found = zn.tileOf(.{ tiles_in[q], tiles_in[q + 1], tiles_in[q + 2] });
+                    }
+                    tiles[i] = found orelse blk: {
+                        const e = el_s.at(fx, fy);
+                        const color: [3]u8 = if (has_water and e < 0.0)
+                            (if (e < -5.0) biome.deepwater else biome.water)
+                        else
+                            classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                        break :blk zn.tileOf(color) orelse zn.out_of_map;
+                    };
+                }
+                zn.world.chunkWith(cx, cy, &tiles, chunk);
+                enemy_tiles += zn.world.drawEntities(chunk, xa, ya, xb, yb, cw, ent_pixels, &counts);
+                if (layer == 4) {
+                    // the ore this pass placed (one entity per tile centre)
+                    for (chunk.amount, 0..) |am, i| {
+                        if (am == 0) continue;
+                        const tx = cx * C + @as(i32, @intCast(i % C));
+                        const ty = cy * C + @as(i32, @intCast(i / C));
+                        if (tx < xa or tx >= xb or ty < ya or ty >= yb) continue;
+                        try ores.append(a, .{ .x = tx, .y = ty, .resource_name = zn.planet.resources[chunk.resource[i]].name, .amount = am });
+                    }
+                }
+                if (g_entity_list) {
+                    const inside = struct {
+                        fn f(px: i32, py: i32, x0: i32, y0: i32, x1: i32, y1: i32) bool {
+                            return px >> 8 >= x0 and px >> 8 < x1 and py >> 8 >= y0 and py >> 8 < y1;
+                        }
+                    }.f;
+                    if (zn.world.cliff) |cl| for (chunk.cliffs[0..chunk.n_cliffs]) |pc| {
+                        if (!inside(pc.x, pc.y, xa, ya, xb, yb)) continue;
+                        try appendFmt(a, &list, "{s}[\"{s}@{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", cl.name, cl.orientations[pc.orient], pc.x, pc.y });
+                    };
+                    for (chunk.ents[0..chunk.n_ents]) |pe| {
+                        if (!inside(pe.x, pe.y, xa, ya, xb, yb)) continue;
+                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", zn.planet.placed[pe.ent].name, pe.x, pe.y });
+                    }
+                    for (chunk.amount, 0..) |am, i| {
+                        if (am == 0) continue;
+                        const px = (cx * C + @as(i32, @intCast(i % C))) * 256 + 128;
+                        const py = (cy * C + @as(i32, @intCast(i / C))) * 256 + 128;
+                        if (!inside(px, py, xa, ya, xb, yb)) continue;
+                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", zn.planet.resources[chunk.resource[i]].name, px, py });
+                    }
+                }
+            }
+        }
+        // a box may reach past the disk's edge: nothing is drawn there
+        for (0..ch) |py| {
+            for (0..cw) |px| {
+                const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
+                const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
+                if (fx * fx + fy * fy > clip * clip) ent_pixels[(py * cw + px) * 4 + 3] = 0;
+            }
+        }
+        g_list = list.items;
     } else if (layer == 3 and !is_field) {
         const ctl = enemyControls(is_nauvis, tags.enemy);
         if (ctl.size > 0) {
@@ -792,7 +959,7 @@ fn generateZone(
             }
         }
     }
-    if (!terrainless and layer != 2 and layer != 3) {
+    if (!terrainless and layer != 2 and layer != 3 and layer != 4) {
         var iy: i32 = ya;
         while (iy < yb) : (iy += 1) {
             var ix: i32 = xa;
@@ -800,7 +967,7 @@ fn generateZone(
                 const fx: f64 = @floatFromInt(ix);
                 const fy: f64 = @floatFromInt(iy);
                 if (!square and fx * fx + fy * fy > radius * radius) continue;
-                const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                const e = el_s.at(fx, fy);
                 var mo_van: f64 = 0.0;
                 var aux_van: f64 = 0.0;
                 if (vanilla_ground) {
@@ -843,7 +1010,7 @@ fn generateZone(
             pixels[idx + 3] = 255;
         }
     }
-    out_pixels.* = pixels;
+    out_pixels.* = all_pixels;
 
     // per-resource totals (matches segen summary.json; "display" is the
     // human-readable amount).
@@ -854,7 +1021,14 @@ fn generateZone(
     try appendFmt(a, &summary, ",\"palette\":\"{s}\"", .{if (vanilla_ground) "nauvis-base" else "se-alien-biomes"});
     if (rect != null)
         try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
-    if (layer == 3) try appendFmt(a, &summary, ",\"enemy_tiles\":{d},\"entity_layer\":{}", .{ enemy_tiles, entity_layer });
+    if (layer == 3 or layer == 4) try appendFmt(a, &summary, ",\"enemy_tiles\":{d},\"entity_layer\":{}", .{ enemy_tiles, entity_layer });
+    if (g_list.len > 0) {
+        // positions in 1/256 tile
+        try summary.appendSlice(a, ",\"entities\":[");
+        try summary.appendSlice(a, g_list);
+        try summary.appendSlice(a, "]");
+        g_list = &.{};
+    }
     try summary.appendSlice(a, ",\"resources\":{");
     {
         var first = true;

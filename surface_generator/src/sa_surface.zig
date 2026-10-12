@@ -212,6 +212,11 @@ pub fn classColor(c: sa_data.Entity.Class) ?[3]u8 {
     };
 }
 
+/// Entities sharing an autoplace order form one placement group.
+pub fn sameGroup(a: *const sa_data.Entity, b: *const sa_data.Entity) bool {
+    return std.mem.eql(u8, a.order, b.order);
+}
+
 /// Tiles and resources, generated chunk by chunk the way the game does.
 ///
 /// Entity placement (EntityMapGenerationTask::generateEntities): the chunk is
@@ -255,12 +260,20 @@ pub const World = struct {
     /// generated (an entity's box can reach into a neighbouring chunk)
     tiles_program: ?prog.Program,
     tiles_ws: prog.Program.Workspace,
+    /// collision layers of the resources being placed (0: none are)
+    res_mask: u64,
     /// cliff_elevation and cliffiness at the cliff grid's cell corners
     cliff: ?*const sa_data.Cliff,
     cliff_program: ?prog.Program,
     cliff_ws: prog.Program.Workspace,
     xs: []f32,
     ys: []f32,
+    /// With supplied tiles, an entity that cannot stand on any tile of a
+    /// chunk is not evaluated there: `deps[e]` marks the instructions entity
+    /// e's expressions need, `live` is the chunk's union of them.
+    deps: []const []const bool,
+    live: []bool,
+    tile_seen: []bool,
 
     pub const Options = struct {
         /// do not compile the tile competition; chunkWith() is given the tiles
@@ -290,7 +303,7 @@ pub const World = struct {
         for (planet.placed, 0..) |e, i| {
             if (e.kind == .resource or opts.entities) n_placed = i + 1;
         }
-        while (n_placed < planet.placed.len and std.mem.eql(u8, planet.placed[n_placed].order, planet.placed[n_placed - 1].order)) n_placed += 1;
+        while (n_placed < planet.placed.len and sameGroup(&planet.placed[n_placed], &planet.placed[n_placed - 1])) n_placed += 1;
         const ent_prob = try a.alloc(usize, n_placed);
         const ent_rich = try a.alloc(?usize, n_placed);
         for (planet.placed[0..n_placed], 0..) |e, i| {
@@ -339,6 +352,20 @@ pub const World = struct {
         const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
         var ws = try program.workspaceN(a, AREA);
         ws.column_rng = true;
+        var deps: []const []const bool = &.{};
+        if (opts.external_tiles) {
+            const d = try a.alloc([]const bool, n_placed);
+            for (d, 0..) |*slot, i| {
+                const m = try a.alloc(bool, program.insts.len);
+                @memset(m, false);
+                if (!(planet.placed[i].kind == .resource and !opts.resources)) {
+                    program.markDeps(ent_prob[i], m);
+                    if (ent_rich[i]) |ri| program.markDeps(ri, m);
+                }
+                slot.* = m;
+            }
+            deps = d;
+        }
         return .{
             .planet = planet,
             .program = program,
@@ -352,6 +379,13 @@ pub const World = struct {
             .enemy_ents = enemy_ents.items,
             .record = opts.entities,
             .with_resources = opts.resources,
+            .res_mask = blk: {
+                var m: u64 = 0;
+                if (opts.resources) for (planet.placed[0..n_placed]) |e| {
+                    if (e.resource) |r| m |= planet.resources[r].mask;
+                };
+                break :blk m;
+            },
             .tiles_program = tiles_program,
             .tiles_ws = tiles_ws,
             .cliff = if (opts.entities) planet.cliff else null,
@@ -359,6 +393,9 @@ pub const World = struct {
             .cliff_ws = cliff_ws,
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
+            .deps = deps,
+            .live = try a.alloc(bool, program.insts.len),
+            .tile_seen = try a.alloc(bool, planet.tiles.len),
         };
     }
 
@@ -374,7 +411,24 @@ pub const World = struct {
             self.xs[i] = @as(f32, @floatFromInt(cx * CHUNK + @as(i32, @intCast(i % CHUNK)))) + SAMPLE_OFFSET;
             self.ys[i] = @as(f32, @floatFromInt(cy * CHUNK + @as(i32, @intCast(i / CHUNK)))) + SAMPLE_OFFSET;
         }
-        self.program.eval(&self.ws, self.xs, self.ys);
+        if (tiles != null and self.deps.len > 0) {
+            // only the entities that can stand somewhere in this chunk (a
+            // skipped entity never wins a tile, takes no draw, and each
+            // random_penalty has a stream of its own, so nothing else changes)
+            @memset(self.tile_seen, false);
+            for (tiles.?) |t| self.tile_seen[t] = true;
+            @memset(self.live, false);
+            for (self.planet.placed[0..self.n_placed], 0..) |*e, ei| {
+                const can = for (self.tile_seen, 0..) |seen, ti| {
+                    if (seen and e.canStandOn(ti, &self.planet.tiles[ti])) break true;
+                } else false;
+                if (!can) continue;
+                for (self.deps[ei], self.live) |d, *l| l.* = l.* or d;
+            }
+            self.program.evalLive(&self.ws, self.xs, self.ys, self.live);
+        } else {
+            self.program.eval(&self.ws, self.xs, self.ys);
+        }
 
         if (tiles) |t| {
             out.tile = t.*;
@@ -412,7 +466,7 @@ pub const World = struct {
         var g0: usize = 0;
         while (g0 < placed.len) {
             var g1 = g0 + 1;
-            while (g1 < placed.len and std.mem.eql(u8, placed[g1].order, placed[g0].order)) g1 += 1;
+            while (g1 < placed.len and sameGroup(&placed[g1], &placed[g0])) g1 += 1;
             if (!self.with_resources and placed[g0].kind == .resource) {
                 // only the group's draws: one for every tile it could use
                 for (0..AREA) |k| {
@@ -720,6 +774,10 @@ pub const World = struct {
                 }
             }
             if (hit) continue;
+            // resources of an earlier group are on the surface already
+            // (alien-biomes trees collide with the resource layer: no tree
+            // stands on ore)
+            if (self.res_mask & ce.mask != 0 and self.onResource(out, ce, c)) continue;
             for (out.ents[0..kept]) |k| {
                 const ke = &placed[k.ent];
                 if (ce.mask & ke.mask == 0) continue;
@@ -735,6 +793,33 @@ pub const World = struct {
             kept += 1;
         }
         out.n_ents = kept;
+    }
+
+    /// Does the entity's box overlap a resource entity it collides with, of a
+    /// group placed before its own? Only this chunk's resources are known.
+    fn onResource(self: *const World, out: *const ChunkData, ce: *const sa_data.Entity, c: Placed) bool {
+        const REACH = 2 * 256; // a resource box reaches at most this far from its tile centre
+        const base_x = @divFloor(c.x, CHUNK * 256) * CHUNK;
+        const base_y = @divFloor(c.y, CHUNK * 256) * CHUNK;
+        var ty = (c.y + ce.box[1] - REACH) >> 8;
+        while (ty <= (c.y + ce.box[3] + REACH) >> 8) : (ty += 1) {
+            var tx = (c.x + ce.box[0] - REACH) >> 8;
+            while (tx <= (c.x + ce.box[2] + REACH) >> 8) : (tx += 1) {
+                const lx = tx - base_x;
+                const ly = ty - base_y;
+                if (lx < 0 or ly < 0 or lx >= CHUNK or ly >= CHUNK) continue;
+                const i: usize = @intCast(ly * CHUNK + lx);
+                if (out.amount[i] == 0) continue;
+                const r = &self.planet.resources[out.resource[i]];
+                if (r.mask & ce.mask == 0) continue;
+                if (std.mem.order(u8, r.order, ce.order) != .lt) continue;
+                const rx = tx * 256 + 128;
+                const ry = ty * 256 + 128;
+                if (c.x + ce.box[0] < rx + r.box[2] and c.x + ce.box[2] > rx + r.box[0] and
+                    c.y + ce.box[1] < ry + r.box[3] and c.y + ce.box[3] > ry + r.box[1]) return true;
+            }
+        }
+        return false;
     }
 
     fn footprintFree(_: *const World, out: *const ChunkData, blocked: *const [AREA]bool, i: usize, size: u8) bool {
@@ -959,7 +1044,7 @@ pub const EntityRolls = struct {
         var g0: usize = 0;
         while (g0 < placed.len and slot < out.len) {
             var g1 = g0 + 1;
-            while (g1 < placed.len and std.mem.eql(u8, placed[g1].order, placed[g0].order)) g1 += 1;
+            while (g1 < placed.len and sameGroup(&placed[g1], &placed[g0])) g1 += 1;
             if (placed[g0].kind == .resource) {
                 // resources are centre-placed: one draw per land tile, no more
                 var k: u32 = 0;

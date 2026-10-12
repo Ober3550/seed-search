@@ -95,9 +95,6 @@ fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
 
     const buf = try a.alloc(u8, 8 << 20);
     var pos: usize = 0;
-    pos += (try std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"k\":{},\"z\":[", .{ seed, k2 })).len;
-
-    var zi: u32 = 0;
     // Nauvis params for the Δv column (Nauvis is skipped from output rows).
     var nauvis: ?gen.Zone = null;
     for (universe.zones.items) |zz| {
@@ -106,6 +103,13 @@ fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
             break;
         }
     }
+    // "hs" / "hr": the homeworld's zone seed and radius - not its map seed;
+    // SE places Nauvis's core seams from them
+    pos += (try std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"k\":{},\"hs\":{d},\"hr\":{d},\"z\":[", .{
+        seed, k2, if (nauvis) |nz| nz.seed else 0, if (nauvis) |nz| nz.radius else 0,
+    })).len;
+
+    var zi: u32 = 0;
     for (universe.zones.items, 0..) |z, si| {
         if (std.mem.eql(u8, z.name, "Nauvis")) continue; // map-gen UI, not universe gen
         if (z.ztype == .orbit or z.ztype == .star) continue; // no resource data

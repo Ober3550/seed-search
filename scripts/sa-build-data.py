@@ -24,9 +24,23 @@ Nothing planet-specific lives in the generator: sa_program.zig compiles
 whichever planet it is asked for straight from this file.
 
 Usage: sa-build-data.py [--dump existing-data-raw-dump.json] [--mods a,b,c]
+                        [--se-zone-lua scripts/zone.lua] [--out file]
 Writes surface_generator/src/sa_noise_data.json (embedded by sa_data.zig).
+
+Space Exploration: its planets and moons are not planet prototypes - the mod
+builds each surface's map_gen_settings at runtime (Zone.create_surface). With
+--se-zone-lua (the mod's scripts/zone.lua) the lists of what may spawn on a
+solid zone are read from Zone.set_autoplace_settings_for_solid and written as
+one more planet, "se-zone": Nauvis's wiring with those lists. What varies per
+zone (controls, cliff settings, which resources and whether enemies) is
+applied by the generator (se_zone.zig). The SE data file is
+surface_generator/src/se_noise_data.json:
+
+  sa-build-data.py --dump <SE data-raw-dump.json> --mods <SE mod list> \
+      --se-zone-lua <space-exploration>/scripts/zone.lua --no-decoratives \
+      --out surface_generator/src/se_noise_data.json
 """
-import argparse, json, math, os, shutil, subprocess, sys, tempfile, zlib
+import argparse, json, math, os, re, shutil, subprocess, sys, tempfile, zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -88,9 +102,35 @@ def noise_def(src, expr_key="expression"):
     return out
 
 
+def se_zone_lists(lua_path):
+    """What Zone.set_autoplace_settings_for_solid lets spawn on a planet or
+    moon: {"tile": [...], "entity": [...], "decorative": [...]}. Everything
+    the function can add is included (every resource, the enemies, the water
+    tiles); the per-zone conditions are the generator's job."""
+    src = Path(lua_path).read_text()
+    a = src.index("function Zone.set_autoplace_settings_for_solid")
+    body = src[a:src.index("function Zone.create_surface", a)]
+    body = re.sub(r"--\[\[.*?\]\]", "", body, flags=re.S)
+    body = re.sub(r"--[^\n]*", "", body)
+    out = {"decorative": [], "entity": [], "tile": []}
+    marks = sorted((body.index(f'["{k}"] = {{'), k) for k in out)
+    end = body.index("local resource_names")
+    for i, (pos, kind) in enumerate(marks):
+        stop = marks[i + 1][0] if i + 1 < len(marks) else end
+        out[kind] += re.findall(r'\["([^"]+)"\]\s*=\s*\{\}', body[pos:stop])
+    for kind, name in re.findall(r'autoplace_settings\.(\w+)\.settings\["([^"]+)"\]', body[end:]):
+        out[kind].append(name)
+    m = re.search(r"local resource_names = \{(.*?)\}", body, flags=re.S)
+    out["entity"] += re.findall(r'"([^"]+)"', m.group(1))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dump"); ap.add_argument("--mods", default=",".join(DEFAULT_MODS))
+    ap.add_argument("--se-zone-lua", help="Space Exploration's scripts/zone.lua: adds the planet 'se-zone'")
+    ap.add_argument("--no-decoratives", action="store_true",
+                    help="leave the decoratives out (nothing reads them yet; a third of an SE file)")
     ap.add_argument("--out", default=str(OUT), help="output file (default: the embedded Space Age data file)")
     a = ap.parse_args()
     raw = json.loads(Path(a.dump).read_text()) if a.dump else dump_data(a.mods.split(","))
@@ -112,19 +152,30 @@ def main():
     tile_order = {n: (t.get("order", ""), n) for n, t in raw["tile"].items()}
     default_masks = raw["utility-constants"]["default"]["default_collision_masks"]
     tiles, entities, planets = {}, {}, {}
-    for pname, planet in raw["planet"].items():
+    sources = dict(raw["planet"])
+    if a.se_zone_lua:
+        lists = se_zone_lists(a.se_zone_lua)
+        mgs = json.loads(json.dumps(raw["planet"]["nauvis"]["map_gen_settings"]))
+        mgs["autoplace_settings"] = {k: {"treat_missing_as_default": False, "settings": {n: {} for n in v}}
+                                     for k, v in lists.items()}
+        sources["se-zone"] = {"map_gen_settings": mgs, "explicit_lists": True}
+    for pname, planet in sources.items():
         mgs = planet.get("map_gen_settings") or {}
         cfg = {
             # a planet's surface seed is map_seed + crc32(planet name); the
             # map's own first surface (nauvis) uses the map seed unchanged.
-            "seed_offset": 0 if pname == "nauvis" else zlib.crc32(pname.encode()),
+            # (an SE zone surface is created with its own seed)
+            "seed_offset": 0 if pname in ("nauvis", "se-zone") else zlib.crc32(pname.encode()),
             "property_expression_names": mgs.get("property_expression_names") or {},
             "autoplace_controls": sorted((mgs.get("autoplace_controls") or {}).keys()),
             "cliff_settings": mgs.get("cliff_settings") or {},
         }
         for key, kind in AUTOPLACE_KINDS:
+            if kind == "decorative" and a.no_decoratives:
+                cfg["decoratives"] = []
+                continue
             names = list(((mgs.get("autoplace_settings") or {}).get(key) or {}).get("settings") or {})
-            if kind == "entity":
+            if kind == "entity" and not planet.get("explicit_lists"):
                 # an autoplace control on the surface also enables every
                 # entity tied to it (Nauvis trees via "trees", enemy bases via
                 # "enemy-base") without listing them one by one
@@ -180,6 +231,13 @@ def main():
                     restr = [t for t in (ap_.get("tile_restriction") or []) if isinstance(t, str)]
                     if restr:
                         entities[n]["tile_restriction"] = restr
+            if kind == "entity":
+                # entities of one placement group that tie on a tile: the
+                # first in prototype order = (order string, name) wins, as
+                # with tiles. Seen on alien-biomes' volcanic rocks, where the
+                # huge and the big rock saturate at the same probability and
+                # the game places the huge one.
+                keep.sort(key=lambda n: (by_name[kind][n][1].get("order", ""), n))
             if kind == "tile":
                 # equal probabilities are common by design (Gleba's clamped
                 # range selectors); the engine then keeps the first tile in

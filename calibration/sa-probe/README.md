@@ -22,6 +22,17 @@ Two harnesses live here:
   a planet's settings does **not** produce that planet's tiles — the surface
   must be created from the planet prototype.
 
+- **Space Exploration zones** (`probe_se_zone.py`) - boots the game with the
+  SE mod set (linked from the Factorio user mod folder), lets SE create a
+  zone's surface the way it does for a player, and dumps the zone as SE sees
+  it, the surface's `map_gen_settings`, every tile of a rectangle and every
+  entity in it. See `docs/space-exploration-entities.md`.
+
+  ```sh
+  python3 probe_se_zone.py 1000 Hermes -320:320:-320:320 hermes.json \
+      --names entity:tree-grassland-g:probability
+  ```
+
 - **Single ops** (the rest of this file) — pins the `noise.zig`
   `voronoi_*`/`terrace` ports.
 
