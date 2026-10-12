@@ -42,6 +42,9 @@ body {
   padding-left: 220px;
 }
 
+/* seed page controls: one setting per line */
+.seed-controls > div + div { margin-top: 8px; }
+
 /* the static pages (index.html, surface.html) have no sidebar */
 .app.no-sidebar { padding-left: 0; }
 
