@@ -342,7 +342,8 @@ fn runZoneDriver(
             std.debug.print("wrote zone-field-probe {s} ({d} points)\n", .{ probe_out, xs.items.len });
             continue;
         }
-        const fm = universe.zoneFrequencyMultiplier(radius);
+        // (the homeworld's controls are not scaled by its size)
+        const fm = if (is_nauvis) 1.0 else universe.zoneFrequencyMultiplier(radius);
         // Per-zone temperature control from the SE tag (verified vs the game:
         // midrange→0.65, extreme→6). Was hardcoded to Horaerratum's 6.0, which
         // pushed every non-extreme zone into hot/cold biome extremes. Moisture/
