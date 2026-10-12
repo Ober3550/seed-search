@@ -399,8 +399,6 @@
     }
     window.preloadUniverseWasm && window.preloadUniverseWasm();
     applyMod();
-    var crumb = document.getElementById("seed-crumb");
-    if (crumb) crumb.textContent = "Seed (client-side · " + window.Shell.modLabel(state.mod) + ")";
     // Auto-generate / list if a seed was in the URL (?seed=...).
     var pre = window.Shell.seed;
     if (pre != null) state.seed = pre;
