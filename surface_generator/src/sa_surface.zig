@@ -203,6 +203,7 @@ pub fn classColor(c: sa_data.Entity.Class) ?[3]u8 {
         .tree => .{ 50, 92, 44 },
         .plant => .{ 62, 104, 52 },
         .rock => .{ 129, 105, 78 },
+        .huge_rock => .{ 176, 148, 112 },
         .spawner => .{ 255, 40, 40 },
         .worm => .{ 255, 64, 40 },
         .cliff => .{ 144, 119, 87 },
@@ -775,7 +776,7 @@ pub const World = struct {
     /// tile per pixel, covering [x0, x1) x [y0, y1), `width` pixels a row):
     /// each as the tiles its collision box covers, in its class colour.
     /// Counts them per class (where their position is) and returns the total.
-    pub fn drawEntities(self: *const World, data: *const ChunkData, x0: i32, y0: i32, x1: i32, y1: i32, width: usize, out: ?[]u8, class_counts: ?*[9]u32) u64 {
+    pub fn drawEntities(self: *const World, data: *const ChunkData, x0: i32, y0: i32, x1: i32, y1: i32, width: usize, out: ?[]u8, class_counts: ?*[sa_data.Entity.class_count]u32) u64 {
         var n: u64 = 0;
         if (self.cliff) |cl| {
             const col = classColor(.cliff).?;
@@ -841,7 +842,7 @@ pub const World = struct {
     /// placement, as its footprint in its class colour (classColor), counted
     /// per class in `class_counts`.
     /// Returns the number of enemy-area tiles / entities drawn.
-    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, enemies: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals, class_counts: ?*[9]u32) u64 {
+    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, enemies: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals, class_counts: ?*[sa_data.Entity.class_count]u32) u64 {
         if (overlay) |o| @memset(o, 0);
         if (enemies) |o| @memset(o, 0);
         var enemy_tiles: u64 = 0;

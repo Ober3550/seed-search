@@ -24,7 +24,7 @@
 //!                stack
 //!   summary = { ok, planet, property, seed, surface_seed, x0, y0, width,
 //!               height, layers, entity_layer (bool),
-//!               entities: { tree, plant, rock, spawner, worm, other },
+//!               entities: { tree, plant, rock, huge_rock, spawner, worm, cliff, other },
 //!               tiles: [{ name, color: [r,g,b], count }],
 //!               resources: [{ name, color, count, amount }] }
 //!
@@ -178,7 +178,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"entity_layer\":{},\"tiles\":[", .{
         planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers, want_enemies,
     });
-    var class_counts: [9]u32 = @splat(0);
+    var class_counts: [sa_data.Entity.class_count]u32 = @splat(0);
     var resources_json: std.ArrayList(u8) = .empty;
     if (c.world) |*w| {
         const counts = try a.alloc(u32, planet.tiles.len);

@@ -673,7 +673,7 @@ fn generateZone(
         var tiles: [C * C]u16 = undefined;
         var pxs: [C * C]f32 = undefined;
         var pys: [C * C]f32 = undefined;
-        var counts: [9]u32 = @splat(0);
+        var counts: [sa_data.Entity.class_count]u32 = @splat(0);
         const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
         var cy = @divFloor(ya, C);
         while (cy * C < yb) : (cy += 1) {

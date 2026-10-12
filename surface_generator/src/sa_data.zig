@@ -78,7 +78,8 @@ pub const Entity = struct {
     /// placement attempts per winning tile
     density: u32 = 1,
 
-    pub const Class = enum { resource, tree, plant, rock, spawner, worm, fish, cliff, other };
+    pub const Class = enum { resource, tree, plant, rock, huge_rock, spawner, worm, fish, cliff, other };
+    pub const class_count = @typeInfo(Class).@"enum".fields.len;
 
     pub fn canStandOn(self: *const Entity, tile_index: usize, tile: *const Tile) bool {
         if (self.mask & tile.mask != 0) return false;
@@ -248,8 +249,10 @@ fn loadCliff(arena: std.mem.Allocator, layers: *Layers, name: []const u8, o: jso
     return c;
 }
 
-fn classOf(typ: []const u8) Entity.Class {
+fn classOf(typ: []const u8, name: []const u8) Entity.Class {
     const eq = std.mem.eql;
+    // the "huge" rocks (and ruins) are worth telling apart: they hold far more
+    if (eq(u8, typ, "simple-entity") and std.mem.indexOf(u8, name, "huge") != null) return .huge_rock;
     if (eq(u8, typ, "resource")) return .resource;
     if (eq(u8, typ, "tree")) return .tree;
     if (eq(u8, typ, "plant")) return .plant;
@@ -393,7 +396,7 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
                 .allowed = allowed,
                 .resource = res_index,
                 .enemy = std.mem.eql(u8, typ, "unit-spawner") or std.mem.eql(u8, typ, "turret"),
-                .class = classOf(typ),
+                .class = classOf(typ, en),
                 .box = boxOf(em),
                 .off_grid = if (json.get(em, "off_grid")) |v| (v == .boolean and v.boolean) else true,
                 .density = @intFromFloat(@max(1, num(em, "density", 1))),

@@ -586,6 +586,7 @@
     enemies: [[255, 40, 40], [255, 64, 40]],
     trees: [[50, 92, 44], [62, 104, 52]],
     rocks: [[129, 105, 78], [160, 120, 190]],
+    huge: [[176, 148, 112]],
     cliffs: [[144, 119, 87]]
   };
   var entityMode = false;   // the overlay holds entities (else enemy areas)
