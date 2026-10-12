@@ -28,7 +28,9 @@
     { res: ["se-vulcanite", "se-holmium-ore", "se-cryonite"], colors: ["#f85149", "#ff8fd8", "#58a6ff"],
       // without it, each of the three from its own nearest watered surface
       standIns: [{ res: "se-vulcanite", color: "#f85149" }, { res: "se-holmium-ore", color: "#ff8fd8" }, { res: "se-cryonite", color: "#58a6ff" }] },
-    { res: ["se-vitamelange", "stone"], colors: ["#3fb950", "#c2ad7a"],
+    // vitamelange has to be the surface's primary: the last biological science
+    // needs vitamelange core fragments, which only such a surface's core gives
+    { res: ["se-vitamelange", "stone"], colors: ["#3fb950", "#c2ad7a"], primary: "se-vitamelange",
       // the resource the pair is wanted for; its stand-in is a settleable surface
       standIns: [{ res: "se-vitamelange", color: "#3fb950", settleable: true }] }
   ];
@@ -44,7 +46,9 @@
   }
   function combosOf(z) {
     if (!settleable(z)) return [];
-    return COMBOS.filter(function (c) { return c.res.every(function (r) { return z.rs[r] >= COMBO_MIN; }); });
+    return COMBOS.filter(function (c) {
+      return (!c.primary || z.p === c.primary) && c.res.every(function (r) { return z.rs[r] >= COMBO_MIN; });
+    });
   }
   function nearestPrimary(zones, res) {
     var best = null;
@@ -299,7 +303,7 @@
     ["z1", "Zone 1", "Vulcanite + cryonite + holmium together where the seed has such a surface, vulcanite + iridium otherwise (sorts by its Δv)", "slot"],
     ["z2", "Zone 2", "Iridium beside a three-resource zone 1, cryonite + holmium otherwise (sorts by its Δv)", "slot"],
     ["be", "Beryl", "Nearest watered home-system surface whose primary resource is beryllium (sorts by its Δv)", "slot"],
-    ["vs", "Vita + Stone", "Nearest watered home-system surface with vitamelange and stone together (sorts by its Δv)", "slot"],
+    ["vs", "Vita + Stone", "Nearest watered home-system surface whose primary resource is vitamelange and that has stone too (sorts by its Δv)", "slot"],
     ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
   ];
   var SLOTS = ["z1", "z2", "be", "vs"];
