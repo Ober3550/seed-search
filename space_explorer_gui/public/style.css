@@ -47,6 +47,11 @@ body {
 /* seed page controls: one setting per line */
 .seed-controls > div + div { margin-top: 8px; }
 
+/* surface page controls: one setting per line, then Generate, then the status */
+.surf-controls > * { display: block; }
+.surf-controls > * + * { margin-top: 8px; }
+.surf-controls > [hidden], .surf-controls > :empty { display: none; }
+
 /* the static pages (index.html, surface.html) have no sidebar */
 .app.no-sidebar { padding-left: 0; }
 

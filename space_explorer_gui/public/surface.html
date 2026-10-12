@@ -13,7 +13,7 @@
         <div class="crumbs"><a id="sf-crumb-seed" href="index.html">🌍 Seed</a> <span>→</span> <span id="sf-crumb-name"></span></div>
         <h2>🗺️ <span id="sf-name"></span> <span id="sf-badge" class="badge zone-type">…</span> <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
         <div id="sf-meta" class="hint"></div>
-        <div class="filter-bar">
+        <div class="filter-bar surf-controls">
           <label>Preview radius <input type="number" id="sf-radius" min="10" max="10000" step="50" value="2000" style="width:7em"></label>
           <label id="sf-layer-wrap">Layer <select id="sf-layer">
             <option value="0">Terrain + ore</option>
@@ -21,8 +21,8 @@
             <option value="2">Ore only</option>
           </select></label>
           <label id="sf-dim-wrap" hidden title="terrain brightness under the resources">Terrain <input type="range" id="sf-dim" min="0" max="100" value="100" style="width:8em;vertical-align:middle"></label>
-          <button type="button" class="btn" id="sf-go">Generate</button>
-          <span id="sf-status" class="hint"></span>
+          <div><button type="button" class="btn" id="sf-go">Generate</button></div>
+          <div id="sf-status" class="hint"></div>
         </div>
         <div class="progress-wrap" id="sf-progress-wrap"><div id="sf-progress" class="progress-fill"></div></div>
         <div class="surf-box">
