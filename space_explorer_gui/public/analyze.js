@@ -490,8 +490,7 @@
       var en = new URLSearchParams(location.search).get("en");
       state.hlEnemyMax = ENEMY_LEVELS.indexOf(en) > 0 ? en : "";
       enEl.innerHTML = '<option value="">none</option>' + ENEMY_LEVELS.slice(1).map(function (l, i) {
-        var name = l.replace("_", " ");
-        return '<option value="' + l + '">' + (i === ENEMY_LEVELS.length - 2 ? name : name + " and above") + "</option>";
+        return '<option value="' + l + '">' + (i === ENEMY_LEVELS.length - 2 ? "= " : "&gt;= ") + ce(l) + "</option>";
       }).join("");
       enEl.value = state.hlEnemyMax;
       enEl.addEventListener("change", function (e) {
