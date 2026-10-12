@@ -286,6 +286,9 @@
       ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
       [null, "Zone", "What each line of the surface columns is"],
       ["vch", "Vulc + Cryo + Holm", "Nearest watered home-system surface with vulcanite, cryonite and holmium together (sorts by its Δv)", "slot-vch"],
+      ["be", "Beryl", "Nearest watered home-system surface whose primary resource is beryllium (sorts by its Δv). None: the home system's beryllium asteroid belt is the source", "slot-be"],
+      ["ir", "Iridium", "Nearest watered home-system surface whose primary resource is iridium (sorts by its Δv)", "slot-ir"],
+      ["vt", "Vita", "Nearest watered home-system surface whose primary resource is vitamelange (sorts by its Δv)", "slot-vt"],
       ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
     ],
     pairs: [
@@ -301,8 +304,8 @@
     ]
   };
   // the surface columns of each list
-  var LIST_SLOTS = { triple: ["vch"], pairs: ["vi", "ch", "be", "vs"] };
-  var SLOTS = LIST_SLOTS.triple.concat(LIST_SLOTS.pairs);
+  var LIST_SLOTS = { triple: ["vch", "be", "ir", "vt"], pairs: ["vi", "ch", "be", "vs"] };
+  var SLOTS = ["vch", "vi", "ch", "be", "ir", "vt", "vs"];
   function selectFeatured(key) {
     var list = state.featuredLists.filter(function (l) { return l.key === key; })[0] || state.featuredLists[0];
     state.featuredList = list.key;
