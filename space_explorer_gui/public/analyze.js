@@ -312,6 +312,15 @@
           state.featuredProd[n] = true;
           return '<label class="hint" title="' + counts[n] + " seeds whose loot has " + n + ' productivity modules"><input type="checkbox" data-prod="' + n + '" checked> ' + n + "</label>";
         }).join(" ");
+        // and a floor on the planet count
+        var planetCounts = {};
+        cfg.seeds.forEach(function (f) { planetCounts[f.planets] = true; });
+        state.featuredMinPlanets = 0;
+        state.featuredLimit = FEATURED_PAGE;
+        var planetSel = document.getElementById("featured-planets");
+        if (planetSel) planetSel.innerHTML = '<option value="0">any</option>' + Object.keys(planetCounts).map(Number).sort(function (a, b) { return a - b; }).slice(1).map(function (n) {
+          return '<option value="' + n + '">&gt;= ' + n + "</option>";
+        }).join("");
         document.getElementById("featured-head").innerHTML = "<tr>" + FEATURED_COLS.map(function (c) {
           return "<th" + (c[0] ? ' class="sortable' + (c[3] ? " " + c[3] : "") + '" data-key="' + c[0] + '"' : "") + (c[2] ? ' title="' + esc(c[2]) + '"' : "") + ">" +
             c[1] + (c[0] ? ' <span class="sort-ind"></span>' : "") + "</th>";
@@ -369,6 +378,8 @@
       '<span class="' + (level ? "enemy-" + level : "") + '">' + e + "</span></div>";
   }
 
+  // rows drawn at a time: the list runs to a couple of thousand seeds
+  var FEATURED_PAGE = 200;
   function prodCount(f) { return String(f.loot || "").split("P").length - 1; }
 
   // The list arrives best first; a header click sorts by that column instead
@@ -376,7 +387,9 @@
   function renderFeatured() {
     var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
     var k = state.featuredKey, dir = state.featuredDir === "asc" ? 1 : -1;
-    var rows = state.featured.filter(function (f) { return !state.featuredProd || state.featuredProd[prodCount(f)] !== false; });
+    var rows = state.featured.filter(function (f) {
+      return (!state.featuredProd || state.featuredProd[prodCount(f)] !== false) && f.planets >= (state.featuredMinPlanets || 0);
+    });
     document.getElementById("featured-note").textContent = "· " + rows.length + " of " +
       Number(state.featuredSearched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")";
     if (k) rows.sort(function (a, b) {
@@ -389,6 +402,8 @@
       if (k === "loot") return (va.length - vb.length) * dir || va.localeCompare(vb) || a.seed - b.seed;
       return (va - vb) * dir || a.seed - b.seed;
     });
+    var total = rows.length;
+    rows = rows.slice(0, state.featuredLimit || FEATURED_PAGE);
     document.getElementById("featured-body").innerHTML = rows.map(function (f) {
       return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
         '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
@@ -396,7 +411,10 @@
         '<td><div class="slot-lines labels"><span>Resources</span><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
         SLOTS.map(function (slot) { return "<td>" + slotCell(f.seed, f[slot]) + "</td>"; }).join("") +
         "<td>" + num(f.naquiumDv) + "</td></tr>";
-    }).join("");
+    }).join("") + (total > rows.length ? '<tr class="featured-more"><td colspan="' + FEATURED_COLS.length + '">' +
+      '<button type="button" class="btn" data-more="' + FEATURED_PAGE + '">Show ' + Math.min(FEATURED_PAGE, total - rows.length) + " more</button> " +
+      '<button type="button" class="btn" data-more="all">Show all ' + total.toLocaleString() + "</button>" +
+      ' <span class="hint">showing ' + rows.length + " of " + total.toLocaleString() + "</span></td></tr>" : "");
     document.querySelectorAll("#featured-head .sort-ind").forEach(function (el) { el.textContent = ""; });
     var active = k && document.querySelector('#featured-head th[data-key="' + k + '"] .sort-ind');
     if (active) active.textContent = dir === 1 ? " ▲" : " ▼";
@@ -551,8 +569,20 @@
       state.featuredProd[cb.dataset.prod] = cb.checked;
       renderFeatured();
     });
+    var featuredPlanets = document.getElementById("featured-planets");
+    if (featuredPlanets) featuredPlanets.addEventListener("change", function (e) {
+      state.featuredMinPlanets = +e.target.value;
+      state.featuredLimit = FEATURED_PAGE;
+      renderFeatured();
+    });
     var featuredBody = document.getElementById("featured-body");
     if (featuredBody) featuredBody.addEventListener("click", function (e) {
+      var more = e.target.closest("button[data-more]");
+      if (more) {
+        state.featuredLimit = more.dataset.more === "all" ? Infinity : (state.featuredLimit || FEATURED_PAGE) + FEATURED_PAGE;
+        renderFeatured();
+        return;
+      }
       if (e.target.closest("a")) return; // the link navigates by itself
       var row = e.target.closest("tr[data-seed]");
       if (!row) return;
