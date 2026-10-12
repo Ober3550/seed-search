@@ -592,7 +592,9 @@
 
     // finished: the progress text goes; the card and the line under the map
     // already say what was generated
-    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); releasePool(); }
+    // (the workers are released a tick later: the result line written right
+    // after this still reports how many there were)
+    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); setTimeout(releasePool, 0); }
     // There is no Generate button to press again, so a failure offers a
     // reload: that restarts the workers and refetches the page's files (the
     // usual cause is a file that could not be loaded).
