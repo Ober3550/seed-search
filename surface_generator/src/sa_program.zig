@@ -67,6 +67,7 @@ pub const Tag = enum(u8) {
     log2,
     clamp,
     select,
+    ridge,
     basis,
     multioctave,
     quick_multioctave,
@@ -83,7 +84,7 @@ pub const Tag = enum(u8) {
             .neg, .not_, .abs, .sin, .cos, .sqrt, .floor, .ceil, .exp, .log2 => 1,
             .add, .sub, .mul, .div, .mod, .pow, .eq, .ne, .lt, .gt, .le, .ge, .and_, .or_, .bitand, .min, .max, .hypot => 2,
             .basis, .multioctave, .quick_multioctave, .voronoi, .terrace, .spot => 2,
-            .clamp, .select, .var_persistence => 3,
+            .clamp, .select, .ridge, .var_persistence => 3,
             .random_penalty => 4,
         };
     }
@@ -109,7 +110,7 @@ pub const Payload = union(enum) {
     multi: struct { gen: u32, m: noise.exact.Multioctave },
     quick: struct { gens: u32, octaves: u32, is: f32, os: f32, oism: f32, oosm: f32, ox: f32, oy: f32 },
     varp: struct { gen: u32, v: noise.exact.VariablePersistence },
-    randp: struct { seed: i32 },
+    randp: struct { seed: u32 },
     voronoi: struct { v: noise.VoronoiNoise, out: VoronoiOut },
     terrace: struct { offset: f32, width: f32 },
     spot: u32,
@@ -207,6 +208,14 @@ fn op3(comptime T: type, tag: Tag, a: T, b: T, c: T) T {
     return switch (tag) {
         .clamp => @min(@max(a, b), c),
         .select => if (a != 0) b else c,
+        // folded back across the limits until it lies between them
+        .ridge => blk: {
+            const range = c - b;
+            if (!(range > 0)) break :blk b;
+            var t = @mod(a - b, 2 * range);
+            if (t > range) t = 2 * range - t;
+            break :blk b + t;
+        },
         else => unreachable,
     };
 }
@@ -652,6 +661,7 @@ pub const Compiler = struct {
         }
         if (eql(u8, name, "pow")) return self.emit2(.pow, try ar.val(name, "", 0), try ar.val(name, "", 1));
         if (eql(u8, name, "clamp")) return self.emit3(.clamp, try ar.val(name, "", 0), try ar.val(name, "", 1), try ar.val(name, "", 2));
+        if (eql(u8, name, "ridge")) return self.emit3(.ridge, try ar.val(name, "", 0), try ar.val(name, "", 1), try ar.val(name, "", 2));
         if (eql(u8, name, "if")) return self.emit3(.select, try ar.val(name, "", 0), try ar.val(name, "", 1), try ar.val(name, "", 2));
         if (eql(u8, name, "var")) {
             const target = ar.str("", 0) orelse return self.fail(error.BadCall, "var() needs a name", .{});
@@ -763,7 +773,7 @@ pub const Compiler = struct {
             const y = try ar.val(name, "y", 1);
             const src = try ar.val(name, "source", 2);
             const amp = try ar.valOr("amplitude", 3, 1);
-            const seed: i32 = @intFromFloat(try ar.num(name, "seed", NONE, 1));
+            const seed: u32 = toU32(try ar.num(name, "seed", NONE, 1));
             const p = try self.payload(.{ .randp = .{ .seed = seed } });
             return self.emitRaw(.{ .tag = .random_penalty, .a = x, .b = y, .c = src, .d = amp, .aux = p });
         }
@@ -958,11 +968,38 @@ pub const Program = struct {
 
     /// Evaluate every root at the positions (xs[j], ys[j]); xs.len <= ws.batch.
     pub fn eval(self: *const Program, ws: *Workspace, xs: []const f32, ys: []const f32) void {
+        self.evalLive(ws, xs, ys, null);
+    }
+
+    /// Mark in `live` every instruction root `root_index` depends on (added
+    /// to what is marked already). `live.len` = insts.len.
+    pub fn markDeps(self: *const Program, root_index: usize, live: []bool) void {
+        const top = self.roots[root_index];
+        live[top] = true;
+        var i: usize = top + 1;
+        while (i > 0) {
+            i -= 1;
+            if (!live[i]) continue;
+            const inst = self.insts[i];
+            const n = inst.tag.arity();
+            if (n > 0) live[inst.a] = true;
+            if (n > 1) live[inst.b] = true;
+            if (n > 2) live[inst.c] = true;
+            if (n > 3) live[inst.d] = true;
+        }
+    }
+
+    /// As eval(), computing only the instructions marked in `live` (null:
+    /// all). The registers of the others keep whatever they held.
+    pub fn evalLive(self: *const Program, ws: *Workspace, xs: []const f32, ys: []const f32, live: ?[]const bool) void {
         const n = xs.len;
         const W = ws.batch;
         std.debug.assert(n <= W and ys.len == n);
         const regs = ws.regs;
         for (self.insts, 0..) |inst, i| {
+            if (live) |l| {
+                if (!l[i]) continue;
+            }
             const r = regs[i * W ..][0..n];
             const A = regs[inst.a * W ..][0..n];
             const B = regs[inst.b * W ..][0..n];
@@ -996,7 +1033,7 @@ pub const Program = struct {
                 .neg, .not_, .abs, .sin, .cos, .sqrt, .floor, .ceil, .exp, .log2 => |t| for (r, A) |*o, a| {
                     o.* = op1(f32, t, a);
                 },
-                .clamp, .select => |t| for (r, A, B, C) |*o, a, b, c| {
+                .clamp, .select, .ridge => |t| for (r, A, B, C) |*o, a, b, c| {
                     o.* = op3(f32, t, a, b, c);
                 },
                 .basis => {
@@ -1026,11 +1063,21 @@ pub const Program = struct {
                     } else if (ws.column_rng and n > 0) {
                         // one stream seeded from the column's first position,
                         // consumed from the last element to the first
+                        // (RandomPenalty::run: a draw is only taken where the
+                        // source is positive; elsewhere the source passes
+                        // through and the stream does not advance)
                         var prng = rng.Rng.init(penaltySeed(A[0], B[0], p.seed));
                         var j = n;
-                        while (j > 0) : (j -= 1) r[j - 1] = @floatCast(@as(f64, C[j - 1]) - prng.float() * @as(f64, D[j - 1]));
+                        while (j > 0) : (j -= 1) {
+                            const src = C[j - 1];
+                            r[j - 1] = if (src > 0) @floatCast(@as(f64, src) - prng.float() * @as(f64, D[j - 1])) else src;
+                        }
                     } else {
                         for (r, A, B, C, D) |*o, x, y, src, amp| {
+                            if (!(src > 0)) {
+                                o.* = src;
+                                continue;
+                            }
                             var prng = rng.Rng.init(penaltySeed(x, y, p.seed));
                             o.* = @floatCast(@as(f64, src) - prng.float() * @as(f64, amp));
                         }
@@ -1052,18 +1099,24 @@ pub const Program = struct {
                     const p = self.payloads[inst.aux].terrace;
                     for (r, A, B) |*o, v, strength| o.* = @floatCast(noise.terrace(v, p.offset, p.width, strength));
                 },
-                .spot => {
-                    const idx = self.payloads[inst.aux].spot;
-                    for (r, A, B) |*o, x, y| o.* = self.spotValue(ws, idx, x, y);
-                },
+                .spot => self.spotBatch(ws, self.payloads[inst.aux].spot, A, B, r),
             }
         }
     }
 
-    fn penaltySeed(x: f32, y: f32, seed: i32) u32 {
-        const xi: i32 = @intFromFloat(@floor(x));
-        const yi: i32 = @as(i32, @intFromFloat(@floor(y))) +% seed;
-        const s: u32 = (@as(u32, @bitCast(xi)) *% 7919) +% (@as(u32, @bitCast(yi)) *% 7907) +% 0x3fbe2c;
+    /// RandomPenalty::run: the seed parameter is added to y as a float (so a
+    /// seed of map-seed size swallows y's low bits - the sum has 24 bits),
+    /// and both coordinates are truncated to 32 bits.
+    fn penaltySeed(x: f32, y: f32, seed: u32) u32 {
+        const trunc = struct {
+            fn f(v: f32) u32 {
+                if (v != v) return 0;
+                if (!(@abs(v) < 9.2e18)) return if (v > 0) 0xffffffff else 0;
+                return @truncate(@as(u64, @bitCast(@as(i64, @intFromFloat(v)))));
+            }
+        }.f;
+        const ys: f32 = y + @as(f32, @floatFromInt(seed));
+        const s: u32 = (trunc(x) *% 7919) +% (trunc(ys) *% 7907) +% 0x3fbe2c;
         return if (s < 342) 341 else s;
     }
 
@@ -1098,6 +1151,74 @@ pub const Program = struct {
             }
         }
         return value;
+    }
+
+    /// spotValue() for a batch of positions. A batch is usually one chunk, so
+    /// the spots that can reach any of its positions are picked out once
+    /// (from the regions around the batch's bounding box) instead of walking
+    /// nine regions' spots for every position. Same values: a spot left out
+    /// is farther than max_radius from every position of the batch.
+    fn spotBatch(self: *const Program, ws: *Workspace, idx: u32, xs: []const f32, ys: []const f32, res: []f32) void {
+        const cfg = &self.spots[idx].cfg;
+        const max_radius: f32 = @floatCast(cfg.max_radius);
+        const MAX = 256;
+        var near: [MAX]Spot = undefined;
+        var n_near: usize = 0;
+        var fits = xs.len >= 16 and cfg.max_radius < cfg.region_size and cfg.region_size >= 1;
+        if (fits) {
+            var x0 = xs[0];
+            var x1 = xs[0];
+            var y0 = ys[0];
+            var y1 = ys[0];
+            for (xs, ys) |x, y| {
+                x0 = @min(x0, x);
+                x1 = @max(x1, x);
+                y0 = @min(y0, y);
+                y1 = @max(y1, y);
+            }
+            // (NaN or absurd positions: leave it to the per-position path)
+            fits = x0 == x0 and y0 == y0 and @abs(x0) < 1.0e9 and @abs(x1) < 1.0e9 and @abs(y0) < 1.0e9 and @abs(y1) < 1.0e9 and
+                (x1 - x0) <= 4 * cfg.region_size and (y1 - y0) <= 4 * cfg.region_size;
+            if (fits) {
+                const half: f64 = @floatFromInt(@as(u32, @intFromFloat(cfg.region_size)) / 2);
+                const rx0: i32 = @intFromFloat(@floor((@as(f64, x0) + half) / cfg.region_size));
+                const rx1: i32 = @intFromFloat(@floor((@as(f64, x1) + half) / cfg.region_size));
+                const ry0: i32 = @intFromFloat(@floor((@as(f64, y0) + half) / cfg.region_size));
+                const ry1: i32 = @intFromFloat(@floor((@as(f64, y1) + half) / cfg.region_size));
+                const m = max_radius + 1;
+                var ry = ry0 - 1;
+                outer: while (ry <= ry1 + 1) : (ry += 1) {
+                    var rx = rx0 - 1;
+                    while (rx <= rx1 + 1) : (rx += 1) {
+                        for (self.spotRegion(ws, idx, rx, ry)) |sp| {
+                            if (sp.x < x0 - m or sp.x > x1 + m or sp.y < y0 - m or sp.y > y1 + m) continue;
+                            if (n_near == MAX) {
+                                fits = false;
+                                break :outer;
+                            }
+                            near[n_near] = sp;
+                            n_near += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if (!fits) {
+            for (res, xs, ys) |*o, x, y| o.* = self.spotValue(ws, idx, x, y);
+            return;
+        }
+        const basement: f32 = @floatCast(cfg.basement);
+        for (res, xs, ys) |*o, x, y| {
+            var value = basement;
+            for (near[0..n_near]) |sp| {
+                const dist: f32 = @sqrt((x - sp.x) * (x - sp.x) + (y - sp.y) * (y - sp.y));
+                if (dist <= max_radius) {
+                    const v = sp.peak - dist * sp.slope;
+                    if (value <= v) value = v;
+                }
+            }
+            o.* = value;
+        }
     }
 
     fn spotRegion(self: *const Program, ws: *Workspace, idx: u32, rx: i32, ry: i32) []const Spot {

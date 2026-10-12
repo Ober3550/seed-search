@@ -288,17 +288,17 @@ fn runZoneDriver(
         }
         const inputs = inputs_buf[0..ninputs];
 
-        // terrain: water tag "none" => no water gate; otherwise approximate the
-        // SE water control (freq 1, size 1.5 — the calibrated Horaerratum point).
-        // Nauvis always has water at the game DEFAULT size 1.0.
+        // terrain: water tag "none" => no water tiles. The water control is
+        // the map's own on every surface (SE writes the tag's values to
+        // settings the 2.0 engine no longer reads): the default, 1.
         const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
-        const water_size: f64 = if (is_nauvis) 1.0 else 1.5;
+        const water_size: f64 = 1.0;
         var elev: ?surfacegen.terrain.Elevation = null;
         var zt: ?surfacegen.terrain.ZoneTerrain = null;
         var classifier: ?surfacegen.biome.Classifier = null;
         if (has_water) elev = surfacegen.terrain.Elevation.init(zone_seed, 1.0, water_size);
-        // Nauvis (base + SE configs) has the engine's starting-area lake.
-        if (is_nauvis) {
+        // every planet and moon has the engine's starting-area lake
+        if (!is_field) {
             const lake = surfacegen.terrain.startingLakeCenter(zone_seed);
             if (elev) |*e| e.addStartingLake(lake[0], lake[1]);
         }
@@ -557,8 +557,8 @@ fn runZoneDriver(
             const grid: i32 = if (surface_grid > 0) surface_grid else 1;
             const full: i32 = r * 2;
             const cellW: i32 = @divTrunc(full + grid - 1, grid); // ceil
-            var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, if (has_water) water_size else 1.0);
-            if (is_nauvis) {
+            var el_s = surfacegen.terrain.Elevation.init(zone_seed, 1.0, water_size);
+            if (!is_field) {
                 const lake = surfacegen.terrain.startingLakeCenter(zone_seed);
                 el_s.addStartingLake(lake[0], lake[1]);
             }
@@ -598,7 +598,7 @@ fn runZoneDriver(
                             const fx: f64 = @floatFromInt(ix);
                             const fy: f64 = @floatFromInt(iy);
                             if (fx * fx + fy * fy > radius * radius) continue;
-                            const e = if (has_water) el_s.at(fx, fy) else 1.0;
+                            const e = el_s.at(fx, fy);
                             const color: [3]u8 = if (has_water and e < 0.0)
                                 (if (e < -5.0) surfacegen.biome.deepwater else surfacegen.biome.water)
                             else

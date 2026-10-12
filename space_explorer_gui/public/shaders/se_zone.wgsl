@@ -253,8 +253,9 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let y = P.origin_y + f32(gid.y);
     let i = gid.y * P.width + gid.x;
     let has_water = P.water_gate > 0.5;
-    var e : f32 = 1.0;
-    if (has_water) { e = elevationAt(x, y); }
+    // (a surface without water tiles still has its elevation: the land
+    // tiles' own rules read it)
+    let e = elevationAt(x, y);
     if (P.mode == 5u) {
         if (has_water && e < 0.0) {
             if (e < -5.0) { outIdx[i] = 0x00264049u; } // deepwater

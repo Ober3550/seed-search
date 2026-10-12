@@ -1012,6 +1012,14 @@ pub const exact = struct {
         return basis(gen, (x + ox) * is, (y + oy) * is) * os;
     }
 
+    /// Where multioctave_noise adds offset_x / offset_y. Map generation adds
+    /// them to the position, before the octave's scale (measured on placed
+    /// alien-biomes tiles: their variant noise only lines up that way);
+    /// calculate_tile_properties adds them after it, which is what the
+    /// probe-derived test vectors hold. Off by default: the Space Age planets
+    /// were measured without it.
+    pub var tile_space_offset: bool = false;
+
     /// multioctave_noise configuration, normalised once like the op does.
     pub const Multioctave = struct {
         n: u32,
@@ -1022,7 +1030,10 @@ pub const exact = struct {
         oy: f32,
 
         pub fn init(octaves: f32, persistence: f32, is: f32, os_in: f32, ox: f32, oy: f32) Multioctave {
-            const nf: f32 = @floatFromInt(@as(u32, @intFromFloat(octaves)));
+            // a fractional octave count rounds up, and the first octave's
+            // scale grows by 2^(count - octaves) to make up for it (the
+            // alien-biomes rocks and trees: octaves = 8 - log2(frequency))
+            const nf: f32 = @ceil(octaves);
             const inv: f32 = 1.0 / persistence;
             const f3 = fastExp2f(nf - octaves);
             const frac: f32 = if (f3 >= 1.0) @min(f3, 1.99999) else 1.0;
@@ -1045,9 +1056,15 @@ pub const exact = struct {
             var k: f64 = 0.0;
             var i: u32 = 0;
             while (i < self.n) : (i += 1) {
-                const X: f32 = @floatCast(k * 17.17 + @as(f64, scale * x));
-                const Y: f32 = scale * y;
-                out = out + basis(gen, (X + self.ox) * 1.0, (Y + self.oy) * 1.0) * os;
+                if (tile_space_offset) {
+                    const X: f32 = @floatCast(k * 17.17 + @as(f64, scale * (x + self.ox)));
+                    const Y: f32 = scale * (y + self.oy);
+                    out = out + basis(gen, X, Y) * os;
+                } else {
+                    const X: f32 = @floatCast(k * 17.17 + @as(f64, scale * x));
+                    const Y: f32 = scale * y;
+                    out = out + basis(gen, (X + self.ox) * 1.0, (Y + self.oy) * 1.0) * os;
+                }
                 scale = scale * 0.5;
                 os = self.inv * os;
                 k += 1.0;

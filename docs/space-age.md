@@ -92,8 +92,20 @@ Entities:
 - apply phase (`applyEntities` -> `Surface::mapGeneratorWouldCollide`): the
   chunk's cliffs go onto the surface first, then its entities in generation
   order, and one is dropped when its box overlaps something already there
-  that shares a collision layer. Only the chunk's own entities are known to
-  us.
+  that shares a collision layer - a resource of an earlier group included
+  (alien-biomes trees carry the resource layer: no tree stands on ore). Only
+  the chunk's own entities are known to us;
+- entities of a group that tie on a tile: the first in prototype order
+  (order string, then name) wins, as with tiles.
+
+`random_penalty` (most tree and rock probabilities end in one) has two rules
+that only show up once several of them share a chunk
+(`RandomPenalty::run`, `ghidra/export/autoplace_order.c`): a draw is taken
+only where the source is positive - elsewhere the source passes through and
+the stream does not advance - and the stream's seed adds the `seed` parameter
+to y as a 32-bit float, so a map-seed-sized seed swallows y's low bits. And
+`multioctave_noise` with a fractional octave count rounds the count up and
+widens the first octave by 2^(count - octaves).
 
 Cliffs sit on a grid of 4x4-tile cells. `cliff_elevation` and `cliffiness` are
 sampled at the cell corners and smoothed (by `cliff_smoothing`) towards the
@@ -126,12 +138,19 @@ on the tiles the Nauvis generator produces (or, on the page, on the terrain
 already drawn by the GPU kernel, sent along with the request - working them
 out again on the CPU costs about 20 us a tile). The Nauvis resources are not
 evaluated there, only their draws. Against the game (seed 341, r480): trees
-98.2% and rocks 97.8% on the game's tile, every cliff and 97% of spawners
-within 2 tiles, worms 67% within 2.
+98.1% and rocks 96% on the game's tile, every cliff and every spawner within 2
+tiles, worms 81% within 2.
+
+Enemy nests cannot be exact anywhere: the game spawns a few units with each
+spawner as it is placed, at positions that do not come from the chunk's
+stream, and those units block the nests rolled after it. We place the nests
+the rolls allow - the same bases, a few more buildings than the game keeps.
 
 The surface page draws all this as its "Entities" layer for the Space Age
-planets and base-game Nauvis. Space Exploration surfaces show enemy base areas
-instead (below): the SE mod set is not in the data file.
+planets, base-game Nauvis and - with their own data file and settings - the
+Space Exploration planets and moons: see
+[space-exploration-entities.md](space-exploration-entities.md). A surface too
+large to draw at full size shows enemy base areas instead (below).
 
 ### Enemy base areas
 

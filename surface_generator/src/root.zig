@@ -47,4 +47,5 @@ test {
 
 test "data-driven planet generator vs live-game vectors" {
     _ = @import("sa_test.zig");
+    _ = @import("se_test.zig");
 }

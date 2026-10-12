@@ -18,6 +18,14 @@
 //!
 //! `map-seed` is the MAP seed; the planet's surface-seed offset is applied
 //! internally.
+//!
+//! Environment:
+//!   SA_DATA=<file>   another data file (scripts/sa-build-data.py --out)
+//!   SA_MGS=<file>    a surface's map_gen_settings from the game (see main)
+//!   SA_COLUMN=1      probe: evaluate the grid as one column, as the game's
+//!                    calculate_tile_properties does (random_penalty draws
+//!                    from one stream per column)
+//!   SA_TILE_OFFSET=1 multioctave offsets as map generation applies them
 const std = @import("std");
 const sg = @import("surface_generator");
 const sa_data = sg.sa_data;
@@ -33,6 +41,66 @@ fn usage() void {
         \\       sa_main <planet> check
         \\
     , .{});
+}
+
+
+fn jnum(v: ?std.json.Value, default: f64) f64 {
+    const x = v orelse return default;
+    return switch (x) {
+        .integer => |i| @floatFromInt(i),
+        .float => |f| f,
+        else => default,
+    };
+}
+
+/// control:<name>:<field> from the dumped autoplace_controls.
+fn mgsControl(ctx: *const anyopaque, name: []const u8, field: []const u8) f64 {
+    const mgs: *const std.json.ObjectMap = @ptrCast(@alignCast(ctx));
+    const default: f64 = if (std.mem.eql(u8, field, "bias")) 0 else 1;
+    if (std.mem.eql(u8, name, "starting-area")) return jnum(mgs.get("starting_area"), 1);
+    const ac = mgs.get("autoplace_controls") orelse return default;
+    const c = ac.object.get(name) orelse return default;
+    return jnum(c.object.get(field), default);
+}
+
+/// The planet with the dumped cliff settings, and only the entities the
+/// surface lets spawn (its entity list, minus those of a size-0 control).
+fn mgsPlanet(a: std.mem.Allocator, base: *const sa_data.Planet, mgs: *const std.json.ObjectMap) !*const sa_data.Planet {
+    const p = try a.create(sa_data.Planet);
+    p.* = base.*;
+    if (mgs.get("cliff_settings")) |cv| {
+        const c = cv.object;
+        p.cliff_richness = jnum(c.get("richness"), p.cliff_richness);
+        p.cliff_elevation_0 = jnum(c.get("cliff_elevation_0"), p.cliff_elevation_0);
+        p.cliff_elevation_interval = jnum(c.get("cliff_elevation_interval"), p.cliff_elevation_interval);
+        p.cliff_smoothing = jnum(c.get("cliff_smoothing"), p.cliff_smoothing);
+        // the cliff control scales them (CliffPlacementSettings::
+        // getModifiedElevationInterval / getModifiedRichness): the interval
+        // is divided by its frequency, the richness multiplied by its size
+        if (c.get("control")) |ctl| {
+            if (ctl == .string) {
+                p.cliff_richness *= mgsControl(mgs, ctl.string, "size");
+                const f = mgsControl(mgs, ctl.string, "frequency");
+                if (f != 0) p.cliff_elevation_interval /= f;
+            }
+        }
+    }
+    var allowed: ?std.json.ObjectMap = null;
+    if (mgs.get("autoplace_settings")) |as| {
+        if (as.object.get("entity")) |e| {
+            if (e.object.get("settings")) |st| allowed = st.object;
+        }
+    }
+    var kept: std.ArrayList(sa_data.Entity) = .empty;
+    for (base.placed) |e| {
+        if (allowed) |al| {
+            if (al.get(e.name) == null) continue;
+        }
+        if (e.control.len > 0 and mgsControl(mgs, e.control, "size") == 0) continue;
+        try kept.append(a, e);
+    }
+    p.placed = kept.items;
+    return p;
 }
 
 fn writeFile(init: std.process.Init, path: []const u8, bytes: []const u8) !void {
@@ -54,12 +122,33 @@ pub fn main(init: std.process.Init) !void {
         try sa_data.loadFrom(a, try std.Io.Dir.readFileAlloc(.cwd(), init.io, path, a, .unlimited))
     else
         try sa_data.load(a);
-    const planet = data.planet(args[1]) orelse {
+    var planet = data.planet(args[1]) orelse {
         std.debug.print("unknown planet '{s}'; known:", .{args[1]});
         for (data.planets) |p| std.debug.print(" {s}", .{p.name});
         std.debug.print("\n", .{});
         return;
     };
+    // SA_MGS=<file>: a surface's map_gen_settings as the game reports them
+    // (the "map_gen_settings" of calibration/sa-probe/probe_se_zone.py's
+    // output, or the table itself): its autoplace controls, cliff settings,
+    // starting area and entity list replace the planet's defaults. This is
+    // how a Space Exploration zone is checked against the game with the
+    // game's own settings.
+    var controls: prog.Controls = .{};
+    if (init.environ_map.get("SA_MGS")) |path| {
+        const text = try std.Io.Dir.readFileAlloc(.cwd(), init.io, path, a, .unlimited);
+        const parsed = try std.json.parseFromSliceLeaky(std.json.Value, a, text, .{});
+        const mgs = try a.create(std.json.ObjectMap);
+        mgs.* = if (parsed.object.get("map_gen_settings")) |m| m.object else parsed.object;
+        // the engine gives every surface a starting lake, placed from the
+        // surface's own seed
+        const lake_seed = try std.fmt.parseInt(u32, if (args.len > 3) args[3] else "0", 10);
+        controls = .{ .starting_lake = sg.terrain.startingLakeCenter(lake_seed), .ctx = mgs, .lookup = mgsControl };
+        // SA_TILE_OFFSET=1: multioctave_noise offsets the way map generation
+        // applies them (needed for alien-biomes tiles; see noise.exact)
+        if (init.environ_map.get("SA_TILE_OFFSET") != null) sg.noise.exact.tile_space_offset = true;
+        planet = try mgsPlanet(a, planet, mgs);
+    }
     const cmd = args[2];
 
     if (std.mem.eql(u8, cmd, "info")) {
@@ -98,6 +187,36 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
+    if (std.mem.eql(u8, cmd, "stats")) {
+        // what the entity program costs per position: instructions by kind,
+        // and the basis-noise evaluations behind the noise instructions
+        var msg: []const u8 = "";
+        const seed = if (args.len > 3) try std.fmt.parseInt(u32, args[3], 10) else 0;
+        const w = surface.World.initWith(a, &data, planet, seed, controls, .{ .external_tiles = true, .entities = true }, &msg) catch |e| {
+            std.debug.print("cannot compile: {s}: {s}\n", .{ @errorName(e), msg });
+            return;
+        };
+        const p = w.program;
+        var counts = std.mem.zeroes([64]u32);
+        var octaves: u32 = 0;
+        for (p.insts) |inst| {
+            counts[@intFromEnum(inst.tag)] += 1;
+            switch (inst.tag) {
+                .basis => octaves += 1,
+                .multioctave => octaves += p.payloads[inst.aux].multi.m.n,
+                .quick_multioctave => octaves += p.payloads[inst.aux].quick.octaves,
+                .var_persistence => octaves += 6,
+                else => {},
+            }
+        }
+        std.debug.print("{s}: {d} entities, {d} instructions, {d} basis evaluations per position\n", .{ planet.name, w.n_placed, p.insts.len, octaves });
+        inline for (@typeInfo(prog.Tag).@"enum".fields) |f| {
+            if (counts[f.value] > 0) std.debug.print("  {s:18} {d}\n", .{ f.name, counts[f.value] });
+        }
+        for (p.spots, 0..) |sp, i| std.debug.print("  spot {d}: sub-program {d} instructions\n", .{ i, sp.sub.insts.len });
+        return;
+    }
+
     if (std.mem.eql(u8, cmd, "deps")) {
         // every named expression the planet's tiles reach (for oracle probes)
         var c = try prog.Compiler.init(a, &data, planet, 0, .{});
@@ -118,7 +237,7 @@ pub fn main(init: std.process.Init) !void {
     if (std.mem.eql(u8, cmd, "render")) {
         const radius = try std.fmt.parseInt(i32, args[4], 10);
         var msg: []const u8 = "";
-        var w = surface.World.init(a, &data, planet, map_seed, .{}, &msg) catch |e| {
+        var w = surface.World.init(a, &data, planet, map_seed, controls, &msg) catch |e| {
             std.debug.print("cannot compile {s}: {s}: {s}\n", .{ planet.name, @errorName(e), msg });
             return;
         };
@@ -179,7 +298,7 @@ pub fn main(init: std.process.Init) !void {
         var errors: std.ArrayList(u8) = .empty;
         var first = true;
         for (names.items) |nm| {
-            var c = try prog.Compiler.init(a, &data, planet, map_seed, .{});
+            var c = try prog.Compiler.init(a, &data, planet, map_seed, controls);
             const r = c.root(nm) catch |e| {
                 if (errors.items.len > 0) try errors.append(a, ',');
                 try errors.print(a, "\"{s}\":\"{s}: {s}\"", .{ nm, @errorName(e), c.errorMessage() });
@@ -191,6 +310,30 @@ pub fn main(init: std.process.Init) !void {
             first = false;
             try out.print(a, "\"{s}\":[", .{nm});
             var k: usize = 0;
+            if (init.environ_map.get("SA_COLUMN") != null) {
+                // the whole grid as ONE column, the way the game's
+                // calculate_tile_properties evaluates its list of positions:
+                // random_penalty then draws from a single stream
+                var cxs: std.ArrayList(f32) = .empty;
+                var cys: std.ArrayList(f32) = .empty;
+                var yy = g[2];
+                while (yy <= g[3]) : (yy += g[4]) {
+                    var xx = g[0];
+                    while (xx <= g[1]) : (xx += g[4]) {
+                        try cxs.append(a, @as(f32, @floatFromInt(xx)) + surface.SAMPLE_OFFSET);
+                        try cys.append(a, @as(f32, @floatFromInt(yy)) + surface.SAMPLE_OFFSET);
+                    }
+                }
+                var cws = try p.workspaceN(a, cxs.items.len);
+                cws.column_rng = true;
+                p.eval(&cws, cxs.items, cys.items);
+                for (p.out(&cws, 0)[0..cxs.items.len], 0..) |v, i| {
+                    if (i > 0) try out.append(a, ',');
+                    if (std.math.isFinite(v)) try out.print(a, "{e}", .{v}) else try out.appendSlice(a, if (v > 0) "1e999" else if (v < 0) "-1e999" else "null");
+                }
+                try out.append(a, ']');
+                continue;
+            }
             var y = g[2];
             while (y <= g[3]) : (y += g[4]) {
                 var x = g[0];
@@ -209,7 +352,7 @@ pub fn main(init: std.process.Init) !void {
         try out.append(a, '}');
         if (want_tiles) {
             var msg: []const u8 = "";
-            if (surface.Surface.init(a, &data, planet, map_seed, .{}, &msg)) |s0| {
+            if (surface.Surface.init(a, &data, planet, map_seed, controls, &msg)) |s0| {
                 var s = s0;
                 try out.appendSlice(a, ",\"tiles\":[");
                 var k: usize = 0;
@@ -233,7 +376,7 @@ pub fn main(init: std.process.Init) !void {
         if (want_entities) {
             // every resource entity whose centre tile lies in the grid's area
             var msg: []const u8 = "";
-            if (surface.World.initWith(a, &data, planet, map_seed, .{}, .{ .entities = true }, &msg)) |w0| {
+            if (surface.World.initWith(a, &data, planet, map_seed, controls, .{ .entities = true }, &msg)) |w0| {
                 var w = w0;
                 try out.appendSlice(a, ",\"entities\":[");
                 var chunk: surface.ChunkData = undefined;

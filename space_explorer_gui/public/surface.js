@@ -320,10 +320,17 @@
         console.error("ore pass failed:", e);
       });
 
-      // enemy areas after the ore, in the same lane
-      var enemies = layer === 0 && zoneHasEnemies(zoneObj) ? streamEnemies(zoneObj, R, diskR, palette, npx, function (n, total) {
-        if (n < total) status("mapping enemy bases " + n + "/" + total + " cells…");
-      }) : Promise.resolve();
+      // The enemy areas / entities come last: the entities are placed on the
+      // terrain as drawn, read back from the canvas.
+      function enemies() {
+        if (layer !== 0 || !wantsEntityLayer(zoneObj, true)) return null;
+        var ents = entitySurface(zoneObj, true);
+        return streamEnemies(zoneObj, R, diskR, palette, npx, function (n, total) {
+          if (n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
+        }, ents ? function (c) {
+          return new Uint8Array(ctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
+        } : null);
+      }
 
       function terrainCell(cell) {
         return sendToPool({
@@ -360,7 +367,7 @@
       Promise.all(jobs).then(function () {
         return ore;
       }).then(function () {
-        return enemies;
+        return enemies();
       }).then(finish, finish);
     });
   }
@@ -576,6 +583,7 @@
   // hides the canvas. ?entities=0 (or ?enemies=0) skips generating it.
   var ENEMIES = !/[?&](enemies|entities)=0\b/.test(location.search);
   var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
+  var SE_ENTITIES_HINT = "Trees, rocks, cliffs and enemy nests, placed the way the game places them. Trees and nests follow the seed: the same forests and bases as in the game, individual positions within a tile or two. Rocks and cliffs are typical only - Space Exploration rolls their settings when a save first creates the surface.";
   var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
   // Entities arrive in one image, each class in its own colour (classColor
@@ -626,34 +634,33 @@
   function hiddenUpper() {
     return hiddenGroups().filter(function (g) { return LOWER_GROUPS.indexOf(g) === -1; });
   }
-  // Move the tree pixels of a rect of the entity canvas down to the tree
-  // canvas (same nearest-colour rule as filterEntities).
-  function lowerTrees(x, y, w, h) {
-    var src = enemyOverlayEl.getContext("2d"), dst = treeEl.getContext("2d");
-    var cols = [];
-    Object.keys(ENTITY_GROUPS).forEach(function (g) { ENTITY_GROUPS[g].forEach(function (c) { cols.push([c[0], c[1], c[2], LOWER_GROUPS.indexOf(g) !== -1]); }); });
-    var STEP = 1024;
-    for (var ty = y; ty < y + h; ty += STEP) {
-      for (var tx = x; tx < x + w; tx += STEP) {
-        var bw = Math.min(STEP, x + w - tx), bh = Math.min(STEP, y + h - ty);
-        var img = src.getImageData(tx, ty, bw, bh), d = img.data;
-        var low = dst.getImageData(tx, ty, bw, bh), l = low.data, moved = false;
-        for (var i = 0; i < d.length; i += 4) {
-          if (!d[i + 3]) continue;
-          var best = 0, bd = Infinity;
-          for (var k = 0; k < cols.length; k++) {
-            var dr = d[i] - cols[k][0], dg = d[i + 1] - cols[k][1], db = d[i + 2] - cols[k][2];
-            var dist = dr * dr + dg * dg + db * db;
-            if (dist < bd) { bd = dist; best = k; }
-          }
-          if (!cols[best][3]) continue;
-          l[i] = d[i]; l[i + 1] = d[i + 1]; l[i + 2] = d[i + 2]; l[i + 3] = d[i + 3];
-          d[i + 3] = 0;
-          moved = true;
-        }
-        if (moved) { src.putImageData(img, tx, ty); dst.putImageData(low, tx, ty); }
+  // Draw one cell of entity pixels (RGBA, w x h) at (dx, dy), dw x dh on the
+  // canvases: the trees onto the tree canvas, everything else onto the entity
+  // canvas. Drawn over what is there - an entity on a cell's edge reaches
+  // into the next cell, whose own transparent pixels must not erase it.
+  function drawEntityCell(px, w, h, dx, dy, dw, dh) {
+    var low = new Uint8ClampedArray(w * h * 4), up = new Uint8ClampedArray(w * h * 4);
+    var anyLow = false, anyUp = false, cols = [];
+    LOWER_GROUPS.forEach(function (g) { ENTITY_GROUPS[g].forEach(function (c) { cols.push(c); }); });
+    for (var i = 0; i < w * h * 4; i += 4) {
+      if (!px[i + 3]) continue;
+      var isLow = false;
+      for (var k = 0; k < cols.length; k++) {
+        if (px[i] === cols[k][0] && px[i + 1] === cols[k][1] && px[i + 2] === cols[k][2]) { isLow = true; break; }
       }
+      var t = isLow ? low : up;
+      t[i] = px[i]; t[i + 1] = px[i + 1]; t[i + 2] = px[i + 2]; t[i + 3] = px[i + 3];
+      if (isLow) anyLow = true; else anyUp = true;
     }
+    [[up, enemyOverlayEl, anyUp], [low, treeEl, anyLow]].forEach(function (job) {
+      if (!job[2] || !job[1]) return;
+      var cx = cellCanvas(w, h);
+      cx.putImageData(new ImageData(job[0], w, h), 0, 0);
+      var ctx = job[1].getContext("2d");
+      ctx.imageSmoothingEnabled = dw !== w;
+      ctx.drawImage(cellCv, 0, 0, w, h, dx, dy, dw, dh);
+    });
+    if (anyUp) entitiesDrawn(dx, dy, dw, dh);
   }
   // Copy a rect of the entity canvas to the filtered view without the
   // hidden groups (a pixel belongs to the group whose colour it is nearest,
@@ -700,17 +707,30 @@
   }
   // after new entities were drawn into a rect: bring the filtered view up to date
   function entitiesDrawn(x, y, w, h) {
-    if (!entityMode || !enemyOverlayEl) return;
+    if (!entityViewEl || !enemyOverlayEl) return;
     x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
     w = Math.min(enemyOverlayEl.width - x, Math.ceil(w) + 1); h = Math.min(enemyOverlayEl.height - y, Math.ceil(h) + 1);
-    if (w <= 0 || h <= 0) return;
-    lowerTrees(x, y, w, h);
-    if (entityViewEl) filterEntities(x, y, w, h, hiddenUpper());
+    if (w > 0 && h > 0) filterEntities(x, y, w, h, hiddenUpper());
   }
   // Does this SE surface have enemies to map? (Nauvis always; a zone by its
   // enemy tag; never an asteroid field.)
   function zoneHasEnemies(z) {
     return ENEMIES && z.t !== "asteroid-field" && (!!z.nauvis || (!!z.enemy && z.enemy !== "none"));
+  }
+  // A Space Exploration planet, moon or Nauvis.
+  function seSolid(z) {
+    return (MOD === "se" || MOD === "k2se") && !!z && z.t !== "asteroid-field";
+  }
+  // Does the layer hold the entities themselves (rocks, trees, cliffs, nests)
+  // rather than the enemy areas? Base-game Nauvis always; an SE surface when
+  // the terrain is on the canvas at full size (`fullSize`), since its
+  // entities are placed on those tiles - a surface too large for that keeps
+  // the enemy areas.
+  function entitySurface(z, fullSize) {
+    return squareSurface(z) || (seSolid(z) && !!fullSize);
+  }
+  function wantsEntityLayer(z, fullSize) {
+    return ENEMIES && (entitySurface(z, fullSize) || zoneHasEnemies(z));
   }
   // The enemy areas of an SE zone / Nauvis for the square [-R,R)^2, onto a new
   // enemy canvas of `px` a side: one request per chunk-aligned cell, nearest
@@ -721,8 +741,9 @@
   // terrain pixels as already drawn, which saves that request working the
   // tiles out again.
   function streamEnemies(z, R, diskR, palette, px, onProgress, terrain) {
-    var entities = squareSurface(z);
-    var ectx = (entities ? enemyOverlay(px, "Entities", ENTITIES_HINT) : enemyOverlay(px)).getContext("2d");
+    // (an SE surface's entities need the terrain's tiles)
+    var entities = entitySurface(z, !!terrain);
+    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? ENTITIES_HINT : SE_ENTITIES_HINT) : enemyOverlay(px)).getContext("2d");
     var scale = (2 * R) / px;
     ectx.imageSmoothingEnabled = true;
     var cells = [];
@@ -741,17 +762,18 @@
     return Promise.all(cells.map(function (c) {
       var tiles = terrain ? terrain(c) : null;
       return sendToPool({
-        seed: SEED, k2: K2, zone: z, layer: 3, radius: diskR, palette: palette, tiles_in: !!tiles,
+        seed: SEED, k2: K2, zone: z, layer: 3, radius: diskR, palette: palette, tiles_in: !!tiles, entities: entities,
         rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }, square: squareSurface(z)
       }, "surface", "ore", tiles).then(function (r) {
         var w = c.x1 - c.x0, h = c.y1 - c.y0;
-        if (r.summary.enemy_tiles) {
+        if (r.summary.enemy_tiles && entities) {
+          drawEntityCell(r.pixels, w, h, (c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
+        } else if (r.summary.enemy_tiles) {
           var cx = cellCanvas(w, h);
           var img = cx.createImageData(w, h);
           img.data.set(r.pixels);
           cx.putImageData(img, 0, 0);
           ectx.drawImage(cellCv, 0, 0, w, h, (c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
-          entitiesDrawn((c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
         }
         done++;
         if (onProgress) onProgress(done, cells.length);
@@ -885,10 +907,12 @@
             setProgress(c.total ? c.done / c.total : 0);
           }
         }).then(function (cells) {
-          // The alien-biomes kernel has no starting lake (SE moons have none),
-          // but Nauvis does. The lake sits within ~105 tiles of spawn, so the
-          // square around spawn is redrawn from the CPU renderer, which has it.
-          if (!seNauvis || scaleS !== 1) return cells;
+          // The alien-biomes kernel has no starting lake, but every surface
+          // with water has one. The lake sits within ~105 tiles of spawn, so
+          // the square around spawn is redrawn from the CPU renderer, which
+          // has it.
+          var lake = seNauvis || (kind === "zone" && z.t !== "asteroid-field" && !!z.water && z.water !== "none");
+          if (!lake || scaleS !== 1) return cells;
           var h = Math.min(128, R);
           return sendToPool({
             seed: SEED, k2: K2, zone: z, layer: 1, radius: R, palette: "se",
@@ -910,9 +934,10 @@
           // base-game Nauvis can take its tiles from the canvas (when it is
           // drawn at full size) rather than work them out again.
           var tctx = els.canvas.getContext("2d");
-          var enemyP = oreCv && zoneHasEnemies(z) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
-            if (oreDone && n < total) status("mapping " + (squareSurface(z) ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
-          }, squareSurface(z) && scaleS === 1 ? function (c) {
+          var ents = entitySurface(z, scaleS === 1);
+          var enemyP = oreCv && wantsEntityLayer(z, scaleS === 1) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
+            if (oreDone && n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
+          }, ents && scaleS === 1 ? function (c) {
             return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
           } : null) : Promise.resolve();
           if (oreP) {
@@ -957,16 +982,6 @@
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(cellCv, 0, 0, w, h, tx / scale, ty / scale, w / scale, h / scale);
       };
-      // like blit, but drawn over what is there: an entity on a cell's edge
-      // reaches into the next cell, whose own (transparent) pixels must not erase it
-      var blitOver = function (ctx, w, h, px, tx, ty) {
-        var cx = cellCanvas(w, h);
-        var cimg = cx.createImageData(w, h);
-        cimg.data.set(px);
-        cx.putImageData(cimg, 0, 0);
-        ctx.imageSmoothingEnabled = scale !== 1;
-        ctx.drawImage(cellCv, 0, 0, w, h, tx / scale, ty / scale, w / scale, h / scale);
-      };
       var run_ = sa;
       var tctx = els.canvas.getContext("2d");
       var octx = oreOverlay(disp).getContext("2d");
@@ -997,8 +1012,8 @@
             if (r.summary.entity_layer && ENEMIES) {
               // third layer: the planet's rocks, trees, plants and nests
               if (!ectx) ectx = enemyOverlay(disp, "Entities", ENTITIES_HINT).getContext("2d");
-              blitOver(ectx, r.summary.width, r.summary.height, r.pixels.subarray(2 * n, 3 * n), c.x0 + R, c.y0 + R);
-              entitiesDrawn((c.x0 + R) / scale, (c.y0 + R) / scale, r.summary.width / scale, r.summary.height / scale);
+              drawEntityCell(r.pixels.subarray(2 * n, 3 * n), r.summary.width, r.summary.height,
+                (c.x0 + R) / scale, (c.y0 + R) / scale, r.summary.width / scale, r.summary.height / scale);
             }
             (r.summary.tiles || []).forEach(function (t) {
               if (!counts[t.name]) counts[t.name] = { color: t.color, count: 0 };
