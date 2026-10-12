@@ -129,6 +129,19 @@ the terrain rather than alongside it. The older code still serves what the
 pass does not cover: Krastorio 2 universes, Nauvis under SE, asteroid fields
 and surfaces too large to draw at full size.
 
+## Core seams
+
+Core seams (where a core miner can be built) are not autoplaced: SE's
+`CoreMiner.generate_core_seam_positions` puts 5 + 95 x radius / 10000 of them
+on a golden-angle spiral out from the centre, one per band of radius, each
+nudged by a random generator seeded with the zone's seed. They follow from the
+seed exactly - 23 of 23 at the game's position on five surfaces (Hermes,
+Talos, Muir, Bluna, and Nauvis, which uses its zone seed, not the map seed:
+the universe generator returns it as `hs` / `hr`). The page computes them
+itself (`coreSeams` in surface.js) and draws them as their own group. The game
+also clears the ore and entities under a seam and turns water there into land;
+the marker simply covers that area.
+
 ## On the page
 
 SE planets, moons and Nauvis get the "Entities" layer (checkboxes per group;

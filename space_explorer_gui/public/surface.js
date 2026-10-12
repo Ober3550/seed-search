@@ -506,6 +506,8 @@
       });
     });
     return Promise.all(jobs).then(function () {
+      return terrain ? drawSeams(z, R, scale) : null;
+    }).then(function () {
       // wells go over ore, whichever cell landed first
       for (var k = 0; k < wells.length; k += 3) drawWell(wells[k], wells[k + 1], wells[k + 2]);
       Object.keys(totals).forEach(function (rn) {
@@ -627,7 +629,8 @@
     trees: [[50, 92, 44], [62, 104, 52]],
     rocks: [[129, 105, 78], [160, 120, 190]],
     huge: [[176, 148, 112]],
-    cliffs: [[144, 119, 87]]
+    cliffs: [[144, 119, 87]],
+    seams: [[110, 215, 255]]
   };
   var entityMode = false;   // the overlay holds entities (else enemy areas)
   var entityViewEl = null;  // the filtered copy, while a group is hidden
@@ -636,6 +639,8 @@
   function enemyOverlayClear() {
     if (enemyOverlayEl) { enemyOverlayEl.remove(); enemyOverlayEl = null; }
     if (treeEl) { treeEl.remove(); treeEl = null; }
+    var seamsLabel = document.getElementById("sf-seams");
+    if (seamsLabel) seamsLabel.hidden = true;
     if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
@@ -767,6 +772,59 @@
   function entitySurface(z, fullSize) {
     return squareSurface(z) || (seSolid(z) && !!fullSize);
   }
+  // ── Core seams ────────────────────────────────────────────────────────────
+  // Where a core miner can be built. Space Exploration does not autoplace
+  // them: CoreMiner.generate_core_seam_positions walks a golden-angle spiral
+  // out from the centre, one seam per band, with a random generator seeded by
+  // the zone's seed - so they follow from the seed exactly (checked against
+  // the game on five surfaces).
+  function coreSeams(seed, radius) {
+    var s = seed >>> 0;
+    if (s < 341) s = 341;
+    var a = s, b = s, c = s;
+    function rnd() { // the game's generator, a float in [0, 1)
+      a = (((a & 0xFFFFFFFE) << 12) ^ (((a << 13) ^ a) >>> 19)) >>> 0;
+      b = (((b & 0xFFFFFFF8) << 4) ^ (((b << 2) ^ b) >>> 25)) >>> 0;
+      c = (((c & 0xFFFFFFF0) << 17) ^ (((c << 3) ^ c) >>> 11)) >>> 0;
+      return ((a ^ b ^ c) >>> 0) * 2.3283064365386963e-10;
+    }
+    var target = 5 + 95 * (radius / 10000), band = radius / (target + 2), phi = (1 + Math.sqrt(5)) / 2;
+    var build = function (v) { return Math.floor(v + (v >= 0 ? 0 : 1 / 256)) + 0.5; };
+    var out = [];
+    for (var i = 1; i <= target; i++) {
+      var o = i * phi + 0.2 * rnd(), d = (i + rnd()) * band;
+      out.push([build(d * Math.sin(o * 2 * Math.PI)), build(-d * Math.cos(o * 2 * Math.PI))]);
+    }
+    return out;
+  }
+  window.__coreSeams = coreSeams; // test hook
+  // Draw the surface's core seams on the entity canvas (a seam is about ten
+  // tiles across; the marker is a little larger so it shows on a big map).
+  function drawSeams(z, R, scale) {
+    if (!entityMode || !enemyOverlayEl || !seSolid(z)) return Promise.resolve();
+    var owner = enemyOverlayEl;
+    var zone = z.nauvis
+      ? (universe ? Promise.resolve(universe) : window.generateUniverse(SEED, K2)).then(function (u) { return { s: u.hs, r: u.hr }; })
+      : Promise.resolve({ s: z.s, r: z.r });
+    return zone.then(function (q) {
+      if (!q.s || !q.r || enemyOverlayEl !== owner) return;
+      var label = document.getElementById("sf-seams");
+      if (label) label.hidden = false;
+      var ctx = owner.getContext("2d"), col = ENTITY_GROUPS.seams[0];
+      // at least 1/200 of the map across, so it still shows on a large one
+      var rad = Math.max(7 / scale, owner.width / 200);
+      ctx.fillStyle = "rgb(" + col.join(",") + ")";
+      coreSeams(q.s, q.r).forEach(function (p) {
+        if (p[0] * p[0] + p[1] * p[1] > R * R) return; // outside the disk being drawn
+        var cx = (p[0] + R) / scale, cy = (p[1] + R) / scale;
+        ctx.beginPath();
+        ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
+        ctx.fill();
+        entitiesDrawn(cx - rad - 1, cy - rad - 1, 2 * rad + 2, 2 * rad + 2);
+      });
+    }, function (e) { console.error("core seams failed:", e); });
+  }
+
   // A Space Exploration planet or moon drawn at full size: its ore and its
   // entities come from one data-driven pass over the terrain's tiles
   // (streamOre with `terrain`), which matches the game's ore tile for tile
@@ -826,7 +884,9 @@
         done++;
         if (onProgress) onProgress(done, cells.length);
       }, function (e) { console.error("enemy areas cell failed:", e); });
-    }));
+    })).then(function () {
+      return entities ? drawSeams(z, R, scale) : null;
+    });
   }
 
   // Terrain brightness from the slider. (Only under ore: a terrain-only view
