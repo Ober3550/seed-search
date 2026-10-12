@@ -331,10 +331,10 @@
       // The enemy areas / entities come last: the entities are placed on the
       // terrain as drawn, read back from the canvas.
       function enemies() {
-        if (exact || layer !== 0 || !wantsEntityLayer(zoneObj, true)) return null;
+        if (layer !== 0 || !wantsEntityLayer(zoneObj, true)) return null;
         var ents = entitySurface(zoneObj, true);
         return streamEnemies(zoneObj, R, diskR, palette, npx, function (n, total) {
-          if (n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
+          if (n < total) status("placing " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
         }, ents ? function (c) {
           return new Uint8Array(ctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
         } : null);
@@ -411,8 +411,8 @@
   //
   // `terrain(cell)`, when given (see exactZone), returns the cell's terrain
   // pixels as drawn: the ore then comes from the data-driven pass, which
-  // places it the way the game does on those tiles and returns the surface's
-  // entities with it - drawn here as the Entities layer.
+  // places it the way the game does on those tiles. (The entities follow in
+  // a pass of their own once the ore is complete - streamEnemies.)
   var ORE_CELL = 256;
   function streamOre(z, R, diskR, palette, oreCv, onProgress, terrain) {
     var octx = oreCv.getContext("2d");
@@ -435,8 +435,6 @@
       }
     }
     cells.sort(function (a, b) { return a.d2 - b.d2; });
-    if (terrain && ENEMIES) enemyOverlay(oreCv.width, "Entities", SE_ENTITIES_HINT, SE_HIDDEN_GROUPS);
-
     var totals = {};
     var wells = [];   // [tile x, tile y, FLUID_COLORS index, ...]
     var done = 0;
@@ -461,19 +459,14 @@
     var jobs = cells.map(function (c) {
       var tiles = terrain ? terrain(c) : null;
       return sendToPool(tiles ? {
-        seed: SEED, k2: K2, zone: z, layer: 4, radius: diskR, tiles_in: true, entities: true,
+        seed: SEED, k2: K2, zone: z, layer: 4, radius: diskR, tiles_in: true, entities: false,
         rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }
       } : {
         seed: SEED, k2: K2, zone: z, layer: 0, radius: diskR, terrainless: true,
         palette: palette, rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }, square: squareSurface(z)
       }, "surface", "ore", tiles).then(function (r) {
         var w = c.x1 - c.x0, h = c.y1 - c.y0, px = r.pixels, mine = [];
-        if (tiles) {
-          // two images: the ore, then the entities
-          var ents = px.subarray(w * h * 4, 2 * w * h * 4);
-          px = px.subarray(0, w * h * 4);
-          if (ENEMIES && r.summary.enemy_tiles) drawEntityCell(ents, w, h, (c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
-        }
+        if (tiles) px = px.subarray(0, w * h * 4); // (the second image is for the entities)
         for (var row = 0; row < h; row++) {
           var ty = c.y0 + row;
           for (var col = 0; col < w; col++) {
@@ -506,8 +499,6 @@
       });
     });
     return Promise.all(jobs).then(function () {
-      return terrain ? drawSeams(z, R) : null;
-    }).then(function () {
       // wells go over ore, whichever cell landed first
       for (var k = 0; k < wells.length; k += 3) drawWell(wells[k], wells[k + 1], wells[k + 2]);
       Object.keys(totals).forEach(function (rn) {
@@ -846,6 +837,8 @@
       box.appendChild(seamEl);
       var label = document.getElementById("sf-seams");
       if (label) label.hidden = list.length === 0;
+      var count = document.getElementById("sf-seams-n");
+      if (count) count.textContent = "(" + list.length + ")";
       showSeams();
     }, function (e) { console.error("core seams failed:", e); });
   }
@@ -1004,7 +997,7 @@
         var startOre = function (terrain) {
           return streamOre(z, R, diskR, palette, oreCv, function (n, total) {
             if (!terrainDone) return; // the terrain's progress is shown first
-            status("placing ore" + (terrain && ENEMIES ? " and entities" : "") + " (CPU wasm) " + n + "/" + total + " cells…");
+            status("placing ore (CPU wasm) " + n + "/" + total + " cells…");
             setProgress(total ? n / total : 0);
           }, terrain);
         };
@@ -1079,18 +1072,25 @@
               return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
             });
           }
-          var enemyP = oreCv && !exact && wantsEntityLayer(z, scaleS === 1) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
-            if (oreDone && n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
-          }, ents && scaleS === 1 ? function (c) {
-            return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
-          } : null) : Promise.resolve();
+          // the entities start once the ore is complete
+          var startEnemies = function () {
+            if (!oreCv || !wantsEntityLayer(z, scaleS === 1)) return Promise.resolve();
+            return streamEnemies(z, R, diskR, palette, disp, function (n, total) {
+              if (n < total) {
+                status("placing " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
+                setProgress(total ? n / total : 0);
+              }
+            }, ents && scaleS === 1 ? function (c) {
+              return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
+            } : null);
+          };
           if (oreP) {
             window.__GPU_STAGE__ = "ore";
             terrainDone = true;
             status("gpu terrain ready — placing ore (CPU wasm)…");
             return oreP.then(function (totals) {
               oreDone = true;
-              return enemyP.then(function () {
+              return startEnemies().then(function () {
                 window.__GPU_STAGE__ = "done";
                 return { out: out, z: z, totals: totals };
               });

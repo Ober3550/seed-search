@@ -92,6 +92,9 @@ var g_se_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_se_data: ?sa_data.Data = null;
 var g_zone_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_zone: ?*se_zone.Zone = null;
+// the same surface for its ore alone (layer 4 without "entities")
+var g_ore_zone_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_ore_zone: ?*se_zone.Zone = null;
 var g_list: []const u8 = &.{};
 var g_want_entities = false;
 var g_entity_list = false;
@@ -763,7 +766,7 @@ fn generateZone(
         // A Space Exploration planet, moon or Nauvis: the entities, placed by
         // the same pass with the SE data file and the settings SE gives the
         // surface (se_zone.zig), on the tiles of this generator.
-        entity_layer = true;
+        entity_layer = g_want_entities;
         var rolls = se_zone.Rolls{};
         if (z.get("rolls")) |rv| {
             // the surface's own random controls, when known (a live game)
@@ -784,12 +787,14 @@ fn generateZone(
             }
         }
         const settings = if (is_nauvis) se_zone.homeSettings(zone_seed) else se_zone.zoneSettings(zone_seed, ztype, primary, tags, radius, rolls);
-        if (g_zone == null or !g_zone.?.settings.eql(&settings)) {
-            g_zone = null;
-            _ = g_zone_arena.reset(.retain_capacity);
-            g_zone = try se_zone.Zone.init(g_zone_arena.allocator(), try seData(), settings);
+        const slot = if (g_want_entities) &g_zone else &g_ore_zone;
+        if (slot.* == null or !slot.*.?.settings.eql(&settings)) {
+            slot.* = null;
+            const za = if (g_want_entities) &g_zone_arena else &g_ore_zone_arena;
+            _ = za.reset(.retain_capacity);
+            slot.* = try se_zone.Zone.init(za.allocator(), try seData(), settings, g_want_entities);
         }
-        const zn = g_zone.?;
+        const zn = slot.*.?;
         const ent_pixels = if (layer == 4) all_pixels[layer_bytes..] else pixels;
         if (layer == 4) {
             // the summary lists the resources this pass can place

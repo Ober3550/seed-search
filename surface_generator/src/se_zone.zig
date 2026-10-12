@@ -174,8 +174,10 @@ pub const Zone = struct {
     /// the tile beyond the surface's edge
     out_of_map: u16,
 
-    /// `arena` must outlive the zone; `d` is the SE data file.
-    pub fn init(arena: std.mem.Allocator, d: *const sa_data.Data, settings: Settings) !*Zone {
+    /// `arena` must outlive the zone; `d` is the SE data file. `entities`
+    /// false: the resources only (the entities before them in placement
+    /// order still take their draws, so the ore is the same either way).
+    pub fn init(arena: std.mem.Allocator, d: *const sa_data.Data, settings: Settings, entities: bool) !*Zone {
         const base = d.planet(if (settings.homeworld) HOME_PLANET else PLANET) orelse return error.NoZoneData;
         const z = try arena.create(Zone);
         z.settings = settings;
@@ -213,7 +215,7 @@ pub const Zone = struct {
             .starting_lake = terrain.startingLakeCenter(s.seed),
             .ctx = s,
             .lookup = Settings.lookup,
-        }, .{ .external_tiles = true, .entities = true, .resources = true }, null);
+        }, .{ .external_tiles = true, .entities = entities, .resources = true }, null);
         return z;
     }
 

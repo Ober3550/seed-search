@@ -124,8 +124,10 @@ on four moons (Bluna of seed 80352098, and Hermes, Talos and Muir of seed
 high). The older hand-written SE ore code (`se_ore_placement.zig`) gives 50%
 to 86% on the same windows - patches missing or elsewhere once away from the
 centre. So on the page an SE planet or moon takes its ore from this pass
-(`layer: 4`: one request per cell returns the ore and the entities), after
-the terrain rather than alongside it. The older code still serves what the
+(`layer: 4` without `entities`: the resources alone, 1 to 2 us a tile), after
+the terrain rather than alongside it; the entities follow in a pass of their
+own once the ore is complete, so the page fills in terrain, then ore, then
+entities. The older code still serves what the
 pass does not cover: Krastorio 2 universes, Nauvis under SE, asteroid fields
 and surfaces too large to draw at full size.
 
