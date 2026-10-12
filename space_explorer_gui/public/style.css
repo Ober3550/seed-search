@@ -368,6 +368,34 @@ dd { font-weight: 500; }
 .res-chip { display: inline-block; background: #2a3446; border-radius: 4px; padding: 1px 5px; margin: 1px; font-size: 0.82rem; white-space: nowrap; }
 .res-chip.est { background: #2f2a20; opacity: 0.85; }
 .yields-cell { max-width: 520px; }
+/* ore colours on the seed page: the SE resources by their usual shorthand
+   colours, the base ores by their in-game map colours (lightened where the
+   game's would vanish on the dark background) */
+.ore { color: var(--ore, inherit); }
+.res-chip.ore { opacity: 1; background: color-mix(in srgb, var(--ore, #8b949e) 16%, var(--surface)); border-left: 3px solid var(--ore, #8b949e); }
+.res-chip.ore strong { color: var(--text); }
+.ore-holmium { --ore: #ff8fd8; }
+.ore-vulcanite { --ore: #f85149; }
+.ore-cryonite { --ore: #58a6ff; }
+.ore-beryllium { --ore: #39d3d3; }
+.ore-iridium { --ore: #e6b422; }
+.ore-vitamelange { --ore: #3fb950; }
+.ore-naquium { --ore: #a371f7; }
+.ore-iron { --ore: #8fb3c9; }
+.ore-copper { --ore: #e07a45; }
+.ore-stone { --ore: #c2ad7a; }
+.ore-coal { --ore: #9aa0a6; }
+.res-chip.ore-coal { background: #050505; }
+.ore-crude-oil { --ore: #d24fd0; }
+.ore-uranium { --ore: #a4e22a; }
+/* loot letters in the top seeds list: productivity, speed, efficiency */
+.loot-P { color: #ff8fd8; }
+.loot-S { color: #58a6ff; }
+.loot-E { color: #3fb950; }
+/* surfaces holding a resource combination (analyze.js COMBOS) */
+#zone-table tbody tr.row-combo { background: var(--combo); }
+#zone-table tbody tr.row-combo td { background: transparent; }
+#zone-table tbody tr.row-combo[data-href]:hover td { background: rgba(255,255,255,0.07); }
 
 /* generation status + in-flight feedback */
 .gen-status { display: inline-block; font-size: 0.8rem; padding: 1px 6px; border-radius: 4px; white-space: nowrap; margin-left: 2px; }

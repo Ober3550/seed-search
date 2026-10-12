@@ -7,7 +7,7 @@
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: false };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -17,6 +17,76 @@
   }
 
   var GEN = { planet: 1, moon: 1, "asteroid-field": 1 };
+
+  // Surfaces worth settling for a resource combination: a planet or moon with
+  // water and a radius over COMBO_RADIUS that holds every resource of a combo
+  // at COMBO_MIN or more (amounts are relative to the primary's, which is 1).
+  // Such a row is washed with a gradient of its resources' colours; the first
+  // combo is the one the Top seeds list is picked for.
+  var COMBO_MIN = 0.05, COMBO_RADIUS = 800;
+  var COMBOS = [
+    { res: ["se-vulcanite", "se-holmium-ore", "se-cryonite"], colors: ["#f85149", "#ff8fd8", "#58a6ff"] },
+    { res: ["se-vitamelange", "stone"], colors: ["#3fb950", "#c2ad7a"], key: "se-vitamelange", keyColor: "#3fb950" }
+  ];
+  // Resources wanted on a surface of their own: the nearest home-system planet
+  // or moon with water whose primary is the resource is marked in its colour.
+  var NEAREST_PRIMARY = [
+    { res: "se-iridium-ore", color: "#e6b422" },
+    { res: "se-beryllium-ore", color: "#39d3d3" }
+  ];
+  function settleable(z) {
+    return (z.t === "planet" || z.t === "moon") && !!z.rs && !!z.water && z.water !== "none" && z.r > COMBO_RADIUS;
+  }
+  function combosOf(z) {
+    if (!settleable(z)) return [];
+    return COMBOS.filter(function (c) { return c.res.every(function (r) { return z.rs[r] >= COMBO_MIN; }); });
+  }
+  function nearestPrimary(zones, res) {
+    var best = null;
+    zones.forEach(function (z) { if (z.p === res && z.dv != null && (!best || z.dv < best.dv)) best = z; });
+    return best;
+  }
+  // Marks that depend on the whole home system -> [[zone, highlight], ...]:
+  // the nearest primaries above, and a stand-in for a combo no surface has -
+  // the nearest surface whose primary is the combo's `key` (the resource it
+  // is wanted for), in that resource's colour.
+  function systemMarks(zones) {
+    var home = zones.filter(function (z) { return z.c === 1 && (z.t === "planet" || z.t === "moon") && z.water && z.water !== "none"; });
+    var out = [];
+    NEAREST_PRIMARY.forEach(function (n) {
+      var z = nearestPrimary(home, n.res);
+      if (z) out.push([z, { label: "nearest " + nm(n.res) + "-primary surface with water", colors: [n.color, n.color] }]);
+    });
+    var settle = home.filter(settleable);
+    COMBOS.forEach(function (c) {
+      if (!c.key || settle.some(function (z) { return combosOf(z).indexOf(c) !== -1; })) return;
+      var z = nearestPrimary(settle, c.key);
+      if (z) out.push([z, {
+        label: "nearest " + nm(c.key) + " surface (this seed has none with " + c.res.map(nm).join(" + ") + ")",
+        colors: [c.keyColor, c.keyColor]
+      }]);
+    });
+    return out;
+  }
+  // The naquium source a seed is judged by: the nearest asteroid field whose
+  // primary resource is naquium. Its row gets a wash of its own.
+  var NAQ_FIELD = { label: "nearest naquium-primary field", colors: ["#a371f7", "#58a6ff"] };
+  function nearestNaqField(zones) {
+    var best = null;
+    zones.forEach(function (z) {
+      if (z.t === "asteroid-field" && z.p === "se-naquium-ore" && z.dv != null && (!best || z.dv < best.dv)) best = z;
+    });
+    return best;
+  }
+  // Nauvis is where every game starts, so it is always marked.
+  var HOME = { label: "home surface", colors: ["#c9d1d9", "#8b949e"] };
+  // What a row is highlighted for (empty = not highlighted).
+  function highlightsOf(z, marks) {
+    if (z.kind !== "se") return [];
+    if (z.nauvis) return [HOME];
+    if (z === marks.naqField) return [NAQ_FIELD];
+    return combosOf(z).concat(marks.system.filter(function (m) { return m[0] === z; }).map(function (m) { return m[1]; }));
+  }
 
   // Space Age / base surfaces — static row descriptors (the SA data stage has
   // no universe generator; these five surfaces always exist for any seed).
@@ -62,7 +132,7 @@
     var keys = Object.keys(est).sort(function (a, b) { return est[b] - est[a]; });
     if (!keys.length) return '<span class="hint">—</span>';
     return keys.map(function (r) {
-      return '<span class="res-chip est" title="calibrated estimate">' + nm(r) + ' <strong>~' + fmt(est[r]) + "</strong></span>";
+      return '<span class="res-chip est ore ore-' + nm(r) + '" title="calibrated estimate">' + nm(r) + ' <strong>~' + fmt(est[r]) + "</strong></span>";
     }).join(" ");
   }
 
@@ -111,39 +181,41 @@
       if (!q) return true;
       return (z.n + " " + z.t + " " + (z.p || "")).toLowerCase().indexOf(q) !== -1;
     });
+    var marks = { naqField: nearestNaqField(state.zones), system: systemMarks(state.zones) };
+    // "Only highlighted" (the static base / Space Age surface lists have no
+    // highlights, so it leaves them alone)
+    if (state.onlyHl) rows = rows.filter(function (z) { return z.kind !== "se" || highlightsOf(z, marks).length; });
     rows = sortZones(rows);
     var body = rows.map(function (z) {
       var estCell;
       if (z.kind === "se") estCell = resChips(estimateZone(z));
       else estCell = '<span class="hint" title="ore estimates for this surface are not modelled yet">—</span>';
-      var openCell;
-      var gated = null;
-      if (z.kind === "sa" && !z.ok) {
-        gated = z.why || "not supported yet";
-        openCell = '<button type="button" class="btn-sm" disabled title="' + esc(z.n) + ': ' + esc(gated) + '">🚧</button>';
-      } else {
-        var href = surfHref(z);
-        var glyph = z.kind === "sa" ? "🪐" : "🗺️";
-        var ttl = z.kind === "sa"
-          ? "Open " + esc(z.n) + " terrain on its own page"
-          : "Open " + esc(z.n) + " surface on its own page";
-        openCell = href
-          ? '<a class="btn-sm" href="' + esc(href) + '" title="' + ttl + '">' + glyph + '</a>'
-          : '<button type="button" class="btn-sm" title="enter a seed first">' + glyph + "</button>";
+      var gated = z.kind === "sa" && !z.ok ? z.why || "not supported yet" : null;
+      var ttl = gated ? esc(z.n) + ": " + esc(gated) : rowOpen(z) ? "Open " + esc(z.n) + " on its own page" : "enter a seed first";
+      var combos = highlightsOf(z, marks);
+      var cls = (rowOpen(z) ? "" : "row-closed") + (combos.length ? " row-combo" : "");
+      // the row is washed with a gradient of its combinations' resource colours
+      var rowStyle = "";
+      if (combos.length) {
+        var colors = [];
+        combos.forEach(function (c) { c.colors.forEach(function (col) { if (colors.indexOf(col) === -1) colors.push(col); }); });
+        if (colors.length === 1) colors.push(colors[0]); // a gradient needs two stops
+        rowStyle = ' style="--combo:linear-gradient(90deg,' + colors.map(function (col) { return col + "55"; }).join(",") + ')"';
+        ttl += " — " + combos.map(function (c) { return c.label || c.res.map(nm).join(" + ") + " together"; }).join("; ");
       }
-      return '<tr' + (rowOpen(z) ? ' data-href="' + esc(surfHref(z)) + '"' : ' class="row-closed"' + (gated ? ' data-why="' + esc(gated) + '"' : '')) + ">" +
-        "<td><strong>" + (z.icon ? z.icon + " " : "") + esc(z.n) + "</strong></td>" +
+      return '<tr' + (cls ? ' class="' + cls.trim() + '"' : "") + (rowOpen(z) ? ' data-href="' + esc(surfHref(z)) + '"' : (gated ? ' data-why="' + esc(gated) + '"' : '')) + rowStyle + ' title="' + ttl + '">' +
+        "<td><strong>" + (z.icon ? z.icon + " " : "") + esc(z.n) + "</strong>" +
+          "</td>" +
         '<td><span class="badge zone-type">' + z.t + "</span></td>" +
         "<td>" + (z.infinity ? "∞" : (z.r ? Math.round(z.r) : "—")) + "</td>" +
         "<td class=\"num\">" + fmtDv(z.dv) + "</td>" +
         "<td>" + cw(z.water) + "</td>" +
         "<td>" + ce(z.enemy) + "</td>" +
-        "<td>" + (z.p ? nm(z.p) : "—") + "</td>" +
+        "<td>" + (z.p ? '<span class="ore ore-' + nm(z.p) + '">' + nm(z.p) + "</span>" : "—") + "</td>" +
         '<td class="yields-cell">' + estCell + "</td>" +
-        "<td>" + openCell + "</td>" +
         "</tr>";
     }).join("");
-    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="9" class="hint">No generatable zones.</td></tr>';
+    document.getElementById("zt-body").innerHTML = body || '<tr><td colspan="8" class="hint">No generatable zones.</td></tr>';
     var zc = document.getElementById("zt-count");
     if (zc) zc.textContent = rows.length +
       (state.zones.length && state.zones[0].kind === "se" ? " zones" : " surfaces");
@@ -162,30 +234,68 @@
       .then(function (data) {
         var cfg = data && data.configs && data.configs[state.mod];
         if (!cfg || !cfg.seeds || !cfg.seeds.length) return;
-        var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
-        var pct = function (v) { return v == null ? "—" : v + "%"; };
         document.getElementById("featured-note").textContent =
-          "· best " + cfg.seeds.length + " of " + num(cfg.searched) + " seeds searched (" + window.Shell.modLabel(state.mod) + ")";
-        document.getElementById("featured-body").innerHTML = cfg.seeds.map(function (f) {
-          return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
-            '<td><a style="color:var(--accent)" href="' + esc(window.Shell.seedHref(f.seed, state.mod)) + '">' + f.seed + "</a></td>" +
-            "<td><strong>" + num(f.score) + "</strong></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
-            "<td>" + num(f.naquiumDv) + "</td><td>" + num(f.fieldDv) + "</td>" +
-            "<td>" + pct(f.hostile) + "</td><td>" + pct(f.water) + "</td>" +
-            '<td><code>' + esc(f.loot || "") + "</code></td></tr>";
-        }).join("");
+          "· best " + cfg.seeds.length + " of " + Number(cfg.searched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")";
+        state.featured = cfg.seeds;
+        renderFeatured();
         box.hidden = false;
         box.open = state.seed == null;
       })
       .catch(function () {}); // optional data: the page works without it
   }
 
+  // The loot sequence, a letter per module: P productivity, S speed, E efficiency.
+  var LOOT = { P: "productivity", S: "speed", E: "efficiency" };
+  function lootHtml(loot) {
+    return String(loot || "").split("").map(function (c) {
+      return LOOT[c] ? '<span class="loot-' + c + '" title="' + LOOT[c] + ' module">' + c + "</span>" : esc(c);
+    }).join("");
+  }
+
+  // The list arrives best first; a header click sorts by that column instead
+  // (every column starts at its high end except the seed number).
+  function renderFeatured() {
+    var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
+    var pct = function (v) { return v == null ? "—" : v + "%"; };
+    var k = state.featuredKey, dir = state.featuredDir === "asc" ? 1 : -1;
+    var rows = state.featured.slice();
+    if (k) rows.sort(function (a, b) {
+      var va = a[k], vb = b[k];
+      if (va == null || vb == null) return (va == null) - (vb == null); // unknowns last either way
+      // loot sorts by how long the sequence is, not by its letters
+      if (k === "loot") return (va.length - vb.length) * dir || va.localeCompare(vb) || a.seed - b.seed;
+      return (va - vb) * dir || a.seed - b.seed;
+    });
+    document.getElementById("featured-body").innerHTML = rows.map(function (f) {
+      return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
+        '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
+        "<td><strong>" + num(f.score) + "</strong></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
+        "<td>" + num(f.naquiumDv) + "</td><td>" + num(f.fieldDv) + "</td>" +
+        "<td" + (f.combinedSurface ? ' title="' + esc(f.combinedSurface) + '"' : "") + ">" + num(f.combinedDv) + "</td>" +
+        "<td" + (f.combinedSurface ? ' title="' + esc(f.combinedSurface) + '"' : "") + ">" + num(f.combinedRadius) + "</td>" +
+        "<td>" + pct(f.hostile) + "</td><td>" + pct(f.water) + "</td>" +
+        '<td><code>' + lootHtml(f.loot) + "</code></td></tr>";
+    }).join("");
+    document.querySelectorAll("#featured-head .sort-ind").forEach(function (el) { el.textContent = ""; });
+    var active = k && document.querySelector('#featured-head th[data-key="' + k + '"] .sort-ind');
+    if (active) active.textContent = dir === 1 ? " ▲" : " ▼";
+  }
+
+  // This page's address for a seed: the mod config, the seed and whether only
+  // the highlighted rows are shown (?hl=1), so a reload or a shared link opens
+  // the same view.
+  function pageHref(seed) {
+    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "&hl=1" : "");
+  }
+  function syncUrl() {
+    history.replaceState(null, "", pageHref(state.seed));
+  }
+
   function generate() {
     var seedVal = parseInt(document.getElementById("seed-input").value, 10);
     if (!Number.isFinite(seedVal) || seedVal < 0) return;
     state.seed = seedVal;
-    var q = "mod=" + encodeURIComponent(state.mod);
-    history.replaceState(null, "", location.pathname + "?" + q + "&seed=" + seedVal);
+    syncUrl();
     var status = document.getElementById("gen-status");
     if (status) status.textContent = "";
     // base / sa: the surfaces are static (no universe to enumerate) — list them.
@@ -216,6 +326,17 @@
     document.getElementById("zt-search").addEventListener("input", function (e) { state.q = e.target.value; renderTable(); });
     var calEl = document.getElementById("cal-filter");
     if (calEl) calEl.addEventListener("change", function (e) { state.calidus = e.target.checked; renderTable(); });
+    var hlEl = document.getElementById("hl-filter");
+    if (hlEl) {
+      state.onlyHl = new URLSearchParams(location.search).get("hl") === "1";
+      hlEl.checked = state.onlyHl;
+      hlEl.addEventListener("change", function (e) {
+        state.onlyHl = e.target.checked;
+        syncUrl();
+        renderTable();
+        if (state.featured) renderFeatured(); // its seed links carry the setting
+      });
+    }
     document.getElementById("zt-head").addEventListener("click", function (e) {
       var thEl = e.target.closest("th[data-key]"); if (!thEl) return;
       var k = thEl.dataset.key;
@@ -235,6 +356,15 @@
         var st = document.getElementById("gen-status");
         if (st) st.textContent = closed.getAttribute("data-why") || "enter a seed first";
       }
+    });
+    var featuredHead = document.getElementById("featured-head");
+    if (featuredHead) featuredHead.addEventListener("click", function (e) {
+      var thEl = e.target.closest("th[data-key]");
+      if (!thEl || !state.featured) return;
+      var k = thEl.dataset.key, first = k === "seed" ? "asc" : "desc";
+      state.featuredDir = state.featuredKey === k ? (state.featuredDir === "asc" ? "desc" : "asc") : first;
+      state.featuredKey = k;
+      renderFeatured();
     });
     var featuredBody = document.getElementById("featured-body");
     if (featuredBody) featuredBody.addEventListener("click", function (e) {
