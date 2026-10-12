@@ -255,15 +255,14 @@
       .then(function (data) {
         var cfg = data && data.configs && data.configs[state.mod];
         if (!cfg || !cfg.seeds || !cfg.seeds.length) return;
-        // the lists a config offers: the three-resource surface, and (when
-        // exported) a surface for each of four needs
-        state.featuredLists = [{ key: "triple", label: "Vulc + Cryo + Holm on one surface", seeds: cfg.seeds }];
-        if (cfg.pairs && cfg.pairs.seeds && cfg.pairs.seeds.length) {
-          state.featuredLists.push({ key: "pairs", label: "Vulc + Iridium · Cryo + Holm · Beryl · Vita + Stone", seeds: cfg.pairs.seeds, rule: cfg.pairs.rule });
-        }
-        state.featuredSearched = cfg.searched;
-        var want = new URLSearchParams(location.search).get("top");
-        selectFeatured(state.featuredLists.some(function (l) { return l.key === want; }) ? want : "triple");
+        document.getElementById("featured-note").textContent = "· " + cfg.seeds.length + " of " +
+          Number(cfg.searched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")" + (cfg.rule ? ": " + cfg.rule : "");
+        state.featured = cfg.seeds;
+        document.getElementById("featured-head").innerHTML = "<tr>" + FEATURED_COLS.map(function (c) {
+          return "<th" + (c[0] ? ' class="sortable' + (c[3] ? " " + c[3] : "") + '" data-key="' + c[0] + '"' : "") + (c[2] ? ' title="' + esc(c[2]) + '"' : "") + ">" +
+            c[1] + (c[0] ? ' <span class="sort-ind"></span>' : "") + "</th>";
+        }).join("") + "</tr>";
+        renderFeatured();
         box.hidden = false;
         box.open = state.seed == null;
       })
@@ -278,60 +277,39 @@
     }).join("");
   }
 
-  // Columns of each list: [sort key, heading, tooltip, header class].
-  var FEATURED_COLS = {
-    triple: [
-      ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
-      ["planets", "Planets", "Planets in the Calidus home system, including Nauvis"],
-      ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
-      [null, "Zone", "What each line of the surface columns is"],
-      ["vch", "Vulc + Cryo + Holm", "Nearest watered home-system surface with vulcanite, cryonite and holmium together (sorts by its Δv)", "slot-vch"],
-      ["be", "Beryl", "Nearest watered home-system surface whose primary resource is beryllium (sorts by its Δv). None: the home system's beryllium asteroid belt is the source", "slot-be"],
-      ["ir", "Iridium", "Nearest watered home-system surface whose primary resource is iridium (sorts by its Δv)", "slot-ir"],
-      ["vs", "Vita + Stone", "Nearest watered home-system surface with vitamelange and stone together (sorts by its Δv)", "slot-vs"],
-      ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
-    ],
-    pairs: [
-      ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
-      ["planets", "Planets", "Planets in the Calidus home system, including Nauvis"],
-      ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
-      [null, "Zone", "What each line of the surface columns is"],
-      ["vi", "Vulc + Iridium", "Nearest watered home-system surface with vulcanite and iridium together (sorts by its Δv)", "slot-vi"],
-      ["ch", "Cryo + Holm", "Nearest watered home-system surface with cryonite and holmium together (sorts by its Δv)", "slot-ch"],
-      ["be", "Beryl", "Nearest watered home-system surface whose primary resource is beryllium (sorts by its Δv)", "slot-be"],
-      ["vs", "Vita + Stone", "Nearest watered home-system surface with vitamelange and stone together (sorts by its Δv)", "slot-vs"],
-      ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
-    ]
+  // One table for every seed, whichever way it covers the special resources.
+  // A seed with vulcanite, cryonite and holmium on one surface has that as
+  // zone 1 and its iridium surface as zone 2; a seed without has vulcanite +
+  // iridium as zone 1 and cryonite + holmium as zone 2. Beryllium and
+  // vitamelange + stone are the same for both. Each zone says what it is for.
+  // Columns: [sort key, heading, tooltip, header class].
+  var FEATURED_COLS = [
+    ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
+    ["planets", "Planets", "Planets in the Calidus home system, including Nauvis"],
+    ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
+    [null, "Zone", "What each line of the zone columns is"],
+    ["z1", "Zone 1", "Vulcanite + cryonite + holmium together where the seed has such a surface, vulcanite + iridium otherwise (sorts by its Δv)", "slot"],
+    ["z2", "Zone 2", "Iridium beside a three-resource zone 1, cryonite + holmium otherwise (sorts by its Δv)", "slot"],
+    ["be", "Beryl", "Nearest watered home-system surface whose primary resource is beryllium (sorts by its Δv)", "slot"],
+    ["vs", "Vita + Stone", "Nearest watered home-system surface with vitamelange and stone together (sorts by its Δv)", "slot"],
+    ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
+  ];
+  var SLOTS = ["z1", "z2", "be", "vs"];
+  // what a zone is for: its resources, each in its own colour
+  var SLOT_RES = {
+    vch: ["vulcanite", "cryonite", "holmium"], vi: ["vulcanite", "iridium"], ch: ["cryonite", "holmium"],
+    ir: ["iridium"], be: ["beryllium"], vs: ["vitamelange", "stone"]
   };
-  // the surface columns of each list
-  var LIST_SLOTS = { triple: ["vch", "be", "ir", "vs"], pairs: ["vi", "ch", "be", "vs"] };
-  var SLOTS = ["vch", "vi", "ch", "be", "ir", "vs"];
-  function selectFeatured(key) {
-    var list = state.featuredLists.filter(function (l) { return l.key === key; })[0] || state.featuredLists[0];
-    state.featuredList = list.key;
-    state.featured = list.seeds;
-    state.featuredKey = null;
-    document.getElementById("featured-note").textContent = "· best " + list.seeds.length + " of " +
-      Number(state.featuredSearched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")" + (list.rule ? " · " + list.rule : "");
-    var tabs = document.getElementById("featured-tabs");
-    if (tabs) {
-      tabs.hidden = state.featuredLists.length < 2;
-      tabs.innerHTML = state.featuredLists.map(function (l) {
-        return '<button type="button" data-list="' + l.key + '"' + (l.key === list.key ? ' class="active"' : "") + ">" + esc(l.label) + "</button>";
-      }).join("");
-    }
-    document.getElementById("featured-head").innerHTML = "<tr>" + FEATURED_COLS[list.key].map(function (c) {
-      return "<th" + (c[0] ? ' class="sortable' + (c[3] ? " " + c[3] : "") + '" data-key="' + c[0] + '"' : "") + (c[2] ? ' title="' + esc(c[2]) + '"' : "") + ">" +
-        c[1] + (c[0] ? ' <span class="sort-ind"></span>' : "") + "</th>";
-    }).join("") + "</tr>";
-    renderFeatured();
-  }
-  // One surface of the four-surface list: its name (a link to the surface),
-  // radius, travel Δv from Nauvis and enemy level, a line each.
+  var RES_SHORT = { vulcanite: "Vulc", cryonite: "Cryo", holmium: "Holm", iridium: "Iridium", beryllium: "Beryl", vitamelange: "Vita", stone: "Stone" };
+  // One zone: what it is for, its name (a link to the surface), radius,
+  // travel Δv from Nauvis and enemy level, a line each. A zone the seed lacks
+  // keeps the first line and dashes the rest.
   function slotCell(seed, z) {
     if (!z) return '<div class="slot-lines"><span class="none">—</span></div>';
+    var res = (SLOT_RES[z.c] || []).map(function (r) { return '<span class="ore ore-' + r + '">' + RES_SHORT[r] + "</span>"; }).join(" + ");
+    if (!z.n) return '<div class="slot-lines"><span>' + res + '</span><span class="none">—</span><span class="none">—</span><span class="none">—</span><span class="none">—</span></div>';
     var e = ce(z.e), level = e === "none" ? "none" : /low/.test(e) ? "low" : /high|max/.test(e) ? "high" : "";
-    return '<div class="slot-lines">' +
+    return '<div class="slot-lines"><span>' + res + "</span>" +
       '<a href="' + esc(window.Shell.surfaceHref(seed, z.n, state.mod, Math.min(z.r, 10000))) + '" title="Open ' + esc(z.n) + " (" + z.t + ')">' + esc(z.n) + "</a>" +
       "<span>" + Number(z.r).toLocaleString() + "</span><span>" + Number(z.dv).toLocaleString() + "</span>" +
       '<span class="' + (level ? "enemy-" + level : "") + '">' + e + "</span></div>";
@@ -357,8 +335,8 @@
       return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
         '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
         "<td><code>" + lootHtml(f.loot) + "</code></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
-        '<td><div class="slot-lines labels"><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
-        LIST_SLOTS[state.featuredList].map(function (slot) { return "<td>" + slotCell(f.seed, f[slot]) + "</td>"; }).join("") +
+        '<td><div class="slot-lines labels"><span>Resources</span><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
+        SLOTS.map(function (slot) { return "<td>" + slotCell(f.seed, f[slot]) + "</td>"; }).join("") +
         "<td>" + num(f.naquiumDv) + "</td></tr>";
     }).join("");
     document.querySelectorAll("#featured-head .sort-ind").forEach(function (el) { el.textContent = ""; });
@@ -370,8 +348,7 @@
   // the highlighted rows are shown (on unless ?hl=0), so a reload or a shared link opens
   // the same view.
   function pageHref(seed) {
-    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0") +
-      (state.featuredList && state.featuredList !== "triple" ? "&top=" + state.featuredList : "");
+    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0");
   }
   function syncUrl() {
     history.replaceState(null, "", pageHref(state.seed));
@@ -463,13 +440,6 @@
       state.featuredDir = state.featuredKey === k ? (state.featuredDir === "asc" ? "desc" : "asc") : first;
       state.featuredKey = k;
       renderFeatured();
-    });
-    var featuredTabs = document.getElementById("featured-tabs");
-    if (featuredTabs) featuredTabs.addEventListener("click", function (e) {
-      var b = e.target.closest("button[data-list]");
-      if (!b || !state.featuredLists) return;
-      selectFeatured(b.dataset.list);
-      syncUrl();
     });
     var featuredBody = document.getElementById("featured-body");
     if (featuredBody) featuredBody.addEventListener("click", function (e) {
