@@ -67,6 +67,8 @@ pub const Entity = struct {
     allowed: ?[]const bool,
     /// index into planet.resources for resources
     resource: ?u8,
+    /// an enemy building (spawner or worm)
+    enemy: bool = false,
 
     pub fn canStandOn(self: *const Entity, tile_index: usize, tile: *const Tile) bool {
         if (self.mask & tile.mask != 0) return false;
@@ -305,6 +307,7 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
                 .mask = layers.mask(em),
                 .allowed = allowed,
                 .resource = res_index,
+                .enemy = std.mem.eql(u8, typ, "unit-spawner") or std.mem.eql(u8, typ, "turret"),
             });
         }
         std.mem.sort(Entity, placed.items, {}, struct {

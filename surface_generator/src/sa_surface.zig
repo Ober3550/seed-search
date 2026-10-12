@@ -81,6 +81,14 @@ pub const Surface = struct {
 // Chunks: tiles + resource placement
 // ---------------------------------------------------------------------------
 
+/// Opacity of an enemy-area tile from the placement probability there, on a
+/// log scale: faint at 0.001 (a nest somewhere in a thousand tiles), solid by
+/// 0.25 (where the base game's spawner probability stops rising).
+pub fn enemyAlpha(v: f32) u8 {
+    const t = @min(1.0, @max(0.0, (@log10(@max(v, 1e-6)) + 3.0) / 2.4));
+    return @intFromFloat(70.0 + 150.0 * t);
+}
+
 pub const CHUNK = 32;
 const AREA = CHUNK * CHUNK;
 pub const NO_RESOURCE: u8 = 255;
@@ -123,6 +131,13 @@ pub const World = struct {
     ent_rich: []const ?usize,
     /// tiles come from the caller (chunkWith) instead of the tile competition
     external_tiles: bool,
+    /// Planets with autoplaced enemy buildings (spawners, worms): their
+    /// placement probabilities compiled on their own, evaluated without the
+    /// random penalty, so a positive value marks where a nest can appear -
+    /// see render(). `enemy_ents` are their indices into planet.placed.
+    enemy_program: ?prog.Program,
+    enemy_ws: prog.Program.Workspace,
+    enemy_ents: []const usize,
     xs: []f32,
     ys: []f32,
 
@@ -161,6 +176,21 @@ pub const World = struct {
                 try names.append(a, rich);
             }
         }
+        var enemy_ents: std.ArrayList(usize) = .empty;
+        var enemy_names: std.ArrayList([]const u8) = .empty;
+        for (planet.placed, 0..) |e, i| {
+            if (!e.enemy) continue;
+            try enemy_ents.append(a, i);
+            try enemy_names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e.name}));
+        }
+        var enemy_program: ?prog.Program = null;
+        var enemy_ws: prog.Program.Workspace = undefined;
+        if (enemy_ents.items.len > 0) {
+            const ep = try prog.compile(a, data, planet, map_seed, controls, enemy_names.items, err_out);
+            enemy_ws = try ep.workspaceN(a, AREA);
+            enemy_ws.no_penalty = true;
+            enemy_program = ep;
+        }
         const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
         var ws = try program.workspaceN(a, AREA);
         ws.column_rng = true;
@@ -172,6 +202,9 @@ pub const World = struct {
             .ent_prob = ent_prob,
             .ent_rich = ent_rich,
             .external_tiles = opts.external_tiles,
+            .enemy_program = enemy_program,
+            .enemy_ws = enemy_ws,
+            .enemy_ents = enemy_ents.items,
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
         };
@@ -302,12 +335,21 @@ pub const World = struct {
     /// Per-resource totals, accumulated by render().
     pub const Totals = struct { count: u64 = 0, amount: u64 = 0 };
 
-    /// Render a rectangle as two RGBA8 layers, one tile per pixel: `terrain`
-    /// (opaque tile colours) and `overlay` (resource colours, transparent
-    /// where there is none). Either may be null. `tile_counts` (per
+    /// Render a rectangle as RGBA8 layers, one tile per pixel: `terrain`
+    /// (opaque tile colours), `overlay` (resource colours, transparent where
+    /// there is none) and `enemies` (enemy base areas: translucent red on
+    /// every tile where some enemy building could be placed - it may stand
+    /// on the tile and its probability, before the random penalty, is
+    /// positive - stronger where that is likelier; nothing on a planet
+    /// without autoplaced enemies). These are the areas nests appear in, not
+    /// the nests: their exact tiles also depend on every tree, rock and
+    /// cliff placed before them. Any may be null. `tile_counts` (per
     /// planet.tiles) and `totals` (per planet.resources) are added to.
-    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals) void {
+    /// Returns the number of enemy-area tiles.
+    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, enemies: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals) u64 {
         if (overlay) |o| @memset(o, 0);
+        if (enemies) |o| @memset(o, 0);
+        var enemy_tiles: u64 = 0;
         const x1 = x0 + @as(i32, @intCast(width));
         const y1 = y0 + @as(i32, @intCast(height));
         var data: ChunkData = undefined;
@@ -316,6 +358,8 @@ pub const World = struct {
             var cx = @divFloor(x0, CHUNK);
             while (cx * CHUNK < x1) : (cx += 1) {
                 self.chunk(cx, cy, &data);
+                const want_enemy = self.enemy_program != null;
+                if (self.enemy_program) |*ep| ep.eval(&self.enemy_ws, self.xs, self.ys);
                 for (0..AREA) |i| {
                     const tx = cx * CHUNK + @as(i32, @intCast(i % CHUNK));
                     const ty = cy * CHUNK + @as(i32, @intCast(i / CHUNK));
@@ -325,6 +369,18 @@ pub const World = struct {
                     if (terrain) |t| {
                         const c = self.planet.tiles[data.tile[i]].color;
                         t[px..][0..4].* = .{ c[0], c[1], c[2], 255 };
+                    }
+                    if (want_enemy) {
+                        const ti = data.tile[i];
+                        var v: f32 = 0;
+                        for (self.enemy_ents, 0..) |e, k| {
+                            if (!self.planet.placed[e].canStandOn(ti, &self.planet.tiles[ti])) continue;
+                            v = @max(v, self.enemy_program.?.out(&self.enemy_ws, k)[i]);
+                        }
+                        if (v > 0) {
+                            enemy_tiles += 1;
+                            if (enemies) |o| o[px..][0..4].* = .{ 255, 40, 40, enemyAlpha(v) };
+                        }
                     }
                     const r = data.resource[i];
                     if (r == NO_RESOURCE) continue;
@@ -341,6 +397,7 @@ pub const World = struct {
                 }
             }
         }
+        return enemy_tiles;
     }
 };
 

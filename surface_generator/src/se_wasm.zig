@@ -19,7 +19,8 @@
 //     "zone": { ...one universe z-array element (n,t,s,r,p,tags, nauvis?)... },
 //     "radius": <render half-extent in tiles, optional>,
 //     "square": <bool, optional: do not clip terrain to the zone disk>,
-//     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only> }
+//     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only,
+//               3=enemy base areas only (see enemyAreas)> }
 //
 // Response: resultPtr()/resultLen() = UTF-8 JSON
 //   { "ok": true, "zone", "zone_seed", "type", "radius", "width", "height",
@@ -65,6 +66,46 @@ fn nauvisExtras(ctx: *anyopaque, cx: i32, cy: i32, water: *const [32 * 32]bool) 
     rolls.attempts(cx, cy, water, &out);
     return out;
 }
+// enemy-base probability program, kept between calls (one per surface)
+var g_enemy_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_enemy: ?struct { seed: u32, ctl: EnemyControls, program: sa_program.Program, ws: sa_program.Program.Workspace } = null;
+
+/// The map-gen settings the base game's enemy autoplace reads.
+const EnemyControls = struct {
+    frequency: f64,
+    size: f64,
+    /// starting-area size (1 = the default 150-tile radius)
+    starting_area: f64,
+
+    fn lookup(ctx: *const anyopaque, name: []const u8, field: []const u8) f64 {
+        const self: *const EnemyControls = @ptrCast(@alignCast(ctx));
+        if (std.mem.eql(u8, name, "enemy-base")) {
+            if (std.mem.eql(u8, field, "frequency")) return self.frequency;
+            if (std.mem.eql(u8, field, "size")) return self.size;
+        }
+        if (std.mem.eql(u8, name, "starting-area")) return self.starting_area;
+        return if (std.mem.eql(u8, field, "bias")) 0.0 else 1.0;
+    }
+};
+
+/// Enemy settings of a surface. Nauvis keeps the game defaults; every other
+/// Space Exploration planet or moon takes its "enemy-base" control from its
+/// enemy tag (Universe.control_settings_from_tag) and has a half-size starting
+/// area (Zone.create_surface sets starting_area = 0.5 off the homeworld).
+fn enemyControls(is_nauvis: bool, tag: ?data.Enemy) EnemyControls {
+    if (is_nauvis) return .{ .frequency = 1, .size = 1, .starting_area = 1 };
+    const fs: [2]f64 = switch (tag orelse .none) {
+        .none => .{ 0, 0 },
+        .very_low => .{ 0.1, 0.1 },
+        .low => .{ 0.2, 0.2 },
+        .med => .{ 0.5, 0.5 },
+        .high => .{ 1, 1 },
+        .very_high => .{ 1.5, 2 },
+        .max => .{ 2, 6 },
+    };
+    return .{ .frequency = fs[0], .size = fs[1], .starting_area = 0.5 };
+}
+
 var g_result: []u8 = &.{};
 var g_pixels: []u8 = &.{};
 var input_buf: []u8 = &.{};
@@ -246,7 +287,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     const k2 = if (obj.get("k2")) |v| (v == .bool and v.bool) else false;
     const layer: i32 = if (obj.get("layer")) |v| blk: {
         break :blk switch (v) {
-            .integer => |i| @intCast(@min(@max(i, 0), 2)),
+            .integer => |i| @intCast(@min(@max(i, 0), 3)),
             else => 0,
         };
     } else 0;
@@ -476,7 +517,7 @@ fn generateZone(
     defer ores.deinit(a);
 
     // terrain-only renders don't touch ore at all.
-    const need_ores = layer != 1;
+    const need_ores = layer != 1 and layer != 3;
     // Resource names reported in the summary, in order.
     var summary_names: std.ArrayList([]const u8) = .empty;
     for (inputs) |inp| try summary_names.append(a, inp.name);
@@ -566,7 +607,81 @@ fn generateZone(
     // alien-biomes classifier — matches asteroid_render.zig / the game belt.
     var field: ?asteroid.AsteroidField = null;
     if (is_field) field = asteroid.AsteroidField.initField(zone_seed);
-    if (!terrainless and layer != 2) {
+    // Enemy base areas (layer 3): every land tile where the base game's
+    // `enemy_base_probability` is positive, i.e. inside one of the blobs the
+    // spawner and worm autoplace draws from. The expression is evaluated by
+    // the data-driven engine with this surface's seed and enemy settings; it
+    // is the area nests can appear in, shaded by how likely - not the nests
+    // themselves, whose exact tiles also depend on every tree, rock and cliff
+    // placed before them. Asteroid fields have no enemies.
+    var enemy_tiles: u64 = 0;
+    if (layer == 3 and !is_field) {
+        const ctl = enemyControls(is_nauvis, tags.enemy);
+        if (ctl.size > 0) {
+            if (g_enemy == null or g_enemy.?.seed != zone_seed or !std.meta.eql(g_enemy.?.ctl, ctl)) {
+                g_enemy = null;
+                _ = g_enemy_arena.reset(.retain_capacity);
+                const ea = g_enemy_arena.allocator();
+                const d = try nauvisData();
+                const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+                // (the controls are folded into the program as constants)
+                const pr = try sa_program.compile(ea, d, nauvis, zone_seed, .{ .ctx = &ctl, .lookup = EnemyControls.lookup }, &.{"enemy_base_probability"}, null);
+                g_enemy = .{ .seed = zone_seed, .ctl = ctl, .program = pr, .ws = try pr.workspace(ea) };
+            }
+            const ep = &g_enemy.?.program;
+            const ews = &g_enemy.?.ws;
+            // Sampled once per 4x4 block of tiles (blocks start at multiples
+            // of 4, so neighbouring cells agree), at the block's centre -
+            // probability and water alike - and spread over the block: a sixteenth of the work, for an area
+            // drawn in blobs tens of tiles across.
+            const STEP: i32 = 4;
+            const B = sa_program.Program.BATCH;
+            var xs: [B]f32 = undefined;
+            var ys: [B]f32 = undefined;
+            var ey: i32 = @divFloor(ya, STEP) * STEP;
+            while (ey < yb) : (ey += STEP) {
+                var ex: i32 = @divFloor(xa, STEP) * STEP;
+                while (ex < xb) {
+                    var n: usize = 0;
+                    while (n < B and ex + @as(i32, @intCast(n)) * STEP < xb) : (n += 1) {
+                        // the block's centre
+                        xs[n] = @floatFromInt(ex + @as(i32, @intCast(n)) * STEP + STEP / 2);
+                        ys[n] = @floatFromInt(ey + STEP / 2);
+                    }
+                    ep.eval(ews, xs[0..n], ys[0..n]);
+                    const vals = ep.out(ews, 0);
+                    for (0..n) |j| {
+                        const v = vals[j];
+                        if (!(v > 0)) continue;
+                        const alpha = sa_surface.enemyAlpha(v); // stronger where a nest is likelier
+                        const bx = ex + @as(i32, @intCast(j)) * STEP;
+                        // nests are land-only (judged at the block's centre)
+                        if (has_water and el_s.at(@as(f64, @floatFromInt(bx)) + 2.0, @as(f64, @floatFromInt(ey)) + 2.0) < 0.0) continue;
+                        var dy: i32 = 0;
+                        while (dy < STEP) : (dy += 1) {
+                            var dx: i32 = 0;
+                            while (dx < STEP) : (dx += 1) {
+                                const tx = bx + dx;
+                                const ty = ey + dy;
+                                if (tx < xa or tx >= xb or ty < ya or ty >= yb) continue;
+                                const fx: f64 = @floatFromInt(tx);
+                                const fy: f64 = @floatFromInt(ty);
+                                if (!square and fx * fx + fy * fy > radius * radius) continue;
+                                const idx = (@as(usize, @intCast(ty - ya)) * cw + @as(usize, @intCast(tx - xa))) * 4;
+                                pixels[idx] = 255;
+                                pixels[idx + 1] = 40;
+                                pixels[idx + 2] = 40;
+                                pixels[idx + 3] = alpha;
+                                enemy_tiles += 1;
+                            }
+                        }
+                    }
+                    ex += @as(i32, @intCast(n)) * STEP;
+                }
+            }
+        }
+    }
+    if (!terrainless and layer != 2 and layer != 3) {
         var iy: i32 = ya;
         while (iy < yb) : (iy += 1) {
             var ix: i32 = xa;
@@ -628,6 +743,7 @@ fn generateZone(
     try appendFmt(a, &summary, ",\"palette\":\"{s}\"", .{if (vanilla_ground) "nauvis-base" else "se-alien-biomes"});
     if (rect != null)
         try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
+    if (layer == 3) try appendFmt(a, &summary, ",\"enemy_tiles\":{d}", .{enemy_tiles});
     try summary.appendSlice(a, ",\"resources\":{");
     {
         var first = true;

@@ -520,7 +520,9 @@ pub const Compiler = struct {
         if (eql(u8, name, "map_seed_small")) return self.konst(@floatFromInt(self.seed & 0xffff));
         if (eql(u8, name, "pi")) return self.konst(std.math.pi);
         if (eql(u8, name, "inf")) return self.konst(std.math.inf(f64));
-        if (eql(u8, name, "starting_area_radius")) return self.konst(150);
+        // 150 tiles at the default starting-area size; a surface with another
+        // size supplies it as the control "starting-area" (default 1)
+        if (eql(u8, name, "starting_area_radius")) return self.konst(150 * self.controls.lookup(self.controls.ctx, "starting-area", "size"));
         if (eql(u8, name, "cliff_richness")) return self.konst(self.planet.cliff_richness);
         if (eql(u8, name, "cliff_elevation_interval")) return self.konst(self.planet.cliff_elevation_interval);
         if (eql(u8, name, "no_enemies_mode")) return self.konst(0);
@@ -912,6 +914,9 @@ pub const Program = struct {
         /// random_penalty draws from one stream per column (how the engine
         /// evaluates spot candidates) instead of one stream per position
         column_rng: bool = false,
+        /// random_penalty returns its source unchanged: the value before the
+        /// random draw, i.e. the most the expression can be at a position
+        no_penalty: bool = false,
     };
 
     pub fn workspace(self: *const Program, a: std.mem.Allocator) error{OutOfMemory}!Workspace {
@@ -999,7 +1004,9 @@ pub const Program = struct {
                 },
                 .random_penalty => {
                     const p = self.payloads[inst.aux].randp;
-                    if (ws.column_rng and n > 0) {
+                    if (ws.no_penalty) {
+                        @memcpy(r, C);
+                    } else if (ws.column_rng and n > 0) {
                         // one stream seeded from the column's first position,
                         // consumed from the last element to the first
                         var prng = rng.Rng.init(penaltySeed(A[0], B[0], p.seed));

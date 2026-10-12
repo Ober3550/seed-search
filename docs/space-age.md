@@ -76,6 +76,37 @@ tiles (`sa_main probe --entities --tiles-from=game.json`) fixes those Fulgora
 chunks (89.9%) but makes Aquilo worse, so the game evidently places entities
 on tiles from before its border-correction pass.
 
+### Enemy base areas
+
+The surface page can shade where the game is able to place enemy nests
+(spawners and worms). It is the area, not the nests: a tile is shaded when an
+enemy building may stand on it and its placement probability is positive
+before the random penalty, with the opacity following the probability on a log
+scale (`sa_surface.enemyAlpha`).
+
+- Space Age planets: `World.render` evaluates the planet's own spawner / worm
+  probability expressions (a second small program, `no_penalty` workspace).
+  Only Gleba has autoplaced enemies; Vulcanus's demolishers are placed by
+  territory, not autoplace, and are not shown.
+- Nauvis and Space Exploration zones (`se_wasm.zig`, `layer: 3`): the base
+  game's `enemy_base_probability` with the surface's seed and enemy settings.
+  A zone takes its `enemy-base` frequency / size from its enemy tag
+  (`Universe.control_settings_from_tag`) and has a half-size starting area;
+  water is excluded with the zone's elevation. Sampled once per 4x4 block.
+
+Against the game at map seed 341 over a 1280x1280 area: on Nauvis all 181
+enemy buildings lie within 3 tiles of a shaded tile (177 on one), with 0.6% of
+the area shaded; on Gleba all 35 spawners lie on a shaded tile, with 5.3%
+shaded (most of it the faint 1-in-1000 coastal term). The Space Exploration
+settings are read from the mod's source and are not checked against a live
+SE game.
+
+Placing the nests themselves was tried by continuing the chunk's placement
+replay into the enemy groups. It lands in the right areas but places several
+times too many (Gleba: 134 against the game's 35): where a nest fits also
+depends on collisions with every tree, rock and cliff placed before it, and
+cliffs are not modelled.
+
 ### Nauvis (base game) resources
 
 Without Space Exploration the page places Nauvis resources with the

@@ -128,7 +128,7 @@ pub fn main(init: std.process.Init) !void {
         const totals = try a.alloc(surface.World.Totals, planet.resources.len);
         @memset(totals, .{});
         var timer = std.Io.Clock.Timestamp.now(init.io, .awake);
-        w.render(-radius, -radius, n, n, terrain, overlay, null, totals);
+        _ = w.render(-radius, -radius, n, n, terrain, overlay, null, null, totals);
         const ns = timer.untilNow(init.io).raw.toNanoseconds();
         try writeFile(init, args[5], try png.encodeRgba(a, @intCast(n), @intCast(n), terrain));
         const base = if (std.mem.endsWith(u8, args[5], ".png")) args[5][0 .. args[5].len - 4] else args[5];

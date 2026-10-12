@@ -18,10 +18,11 @@
 //! pixelsPtr/pixelsLen, one tile per pixel, row-major from (x0, y0).
 //!   "tiles"      one layer: opaque tile colours
 //!   "resources"  one layer: resource colours, transparent elsewhere
-//!   "all"        both layers back to back (terrain, then resources), so the
-//!                page can composite them with its own contrast
+//!   "all"        the layers back to back - terrain, resources and, on a
+//!                planet with autoplaced enemies, enemy base areas (see
+//!                sa_surface.World.render) - for the page to stack
 //!   summary = { ok, planet, property, seed, surface_seed, x0, y0, width,
-//!               height, layers,
+//!               height, layers, enemy_layer (bool), enemy_tiles,
 //!               tiles: [{ name, color: [r,g,b], count }],
 //!               resources: [{ name, color, count, amount }] }
 //!
@@ -166,27 +167,32 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     const want_terrain = !std.mem.eql(u8, property, "resources");
     const want_overlay = c.world != null and !std.mem.eql(u8, property, "tiles");
     const layer = width * height * 4;
-    const layers: usize = @as(usize, @intFromBool(want_terrain)) + @intFromBool(want_overlay);
+    const want_enemies = c.world != null and c.world.?.enemy_program != null and std.mem.eql(u8, property, "all");
+    const layers: usize = @as(usize, @intFromBool(want_terrain)) + @intFromBool(want_overlay) + @intFromBool(want_enemies);
     const pixels = try a.alloc(u8, layer * layers);
     g_pixels = pixels;
 
     var sb: std.ArrayList(u8) = .empty;
-    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"tiles\":[", .{
-        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers,
+    try sb.print(a, "{{\"ok\":true,\"planet\":\"{s}\",\"property\":\"{s}\",\"seed\":{d},\"surface_seed\":{d},\"x0\":{d},\"y0\":{d},\"width\":{d},\"height\":{d},\"layers\":{d},\"enemy_layer\":{},\"tiles\":[", .{
+        planet.name, property, seed, planet.surfaceSeed(seed), x0, y0, width, height, layers, want_enemies,
     });
+    var enemy_tiles: u64 = 0;
     var resources_json: std.ArrayList(u8) = .empty;
     if (c.world) |*w| {
         const counts = try a.alloc(u32, planet.tiles.len);
         @memset(counts, 0);
         const totals = try a.alloc(surface.World.Totals, planet.resources.len);
         @memset(totals, .{});
-        w.render(
+        // layer order: terrain, resources, enemies
+        const overlay_at: usize = @intFromBool(want_terrain);
+        enemy_tiles = w.render(
             x0,
             y0,
             width,
             height,
             if (want_terrain) pixels[0..layer] else null,
-            if (want_overlay) pixels[layer * (layers - 1) ..] else null,
+            if (want_overlay) pixels[layer * overlay_at ..][0..layer] else null,
+            if (want_enemies) pixels[layer * (layers - 1) ..] else null,
             counts,
             totals,
         );
@@ -221,7 +227,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
             }
         }
     }
-    try sb.print(a, "],\"resources\":[{s}]}}", .{resources_json.items});
+    try sb.print(a, "],\"enemy_tiles\":{d},\"resources\":[{s}]}}", .{ enemy_tiles, resources_json.items });
     return sb.items;
 }
 
