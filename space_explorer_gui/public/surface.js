@@ -897,12 +897,10 @@
     // the shell is a static file: fill in the names it cannot know
     var nameEl = document.getElementById("sf-name");
     if (nameEl) nameEl.textContent = TARGET;
-    var crumbName = document.getElementById("sf-crumb-name");
-    if (crumbName) crumbName.textContent = TARGET;
     var crumbSeed = document.getElementById("sf-crumb-seed");
     if (crumbSeed) {
       crumbSeed.href = window.Shell.seedHref(SEED, MOD);
-      if (SEED != null) crumbSeed.textContent = "🌍 Seed " + SEED;
+      if (SEED != null) crumbSeed.textContent = "Seed: " + SEED;
     }
     if (SEED != null && TARGET) document.title = "Seed " + SEED + " · " + TARGET + " — Surface Explorer";
     if (SEED == null || !TARGET) {
