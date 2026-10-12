@@ -248,7 +248,8 @@ fn zoneSurfaceParams(z: std.json.ObjectMap) !ZoneSurfaceParams {
     const has_water = if (is_nauvis) true else if (tags.water) |wt| wt != .none else false;
     const water_size: f64 = 1.0;
     const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
-    const fm = universe.zoneFrequencyMultiplier(radius);
+    // (the homeworld's controls are not scaled by its size)
+    const fm = if (is_nauvis) 1.0 else universe.zoneFrequencyMultiplier(radius);
     return .{
         .zone_seed = zone_seed,
         .radius = radius,
@@ -517,7 +518,8 @@ fn generateZone(
 
     // Per-zone temperature control from the SE tag (midrange→0.65, extreme→6).
     const tc = (tags.temperature orelse data.Temperature.midrange).controlSettings();
-    const fm = universe.zoneFrequencyMultiplier(radius);
+    // (the homeworld's controls are not scaled by its size)
+    const fm = if (is_nauvis) 1.0 else universe.zoneFrequencyMultiplier(radius);
     const zt = try a.create(terrain.ZoneTerrain);
     zt.* = terrain.ZoneTerrain.init(.{
         .map_seed = zone_seed,

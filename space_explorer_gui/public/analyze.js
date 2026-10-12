@@ -208,9 +208,10 @@
     // Open at the zone's ACTUAL radius (disk-cropped to it). Asteroid fields
     // carry no radius in the universe data — open them at 5000 (SE's default
     // field radius). Max SE zone radius is 10000, which is also the page
-    // slider max; ?r is clamped to that only. Nauvis carries no ?r: it opens
-    // at the surface page's default preview radius.
-    var r0 = z.nauvis ? null : z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
+    // slider max; ?r is clamped to that only. Base-game Nauvis has no edge
+    // and carries no ?r: it opens at the surface page's default preview
+    // radius. Under Space Exploration it is a planet like the others.
+    var r0 = z.nauvis && z.kind !== "se" ? null : z.r ? Math.round(z.r) : (z.t === "asteroid-field" ? 5000 : null);
     return window.Shell.surfaceHref(state.seed, z.n, state.mod, r0 ? Math.min(r0, 10000) : null);
   }
   // True when the row can open a surface (seed present + engine support).
@@ -423,7 +424,7 @@
         // Synthetic Nauvis (the universe generator never emits it): default-FSR
         // planet, r5000. Estimated client-side (base ores + K2 rare-metal);
         // surface generation uses the game's default map-gen settings (nauvis).
-        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
+        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: window.Shell.seNauvisRadius, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
         zones.forEach(function (z) { z.kind = "se"; });
         // Without Krastorio 2 its resources do not exist: the generator still
         // rolls a share for them (the roll keeps the others' in step), which
