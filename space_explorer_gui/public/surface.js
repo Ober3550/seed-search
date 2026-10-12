@@ -114,7 +114,11 @@
     dimVal: document.getElementById("sf-dim-val"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
-    res: document.getElementById("sf-res"),
+    // The result line is written as "<resource chips> <hint>· size · timing…";
+    // the hint goes on a line of its own under the chips (no leading dot).
+    res: (function (el) {
+      return { set innerHTML(html) { el.innerHTML = html.replace('<span class="hint">· ', '<span class="hint res-info">'); } };
+    })(document.getElementById("sf-res")),
     progress: document.getElementById("sf-progress")
   };
   var busy = false;

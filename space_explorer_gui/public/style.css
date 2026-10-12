@@ -58,6 +58,7 @@ body {
 .zone-card .dim-row[hidden] { display: none; }
 .zone-card .dim-row #sf-dim-val { color: var(--text); min-width: 3em; }
 .zone-card .dim-row input { flex: 1; max-width: 16em; }
+.res-info { display: block; margin-top: 6px; }
 .surf-status:empty { display: none; }
 .surf-status { margin-bottom: 8px; }
 
