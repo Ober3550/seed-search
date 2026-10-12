@@ -49,6 +49,7 @@ body {
 
 /* surface page header: the seed, linking back to its zones */
 .seed-link a { color: var(--accent); text-decoration: none; }
+.seed-link a::before { content: "←"; display: inline-block; margin-right: 8px; }
 .seed-link a:hover { text-decoration: underline; }
 
 /* surface page: the zone's card, laid out like a zone row of the seed page */
