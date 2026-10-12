@@ -790,12 +790,22 @@ fn generateZone(
         var counts: [sa_data.Entity.class_count]u32 = @splat(0);
         const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
         var list: std.ArrayList(u8) = .empty;
+        // the disk being drawn: the surface's own, or a smaller preview of it
+        const clip: f64 = @min(radius, @as(f64, @floatFromInt(r)));
         var cy = @divFloor(ya, C);
         while (cy * C < yb) : (cy += 1) {
             var cx = @divFloor(xa, C);
             while (cx * C < xb) : (cx += 1) {
+                {
+                    // nothing to draw for a chunk wholly outside that disk
+                    const nx: f64 = @floatFromInt(@max(cx * C, @min(0, cx * C + C - 1)));
+                    const ny: f64 = @floatFromInt(@max(cy * C, @min(0, cy * C + C - 1)));
+                    if (nx * nx + ny * ny > clip * clip) continue;
+                }
                 // Tiles: from the terrain the page sent (matched by map
-                // colour) where it covers the tile, worked out here otherwise.
+                // colour) where it covers the tile, worked out here otherwise
+                // (a chunk on the edge of a preview disk: the surface goes on
+                // past it).
                 for (0..C * C) |i| {
                     const tx = cx * C + @as(i32, @intCast(i % C));
                     const ty = cy * C + @as(i32, @intCast(i / C));
@@ -838,12 +848,12 @@ fn generateZone(
                 }
             }
         }
-        // a box may reach past the surface's edge: nothing is drawn there
+        // a box may reach past the disk's edge: nothing is drawn there
         for (0..ch) |py| {
             for (0..cw) |px| {
                 const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
                 const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
-                if (fx * fx + fy * fy > radius * radius) pixels[(py * cw + px) * 4 + 3] = 0;
+                if (fx * fx + fy * fy > clip * clip) pixels[(py * cw + px) * 4 + 3] = 0;
             }
         }
         g_list = list.items;
