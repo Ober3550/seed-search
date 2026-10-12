@@ -115,10 +115,26 @@ With the game's rolls and our tiles the trees are 90% within 2 tiles on
 Hermes: the rest of the gap is the terrain. One tile that differs changes how
 many draws a group takes and shifts the rest of its chunk.
 
+## Ore
+
+The same pass places the zone's ore, and it is the game's ore: with our own
+terrain and our own resource controls, 98.8% to 100% of the game's ore tiles
+on four moons (Bluna of seed 80352098, and Hermes, Talos and Muir of seed
+1000; the few extra tiles are secondaries whose controls come out a little
+high). The older hand-written SE ore code (`se_ore_placement.zig`) gives 50%
+to 86% on the same windows - patches missing or elsewhere once away from the
+centre. So on the page an SE planet or moon takes its ore from this pass
+(`layer: 4`: one request per cell returns the ore and the entities), after
+the terrain rather than alongside it. The older code still serves what the
+pass does not cover: Krastorio 2 universes, Nauvis under SE, asteroid fields
+and surfaces too large to draw at full size.
+
 ## On the page
 
 SE planets, moons and Nauvis get the "Entities" layer (checkboxes per group;
-trees are drawn under the ore, everything else over it) when the surface is
+trees are drawn under the ore, everything else over it; rocks start unticked,
+since alien-biomes flags them `not-on-map` and the game's own map does not
+draw them) when the surface is
 drawn at full size - the entities are placed on the tiles of the terrain
 canvas. A surface larger than the canvas limit keeps the enemy base areas.
 

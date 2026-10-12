@@ -309,21 +309,29 @@
       var done = 0;
       var failed = 0;
 
-      var ore = !oreCv ? Promise.resolve(null) : streamOre(zoneObj, R, diskR, palette, oreCv, function (n, total) {
-        // the terrain's progress is shown until it is done, then the ore's
-        if (layer === 2 || done === cells.length) {
-          status("placing ore " + n + "/" + total + " cells…");
-          setProgress(total ? n / total : 0);
-        }
-      }).then(function (t) { totals = t; }, function (e) {
-        failed++;
-        console.error("ore pass failed:", e);
-      });
+      // (an exact zone's ore needs the finished terrain: it starts after it)
+      var exact = layer === 0 && exactZone(zoneObj, true);
+      function startOre(terrain) {
+        return streamOre(zoneObj, R, diskR, palette, oreCv, function (n, total) {
+          // the terrain's progress is shown until it is done, then the ore's
+          if (layer === 2 || done === cells.length) {
+            status("placing ore " + n + "/" + total + " cells…");
+            setProgress(total ? n / total : 0);
+          }
+        }, terrain).then(function (t) { totals = t; }, function (e) {
+          failed++;
+          console.error("ore pass failed:", e);
+        });
+      }
+      function canvasTiles(c) {
+        return new Uint8Array(ctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
+      }
+      var ore = !oreCv ? Promise.resolve(null) : exact ? null : startOre(null);
 
       // The enemy areas / entities come last: the entities are placed on the
       // terrain as drawn, read back from the canvas.
       function enemies() {
-        if (layer !== 0 || !wantsEntityLayer(zoneObj, true)) return null;
+        if (exact || layer !== 0 || !wantsEntityLayer(zoneObj, true)) return null;
         var ents = entitySurface(zoneObj, true);
         return streamEnemies(zoneObj, R, diskR, palette, npx, function (n, total) {
           if (n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
@@ -365,7 +373,7 @@
       for (var c = 0; c < cells.length; c++) jobs.push(terrainCell(cells[c]));
       // All terrain cells, then the ore overlay and the enemy areas, then resolve.
       Promise.all(jobs).then(function () {
-        return ore;
+        return exact ? startOre(canvasTiles) : ore;
       }).then(function () {
         return enemies();
       }).then(finish, finish);
@@ -400,8 +408,13 @@
   // side, or smaller when the surface is shown downscaled (a phone's canvas
   // limit): cells are then drawn scaled down to it. `onProgress(done, total)`
   // is called after each cell. Resolves to { name: { amount, display } }.
+  //
+  // `terrain(cell)`, when given (see exactZone), returns the cell's terrain
+  // pixels as drawn: the ore then comes from the data-driven pass, which
+  // places it the way the game does on those tiles and returns the surface's
+  // entities with it - drawn here as the Entities layer.
   var ORE_CELL = 256;
-  function streamOre(z, R, diskR, palette, oreCv, onProgress) {
+  function streamOre(z, R, diskR, palette, oreCv, onProgress, terrain) {
     var octx = oreCv.getContext("2d");
     var scale = (2 * R) / oreCv.width; // tiles per canvas pixel
     octx.imageSmoothingEnabled = true;
@@ -411,12 +424,18 @@
       for (var x = Math.floor(-R / ORE_CELL) * ORE_CELL; x < R; x += ORE_CELL) {
         var c = { x0: Math.max(x, -R), y0: Math.max(y, -R), x1: Math.min(x + ORE_CELL, R), y1: Math.min(y + ORE_CELL, R) };
         // (cells wholly off the disk draw nothing but still count: the totals
-        // are for the whole square, as they always were)
+        // are for the whole square, as they always were - except with the
+        // data-driven pass, which places nothing past the surface's edge)
+        if (terrain) {
+          var nx = Math.max(c.x0, Math.min(0, c.x1 - 1)), ny = Math.max(c.y0, Math.min(0, c.y1 - 1));
+          if (nx * nx + ny * ny > R2) continue;
+        }
         c.d2 = Math.pow((c.x0 + c.x1) / 2, 2) + Math.pow((c.y0 + c.y1) / 2, 2);
         cells.push(c);
       }
     }
     cells.sort(function (a, b) { return a.d2 - b.d2; });
+    if (terrain && ENEMIES) enemyOverlay(oreCv.width, "Entities", SE_ENTITIES_HINT, SE_HIDDEN_GROUPS);
 
     var totals = {};
     var wells = [];   // [tile x, tile y, FLUID_COLORS index, ...]
@@ -440,11 +459,21 @@
       }
     }
     var jobs = cells.map(function (c) {
-      return sendToPool({
+      var tiles = terrain ? terrain(c) : null;
+      return sendToPool(tiles ? {
+        seed: SEED, k2: K2, zone: z, layer: 4, radius: diskR, tiles_in: true, entities: true,
+        rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }
+      } : {
         seed: SEED, k2: K2, zone: z, layer: 0, radius: diskR, terrainless: true,
         palette: palette, rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }, square: squareSurface(z)
-      }, "surface", "ore").then(function (r) {
+      }, "surface", "ore", tiles).then(function (r) {
         var w = c.x1 - c.x0, h = c.y1 - c.y0, px = r.pixels, mine = [];
+        if (tiles) {
+          // two images: the ore, then the entities
+          var ents = px.subarray(w * h * 4, 2 * w * h * 4);
+          px = px.subarray(0, w * h * 4);
+          if (ENEMIES && r.summary.enemy_tiles) drawEntityCell(ents, w, h, (c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
+        }
         for (var row = 0; row < h; row++) {
           var ty = c.y0 + row;
           for (var col = 0; col < w; col++) {
@@ -583,7 +612,8 @@
   // hides the canvas. ?entities=0 (or ?enemies=0) skips generating it.
   var ENEMIES = !/[?&](enemies|entities)=0\b/.test(location.search);
   var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
-  var SE_ENTITIES_HINT = "Trees, rocks, cliffs and enemy nests, placed the way the game places them. Trees and nests follow the seed: the same forests and bases as in the game, individual positions within a tile or two. Rocks and cliffs are typical only - Space Exploration rolls their settings when a save first creates the surface.";
+  var SE_ENTITIES_HINT = "Trees, rocks, cliffs and enemy nests, placed the way the game places them. Trees and nests follow the seed: the same forests and bases as in the game, individual positions within a tile or two. Rocks and cliffs are typical only - Space Exploration rolls their settings when a save first creates the surface. Rocks start hidden: the game's own map does not show them.";
+  var SE_HIDDEN_GROUPS = ["rocks", "huge"];
   var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
   // Entities arrive in one image, each class in its own colour (classColor
@@ -610,12 +640,20 @@
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
   // label = "Entities": the per-group checkboxes; otherwise the one checkbox
-  function enemyOverlay(px, label, hint) {
+  // `off`: the groups whose checkbox starts unticked on this surface
+  function enemyOverlay(px, label, hint, off) {
     enemyOverlayClear();
     entityMode = label === "Entities";
     // enemy areas lie under the ore; entities other than trees over it
     enemyOverlayEl = overlayCanvas(px, entityMode ? 3 : 1);
-    if (entityMode) treeEl = overlayCanvas(px, 1);
+    if (entityMode) {
+      treeEl = overlayCanvas(px, 1);
+      // (read back whenever a group is hidden)
+      enemyOverlayEl.getContext("2d", { willReadFrequently: true });
+      if (els.groups) els.groups.querySelectorAll("input[data-group]").forEach(function (cb) {
+        cb.checked = !off || off.indexOf(cb.dataset.group) === -1;
+      });
+    }
     if (els.enemyWrap) {
       els.enemyWrap.hidden = false;
       els.enemyWrap.title = hint || ENEMY_AREAS_HINT;
@@ -729,6 +767,14 @@
   function entitySurface(z, fullSize) {
     return squareSurface(z) || (seSolid(z) && !!fullSize);
   }
+  // A Space Exploration planet or moon drawn at full size: its ore and its
+  // entities come from one data-driven pass over the terrain's tiles
+  // (streamOre with `terrain`), which matches the game's ore tile for tile
+  // where the older ore code does not. Not with Krastorio 2 (its resources
+  // are not in the data file) and not Nauvis.
+  function exactZone(z, fullSize) {
+    return MOD === "se" && !!z && !z.nauvis && (z.t === "planet" || z.t === "moon") && !!fullSize;
+  }
   function wantsEntityLayer(z, fullSize) {
     return ENEMIES && (entitySurface(z, fullSize) || zoneHasEnemies(z));
   }
@@ -743,7 +789,9 @@
   function streamEnemies(z, R, diskR, palette, px, onProgress, terrain) {
     // (an SE surface's entities need the terrain's tiles)
     var entities = entitySurface(z, !!terrain);
-    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? ENTITIES_HINT : SE_ENTITIES_HINT) : enemyOverlay(px)).getContext("2d");
+    // alien-biomes rocks are flagged "not-on-map": the game's own map does not
+    // draw them, so on an SE surface they start hidden
+    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? ENTITIES_HINT : SE_ENTITIES_HINT, squareSurface(z) ? null : SE_HIDDEN_GROUPS) : enemyOverlay(px)).getContext("2d");
     var scale = (2 * R) / px;
     ectx.imageSmoothingEnabled = true;
     var cells = [];
@@ -866,11 +914,16 @@
         // downscaled surface it is drawn scaled down like the terrain.
         var oreCv = layer === 0 ? oreOverlay(disp) : null;
         var terrainDone = false;
-        var oreP = !oreCv ? null : streamOre(z, R, diskR, palette, oreCv, function (n, total) {
-          if (!terrainDone) return; // the terrain's progress is shown first
-          status("placing ore (CPU wasm) " + n + "/" + total + " cells…");
-          setProgress(total ? n / total : 0);
-        });
+        // (an exact zone's ore needs the finished terrain: it starts after it)
+        var exact = !!oreCv && exactZone(z, scaleS === 1);
+        var startOre = function (terrain) {
+          return streamOre(z, R, diskR, palette, oreCv, function (n, total) {
+            if (!terrainDone) return; // the terrain's progress is shown first
+            status("placing ore" + (terrain && ENEMIES ? " and entities" : "") + " (CPU wasm) " + n + "/" + total + " cells…");
+            setProgress(total ? n / total : 0);
+          }, terrain);
+        };
+        var oreP = !oreCv || exact ? null : startOre(null);
         if (oreP) oreP.catch(function () {}); // reported where it is awaited below
         var oreDone = false;
         var gpuKind, backend, label;
@@ -935,7 +988,13 @@
           // drawn at full size) rather than work them out again.
           var tctx = els.canvas.getContext("2d");
           var ents = entitySurface(z, scaleS === 1);
-          var enemyP = oreCv && wantsEntityLayer(z, scaleS === 1) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
+          if (exact) {
+            terrainDone = true;
+            oreP = startOre(function (c) {
+              return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
+            });
+          }
+          var enemyP = oreCv && !exact && wantsEntityLayer(z, scaleS === 1) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
             if (oreDone && n < total) status("mapping " + (ents ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
           }, ents && scaleS === 1 ? function (c) {
             return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
