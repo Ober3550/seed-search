@@ -105,7 +105,89 @@ pub const ChunkData = struct {
     /// surface, in placement order (only with Options.entities)
     ents: [MAX_ENTS]Placed,
     n_ents: usize,
+    /// the chunk's cliff pieces (only with Options.entities)
+    cliffs: [MAX_CLIFFS]CliffPiece,
+    n_cliffs: usize,
 };
+
+/// One cliff piece: position in 1/256 tile and orientation (index into
+/// sa_data.Cliff.orientations).
+pub const CliffPiece = struct { x: i32, y: i32, orient: u8 };
+pub const MAX_CLIFFS = 64;
+const CLIFF_POINTS = 33 * 33;
+
+/// CellCliffCrossing::toMaybeCliffOrientation: the piece for a cell from its
+/// crossed edges, two bits each (0 none, 1 rising, 3 falling) packed as
+/// left << 6 | right << 4 | top << 2 | bottom. Null: no piece fits.
+pub fn cliffOrientation(code: u8) ?u8 {
+    return switch (code) {
+        0x01 => 17,
+        0x03 => 18,
+        0x04 => 16,
+        0x05 => 1,
+        0x0c => 19,
+        0x0f => 3,
+        0x10 => 14,
+        0x11 => 6,
+        0x1c => 10,
+        0x30 => 13,
+        0x33 => 11,
+        0x34 => 5,
+        0x40 => 15,
+        0x43 => 7,
+        0x44 => 9,
+        0x50 => 2,
+        0xc0 => 12,
+        0xc1 => 8,
+        0xcc => 4,
+        0xf0 => 0,
+        else => null,
+    };
+}
+
+/// Does the cliff piece's (rotated) collision box overlap the axis-aligned
+/// box [l, r) x [t, b) (tiles)? Separating axes of the two rectangles.
+pub fn cliffTouches(c: *const sa_data.Cliff, o: u8, px: i32, py: i32, l: f32, t: f32, r: f32, b: f32) bool {
+    const rc = c.rects[o];
+    const ox = @as(f32, @floatFromInt(px)) / 256.0;
+    const oy = @as(f32, @floatFromInt(py)) / 256.0;
+    const ang = rc[4] * 2.0 * std.math.pi;
+    const ca = @cos(ang);
+    const sa = @sin(ang);
+    // the other box's corners in the cliff box's own frame
+    const corners = [4][2]f32{ .{ l, t }, .{ r, t }, .{ r, b }, .{ l, b } };
+    var lx0: f32 = std.math.inf(f32);
+    var lx1: f32 = -std.math.inf(f32);
+    var ly0: f32 = std.math.inf(f32);
+    var ly1: f32 = -std.math.inf(f32);
+    for (corners) |q| {
+        const dx = q[0] - ox;
+        const dy = q[1] - oy;
+        const ux = dx * ca + dy * sa;
+        const uy = -dx * sa + dy * ca;
+        lx0 = @min(lx0, ux);
+        lx1 = @max(lx1, ux);
+        ly0 = @min(ly0, uy);
+        ly1 = @max(ly1, uy);
+    }
+    if (lx1 <= rc[0] or lx0 >= rc[2] or ly1 <= rc[1] or ly0 >= rc[3]) return false;
+    // the cliff box's corners in the world frame
+    const mine = [4][2]f32{ .{ rc[0], rc[1] }, .{ rc[2], rc[1] }, .{ rc[2], rc[3] }, .{ rc[0], rc[3] } };
+    var wx0: f32 = std.math.inf(f32);
+    var wx1: f32 = -std.math.inf(f32);
+    var wy0: f32 = std.math.inf(f32);
+    var wy1: f32 = -std.math.inf(f32);
+    for (mine) |q| {
+        const wx = ox + q[0] * ca - q[1] * sa;
+        const wy = oy + q[0] * sa + q[1] * ca;
+        wx0 = @min(wx0, wx);
+        wx1 = @max(wx1, wx);
+        wy0 = @min(wy0, wy);
+        wy1 = @max(wy1, wy);
+    }
+    return !(wx1 <= l or wx0 >= r or wy1 <= t or wy0 >= b);
+}
+
 
 /// One placed non-resource entity: index into planet.placed and its position
 /// in 1/256 tile (the engine's fixed-point map position).
@@ -167,6 +249,10 @@ pub const World = struct {
     /// generated (an entity's box can reach into a neighbouring chunk)
     tiles_program: ?prog.Program,
     tiles_ws: prog.Program.Workspace,
+    /// cliff_elevation and cliffiness at the cliff grid's cell corners
+    cliff: ?*const sa_data.Cliff,
+    cliff_program: ?prog.Program,
+    cliff_ws: prog.Program.Workspace,
     xs: []f32,
     ys: []f32,
 
@@ -230,6 +316,15 @@ pub const World = struct {
             tiles_ws = try tp.workspaceN(a, 1);
             tiles_program = tp;
         }
+        var cliff_program: ?prog.Program = null;
+        var cliff_ws: prog.Program.Workspace = undefined;
+        if (opts.entities and planet.cliff != null) {
+            prog.multisample_step = @floatFromInt(planet.cliff.?.grid[0]);
+            defer prog.multisample_step = 1;
+            const cpr = try prog.compile(a, data, planet, map_seed, controls, &.{ "cliff_elevation", "cliffiness" }, err_out);
+            cliff_ws = try cpr.workspaceN(a, CLIFF_POINTS);
+            cliff_program = cpr;
+        }
         const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
         var ws = try program.workspaceN(a, AREA);
         ws.column_rng = true;
@@ -247,6 +342,9 @@ pub const World = struct {
             .record = opts.entities,
             .tiles_program = tiles_program,
             .tiles_ws = tiles_ws,
+            .cliff = if (opts.entities) planet.cliff else null,
+            .cliff_program = cliff_program,
+            .cliff_ws = cliff_ws,
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
         };
@@ -286,6 +384,8 @@ pub const World = struct {
         @memset(&out.resource, NO_RESOURCE);
         @memset(&out.amount, 0);
         out.n_ents = 0;
+        // computeInternal: cliffs first, then the entities
+        self.genCliffs(cx, cy, out);
         if (self.n_placed == 0) return;
 
         var blocked: [AREA]bool = undefined;
@@ -362,6 +462,171 @@ pub const World = struct {
         if (self.record) self.applyEntities(out);
     }
 
+
+    // -----------------------------------------------------------------------
+    // Cliffs (CliffGenerator::crossingsForChunk, CellEdgeCliffCrossingArray::
+    // fixImpossibleCells, EntityMapGenerationTask::generateCliffs)
+    // -----------------------------------------------------------------------
+
+    /// The chunk's cliff pieces. Cliffs sit on a grid of cells (4x4 tiles);
+    /// `cliff_elevation` and `cliffiness` are sampled at the cell corners. A
+    /// cell edge is crossed when the elevation passes a cliff level between
+    /// its two corners (levels are cliff_elevation_0 + k * interval) and the
+    /// corners' mean cliffiness is above one half; the pattern of crossed
+    /// edges around a cell picks the piece that goes in it.
+    fn genCliffs(self: *World, cx: i32, cy: i32, out: *ChunkData) void {
+        out.n_cliffs = 0;
+        const c = self.cliff orelse return;
+        const cp = &(self.cliff_program orelse return);
+        const gx: usize = @intCast(c.grid[0]);
+        const gy: usize = @intCast(c.grid[1]);
+        if (gx == 0 or gy == 0) return;
+        const nx = CHUNK / gx;
+        const ny = CHUNK / gy;
+        const pw = nx + 1; // points per row
+        const np = pw * (ny + 1);
+        if (np > CLIFF_POINTS or nx == 0 or ny == 0) return;
+
+        var xs: [CLIFF_POINTS]f32 = undefined;
+        var ys: [CLIFF_POINTS]f32 = undefined;
+        for (0..ny + 1) |j| {
+            for (0..pw) |i| {
+                xs[j * pw + i] = @floatFromInt(cx * CHUNK + @as(i32, @intCast(gx * i)));
+                ys[j * pw + i] = @floatFromInt(cy * CHUNK + @as(i32, @intCast(gy * j)));
+            }
+        }
+        cp.eval(&self.cliff_ws, xs[0..np], ys[0..np]);
+        const raw = cp.out(&self.cliff_ws, 0);
+        const cliffiness = cp.out(&self.cliff_ws, 1);
+
+        // Smoothing: each corner is blended (by cliff_smoothing) towards the
+        // bilinear interpolation of a coarse grid - every 4th corner, the
+        // last coarse step ending on the last cell's corner (so 0, 4, 7 for 8
+        // cells), exactly as the engine does it.
+        var elev: [CLIFF_POINTS]f32 = undefined;
+        const s: f32 = @floatCast(self.planet.cliff_smoothing);
+        for (0..ny + 1) |j| {
+            const row0 = j & ~@as(usize, 3);
+            const row1c = @min(row0 + 4, ny - 1);
+            const fy: f32 = if (row1c > row0) @as(f32, @floatFromInt(j & 3)) / @as(f32, @floatFromInt(row1c - row0)) else 0;
+            const row1 = @max(row1c, @min(row0, ny)); // (when fy is 0 the far row has no weight)
+            for (0..pw) |i| {
+                const col0 = i & ~@as(usize, 3);
+                const col1c = @min(col0 + 4, nx - 1);
+                const fx: f32 = if (col1c > col0) @as(f32, @floatFromInt(i & 3)) / @as(f32, @floatFromInt(col1c - col0)) else 0;
+                const ccol1 = @max(col1c, @min(col0, nx));
+                const rrow0 = @min(row0, ny);
+                const ccol0 = @min(col0, nx);
+                const b = raw[rrow0 * pw + ccol0] * (1 - fx) * (1 - fy) + fx * (1 - fy) * raw[rrow0 * pw + ccol1] +
+                    (1 - fx) * fy * raw[row1 * pw + ccol0] + fx * fy * raw[row1 * pw + ccol1];
+                elev[j * pw + i] = s * b + (1 - s) * raw[j * pw + i];
+            }
+        }
+
+        const e0: f32 = @floatCast(self.planet.cliff_elevation_0);
+        const iv: f32 = @floatCast(self.planet.cliff_elevation_interval);
+        const cross = struct {
+            fn f(a: f32, b: f32, ca: f32, cb: f32, base: f32, step: f32) u8 {
+                if (!(a >= 0) or !(b >= 0)) return 0;
+                const m = @max(a, b);
+                const q = (m - base) / step;
+                if (!(@abs(q) < 1.0e9)) return 0;
+                const lvl = base + step * @as(f32, @floatFromInt(@as(i32, @intFromFloat(q))));
+                if (lvl < base) return 0;
+                const cf = (ca + cb) * 0.5;
+                if (!(cf > 0.5)) return 0;
+                if (a - lvl < 0 and b - lvl > 0) return 1;
+                if (b - lvl < 0 and a - lvl > 0) return 3;
+                return 0;
+            }
+        }.f;
+        // h: edges between horizontal neighbours (a cell's top / bottom),
+        // v: between vertical neighbours (its left / right)
+        var h: [CLIFF_POINTS]u8 = undefined;
+        var v: [CLIFF_POINTS]u8 = undefined;
+        for (0..ny + 1) |j| {
+            for (0..nx) |i| h[j * nx + i] = cross(elev[j * pw + i], elev[j * pw + i + 1], cliffiness[j * pw + i], cliffiness[j * pw + i + 1], e0, iv);
+        }
+        for (0..ny) |j| {
+            for (0..pw) |i| v[j * pw + i] = cross(elev[j * pw + i], elev[(j + 1) * pw + i], cliffiness[j * pw + i], cliffiness[(j + 1) * pw + i], e0, iv);
+        }
+
+        // fixImpossibleCells: a cell may have at most two crossed edges, in a
+        // pattern some piece fits. Otherwise crossings are dropped one at a
+        // time - never one on the chunk's border, which the neighbouring
+        // chunk also sees - left, top, right, bottom, until it does.
+        var pass: usize = 0;
+        while (pass < 2) : (pass += 1) {
+            if (pass == 1) {
+                // second try: give up the chunk's corner crossings
+                h[0] = 0;
+                v[0] = 0;
+                h[nx - 1] = 0;
+                v[nx] = 0;
+                h[nx * ny] = 0;
+                v[(ny - 1) * pw] = 0;
+                h[nx - 1 + nx * ny] = 0;
+                v[(ny - 1) * pw + nx] = 0;
+            }
+            var stuck = false;
+            for (0..ny) |y| {
+                for (0..nx) |x| {
+                    while (true) {
+                        const l = &v[y * pw + x];
+                        const r = &v[y * pw + x + 1];
+                        const t = &h[y * nx + x];
+                        const b = &h[(y + 1) * nx + x];
+                        const count = @as(u8, @intFromBool(l.* != 0)) + @intFromBool(r.* != 0) + @intFromBool(t.* != 0) + @intFromBool(b.* != 0);
+                        const code = l.* << 6 | r.* << 4 | t.* << 2 | b.*;
+                        if (count < 3 and (code == 0 or cliffOrientation(code) != null)) break;
+                        if (x != 0 and l.* != 0) {
+                            l.* = 0;
+                        } else if (t.* != 0 and y != 0) {
+                            t.* = 0;
+                        } else if (r.* != 0 and x < nx - 1) {
+                            r.* = 0;
+                        } else if (b.* != 0 and y < ny - 1) {
+                            b.* = 0;
+                        } else {
+                            stuck = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!stuck) break;
+        }
+
+        for (0..nx) |i| {
+            for (0..ny) |j| {
+                const code = v[j * pw + i] << 6 | v[j * pw + i + 1] << 4 | h[j * nx + i] << 2 | h[(j + 1) * nx + i];
+                if (code == 0) continue;
+                const o = cliffOrientation(code) orelse continue;
+                if (out.n_cliffs >= MAX_CLIFFS) return;
+                const px = c.offset[0] + (cx * CHUNK + @as(i32, @intCast(i * gx + gx / 2))) * 256;
+                const py = c.offset[1] + (cy * CHUNK + @as(i32, @intCast(j * gy + gy / 2))) * 256;
+                // applyCliffs -> Surface::wouldCollide: not on a tile it collides with
+                if (self.cliffOnBadTile(out, cx, cy, c, o, px, py)) continue;
+                out.cliffs[out.n_cliffs] = .{ .x = px, .y = py, .orient = o };
+                out.n_cliffs += 1;
+            }
+        }
+    }
+
+    fn cliffOnBadTile(self: *World, out: *const ChunkData, cx: i32, cy: i32, c: *const sa_data.Cliff, o: u8, px: i32, py: i32) bool {
+        const box = c.boxes[o];
+        var ty = (box[1] + py) >> 8;
+        while (ty <= (box[3] + py) >> 8) : (ty += 1) {
+            var tx = (box[0] + px) >> 8;
+            while (tx <= (box[2] + px) >> 8) : (tx += 1) {
+                if (!cliffTouches(c, o, px, py, @floatFromInt(tx), @floatFromInt(ty), @floatFromInt(tx + 1), @floatFromInt(ty + 1))) continue;
+                const ti = self.tileAt(out, cx, cy, tx, ty);
+                if (c.mask & self.planet.tiles[ti].mask != 0) return true;
+            }
+        }
+        return false;
+    }
+
     /// EntityMapGenerationTask::wouldCollide: every tile under the entity's
     /// box must be one it does not collide with.
     fn boxOnTiles(self: *World, out: *const ChunkData, cx: i32, cy: i32, ent: *const sa_data.Entity, px: i32, py: i32) bool {
@@ -413,6 +678,22 @@ pub const World = struct {
         for (out.ents[0..out.n_ents]) |c| {
             const ce = &placed[c.ent];
             var hit = false;
+            // the cliffs were applied before any entity
+            if (self.cliff) |cl| {
+                if (ce.mask & cl.mask != 0) {
+                    const l = @as(f32, @floatFromInt(c.x + ce.box[0])) / 256.0;
+                    const t = @as(f32, @floatFromInt(c.y + ce.box[1])) / 256.0;
+                    const r = @as(f32, @floatFromInt(c.x + ce.box[2])) / 256.0;
+                    const b = @as(f32, @floatFromInt(c.y + ce.box[3])) / 256.0;
+                    for (out.cliffs[0..out.n_cliffs]) |p| {
+                        if (cliffTouches(cl, p.orient, p.x, p.y, l, t, r, b)) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (hit) continue;
             for (out.ents[0..kept]) |k| {
                 const ke = &placed[k.ent];
                 if (ce.mask & ke.mask == 0) continue;
@@ -497,6 +778,29 @@ pub const World = struct {
                 self.chunk(cx, cy, &data);
                 const want_enemy = self.enemy_program != null and !self.record;
                 if (want_enemy) self.enemy_program.?.eval(&self.enemy_ws, self.xs, self.ys);
+                if (self.cliff) |cl| {
+                    const col = classColor(.cliff).?;
+                    for (data.cliffs[0..data.n_cliffs]) |pc| {
+                        if (pc.x >> 8 < x0 or pc.x >> 8 >= x1 or pc.y >> 8 < y0 or pc.y >> 8 >= y1) continue;
+                        enemy_tiles += 1;
+                        if (class_counts) |cc| cc[@intFromEnum(sa_data.Entity.Class.cliff)] += 1;
+                        const o = enemies orelse continue;
+                        // the tiles whose centre lies in the piece's box
+                        const box = cl.boxes[pc.orient];
+                        var ty = (pc.y + box[1]) >> 8;
+                        while (ty <= (pc.y + box[3]) >> 8) : (ty += 1) {
+                            var tx = (pc.x + box[0]) >> 8;
+                            while (tx <= (pc.x + box[2]) >> 8) : (tx += 1) {
+                                if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                                const fx: f32 = @floatFromInt(tx);
+                                const fy: f32 = @floatFromInt(ty);
+                                if (!cliffTouches(cl, pc.orient, pc.x, pc.y, fx + 0.45, fy + 0.45, fx + 0.55, fy + 0.55)) continue;
+                                const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
+                                o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
+                            }
+                        }
+                    }
+                }
                 for (data.ents[0..data.n_ents]) |pe| {
                     const ent = &self.planet.placed[pe.ent];
                     // counted where its position is, drawn wherever its box reaches

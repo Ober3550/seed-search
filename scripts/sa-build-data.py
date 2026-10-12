@@ -35,6 +35,14 @@ FACTORIO = os.environ.get("FACTORIO_BIN", "/Applications/factorio.app/Contents/M
 DATA = os.environ.get("FACTORIO_DATA", "/Applications/factorio.app/Contents/data")
 DEFAULT_MODS = ["base", "quality", "elevated-rails", "space-age"]
 AUTOPLACE_KINDS = (("tile", "tile"), ("entity", "entity"), ("decorative", "decorative"))
+# the engine's CliffOrientation enum (checked against the game's cliffs)
+CLIFF_ORIENTATIONS = [
+    "west-to-east", "north-to-south", "east-to-west", "south-to-north",
+    "west-to-north", "north-to-east", "east-to-south", "south-to-west",
+    "west-to-south", "north-to-west", "east-to-north", "south-to-east",
+    "west-to-none", "none-to-east", "east-to-none", "none-to-west",
+    "north-to-none", "none-to-south", "south-to-none", "none-to-north",
+]
 
 
 def dump_data(mods):
@@ -184,8 +192,33 @@ def main():
                                           key=lambda n: (entities[n]["order"], n))
         planets[pname] = cfg
 
+    # Cliff prototypes named by a planet's cliff_settings: the grid they sit
+    # on, their collision layers and, per orientation (in the engine's
+    # CliffOrientation order), the axis-aligned bounds of the rotated
+    # collision box [left, top, right, bottom].
+    cliffs = {}
+    for cfg in planets.values():
+        cname = (cfg.get("cliff_settings") or {}).get("name")
+        cp = (raw.get("cliff") or {}).get(cname)
+        if not cp or cname in cliffs:
+            continue
+        mask = (cp.get("collision_mask") or default_masks.get("cliff") or {}).get("layers") or {}
+        boxes, rects = [], []
+        for o in CLIFF_ORIENTATIONS:
+            bb = cp["orientations"][o.replace("-", "_")]["collision_bounding_box"]
+            (l, t), (r, b) = bb[0], bb[1]
+            ang = (bb[2] if len(bb) > 2 else 0) * 2 * math.pi
+            pts = [(x * math.cos(ang) - y * math.sin(ang), x * math.sin(ang) + y * math.cos(ang))
+                   for x, y in ((l, t), (r, t), (r, b), (l, b))]
+            boxes.append([min(q[0] for q in pts), min(q[1] for q in pts), max(q[0] for q in pts), max(q[1] for q in pts)])
+            # the box itself: [left, top, right, bottom, turns]
+            rects.append([l, t, r, b, bb[2] if len(bb) > 2 else 0])
+        cliffs[cname] = {"grid_size": list(cp.get("grid_size", [4, 4])), "grid_offset": list(cp.get("grid_offset", [0, 0])),
+                         "color": rgb(cp.get("map_color")), "layers": sorted(k for k, v in mask.items() if v),
+                         "orientations": CLIFF_ORIENTATIONS, "boxes": boxes, "rects": rects}
+
     out = {"game_version": game_version(), "mods": a.mods.split(","),
-           "planets": planets, "tiles": tiles, "entities": entities,
+           "planets": planets, "tiles": tiles, "entities": entities, "cliffs": cliffs,
            "functions": functions, "expressions": expressions}
     out_path = Path(a.out).resolve()
     out_path.write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")

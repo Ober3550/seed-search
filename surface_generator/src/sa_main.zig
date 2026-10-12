@@ -255,6 +255,16 @@ pub fn main(init: std.process.Init) !void {
                             }
                             w.chunkWith(cx, cy, &tiles, &chunk);
                         }
+                        if (planet.cliff) |cl| {
+                            for (chunk.cliffs[0..chunk.n_cliffs]) |pc| {
+                                const fx = @as(f64, @floatFromInt(pc.x)) / 256.0;
+                                const fy = @as(f64, @floatFromInt(pc.y)) / 256.0;
+                                if (fx < @as(f64, @floatFromInt(g[0])) or fx >= @as(f64, @floatFromInt(g[1] + 1)) or fy < @as(f64, @floatFromInt(g[2])) or fy >= @as(f64, @floatFromInt(g[3] + 1))) continue;
+                                if (k > 0) try out.append(a, ',');
+                                k += 1;
+                                try out.print(a, "{{\"n\":\"{s}@{s}\",\"x\":{d:.2},\"y\":{d:.2},\"a\":0}}", .{ cl.name, cl.orientations[pc.orient], fx, fy });
+                            }
+                        }
                         for (chunk.ents[0..chunk.n_ents]) |pe| {
                             const fx = @as(f64, @floatFromInt(pe.x)) / 256.0;
                             const fy = @as(f64, @floatFromInt(pe.y)) / 256.0;

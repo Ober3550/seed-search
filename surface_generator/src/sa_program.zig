@@ -134,6 +134,11 @@ pub const SpotCfg = struct {
 pub const SpotOp = struct { cfg: SpotCfg, sub: Program };
 
 /// control:<name>:<field> values (frequency/size/richness/bias).
+/// Tiles per step of the grid a program is evaluated on. multisample()
+/// offsets count grid steps, not tiles: a program compiled for the cliff grid
+/// (4-tile cells) sets this to the cell size while it compiles.
+pub var multisample_step: f64 = 1;
+
 pub const Controls = struct {
     ctx: *const anyopaque = undefined,
     lookup: *const fn (ctx: *const anyopaque, name: []const u8, field: []const u8) f64 = defaultControl,
@@ -655,8 +660,8 @@ pub const Compiler = struct {
             const dx = try ar.num(name, "offset_x", 1, null);
             const dy = try ar.num(name, "offset_y", 2, null);
             const here = self.ctxs.items[self.cur_ctx];
-            const nx = try self.emit2(.add, here.x, try self.konst(dx));
-            const ny = try self.emit2(.add, here.y, try self.konst(dy));
+            const nx = try self.emit2(.add, here.x, try self.konst(dx * multisample_step));
+            const ny = try self.emit2(.add, here.y, try self.konst(dy * multisample_step));
             const saved = self.cur_ctx;
             self.cur_ctx = try self.posCtx(nx, ny);
             defer self.cur_ctx = saved;
