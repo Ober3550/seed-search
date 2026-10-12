@@ -568,7 +568,7 @@
     return oreOverlayEl;
   }
 
-  // ── Enemy base areas ──────────────────────────────────────────────────────
+  // ── Enemy base areas / entities ───────────────────────────────────────────
   // A third canvas between the terrain and the ore: translucent red wherever
   // the game can place a nest (spawners and worms), stronger where that is
   // likelier - or, on a Space Age planet, the entities themselves (rocks,
@@ -578,10 +578,12 @@
   var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
   var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
-  // Entities come in one canvas, each class in its own colour (classColor in
-  // sa_surface.zig). The per-group checkboxes hide groups by showing a copy
-  // of that canvas with the unticked groups' pixels left out - made only
-  // while something is unticked, so the usual case costs no extra canvas.
+  // Entities arrive in one image, each class in its own colour (classColor
+  // in sa_surface.zig), and are kept on two canvases: the trees under the ore
+  // (ore shows through a forest, as on the game's map) and everything else -
+  // nests, rocks, cliffs - over it. Hiding the trees hides their canvas; the
+  // other per-group checkboxes show a copy of the upper canvas with the
+  // unticked groups' pixels left out - made only while one is unticked.
   var ENTITY_GROUPS = {
     enemies: [[255, 40, 40], [255, 64, 40]],
     trees: [[50, 92, 44], [62, 104, 52]],
@@ -591,16 +593,21 @@
   };
   var entityMode = false;   // the overlay holds entities (else enemy areas)
   var entityViewEl = null;  // the filtered copy, while a group is hidden
+  var treeEl = null;        // the trees, under the ore
+  var LOWER_GROUPS = ["trees"];
   function enemyOverlayClear() {
     if (enemyOverlayEl) { enemyOverlayEl.remove(); enemyOverlayEl = null; }
+    if (treeEl) { treeEl.remove(); treeEl = null; }
     if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
   // label = "Entities": the per-group checkboxes; otherwise the one checkbox
   function enemyOverlay(px, label, hint) {
     enemyOverlayClear();
-    enemyOverlayEl = overlayCanvas(px, 1);
     entityMode = label === "Entities";
+    // enemy areas lie under the ore; entities other than trees over it
+    enemyOverlayEl = overlayCanvas(px, entityMode ? 3 : 1);
+    if (entityMode) treeEl = overlayCanvas(px, 1);
     if (els.enemyWrap) {
       els.enemyWrap.hidden = false;
       els.enemyWrap.title = hint || ENEMY_AREAS_HINT;
@@ -614,6 +621,39 @@
     var off = [];
     if (els.groups) els.groups.querySelectorAll("input[data-group]").forEach(function (cb) { if (!cb.checked) off.push(cb.dataset.group); });
     return off;
+  }
+  // the hidden groups of the upper canvas
+  function hiddenUpper() {
+    return hiddenGroups().filter(function (g) { return LOWER_GROUPS.indexOf(g) === -1; });
+  }
+  // Move the tree pixels of a rect of the entity canvas down to the tree
+  // canvas (same nearest-colour rule as filterEntities).
+  function lowerTrees(x, y, w, h) {
+    var src = enemyOverlayEl.getContext("2d"), dst = treeEl.getContext("2d");
+    var cols = [];
+    Object.keys(ENTITY_GROUPS).forEach(function (g) { ENTITY_GROUPS[g].forEach(function (c) { cols.push([c[0], c[1], c[2], LOWER_GROUPS.indexOf(g) !== -1]); }); });
+    var STEP = 1024;
+    for (var ty = y; ty < y + h; ty += STEP) {
+      for (var tx = x; tx < x + w; tx += STEP) {
+        var bw = Math.min(STEP, x + w - tx), bh = Math.min(STEP, y + h - ty);
+        var img = src.getImageData(tx, ty, bw, bh), d = img.data;
+        var low = dst.getImageData(tx, ty, bw, bh), l = low.data, moved = false;
+        for (var i = 0; i < d.length; i += 4) {
+          if (!d[i + 3]) continue;
+          var best = 0, bd = Infinity;
+          for (var k = 0; k < cols.length; k++) {
+            var dr = d[i] - cols[k][0], dg = d[i + 1] - cols[k][1], db = d[i + 2] - cols[k][2];
+            var dist = dr * dr + dg * dg + db * db;
+            if (dist < bd) { bd = dist; best = k; }
+          }
+          if (!cols[best][3]) continue;
+          l[i] = d[i]; l[i + 1] = d[i + 1]; l[i + 2] = d[i + 2]; l[i + 3] = d[i + 3];
+          d[i + 3] = 0;
+          moved = true;
+        }
+        if (moved) { src.putImageData(img, tx, ty); dst.putImageData(low, tx, ty); }
+      }
+    }
   }
   // Copy a rect of the entity canvas to the filtered view without the
   // hidden groups (a pixel belongs to the group whose colour it is nearest,
@@ -647,22 +687,25 @@
       enemyOverlayEl.style.display = !els.enemy || els.enemy.checked ? "" : "none";
       return;
     }
-    var off = hiddenGroups();
+    if (treeEl) treeEl.style.display = hiddenGroups().indexOf("trees") === -1 ? "" : "none";
+    var off = hiddenUpper();
     if (!off.length) {
       if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
       enemyOverlayEl.style.display = "";
       return;
     }
-    if (!entityViewEl) entityViewEl = overlayCanvas(enemyOverlayEl.width, 1);
+    if (!entityViewEl) entityViewEl = overlayCanvas(enemyOverlayEl.width, 3);
     enemyOverlayEl.style.display = "none";
     filterEntities(0, 0, enemyOverlayEl.width, enemyOverlayEl.height, off);
   }
   // after new entities were drawn into a rect: bring the filtered view up to date
   function entitiesDrawn(x, y, w, h) {
-    if (!entityViewEl) return;
+    if (!entityMode || !enemyOverlayEl) return;
     x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
     w = Math.min(enemyOverlayEl.width - x, Math.ceil(w) + 1); h = Math.min(enemyOverlayEl.height - y, Math.ceil(h) + 1);
-    if (w > 0 && h > 0) filterEntities(x, y, w, h, hiddenGroups());
+    if (w <= 0 || h <= 0) return;
+    lowerTrees(x, y, w, h);
+    if (entityViewEl) filterEntities(x, y, w, h, hiddenUpper());
   }
   // Does this SE surface have enemies to map? (Nauvis always; a zone by its
   // enemy tag; never an asteroid field.)
