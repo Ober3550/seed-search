@@ -294,11 +294,10 @@
     return new Promise(function (resolve, reject) {
       // Ore has a canvas of its own (the ore layer when layered), drawn onto
       // the visible canvas over whatever terrain is there.
-      var oreCv = layer === 1 ? null : L ? L.ore : newCanvas(npx);
+      var oreCv = layer === 1 ? null : L ? L.ore : oreOverlay(npx);
       var visible = els.canvas.getContext("2d");
       function showOre(x, y, w, h) {
-        if (L) { compositeSA(x, y, w, h); return; }
-        if (oreCv) visible.drawImage(oreCv, x, y, w, h, x, y, w, h);
+        if (L) compositeSA(x, y, w, h); // (unlayered: the ore canvas is shown as it is)
       }
       var done = 0;
       var failed = 0;
@@ -540,6 +539,7 @@
   // terrain under the ore without regenerating. Returns null (plain drawing,
   // slider inactive) when the canvases would be too large to keep three of.
   function layersBegin(px, key) {
+    oreOverlayClear();
     if (px > LAYERED_MAX) { sa = null; return null; }
     var mk = function () { var c = document.createElement("canvas"); c.width = px; c.height = px; return c; };
     sa = { R: key, terrain: mk(), ore: mk(), done: false };
@@ -549,8 +549,35 @@
   // Draw the visible canvas from the two layers (optionally just one rect).
   // The "Terrain" slider darkens the terrain only where it has pixels, so a
   // disk's transparent corners stay transparent.
+  // Above LAYERED_MAX there are no offscreen layers to composite. The visible
+  // canvas then holds the terrain alone and the ore canvas is laid over it in
+  // the page, so the "Terrain" slider can still darken the terrain: with a CSS
+  // filter instead of a redraw.
+  var oreOverlayEl = null;
+  function oreOverlayClear() {
+    if (oreOverlayEl) { oreOverlayEl.remove(); oreOverlayEl = null; }
+    els.canvas.style.filter = "";
+  }
+  function oreOverlay(px) {
+    oreOverlayClear();
+    var c = newCanvas(px);
+    var box = els.canvas.parentNode;
+    box.style.position = "relative";
+    // sized by the same rules as the canvas under it (#sf-canvas in style.css)
+    c.style.cssText = "position:absolute;pointer-events:none;width:100%;max-width:720px;height:auto;image-rendering:pixelated;" +
+      "left:" + els.canvas.offsetLeft + "px;top:" + els.canvas.offsetTop + "px";
+    box.appendChild(c);
+    oreOverlayEl = c;
+    dimUnlayered();
+    return c;
+  }
+  function dimUnlayered() {
+    var dim = els.dim ? parseInt(els.dim.value, 10) / 100 : 1;
+    els.canvas.style.filter = oreOverlayEl && dim < 1 ? "brightness(" + dim + ")" : "";
+  }
+
   function compositeSA(x, y, w, h) {
-    if (!sa) return;
+    if (!sa) { dimUnlayered(); return; }
     var ctx = els.canvas.getContext("2d");
     if (x == null) { x = 0; y = 0; w = els.canvas.width; h = els.canvas.height; }
     var layer = parseInt(els.layer.value, 10) || 0;
@@ -651,12 +678,10 @@
         // Ore runs on the CPU workers while the GPU does the terrain; on a
         // downscaled surface it is drawn scaled down like the terrain.
         var visible = els.canvas.getContext("2d");
-        var oreCv = layer === 0 ? (GL ? GL.ore : newCanvas(disp)) : null;
+        var oreCv = layer === 0 ? (GL ? GL.ore : oreOverlay(disp)) : null;
         var terrainDone = false;
         function showOre(x, y, w, h) {
-          if (!oreCv) return;
-          if (GL) { compositeSA(x, y, w, h); return; }
-          visible.drawImage(oreCv, x, y, w, h, x, y, w, h);
+          if (oreCv && GL) compositeSA(x, y, w, h); // (unlayered: the ore canvas is shown as it is)
         }
         var oreP = !oreCv ? null : streamOre(z, R, diskR, palette, oreCv, showOre, function (n, total) {
           if (!terrainDone) return; // the terrain's progress is shown first
