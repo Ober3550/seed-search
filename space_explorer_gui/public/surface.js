@@ -604,10 +604,7 @@
   // trees, plants, nests). It is drawn once; the checkbox only shows or
   // hides the canvas. ?entities=0 (or ?enemies=0) skips generating it.
   var ENEMIES = !/[?&](enemies|entities)=0\b/.test(location.search);
-  var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
-  var SE_ENTITIES_HINT = "Trees, rocks, cliffs and enemy nests, placed the way the game places them. Trees and nests follow the seed: the same forests and bases as in the game, individual positions within a tile or two. Rocks and cliffs are typical only - Space Exploration rolls their settings when a save first creates the surface. Rocks start hidden: the game's own map does not show them.";
   var SE_HIDDEN_GROUPS = ["rocks", "huge"];
-  var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
   // Entities arrive in one image, each class in its own colour (classColor
   // in sa_surface.zig), and are kept on two canvases: the trees under the ore
@@ -635,7 +632,7 @@
   }
   // label = "Entities": the per-group checkboxes; otherwise the one checkbox
   // `off`: the groups whose checkbox starts unticked on this surface
-  function enemyOverlay(px, label, hint, off) {
+  function enemyOverlay(px, label, off) {
     enemyOverlayClear();
     entityMode = label === "Entities";
     // enemy areas lie under the ore; entities other than trees over it
@@ -650,7 +647,6 @@
     }
     if (els.enemyWrap) {
       els.enemyWrap.hidden = false;
-      els.enemyWrap.title = hint || ENEMY_AREAS_HINT;
       if (els.areas) els.areas.hidden = entityMode;
       if (els.groups) els.groups.hidden = !entityMode;
     }
@@ -867,7 +863,7 @@
     var entities = entitySurface(z, !!terrain);
     // alien-biomes rocks are flagged "not-on-map": the game's own map does not
     // draw them, so on an SE surface they start hidden
-    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? ENTITIES_HINT : SE_ENTITIES_HINT, squareSurface(z) ? null : SE_HIDDEN_GROUPS) : enemyOverlay(px)).getContext("2d");
+    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? null : SE_HIDDEN_GROUPS) : enemyOverlay(px)).getContext("2d");
     var scale = (2 * R) / px;
     ectx.imageSmoothingEnabled = true;
     var cells = [];
@@ -1155,7 +1151,7 @@
             blit(octx, r.summary.width, r.summary.height, r.pixels.subarray(n, 2 * n), c.x0 + R, c.y0 + R);
             if (r.summary.entity_layer && ENEMIES) {
               // third layer: the planet's rocks, trees, plants and nests
-              if (!ectx) ectx = enemyOverlay(disp, "Entities", ENTITIES_HINT).getContext("2d");
+              if (!ectx) ectx = enemyOverlay(disp, "Entities").getContext("2d");
               drawEntityCell(r.pixels.subarray(2 * n, 3 * n), r.summary.width, r.summary.height,
                 (c.x0 + R) / scale, (c.y0 + R) / scale, r.summary.width / scale, r.summary.height / scale);
             }
