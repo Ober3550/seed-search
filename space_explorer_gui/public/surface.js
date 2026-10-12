@@ -102,8 +102,9 @@
     badge: document.getElementById("sf-badge"),
     meta: document.getElementById("sf-meta"),
     radius: document.getElementById("sf-radius"),
-    layerWrap: document.getElementById("sf-layer-wrap"),
-    layer: document.getElementById("sf-layer"),
+    // The page always draws terrain + ore (0). There is no selector for it;
+    // ?layer=1 (terrain only) / ?layer=2 (ore only) remain for testing.
+    layer: { value: "0" },
     dimWrap: document.getElementById("sf-dim-wrap"),
     dim: document.getElementById("sf-dim"),
     go: document.getElementById("sf-go"),
@@ -543,7 +544,6 @@
 
   function adaptForKind() {
     els.badge.textContent = kind === "zone" ? "…" : "planet";
-    els.layerWrap.hidden = false;
     if (els.dimWrap) els.dimWrap.hidden = false;
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
@@ -915,7 +915,6 @@
     adaptForKind();
     els.go.addEventListener("click", run);
     els.radius.addEventListener("change", run);
-    els.layer.addEventListener("change", run);
     if (els.dim) els.dim.addEventListener("input", function () { compositeSA(); });
     if (kind === "sa") {
       var p = PLANETS[planetKey];
