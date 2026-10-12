@@ -7,7 +7,7 @@
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true, hlCombined: true, hlPrimary: false };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -28,6 +28,9 @@
     { res: ["se-vulcanite", "se-holmium-ore", "se-cryonite"], colors: ["#f85149", "#ff8fd8", "#58a6ff"],
       // without it, each of the three from its own nearest watered surface
       standIns: [{ res: "se-vulcanite", color: "#f85149" }, { res: "se-holmium-ore", color: "#ff8fd8" }, { res: "se-cryonite", color: "#58a6ff" }] },
+    // the pairs a seed without the three-resource surface is settled for
+    { res: ["se-vulcanite", "se-iridium-ore"], colors: ["#f85149", "#e6b422"], standIns: [] },
+    { res: ["se-cryonite", "se-holmium-ore"], colors: ["#58a6ff", "#ff8fd8"], standIns: [] },
     // vitamelange has to be the surface's primary: the last biological science
     // needs vitamelange core fragments, which only such a surface's core gives
     { res: ["se-vitamelange", "stone"], colors: ["#3fb950", "#c2ad7a"], primary: "se-vitamelange",
@@ -77,7 +80,14 @@
     NEAREST_PRIMARY.forEach(function (n) { mark(n.res, n.color, home, ""); });
     COMBOS.forEach(function (c) {
       if (settle.some(function (z) { return combosOf(z).indexOf(c) !== -1; })) return;
-      c.standIns.forEach(function (n) { mark(n.res, n.color, n.settleable ? settle : home, c.res.map(nm).join(" + ")); });
+      c.standIns.forEach(function (n) {
+        // no stand-in for a resource another combination of this seed covers
+        // (vulcanite by vulcanite + iridium, cryonite and holmium by their pair)
+        var covered = settle.some(function (z) {
+          return combosOf(z).some(function (o) { return o !== c && o.res.indexOf(n.res) !== -1; });
+        });
+        if (!covered) mark(n.res, n.color, n.settleable ? settle : home, c.res.map(nm).join(" + "));
+      });
     });
     return out;
   }
@@ -91,6 +101,12 @@
     });
     return best;
   }
+  // "Primary core resources": every zone whose primary is one of the special
+  // resources, in that resource's colour - where its core fragments come from.
+  var CORE_PRIMARY = {
+    "se-vulcanite": "#f85149", "se-cryonite": "#58a6ff", "se-holmium-ore": "#ff8fd8", "se-iridium-ore": "#e6b422",
+    "se-beryllium-ore": "#39d3d3", "se-vitamelange": "#3fb950", "se-naquium-ore": "#a371f7"
+  };
   // Nauvis is where every game starts, so it is always marked.
   var HOME = { label: "home surface", colors: ["#c9d1d9", "#8b949e"] };
   // What a row is highlighted for (empty = not highlighted).
@@ -98,7 +114,12 @@
     if (z.kind !== "se") return [];
     if (z.nauvis) return [HOME];
     if (z === marks.naqField) return [NAQ_FIELD];
-    return combosOf(z).concat(marks.system.filter(function (m) { return m[0] === z; }).map(function (m) { return m[1]; }));
+    var out = [];
+    // "Combined resources": the surfaces holding a combination, and the
+    // nearest surfaces that stand in where a seed has none
+    if (state.hlCombined) out = combosOf(z).concat(marks.system.filter(function (m) { return m[0] === z; }).map(function (m) { return m[1]; }));
+    if (state.hlPrimary && CORE_PRIMARY[z.p]) out.push({ label: nm(z.p) + "-primary", colors: [CORE_PRIMARY[z.p], CORE_PRIMARY[z.p]] });
+    return out;
   }
 
   // Space Age / base surfaces — static row descriptors (the SA data stage has
@@ -364,7 +385,8 @@
   // the highlighted rows are shown (on unless ?hl=0), so a reload or a shared link opens
   // the same view.
   function pageHref(seed) {
-    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0");
+    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0") +
+      (state.hlCombined ? "" : "&cmb=0") + (state.hlPrimary ? "&pri=1" : "");
   }
   function syncUrl() {
     history.replaceState(null, "", pageHref(state.seed));
@@ -416,6 +438,20 @@
         if (state.featured) renderFeatured(); // its seed links carry the setting
       });
     }
+    // what is highlighted: both kept in the address, like "Only highlighted"
+    [["hl-combined", "hlCombined", "cmb", true], ["hl-primary", "hlPrimary", "pri", false]].forEach(function (spec) {
+      var el = document.getElementById(spec[0]);
+      if (!el) return;
+      var v = new URLSearchParams(location.search).get(spec[2]);
+      state[spec[1]] = v == null ? spec[3] : v !== "0";
+      el.checked = state[spec[1]];
+      el.addEventListener("change", function (e) {
+        state[spec[1]] = e.target.checked;
+        syncUrl();
+        renderTable();
+        if (state.featured) renderFeatured();
+      });
+    });
     document.getElementById("zt-head").addEventListener("click", function (e) {
       var thEl = e.target.closest("th[data-key]"); if (!thEl) return;
       var k = thEl.dataset.key;
