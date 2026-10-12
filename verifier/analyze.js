@@ -701,7 +701,7 @@ function ruleLabel(rule) {
   return (names.length === 1 ? `has ${names[0]}` : `${names.join(" + ")} together`) + em + wm + rm;
 }
 
-module.exports = { convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, filterZoneMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
+module.exports = { surfaceInfo, printTable, noColor, convertNewToOld, viableBodies, isPrimaryResource, SPECIAL, bestNaqField, evaluateWorld, matchFilter, countMatches, filterZoneMatches, ruleLabel, normalizeRule, ENEMY_LEVELS, WATER_LEVELS };
 
 if (require.main !== module) {
   // imported as a library — skip the CLI main below
