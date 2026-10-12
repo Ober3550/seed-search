@@ -413,6 +413,12 @@
     Promise.all([window.generateUniverse(seedVal, state.k2), loadEstimator()])
       .then(function (res) {
         var uni = res[0];
+        // the universe's loot sequence, in the card with the other settings
+        var lootRow = document.getElementById("seed-loot-row");
+        if (lootRow) {
+          lootRow.hidden = !uni.l;
+          document.getElementById("seed-loot").innerHTML = lootHtml(uni.l);
+        }
         var zones = uni.z.slice();
         // Synthetic Nauvis (the universe generator never emits it): default-FSR
         // planet, r5000. Estimated client-side (base ores + K2 rare-metal);

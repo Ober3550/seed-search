@@ -103,10 +103,11 @@ fn build(a: std.mem.Allocator, seed: u32, k2: bool) ![]u8 {
             break;
         }
     }
+    // "l": the vault loot sequence (P productivity, S speed, E efficiency)
     // "hs" / "hr": the homeworld's zone seed and radius - not its map seed;
     // SE places Nauvis's core seams from them
-    pos += (try std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"k\":{},\"hs\":{d},\"hr\":{d},\"z\":[", .{
-        seed, k2, if (nauvis) |nz| nz.seed else 0, if (nauvis) |nz| nz.radius else 0,
+    pos += (try std.fmt.bufPrint(buf[pos..], "{{\"s\":{d},\"k\":{},\"l\":\"{s}\",\"hs\":{d},\"hr\":{d},\"z\":[", .{
+        seed, k2, universe.vault_loot, if (nauvis) |nz| nz.seed else 0, if (nauvis) |nz| nz.radius else 0,
     })).len;
 
     var zi: u32 = 0;
