@@ -281,15 +281,12 @@
   // Columns of each list: [sort key, heading, tooltip, header class].
   var FEATURED_COLS = {
     triple: [
-      ["seed", "Seed"], ["score", "Score", "Search score: planet count first, then field distance, hostility and water"],
+      ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
       ["planets", "Planets", "Planets in the Calidus home system, including Nauvis"],
       ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
-      ["naquiumDv", "Naquium Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"],
-      ["fieldDv", "Field Δv", "Travel Δv to the nearest asteroid field of any kind"],
-      ["combinedDv", "Combined Δv", "Travel Δv from Nauvis to the nearest surface with vulcanite, cryonite and holmium together"],
-      ["combinedRadius", "Combined radius", "Radius of that surface"],
-      ["hostile", "Hostile", "Share of home-system bodies with enemies"],
-      ["water", "Water", "Share of home-system bodies with water"], ["loot", "Loot", "Loot sequence"]
+      [null, "Zone", "What each line of the surface columns is"],
+      ["vch", "Vulc + Cryo + Holm", "Nearest watered home-system surface with vulcanite, cryonite and holmium together (sorts by its Δv)", "slot-vch"],
+      ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
     ],
     pairs: [
       ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
@@ -303,7 +300,9 @@
       ["naquiumDv", "Naq Δv", "Travel Δv to the nearest asteroid field whose primary resource is naquium"]
     ]
   };
-  var SLOTS = ["vi", "ch", "be", "vs"];
+  // the surface columns of each list
+  var LIST_SLOTS = { triple: ["vch"], pairs: ["vi", "ch", "be", "vs"] };
+  var SLOTS = LIST_SLOTS.triple.concat(LIST_SLOTS.pairs);
   function selectFeatured(key) {
     var list = state.featuredLists.filter(function (l) { return l.key === key; })[0] || state.featuredLists[0];
     state.featuredList = list.key;
@@ -339,7 +338,6 @@
   // (every column starts at its high end except the seed number).
   function renderFeatured() {
     var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
-    var pct = function (v) { return v == null ? "—" : v + "%"; };
     var k = state.featuredKey, dir = state.featuredDir === "asc" ? 1 : -1;
     var rows = state.featured.slice();
     if (k) rows.sort(function (a, b) {
@@ -353,22 +351,12 @@
       return (va - vb) * dir || a.seed - b.seed;
     });
     document.getElementById("featured-body").innerHTML = rows.map(function (f) {
-      if (state.featuredList === "pairs") {
-        return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
-          '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
-          "<td><code>" + lootHtml(f.loot) + "</code></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
-          '<td><div class="slot-lines labels"><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
-          SLOTS.map(function (k) { return "<td>" + slotCell(f.seed, f[k]) + "</td>"; }).join("") +
-          "<td>" + num(f.naquiumDv) + "</td></tr>";
-      }
       return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
         '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
-        "<td><strong>" + num(f.score) + "</strong></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
-        "<td>" + num(f.naquiumDv) + "</td><td>" + num(f.fieldDv) + "</td>" +
-        "<td" + (f.combinedSurface ? ' title="' + esc(f.combinedSurface) + '"' : "") + ">" + num(f.combinedDv) + "</td>" +
-        "<td" + (f.combinedSurface ? ' title="' + esc(f.combinedSurface) + '"' : "") + ">" + num(f.combinedRadius) + "</td>" +
-        "<td>" + pct(f.hostile) + "</td><td>" + pct(f.water) + "</td>" +
-        '<td><code>' + lootHtml(f.loot) + "</code></td></tr>";
+        "<td><code>" + lootHtml(f.loot) + "</code></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
+        '<td><div class="slot-lines labels"><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
+        LIST_SLOTS[state.featuredList].map(function (slot) { return "<td>" + slotCell(f.seed, f[slot]) + "</td>"; }).join("") +
+        "<td>" + num(f.naquiumDv) + "</td></tr>";
     }).join("");
     document.querySelectorAll("#featured-head .sort-ind").forEach(function (el) { el.textContent = ""; });
     var active = k && document.querySelector('#featured-head th[data-key="' + k + '"] .sort-ind');

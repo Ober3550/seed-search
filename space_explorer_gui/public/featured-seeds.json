@@ -15,7 +15,14 @@
      "water": 63,
      "combinedDv": 1967,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 2771
+     "combinedRadius": 2771,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 2771,
+      "dv": 1967,
+      "e": "very_low"
+     }
     },
     {
      "seed": 996931028,
@@ -29,7 +36,14 @@
      "water": 60,
      "combinedDv": 6612,
      "combinedSurface": "Lacero",
-     "combinedRadius": 7445
+     "combinedRadius": 7445,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 7445,
+      "dv": 6612,
+      "e": "none"
+     }
     },
     {
      "seed": 1753505128,
@@ -43,7 +57,14 @@
      "water": 66,
      "combinedDv": 7852,
      "combinedSurface": "Bomore",
-     "combinedRadius": 1213
+     "combinedRadius": 1213,
+     "vch": {
+      "n": "Bomore",
+      "t": "moon",
+      "r": 1213,
+      "dv": 7852,
+      "e": "very_high"
+     }
     },
     {
      "seed": 200741024,
@@ -57,7 +78,14 @@
      "water": 68,
      "combinedDv": 5876,
      "combinedSurface": "Pandion",
-     "combinedRadius": 2414
+     "combinedRadius": 2414,
+     "vch": {
+      "n": "Pandion",
+      "t": "moon",
+      "r": 2414,
+      "dv": 5876,
+      "e": "none"
+     }
     },
     {
      "seed": 3078590040,
@@ -71,7 +99,14 @@
      "water": 58,
      "combinedDv": 4507,
      "combinedSurface": "Xynariz",
-     "combinedRadius": 2135
+     "combinedRadius": 2135,
+     "vch": {
+      "n": "Xynariz",
+      "t": "moon",
+      "r": 2135,
+      "dv": 4507,
+      "e": "max"
+     }
     },
     {
      "seed": 58612664,
@@ -85,7 +120,14 @@
      "water": 68,
      "combinedDv": 9209,
      "combinedSurface": "Lynx",
-     "combinedRadius": 1841
+     "combinedRadius": 1841,
+     "vch": {
+      "n": "Lynx",
+      "t": "moon",
+      "r": 1841,
+      "dv": 9209,
+      "e": "low"
+     }
     },
     {
      "seed": 1242640992,
@@ -99,7 +141,14 @@
      "water": 79,
      "combinedDv": 7650,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 2954
+     "combinedRadius": 2954,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 2954,
+      "dv": 7650,
+      "e": "low"
+     }
     },
     {
      "seed": 2606936850,
@@ -113,7 +162,14 @@
      "water": 64,
      "combinedDv": 1289,
      "combinedSurface": "Krobelus",
-     "combinedRadius": 1514
+     "combinedRadius": 1514,
+     "vch": {
+      "n": "Krobelus",
+      "t": "moon",
+      "r": 1514,
+      "dv": 1289,
+      "e": "max"
+     }
     },
     {
      "seed": 2079622478,
@@ -127,7 +183,14 @@
      "water": 75,
      "combinedDv": 8715,
      "combinedSurface": "Lacero",
-     "combinedRadius": 1005
+     "combinedRadius": 1005,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 1005,
+      "dv": 8715,
+      "e": "none"
+     }
     },
     {
      "seed": 2243078354,
@@ -141,7 +204,14 @@
      "water": 79,
      "combinedDv": 4107,
      "combinedSurface": "Lacero",
-     "combinedRadius": 4091
+     "combinedRadius": 4091,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 4091,
+      "dv": 4107,
+      "e": "none"
+     }
     },
     {
      "seed": 1638003014,
@@ -155,7 +225,14 @@
      "water": 65,
      "combinedDv": 7262,
      "combinedSurface": "Jakiro",
-     "combinedRadius": 1514
+     "combinedRadius": 1514,
+     "vch": {
+      "n": "Jakiro",
+      "t": "moon",
+      "r": 1514,
+      "dv": 7262,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2641100764,
@@ -169,7 +246,14 @@
      "water": 59,
      "combinedDv": 9616,
      "combinedSurface": "Xynariz",
-     "combinedRadius": 8000
+     "combinedRadius": 8000,
+     "vch": {
+      "n": "Xynariz",
+      "t": "planet",
+      "r": 8000,
+      "dv": 9616,
+      "e": "max"
+     }
     },
     {
      "seed": 2960191934,
@@ -183,7 +267,14 @@
      "water": 68,
      "combinedDv": 9317,
      "combinedSurface": "Linken",
-     "combinedRadius": 5053
+     "combinedRadius": 5053,
+     "vch": {
+      "n": "Linken",
+      "t": "planet",
+      "r": 5053,
+      "dv": 9317,
+      "e": "high"
+     }
     },
     {
      "seed": 2642309656,
@@ -197,7 +288,14 @@
      "water": 72,
      "combinedDv": 1757,
      "combinedSurface": "Xynariz",
-     "combinedRadius": 1634
+     "combinedRadius": 1634,
+     "vch": {
+      "n": "Xynariz",
+      "t": "moon",
+      "r": 1634,
+      "dv": 1757,
+      "e": "max"
+     }
     },
     {
      "seed": 1292309734,
@@ -211,7 +309,14 @@
      "water": 68,
      "combinedDv": 1219,
      "combinedSurface": "Feist",
-     "combinedRadius": 1108
+     "combinedRadius": 1108,
+     "vch": {
+      "n": "Feist",
+      "t": "moon",
+      "r": 1108,
+      "dv": 1219,
+      "e": "max"
+     }
     },
     {
      "seed": 839961970,
@@ -225,7 +330,14 @@
      "water": 63,
      "combinedDv": 10281,
      "combinedSurface": "Luxitania",
-     "combinedRadius": 6175
+     "combinedRadius": 6175,
+     "vch": {
+      "n": "Luxitania",
+      "t": "planet",
+      "r": 6175,
+      "dv": 10281,
+      "e": "very_low"
+     }
     },
     {
      "seed": 4161786824,
@@ -239,7 +351,14 @@
      "water": 75,
      "combinedDv": 9457,
      "combinedSurface": "Zakhol",
-     "combinedRadius": 1026
+     "combinedRadius": 1026,
+     "vch": {
+      "n": "Zakhol",
+      "t": "moon",
+      "r": 1026,
+      "dv": 9457,
+      "e": "high"
+     }
     },
     {
      "seed": 1462340348,
@@ -253,7 +372,14 @@
      "water": 66,
      "combinedDv": 7192,
      "combinedSurface": "Jakiro",
-     "combinedRadius": 1058
+     "combinedRadius": 1058,
+     "vch": {
+      "n": "Jakiro",
+      "t": "moon",
+      "r": 1058,
+      "dv": 7192,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2151803794,
@@ -267,7 +393,14 @@
      "water": 58,
      "combinedDv": 9675,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 816
+     "combinedRadius": 816,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 816,
+      "dv": 9675,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2600314072,
@@ -281,7 +414,14 @@
      "water": 67,
      "combinedDv": 6782,
      "combinedSurface": "Arae",
-     "combinedRadius": 1120
+     "combinedRadius": 1120,
+     "vch": {
+      "n": "Arae",
+      "t": "moon",
+      "r": 1120,
+      "dv": 6782,
+      "e": "max"
+     }
     },
     {
      "seed": 1981071598,
@@ -295,7 +435,14 @@
      "water": 71,
      "combinedDv": 9274,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 2840
+     "combinedRadius": 2840,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 2840,
+      "dv": 9274,
+      "e": "very_low"
+     }
     },
     {
      "seed": 21273860,
@@ -309,7 +456,14 @@
      "water": 68,
      "combinedDv": 9827,
      "combinedSurface": "Lyralei",
-     "combinedRadius": 2673
+     "combinedRadius": 2673,
+     "vch": {
+      "n": "Lyralei",
+      "t": "moon",
+      "r": 2673,
+      "dv": 9827,
+      "e": "max"
+     }
     },
     {
      "seed": 2009560844,
@@ -323,7 +477,14 @@
      "water": 58,
      "combinedDv": 5047,
      "combinedSurface": "Atengam",
-     "combinedRadius": 1778
+     "combinedRadius": 1778,
+     "vch": {
+      "n": "Atengam",
+      "t": "moon",
+      "r": 1778,
+      "dv": 5047,
+      "e": "max"
+     }
     },
     {
      "seed": 382040142,
@@ -337,7 +498,14 @@
      "water": 62,
      "combinedDv": 11207,
      "combinedSurface": "Lacero",
-     "combinedRadius": 910
+     "combinedRadius": 910,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 910,
+      "dv": 11207,
+      "e": "none"
+     }
     },
     {
      "seed": 780546586,
@@ -351,7 +519,14 @@
      "water": 75,
      "combinedDv": 11019,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 4777
+     "combinedRadius": 4777,
+     "vch": {
+      "n": "Willownezz",
+      "t": "planet",
+      "r": 4777,
+      "dv": 11019,
+      "e": "very_low"
+     }
     },
     {
      "seed": 3879878800,
@@ -365,7 +540,14 @@
      "water": 68,
      "combinedDv": 10653,
      "combinedSurface": "Lacero",
-     "combinedRadius": 4614
+     "combinedRadius": 4614,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 4614,
+      "dv": 10653,
+      "e": "none"
+     }
     },
     {
      "seed": 3530331804,
@@ -379,7 +561,14 @@
      "water": 62,
      "combinedDv": 4961,
      "combinedSurface": "Tarrasque",
-     "combinedRadius": 872
+     "combinedRadius": 872,
+     "vch": {
+      "n": "Tarrasque",
+      "t": "moon",
+      "r": 872,
+      "dv": 4961,
+      "e": "med"
+     }
     },
     {
      "seed": 1108055686,
@@ -393,7 +582,14 @@
      "water": 72,
      "combinedDv": 6072,
      "combinedSurface": "Murasaki",
-     "combinedRadius": 5281
+     "combinedRadius": 5281,
+     "vch": {
+      "n": "Murasaki",
+      "t": "planet",
+      "r": 5281,
+      "dv": 6072,
+      "e": "none"
+     }
     },
     {
      "seed": 1267655460,
@@ -407,7 +603,14 @@
      "water": 70,
      "combinedDv": 9647,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 985
+     "combinedRadius": 985,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 985,
+      "dv": 9647,
+      "e": "low"
+     }
     },
     {
      "seed": 2476582260,
@@ -421,7 +624,14 @@
      "water": 66,
      "combinedDv": 6128,
      "combinedSurface": "Lamplika",
-     "combinedRadius": 941
+     "combinedRadius": 941,
+     "vch": {
+      "n": "Lamplika",
+      "t": "moon",
+      "r": 941,
+      "dv": 6128,
+      "e": "max"
+     }
     },
     {
      "seed": 1161322370,
@@ -435,7 +645,14 @@
      "water": 62,
      "combinedDv": 1177,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 1795
+     "combinedRadius": 1795,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 1795,
+      "dv": 1177,
+      "e": "low"
+     }
     },
     {
      "seed": 3946707254,
@@ -449,7 +666,14 @@
      "water": 58,
      "combinedDv": 6815,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 1031
+     "combinedRadius": 1031,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 1031,
+      "dv": 6815,
+      "e": "low"
+     }
     },
     {
      "seed": 3426357374,
@@ -463,7 +687,14 @@
      "water": 73,
      "combinedDv": 10635,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 2317
+     "combinedRadius": 2317,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 2317,
+      "dv": 10635,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2723761014,
@@ -477,7 +708,14 @@
      "water": 71,
      "combinedDv": 6316,
      "combinedSurface": "Lacero",
-     "combinedRadius": 2613
+     "combinedRadius": 2613,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 2613,
+      "dv": 6316,
+      "e": "none"
+     }
     },
     {
      "seed": 95269744,
@@ -491,7 +729,14 @@
      "water": 68,
      "combinedDv": 7790,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1398
+     "combinedRadius": 1398,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1398,
+      "dv": 7790,
+      "e": "very_low"
+     }
     },
     {
      "seed": 688938958,
@@ -505,7 +750,14 @@
      "water": 64,
      "combinedDv": 8450,
      "combinedSurface": "Mercurial",
-     "combinedRadius": 2207
+     "combinedRadius": 2207,
+     "vch": {
+      "n": "Mercurial",
+      "t": "moon",
+      "r": 2207,
+      "dv": 8450,
+      "e": "high"
+     }
     },
     {
      "seed": 311793782,
@@ -519,7 +771,14 @@
      "water": 62,
      "combinedDv": 3744,
      "combinedSurface": "Feist",
-     "combinedRadius": 4506
+     "combinedRadius": 4506,
+     "vch": {
+      "n": "Feist",
+      "t": "moon",
+      "r": 4506,
+      "dv": 3744,
+      "e": "max"
+     }
     },
     {
      "seed": 144225646,
@@ -533,7 +792,14 @@
      "water": 75,
      "combinedDv": 7563,
      "combinedSurface": "Vexo",
-     "combinedRadius": 7573
+     "combinedRadius": 7573,
+     "vch": {
+      "n": "Vexo",
+      "t": "planet",
+      "r": 7573,
+      "dv": 7563,
+      "e": "med"
+     }
     },
     {
      "seed": 608432100,
@@ -547,7 +813,14 @@
      "water": 64,
      "combinedDv": 6421,
      "combinedSurface": "Kerkon",
-     "combinedRadius": 5006
+     "combinedRadius": 5006,
+     "vch": {
+      "n": "Kerkon",
+      "t": "planet",
+      "r": 5006,
+      "dv": 6421,
+      "e": "very_low"
+     }
     },
     {
      "seed": 3785543546,
@@ -561,7 +834,14 @@
      "water": 75,
      "combinedDv": 9467,
      "combinedSurface": "Lacero",
-     "combinedRadius": 1849
+     "combinedRadius": 1849,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 1849,
+      "dv": 9467,
+      "e": "none"
+     }
     },
     {
      "seed": 3124828732,
@@ -575,7 +855,14 @@
      "water": 73,
      "combinedDv": 7622,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 4673
+     "combinedRadius": 4673,
+     "vch": {
+      "n": "Boerdig",
+      "t": "planet",
+      "r": 4673,
+      "dv": 7622,
+      "e": "low"
+     }
     },
     {
      "seed": 1507792144,
@@ -589,7 +876,14 @@
      "water": 61,
      "combinedDv": 8708,
      "combinedSurface": "Bloodthorn",
-     "combinedRadius": 1718
+     "combinedRadius": 1718,
+     "vch": {
+      "n": "Bloodthorn",
+      "t": "moon",
+      "r": 1718,
+      "dv": 8708,
+      "e": "none"
+     }
     },
     {
      "seed": 12759694,
@@ -603,7 +897,14 @@
      "water": 62,
      "combinedDv": 10386,
      "combinedSurface": "Xynariz",
-     "combinedRadius": 8000
+     "combinedRadius": 8000,
+     "vch": {
+      "n": "Xynariz",
+      "t": "planet",
+      "r": 8000,
+      "dv": 10386,
+      "e": "max"
+     }
     },
     {
      "seed": 1857717860,
@@ -617,7 +918,14 @@
      "water": 64,
      "combinedDv": 6274,
      "combinedSurface": "Ariel",
-     "combinedRadius": 2684
+     "combinedRadius": 2684,
+     "vch": {
+      "n": "Ariel",
+      "t": "moon",
+      "r": 2684,
+      "dv": 6274,
+      "e": "very_low"
+     }
     },
     {
      "seed": 301849518,
@@ -631,7 +939,14 @@
      "water": 74,
      "combinedDv": 5430,
      "combinedSurface": "Lethe",
-     "combinedRadius": 903
+     "combinedRadius": 903,
+     "vch": {
+      "n": "Lethe",
+      "t": "moon",
+      "r": 903,
+      "dv": 5430,
+      "e": "none"
+     }
     },
     {
      "seed": 391401966,
@@ -645,7 +960,14 @@
      "water": 61,
      "combinedDv": 3041,
      "combinedSurface": "Eulstave",
-     "combinedRadius": 1848
+     "combinedRadius": 1848,
+     "vch": {
+      "n": "Eulstave",
+      "t": "moon",
+      "r": 1848,
+      "dv": 3041,
+      "e": "high"
+     }
     },
     {
      "seed": 2203869988,
@@ -659,7 +981,14 @@
      "water": 75,
      "combinedDv": 9767,
      "combinedSurface": "Murasaki",
-     "combinedRadius": 2119
+     "combinedRadius": 2119,
+     "vch": {
+      "n": "Murasaki",
+      "t": "moon",
+      "r": 2119,
+      "dv": 9767,
+      "e": "none"
+     }
     },
     {
      "seed": 3752128254,
@@ -673,7 +1002,14 @@
      "water": 68,
      "combinedDv": 6108,
      "combinedSurface": "Tieneo",
-     "combinedRadius": 1761
+     "combinedRadius": 1761,
+     "vch": {
+      "n": "Tieneo",
+      "t": "moon",
+      "r": 1761,
+      "dv": 6108,
+      "e": "none"
+     }
     },
     {
      "seed": 4138378656,
@@ -687,7 +1023,14 @@
      "water": 64,
      "combinedDv": 5985,
      "combinedSurface": "Jackneevle",
-     "combinedRadius": 2276
+     "combinedRadius": 2276,
+     "vch": {
+      "n": "Jackneevle",
+      "t": "moon",
+      "r": 2276,
+      "dv": 5985,
+      "e": "none"
+     }
     },
     {
      "seed": 2387692326,
@@ -701,7 +1044,14 @@
      "water": 60,
      "combinedDv": 1910,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 894
+     "combinedRadius": 894,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 894,
+      "dv": 1910,
+      "e": "very_low"
+     }
     },
     {
      "seed": 3294628670,
@@ -715,7 +1065,14 @@
      "water": 77,
      "combinedDv": 7171,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 2079
+     "combinedRadius": 2079,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 2079,
+      "dv": 7171,
+      "e": "very_low"
+     }
     },
     {
      "seed": 1407620054,
@@ -729,7 +1086,14 @@
      "water": 63,
      "combinedDv": 5639,
      "combinedSurface": "Sihnon",
-     "combinedRadius": 1340
+     "combinedRadius": 1340,
+     "vch": {
+      "n": "Sihnon",
+      "t": "moon",
+      "r": 1340,
+      "dv": 5639,
+      "e": "low"
+     }
     },
     {
      "seed": 2327417480,
@@ -743,7 +1107,14 @@
      "water": 68,
      "combinedDv": 9435,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1186
+     "combinedRadius": 1186,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1186,
+      "dv": 9435,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2612777772,
@@ -757,7 +1128,14 @@
      "water": 66,
      "combinedDv": 9471,
      "combinedSurface": "Lacero",
-     "combinedRadius": 4001
+     "combinedRadius": 4001,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 4001,
+      "dv": 9471,
+      "e": "none"
+     }
     },
     {
      "seed": 919190042,
@@ -771,7 +1149,14 @@
      "water": 70,
      "combinedDv": 3117,
      "combinedSurface": "Lacero",
-     "combinedRadius": 3274
+     "combinedRadius": 3274,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 3274,
+      "dv": 3117,
+      "e": "none"
+     }
     },
     {
      "seed": 1184621744,
@@ -785,7 +1170,14 @@
      "water": 59,
      "combinedDv": 11175,
      "combinedSurface": "Jakiro",
-     "combinedRadius": 1776
+     "combinedRadius": 1776,
+     "vch": {
+      "n": "Jakiro",
+      "t": "moon",
+      "r": 1776,
+      "dv": 11175,
+      "e": "med"
+     }
     },
     {
      "seed": 1867193168,
@@ -799,7 +1191,14 @@
      "water": 71,
      "combinedDv": 9893,
      "combinedSurface": "Lacero",
-     "combinedRadius": 6196
+     "combinedRadius": 6196,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 6196,
+      "dv": 9893,
+      "e": "none"
+     }
     },
     {
      "seed": 3862942110,
@@ -813,7 +1212,14 @@
      "water": 73,
      "combinedDv": 3175,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 1017
+     "combinedRadius": 1017,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 1017,
+      "dv": 3175,
+      "e": "low"
+     }
     },
     {
      "seed": 3637346852,
@@ -827,7 +1233,14 @@
      "water": 66,
      "combinedDv": 9265,
      "combinedSurface": "Lacero",
-     "combinedRadius": 1433
+     "combinedRadius": 1433,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 1433,
+      "dv": 9265,
+      "e": "none"
+     }
     },
     {
      "seed": 4248016058,
@@ -841,7 +1254,14 @@
      "water": 72,
      "combinedDv": 4940,
      "combinedSurface": "Gapleon",
-     "combinedRadius": 8754
+     "combinedRadius": 8754,
+     "vch": {
+      "n": "Gapleon",
+      "t": "planet",
+      "r": 8754,
+      "dv": 4940,
+      "e": "max"
+     }
     },
     {
      "seed": 3933694276,
@@ -855,7 +1275,14 @@
      "water": 71,
      "combinedDv": 10557,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 1028
+     "combinedRadius": 1028,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 1028,
+      "dv": 10557,
+      "e": "low"
+     }
     },
     {
      "seed": 470616380,
@@ -869,7 +1296,14 @@
      "water": 65,
      "combinedDv": 3834,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1031
+     "combinedRadius": 1031,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1031,
+      "dv": 3834,
+      "e": "very_low"
+     }
     },
     {
      "seed": 1801407816,
@@ -883,7 +1317,14 @@
      "water": 66,
      "combinedDv": 6669,
      "combinedSurface": "Lacero",
-     "combinedRadius": 5184
+     "combinedRadius": 5184,
+     "vch": {
+      "n": "Lacero",
+      "t": "planet",
+      "r": 5184,
+      "dv": 6669,
+      "e": "none"
+     }
     },
     {
      "seed": 998840938,
@@ -897,7 +1338,14 @@
      "water": 62,
      "combinedDv": 7192,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 4341
+     "combinedRadius": 4341,
+     "vch": {
+      "n": "Willownezz",
+      "t": "planet",
+      "r": 4341,
+      "dv": 7192,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2288336636,
@@ -911,7 +1359,14 @@
      "water": 59,
      "combinedDv": 8007,
      "combinedSurface": "Lacero",
-     "combinedRadius": 1357
+     "combinedRadius": 1357,
+     "vch": {
+      "n": "Lacero",
+      "t": "moon",
+      "r": 1357,
+      "dv": 8007,
+      "e": "none"
+     }
     },
     {
      "seed": 3621195270,
@@ -925,7 +1380,14 @@
      "water": 63,
      "combinedDv": 9800,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1703
+     "combinedRadius": 1703,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1703,
+      "dv": 9800,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2445863176,
@@ -939,7 +1401,14 @@
      "water": 66,
      "combinedDv": 8174,
      "combinedSurface": "Persephone",
-     "combinedRadius": 1798
+     "combinedRadius": 1798,
+     "vch": {
+      "n": "Persephone",
+      "t": "moon",
+      "r": 1798,
+      "dv": 8174,
+      "e": "low"
+     }
     },
     {
      "seed": 1598185874,
@@ -953,7 +1422,14 @@
      "water": 65,
      "combinedDv": 4271,
      "combinedSurface": "Krobelus",
-     "combinedRadius": 1433
+     "combinedRadius": 1433,
+     "vch": {
+      "n": "Krobelus",
+      "t": "moon",
+      "r": 1433,
+      "dv": 4271,
+      "e": "max"
+     }
     },
     {
      "seed": 1549137158,
@@ -967,7 +1443,14 @@
      "water": 67,
      "combinedDv": 10044,
      "combinedSurface": "Nechrophos",
-     "combinedRadius": 1145
+     "combinedRadius": 1145,
+     "vch": {
+      "n": "Nechrophos",
+      "t": "moon",
+      "r": 1145,
+      "dv": 10044,
+      "e": "none"
+     }
     },
     {
      "seed": 1952941170,
@@ -981,7 +1464,14 @@
      "water": 62,
      "combinedDv": 1675,
      "combinedSurface": "Octarine",
-     "combinedRadius": 896
+     "combinedRadius": 896,
+     "vch": {
+      "n": "Octarine",
+      "t": "moon",
+      "r": 896,
+      "dv": 1675,
+      "e": "very_high"
+     }
     },
     {
      "seed": 2811955388,
@@ -995,7 +1485,14 @@
      "water": 69,
      "combinedDv": 6598,
      "combinedSurface": "Demeter",
-     "combinedRadius": 2354
+     "combinedRadius": 2354,
+     "vch": {
+      "n": "Demeter",
+      "t": "moon",
+      "r": 2354,
+      "dv": 6598,
+      "e": "none"
+     }
     },
     {
      "seed": 2182374878,
@@ -1009,7 +1506,14 @@
      "water": 70,
      "combinedDv": 11871,
      "combinedSurface": "Plenai",
-     "combinedRadius": 9889
+     "combinedRadius": 9889,
+     "vch": {
+      "n": "Plenai",
+      "t": "planet",
+      "r": 9889,
+      "dv": 11871,
+      "e": "low"
+     }
     },
     {
      "seed": 3502840534,
@@ -1023,7 +1527,14 @@
      "water": 66,
      "combinedDv": 8354,
      "combinedSurface": "Kaya",
-     "combinedRadius": 5552
+     "combinedRadius": 5552,
+     "vch": {
+      "n": "Kaya",
+      "t": "planet",
+      "r": 5552,
+      "dv": 8354,
+      "e": "high"
+     }
     },
     {
      "seed": 4041962422,
@@ -1037,7 +1548,14 @@
      "water": 56,
      "combinedDv": 6480,
      "combinedSurface": "Jeroen",
-     "combinedRadius": 912
+     "combinedRadius": 912,
+     "vch": {
+      "n": "Jeroen",
+      "t": "moon",
+      "r": 912,
+      "dv": 6480,
+      "e": "very_high"
+     }
     },
     {
      "seed": 674049168,
@@ -1051,7 +1569,14 @@
      "water": 58,
      "combinedDv": 5581,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1681
+     "combinedRadius": 1681,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1681,
+      "dv": 5581,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2516083678,
@@ -1065,7 +1590,14 @@
      "water": 61,
      "combinedDv": 7119,
      "combinedSurface": "Pandion",
-     "combinedRadius": 1438
+     "combinedRadius": 1438,
+     "vch": {
+      "n": "Pandion",
+      "t": "moon",
+      "r": 1438,
+      "dv": 7119,
+      "e": "med"
+     }
     },
     {
      "seed": 3113754138,
@@ -1079,7 +1611,14 @@
      "water": 75,
      "combinedDv": 5124,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1011
+     "combinedRadius": 1011,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1011,
+      "dv": 5124,
+      "e": "very_low"
+     }
     },
     {
      "seed": 2757422398,
@@ -1093,7 +1632,14 @@
      "water": 68,
      "combinedDv": 5672,
      "combinedSurface": "Bandoch",
-     "combinedRadius": 3105
+     "combinedRadius": 3105,
+     "vch": {
+      "n": "Bandoch",
+      "t": "moon",
+      "r": 3105,
+      "dv": 5672,
+      "e": "low"
+     }
     },
     {
      "seed": 1816501518,
@@ -1107,7 +1653,14 @@
      "water": 68,
      "combinedDv": 3989,
      "combinedSurface": "Boerdig",
-     "combinedRadius": 1394
+     "combinedRadius": 1394,
+     "vch": {
+      "n": "Boerdig",
+      "t": "moon",
+      "r": 1394,
+      "dv": 3989,
+      "e": "low"
+     }
     },
     {
      "seed": 1140037478,
@@ -1121,7 +1674,14 @@
      "water": 59,
      "combinedDv": 7324,
      "combinedSurface": "Willownezz",
-     "combinedRadius": 1630
+     "combinedRadius": 1630,
+     "vch": {
+      "n": "Willownezz",
+      "t": "moon",
+      "r": 1630,
+      "dv": 7324,
+      "e": "very_low"
+     }
     }
    ],
    "pairs": {
