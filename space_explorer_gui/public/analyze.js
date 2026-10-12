@@ -419,6 +419,12 @@
         // surface generation uses the game's default map-gen settings (nauvis).
         zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
         zones.forEach(function (z) { z.kind = "se"; });
+        // Without Krastorio 2 its resources do not exist: the generator still
+        // rolls a share for them (the roll keeps the others' in step), which
+        // must not reach the estimates.
+        if (!state.k2) zones.forEach(function (z) {
+          if (z.rs) Object.keys(z.rs).forEach(function (r) { if (r.indexOf("kr-") === 0) delete z.rs[r]; });
+        });
         state.zones = zones;
         status.textContent = "";
         renderTable();
