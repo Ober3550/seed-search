@@ -7,13 +7,13 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
-    <nav class="sidebar" id="sidebar"></nav>
+  <div class="app no-sidebar">
     <main id="main">
       <div class="page">
         <div class="crumbs"><span id="seed-crumb">Seed (client-side)</span></div>
         <h2>🌍 Seed <span class="badge zone-type" title="generated entirely in your browser — no backend">client-side</span></h2>
         <div class="filter-bar">
+          <label>Mod config: <select id="mod-select"></select></label>
           <label>Seed: <input type="number" id="seed-input" min="0" step="1" placeholder="e.g. 32094082" style="width:12em"></label>
           <button type="button" class="btn" id="gen-btn">Generate</button>
           <span id="gen-status" class="hint"></span><br/>
