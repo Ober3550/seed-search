@@ -33,7 +33,8 @@
       standIns: [{ res: "se-vitamelange", color: "#3fb950", settleable: true }] }
   ];
   // Resources wanted on a surface of their own: the nearest home-system planet
-  // or moon with water whose primary is the resource is marked in its colour.
+  // or moon with water whose primary is the resource is marked in its colour
+  // (a waterless one only when no surface with water has it).
   var NEAREST_PRIMARY = [
     { res: "se-iridium-ore", color: "#e6b422" },
     { res: "se-beryllium-ore", color: "#39d3d3" }
@@ -55,22 +56,24 @@
   // for each of its `standIns`, the nearest surface whose primary is that
   // resource, in the resource's colour.
   function systemMarks(zones) {
-    var home = zones.filter(function (z) { return z.c === 1 && (z.t === "planet" || z.t === "moon") && z.water && z.water !== "none"; });
-    var out = [];
-    NEAREST_PRIMARY.forEach(function (n) {
-      var z = nearestPrimary(home, n.res);
-      if (z) out.push([z, { label: "nearest " + nm(n.res) + "-primary surface with water", colors: [n.color, n.color] }]);
-    });
+    var bodies = zones.filter(function (z) { return z.c === 1 && (z.t === "planet" || z.t === "moon"); });
+    var home = bodies.filter(function (z) { return z.water && z.water !== "none"; });
     var settle = home.filter(settleable);
+    var out = [];
+    // nearest surface whose primary is `res`: one with water (from `pool`),
+    // or as a last resort a waterless one
+    function mark(res, color, pool, why) {
+      var z = nearestPrimary(pool, res), dry = false;
+      if (!z) { z = nearestPrimary(bodies, res); dry = true; }
+      if (z) out.push([z, {
+        label: "nearest " + nm(res) + "-primary surface" + (dry ? " (none of them has water)" : " with water") + (why ? " — this seed has none with " + why : ""),
+        colors: [color, color]
+      }]);
+    }
+    NEAREST_PRIMARY.forEach(function (n) { mark(n.res, n.color, home, ""); });
     COMBOS.forEach(function (c) {
       if (settle.some(function (z) { return combosOf(z).indexOf(c) !== -1; })) return;
-      c.standIns.forEach(function (n) {
-        var z = nearestPrimary(n.settleable ? settle : home, n.res);
-        if (z) out.push([z, {
-          label: "nearest " + nm(n.res) + "-primary surface with water (this seed has none with " + c.res.map(nm).join(" + ") + ")",
-          colors: [n.color, n.color]
-        }]);
-      });
+      c.standIns.forEach(function (n) { mark(n.res, n.color, n.settleable ? settle : home, c.res.map(nm).join(" + ")); });
     });
     return out;
   }
