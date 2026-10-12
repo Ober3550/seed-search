@@ -101,13 +101,17 @@
   var els = {
     badge: document.getElementById("sf-badge"),
     meta: document.getElementById("sf-meta"),
-    radius: document.getElementById("sf-radius"),
+    // The surface is drawn once, at the radius in the address (?r=, which the
+    // seed page sets to the zone's radius): there is no radius box and no
+    // Generate button, so these two only hold state.
+    radius: { value: "2000" },
     // The page always draws terrain + ore (0). There is no selector for it;
     // ?layer=1 (terrain only) / ?layer=2 (ore only) remain for testing.
     layer: { value: "0" },
     dimWrap: document.getElementById("sf-dim-wrap"),
     dim: document.getElementById("sf-dim"),
-    go: document.getElementById("sf-go"),
+    go: { disabled: false },
+    dimVal: document.getElementById("sf-dim-val"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
     res: document.getElementById("sf-res"),
@@ -912,9 +916,10 @@
       if (_ly != null && ["0", "1", "2"].indexOf(_ly) !== -1) els.layer.value = _ly;
     } catch (e2) {}
     adaptForKind();
-    els.go.addEventListener("click", run);
-    els.radius.addEventListener("change", run);
-    if (els.dim) els.dim.addEventListener("input", function () { compositeSA(); });
+    if (els.dim) els.dim.addEventListener("input", function () {
+      if (els.dimVal) els.dimVal.textContent = els.dim.value + "%";
+      compositeSA();
+    });
     if (kind === "sa") {
       var p = PLANETS[planetKey];
       els.meta.innerHTML = '<span class="hint">Space Age planet tiles, generated from the game\'s map-gen data (sa.wasm).</span>';

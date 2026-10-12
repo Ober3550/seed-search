@@ -53,10 +53,13 @@ body {
 .zone-card #sf-meta { display: contents; }
 .zone-card .k { color: var(--muted); }
 
-/* surface page controls: one setting per line, then Generate, then the status */
-.surf-controls > * { display: block; }
-.surf-controls > * + * { margin-top: 8px; }
-.surf-controls > [hidden], .surf-controls > :empty { display: none; }
+/* the terrain brightness slider takes a line of its own in the card */
+.zone-card .dim-row { flex-basis: 100%; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
+.zone-card .dim-row[hidden] { display: none; }
+.zone-card .dim-row #sf-dim-val { color: var(--text); min-width: 3em; }
+.zone-card .dim-row input { flex: 1; max-width: 16em; }
+.surf-status:empty { display: none; }
+.surf-status { margin-bottom: 8px; }
 
 /* the static pages (index.html, surface.html) have no sidebar */
 .app.no-sidebar { padding-left: 0; }
