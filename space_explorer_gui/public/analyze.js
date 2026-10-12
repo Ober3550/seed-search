@@ -255,9 +255,17 @@
       .then(function (data) {
         var cfg = data && data.configs && data.configs[state.mod];
         if (!cfg || !cfg.seeds || !cfg.seeds.length) return;
-        document.getElementById("featured-note").textContent = "· " + cfg.seeds.length + " of " +
-          Number(cfg.searched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")" + (cfg.rule ? ": " + cfg.rule : "");
         state.featured = cfg.seeds;
+        state.featuredSearched = cfg.searched;
+        // one checkbox per productivity-module count the list holds
+        var counts = {};
+        cfg.seeds.forEach(function (f) { var n = prodCount(f); counts[n] = (counts[n] || 0) + 1; });
+        state.featuredProd = {};
+        var prodBox = document.getElementById("featured-prod");
+        if (prodBox) prodBox.innerHTML = "<span>Productivity modules:</span> " + Object.keys(counts).sort().map(function (n) {
+          state.featuredProd[n] = true;
+          return '<label class="hint" title="' + counts[n] + " seeds whose loot has " + n + ' productivity modules"><input type="checkbox" data-prod="' + n + '" checked> ' + n + "</label>";
+        }).join(" ");
         document.getElementById("featured-head").innerHTML = "<tr>" + FEATURED_COLS.map(function (c) {
           return "<th" + (c[0] ? ' class="sortable' + (c[3] ? " " + c[3] : "") + '" data-key="' + c[0] + '"' : "") + (c[2] ? ' title="' + esc(c[2]) + '"' : "") + ">" +
             c[1] + (c[0] ? ' <span class="sort-ind"></span>' : "") + "</th>";
@@ -315,12 +323,16 @@
       '<span class="' + (level ? "enemy-" + level : "") + '">' + e + "</span></div>";
   }
 
+  function prodCount(f) { return String(f.loot || "").split("P").length - 1; }
+
   // The list arrives best first; a header click sorts by that column instead
   // (every column starts at its high end except the seed number).
   function renderFeatured() {
     var num = function (v) { return v == null ? "—" : Number(v).toLocaleString(); };
     var k = state.featuredKey, dir = state.featuredDir === "asc" ? 1 : -1;
-    var rows = state.featured.slice();
+    var rows = state.featured.filter(function (f) { return !state.featuredProd || state.featuredProd[prodCount(f)] !== false; });
+    document.getElementById("featured-note").textContent = "· " + rows.length + " of " +
+      Number(state.featuredSearched).toLocaleString() + " seeds searched (" + window.Shell.modLabel(state.mod) + ")";
     if (k) rows.sort(function (a, b) {
       var va = a[k], vb = b[k];
       // a surface column sorts by how far the surface is
@@ -439,6 +451,13 @@
       var k = thEl.dataset.key, first = k === "seed" || SLOTS.indexOf(k) !== -1 ? "asc" : "desc";
       state.featuredDir = state.featuredKey === k ? (state.featuredDir === "asc" ? "desc" : "asc") : first;
       state.featuredKey = k;
+      renderFeatured();
+    });
+    var featuredProd = document.getElementById("featured-prod");
+    if (featuredProd) featuredProd.addEventListener("change", function (e) {
+      var cb = e.target.closest("input[data-prod]");
+      if (!cb || !state.featuredProd) return;
+      state.featuredProd[cb.dataset.prod] = cb.checked;
       renderFeatured();
     });
     var featuredBody = document.getElementById("featured-body");

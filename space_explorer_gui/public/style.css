@@ -755,3 +755,5 @@ a.btn-sm {
    window is narrower than its columns it scrolls sideways in its own box
    (which is also where the heading stops following the page). */
 @media (max-width: 1180px) { .featured-scroll { overflow-x: auto; } }
+#featured-prod { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+#featured-prod label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
