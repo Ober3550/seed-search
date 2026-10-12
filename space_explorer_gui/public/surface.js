@@ -113,6 +113,7 @@
     // ?layer=1 (terrain only) / ?layer=2 (ore only) remain for testing.
     layer: { value: "0" },
     dimWrap: document.getElementById("sf-dim-wrap"),
+    download: document.getElementById("sf-download"),
     dim: document.getElementById("sf-dim"),
     go: { disabled: false },
     dimVal: document.getElementById("sf-dim-val"),
@@ -766,6 +767,73 @@
   function entitySurface(z, fullSize) {
     return squareSurface(z) || (seSolid(z) && !!fullSize);
   }
+  // ── Download ──────────────────────────────────────────────────────────────
+  // The map as it is shown, flattened into one canvas: the terrain at the
+  // slider's brightness, then every overlay that is visible, in stacking
+  // order (trees or enemy areas, ore, the other entities), then the core
+  // seam icons. One pixel a tile (or whatever the page's canvases hold).
+  function flattenMap() {
+    var W = els.canvas.width, H = els.canvas.height;
+    var out = document.createElement("canvas");
+    out.width = W; out.height = H;
+    var ctx = out.getContext("2d");
+    ctx.drawImage(els.canvas, 0, 0);
+    // brightness(d) scales the colours by d: the same as black over them at
+    // 1 - d, kept to where the terrain is
+    var dim = els.dim ? parseInt(els.dim.value, 10) / 100 : 1;
+    if (oreOverlayEl && dim < 1) {
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.fillStyle = "rgba(0,0,0," + (1 - dim) + ")";
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = "source-over";
+    }
+    var box = els.canvas.parentNode;
+    Array.prototype.slice.call(box.querySelectorAll("canvas")).filter(function (c) {
+      return c !== els.canvas && c.style.display !== "none";
+    }).sort(function (a, b) {
+      return (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0);
+    }).forEach(function (c) { ctx.drawImage(c, 0, 0, W, H); });
+
+    var icons = seamEl && !seamEl.hidden ? Array.prototype.slice.call(seamEl.querySelectorAll(".seam-icon")) : [];
+    if (!icons.length) return Promise.resolve(out);
+    // the icons are page elements: drawn from the same SVG, at the size they
+    // have on screen relative to the map
+    var fill = getComputedStyle(icons[0].querySelector(".seam-bg")).fill || "#6ed7ff";
+    var svg = SEAM_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace('class="seam-bg"', 'fill="' + fill + '"');
+    var shown = els.canvas.getBoundingClientRect().width || W;
+    var w = Math.max(12, 18 * W / shown), h = w * 17 / 18;
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        icons.forEach(function (el) {
+          var x = parseFloat(el.style.left) / 100 * W, y = parseFloat(el.style.top) / 100 * H;
+          ctx.drawImage(img, x - w / 2, y - h * 0.55, w, h);
+        });
+        resolve(out);
+      };
+      img.onerror = function () { resolve(out); };
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    });
+  }
+  window.__flattenMap = flattenMap; // test hook
+  function downloadMap() {
+    if (!els.download) return;
+    els.download.disabled = true;
+    flattenMap().then(function (cv) {
+      return new Promise(function (resolve) { cv.toBlob(resolve, "image/png"); });
+    }).then(function (blob) {
+      els.download.disabled = false;
+      if (!blob) { status("This map is too large for the browser to save as one image."); return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "seed-" + SEED + "-" + String(TARGET).replace(/[^A-Za-z0-9_-]+/g, "_") + ".png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+    }, function (e) { els.download.disabled = false; console.error("download failed:", e); status("download failed: " + e.message); });
+  }
+
   // ── Core seams ────────────────────────────────────────────────────────────
   // Where a core miner can be built. Space Exploration does not autoplace
   // them: CoreMiner.generate_core_seam_positions walks a golden-angle spiral
@@ -939,7 +1007,10 @@
     // already say what was generated
     // (the workers are released a tick later: the result line written right
     // after this still reports how many there were)
-    function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); setTimeout(releasePool, 0); }
+    function doneUI() {
+      busy = false; els.go.disabled = false; setProgress(1); status(""); setTimeout(releasePool, 0);
+      if (els.download) els.download.hidden = false;
+    }
     // There is no Generate button to press again, so a failure offers a
     // reload: that restarts the workers and refetches the page's files (the
     // usual cause is a file that could not be loaded).
@@ -1289,6 +1360,7 @@
     adaptForKind();
     if (els.enemy) els.enemy.addEventListener("change", showEnemies);
     if (els.groups) els.groups.addEventListener("change", showEnemies);
+    if (els.download) els.download.addEventListener("click", downloadMap);
     var seamsCb = document.getElementById("sf-seams-cb");
     if (seamsCb) seamsCb.addEventListener("change", showSeams);
     if (els.dim) els.dim.addEventListener("input", function () {
