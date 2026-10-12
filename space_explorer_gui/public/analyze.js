@@ -7,7 +7,7 @@
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: false };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -291,10 +291,10 @@
   }
 
   // This page's address for a seed: the mod config, the seed and whether only
-  // the highlighted rows are shown (?hl=1), so a reload or a shared link opens
+  // the highlighted rows are shown (on unless ?hl=0), so a reload or a shared link opens
   // the same view.
   function pageHref(seed) {
-    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "&hl=1" : "");
+    return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0");
   }
   function syncUrl() {
     history.replaceState(null, "", pageHref(state.seed));
@@ -337,7 +337,7 @@
     if (calEl) calEl.addEventListener("change", function (e) { state.calidus = e.target.checked; renderTable(); });
     var hlEl = document.getElementById("hl-filter");
     if (hlEl) {
-      state.onlyHl = new URLSearchParams(location.search).get("hl") === "1";
+      state.onlyHl = new URLSearchParams(location.search).get("hl") !== "0";
       hlEl.checked = state.onlyHl;
       hlEl.addEventListener("change", function (e) {
         state.onlyHl = e.target.checked;
