@@ -44,7 +44,7 @@ const FILES = [
   "gen-bridge.js", "gen-worker.js", "universe-wasm.js", "surface-wasm.js", "sa-wasm.js",
   "estimate-core.js", "analyze.js", "surface.js",
   "gpu-surface.js", "gpu-worker.js", "ab-table.js",
-  "ore-model.json", "featured-seeds.json",
+  "ore-model.json", "featured-seeds.json", "factorio-gear.webp",
   "universe.wasm", "surface.wasm", "sa.wasm",
   "shaders/elevation.wgsl", "shaders/nauvis.wgsl", "shaders/se_field.wgsl", "shaders/se_zone.wgsl",
 ];
@@ -64,10 +64,10 @@ for (const f of FILES) {
   bytes += fs.statSync(path.join(PUBLIC, f)).size;
 }
 for (const page of PAGES) {
-  // point the page's own script / stylesheet references into the assets folder
+  // point the page's own script / stylesheet / image references into the assets folder
   let html = fs.readFileSync(path.join(PUBLIC, page), "utf8");
   let refs = 0;
-  html = html.replace(/(<script src="|<link rel="stylesheet" href=")([^"]+)"/g, (_, pre, file) => {
+  html = html.replace(/(<script src="|<link rel="stylesheet" href="|<img src=")([^"]+)"/g, (_, pre, file) => {
     if (!FILES.includes(file)) throw new Error(`${page} references ${file}, which is not in the published file list`);
     refs++;
     return `${pre}${ASSETS}/${file}"`;
