@@ -295,7 +295,6 @@
       // Ore has a canvas of its own (the ore layer when layered), drawn onto
       // the visible canvas over whatever terrain is there.
       var oreCv = layer === 1 ? null : L ? L.ore : oreOverlay(npx);
-      var visible = els.canvas.getContext("2d");
       function showOre(x, y, w, h) {
         if (L) compositeSA(x, y, w, h); // (unlayered: the ore canvas is shown as it is)
       }
@@ -677,7 +676,6 @@
         var GL = layersBegin(disp, null);
         // Ore runs on the CPU workers while the GPU does the terrain; on a
         // downscaled surface it is drawn scaled down like the terrain.
-        var visible = els.canvas.getContext("2d");
         var oreCv = layer === 0 ? (GL ? GL.ore : oreOverlay(disp)) : null;
         var terrainDone = false;
         function showOre(x, y, w, h) {
