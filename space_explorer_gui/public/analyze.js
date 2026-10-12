@@ -7,7 +7,7 @@
 (function () {
   var estimator = null;   // { estimateZoneOre }
   var MODS = { base: "Base", sa: "Space Age", se: "Space Exploration", k2se: "SE + K2" };
-  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true, hlCombined: true, hlPrimary: false };
+  var state = { mod: MODS[window.Shell.mod] ? window.Shell.mod : "k2se", k2: true, zones: [], sortKey: "dv", sortDir: "asc", q: "", calidus: true, onlyHl: true, hlCombined: true, hlPrimary: false, hlEnemyMax: "", hlWet: false };
   state.k2 = state.mod === "k2se";
 
   function loadEstimator() {
@@ -44,8 +44,23 @@
     { res: "se-iridium-ore", color: "#e6b422" },
     { res: "se-beryllium-ore", color: "#39d3d3" }
   ];
+  // Enemy levels, mildest first. The "exclude enemies" setting names the
+  // first level that is too much: a zone at that level or above is passed
+  // over by the highlighting, and the next suitable zone is marked instead.
+  var ENEMY_LEVELS = ["none", "very_low", "low", "med", "high", "very_high", "max"];
+  // (an asteroid field has no enemies and no water to speak of: neither
+  // exclusion applies to it)
+  function enemyOk(z) {
+    var cut = ENEMY_LEVELS.indexOf(state.hlEnemyMax);
+    return cut < 0 || z.t === "asteroid-field" || ENEMY_LEVELS.indexOf(z.enemy || "none") < cut;
+  }
+  // "Exclude zones with no water": a waterless zone is never highlighted,
+  // not even as the last resort for a resource no watered zone has.
+  function waterOk(z) {
+    return !state.hlWet || z.t === "asteroid-field" || (!!z.water && z.water !== "none");
+  }
   function settleable(z) {
-    return (z.t === "planet" || z.t === "moon") && !!z.rs && !!z.water && z.water !== "none" && z.r > COMBO_RADIUS;
+    return (z.t === "planet" || z.t === "moon") && !!z.rs && !!z.water && z.water !== "none" && z.r > COMBO_RADIUS && enemyOk(z);
   }
   function combosOf(z) {
     if (!settleable(z)) return [];
@@ -63,7 +78,7 @@
   // for each of its `standIns`, the nearest surface whose primary is that
   // resource, in the resource's colour.
   function systemMarks(zones) {
-    var bodies = zones.filter(function (z) { return z.c === 1 && (z.t === "planet" || z.t === "moon"); });
+    var bodies = zones.filter(function (z) { return z.c === 1 && (z.t === "planet" || z.t === "moon") && enemyOk(z) && waterOk(z); });
     var home = bodies.filter(function (z) { return z.water && z.water !== "none"; });
     var settle = home.filter(settleable);
     var out = [];
@@ -123,7 +138,7 @@
     // "Combined resources": the surfaces holding a combination, and the
     // nearest surfaces that stand in where a seed has none
     if (state.hlCombined) out = combosOf(z).concat(marks.system.filter(function (m) { return m[0] === z; }).map(function (m) { return m[1]; }));
-    if (state.hlPrimary && CORE_PRIMARY[z.p]) out.push({ label: nm(z.p) + "-primary", colors: [CORE_PRIMARY[z.p], CORE_PRIMARY[z.p]] });
+    if (state.hlPrimary && CORE_PRIMARY[z.p] && enemyOk(z) && waterOk(z)) out.push({ label: nm(z.p) + "-primary", colors: [CORE_PRIMARY[z.p], CORE_PRIMARY[z.p]] });
     return out;
   }
 
@@ -392,7 +407,7 @@
   // the same view.
   function pageHref(seed) {
     return window.Shell.seedHref(seed, state.mod) + (state.onlyHl ? "" : "&hl=0") +
-      (state.hlCombined ? "" : "&cmb=0") + (state.hlPrimary ? "&pri=1" : "");
+      (state.hlCombined ? "" : "&cmb=0") + (state.hlPrimary ? "&pri=1" : "") + (state.hlEnemyMax ? "&en=" + state.hlEnemyMax : "") + (state.hlWet ? "&wet=1" : "");
   }
   function syncUrl() {
     history.replaceState(null, "", pageHref(state.seed));
@@ -457,7 +472,7 @@
       });
     }
     // what is highlighted: both kept in the address, like "Only highlighted"
-    [["hl-combined", "hlCombined", "cmb", true], ["hl-primary", "hlPrimary", "pri", false]].forEach(function (spec) {
+    [["hl-combined", "hlCombined", "cmb", true], ["hl-primary", "hlPrimary", "pri", false], ["hl-wet", "hlWet", "wet", false]].forEach(function (spec) {
       var el = document.getElementById(spec[0]);
       if (!el) return;
       var v = new URLSearchParams(location.search).get(spec[2]);
@@ -470,6 +485,22 @@
         if (state.featured) renderFeatured();
       });
     });
+    var enEl = document.getElementById("hl-enemy");
+    if (enEl) {
+      var en = new URLSearchParams(location.search).get("en");
+      state.hlEnemyMax = ENEMY_LEVELS.indexOf(en) > 0 ? en : "";
+      enEl.innerHTML = '<option value="">none</option>' + ENEMY_LEVELS.slice(1).map(function (l, i) {
+        var name = l.replace("_", " ");
+        return '<option value="' + l + '">' + (i === ENEMY_LEVELS.length - 2 ? name : name + " and above") + "</option>";
+      }).join("");
+      enEl.value = state.hlEnemyMax;
+      enEl.addEventListener("change", function (e) {
+        state.hlEnemyMax = e.target.value;
+        syncUrl();
+        renderTable();
+        if (state.featured) renderFeatured();
+      });
+    }
     document.getElementById("zt-head").addEventListener("click", function (e) {
       var thEl = e.target.closest("th[data-key]"); if (!thEl) return;
       var k = thEl.dataset.key;
