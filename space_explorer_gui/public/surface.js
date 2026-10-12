@@ -538,7 +538,7 @@
     if (dv != null) bits.push(item("Δv", '<span class="num">' + dv + "</span>"));
     bits.push(item("water", esc(z.water || "none")));
     bits.push(item("enemy", esc((z.enemy || "none").replace("very_", "v"))));
-    if (z.p) bits.push('<span class="ore ore-' + esc(nm(z.p)) + '">' + esc(nm(z.p)) + "</span>");
+    if (z.p) bits.push(item("primary", '<span class="ore ore-' + esc(nm(z.p)) + '">' + esc(nm(z.p)) + "</span>"));
     return bits.join("");
   }
 
@@ -632,7 +632,16 @@
     // finished: the progress text goes; the card and the line under the map
     // already say what was generated
     function doneUI() { busy = false; els.go.disabled = false; setProgress(1); status(""); }
-    function fail(e, tag) { busy = false; els.go.disabled = false; status(tag + ": " + e.message); console.error(e); }
+    // There is no Generate button to press again, so a failure offers a
+    // reload: that restarts the workers and refetches the page's files (the
+    // usual cause is a file that could not be loaded).
+    function fail(e, tag) {
+      busy = false; els.go.disabled = false; status(tag + ": " + e.message + " "); console.error(e);
+      var retry = document.createElement("button");
+      retry.type = "button"; retry.className = "btn-sm"; retry.textContent = "Reload and retry";
+      retry.addEventListener("click", function () { location.reload(); });
+      els.status.appendChild(retry);
+    }
 
     // CPU wasm pipeline (default for ore-only layers & SA planets; also the
     // fallback whenever WebGPU terrain is unavailable or fails).

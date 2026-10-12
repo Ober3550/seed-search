@@ -712,6 +712,7 @@ a.btn-sm {
   #zone-table td:nth-child(4)::before { content: "Δv "; }
   #zone-table td:nth-child(5)::before { content: "water "; }
   #zone-table td:nth-child(6)::before { content: "enemy "; }
+  #zone-table td:nth-child(7)::before { content: "primary "; }
   #zone-table td.yields-cell { flex-basis: 100%; max-width: none; }
   #zone-table td[colspan] { flex-basis: 100%; }
   /* the top seeds table keeps its columns and scrolls sideways */
