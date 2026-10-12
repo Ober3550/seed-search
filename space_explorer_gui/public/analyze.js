@@ -294,6 +294,7 @@
     pairs: [
       ["seed", "Seed"], ["loot", "Loot", "Loot sequence"],
       ["planets", "Planets", "Planets in the Calidus home system, including Nauvis"],
+      ["bodies", "Bodies", "Planets and moons in the Calidus home system"],
       [null, "Zone", "What each line of the surface columns is"],
       ["vi", "Vulc + Iridium", "Nearest watered home-system surface with vulcanite and iridium together (sorts by its Δv)", "slot-vi"],
       ["ch", "Cryo + Holm", "Nearest watered home-system surface with cryonite and holmium together (sorts by its Δv)", "slot-ch"],
@@ -355,7 +356,7 @@
       if (state.featuredList === "pairs") {
         return '<tr data-seed="' + f.seed + '" style="cursor:pointer" title="Open seed ' + f.seed + '">' +
           '<td><a style="color:var(--accent)" href="' + esc(pageHref(f.seed)) + '">' + f.seed + "</a></td>" +
-          "<td><code>" + lootHtml(f.loot) + "</code></td><td>" + num(f.planets) + "</td>" +
+          "<td><code>" + lootHtml(f.loot) + "</code></td><td>" + num(f.planets) + "</td><td>" + num(f.bodies) + "</td>" +
           '<td><div class="slot-lines labels"><span>Zone</span><span>Radius</span><span>Δv</span><span>Enemy</span></div></td>' +
           SLOTS.map(function (k) { return "<td>" + slotCell(f.seed, f[k]) + "</td>"; }).join("") +
           "<td>" + num(f.naquiumDv) + "</td></tr>";

@@ -1132,6 +1132,7 @@
       "seed": 2046902924,
       "loot": "PESESPPSESPEPP",
       "planets": 15,
+      "bodies": 63,
       "naquiumDv": 31801,
       "vi": {
        "n": "Boerdig",
@@ -1166,6 +1167,7 @@
       "seed": 2538125470,
       "loot": "PPSSEEPSEPESS",
       "planets": 14,
+      "bodies": 50,
       "naquiumDv": 47823,
       "vi": {
        "n": "Feist",
@@ -1200,6 +1202,7 @@
       "seed": 3082334968,
       "loot": "PPEESSEESPSPS",
       "planets": 14,
+      "bodies": 52,
       "naquiumDv": 61922,
       "vi": {
        "n": "Redril",
@@ -1234,6 +1237,7 @@
       "seed": 3309276638,
       "loot": "PESPSEEEPPSSE",
       "planets": 14,
+      "bodies": 56,
       "naquiumDv": 32025,
       "vi": {
        "n": "Cinza",
@@ -1268,6 +1272,7 @@
       "seed": 2032187456,
       "loot": "PSSPEEESSPEPP",
       "planets": 14,
+      "bodies": 58,
       "naquiumDv": 21619,
       "vi": {
        "n": "Sakimi",
@@ -1302,6 +1307,7 @@
       "seed": 4117891184,
       "loot": "PPSEESEPPSSEP",
       "planets": 14,
+      "bodies": 53,
       "naquiumDv": 39035,
       "vi": {
        "n": "Stromhurst",
@@ -1336,6 +1342,7 @@
       "seed": 3900317886,
       "loot": "PSESPEEPSPSES",
       "planets": 14,
+      "bodies": 51,
       "naquiumDv": 31446,
       "vi": {
        "n": "Yaegner",
@@ -1370,6 +1377,7 @@
       "seed": 180116120,
       "loot": "PSEPESPSSEPEE",
       "planets": 14,
+      "bodies": 51,
       "naquiumDv": 35198,
       "vi": {
        "n": "Haka",
@@ -1404,6 +1412,7 @@
       "seed": 3457958804,
       "loot": "PEEPSSPESESPP",
       "planets": 14,
+      "bodies": 61,
       "naquiumDv": 27903,
       "vi": {
        "n": "Thurion",
@@ -1438,6 +1447,7 @@
       "seed": 3672982672,
       "loot": "PSESEPPSPEESS",
       "planets": 14,
+      "bodies": 57,
       "naquiumDv": 29060,
       "vi": {
        "n": "Melkor",
@@ -1472,6 +1482,7 @@
       "seed": 2955883592,
       "loot": "PPEESSEESSPPE",
       "planets": 14,
+      "bodies": 52,
       "naquiumDv": 49361,
       "vi": {
        "n": "Osiris",
@@ -1506,6 +1517,7 @@
       "seed": 1497804066,
       "loot": "PEPSSESSEPEPS",
       "planets": 14,
+      "bodies": 55,
       "naquiumDv": 35374,
       "vi": {
        "n": "Arcanis",
@@ -1540,6 +1552,7 @@
       "seed": 931700488,
       "loot": "PSSEEPSPESPEE",
       "planets": 14,
+      "bodies": 60,
       "naquiumDv": 48259,
       "vi": {
        "n": "Acheron",
@@ -1574,6 +1587,7 @@
       "seed": 152759406,
       "loot": "PSESPESPEESPP",
       "planets": 14,
+      "bodies": 55,
       "naquiumDv": 46932,
       "vi": {
        "n": "Eirene",
@@ -1608,6 +1622,7 @@
       "seed": 4014566582,
       "loot": "PEPSESPESEPSE",
       "planets": 14,
+      "bodies": 64,
       "naquiumDv": 27598,
       "vi": {
        "n": "Miturion",
@@ -1642,6 +1657,7 @@
       "seed": 426156908,
       "loot": "PEPSESSESPPEP",
       "planets": 14,
+      "bodies": 61,
       "naquiumDv": 31985,
       "vi": {
        "n": "Jiangyin",
@@ -1676,6 +1692,7 @@
       "seed": 2273209920,
       "loot": "PSEPSEPPESESE",
       "planets": 14,
+      "bodies": 60,
       "naquiumDv": 48491,
       "vi": {
        "n": "Shashi",
@@ -1710,6 +1727,7 @@
       "seed": 2304697802,
       "loot": "PESSPEPPSSEES",
       "planets": 14,
+      "bodies": 57,
       "naquiumDv": 51205,
       "vi": {
        "n": "Mercurial",
@@ -1744,6 +1762,7 @@
       "seed": 2476420384,
       "loot": "PSSEEPEPPSSEP",
       "planets": 14,
+      "bodies": 52,
       "naquiumDv": 36510,
       "vi": {
        "n": "Snek",
@@ -1778,6 +1797,7 @@
       "seed": 3023064844,
       "loot": "PSSEEPEESSPPS",
       "planets": 14,
+      "bodies": 53,
       "naquiumDv": 58984,
       "vi": {
        "n": "Tigris",
@@ -1812,6 +1832,7 @@
       "seed": 2863612924,
       "loot": "PSPEESSPSEEPP",
       "planets": 14,
+      "bodies": 61,
       "naquiumDv": 46163,
       "vi": {
        "n": "Caerus",
@@ -1846,6 +1867,7 @@
       "seed": 3240921650,
       "loot": "PSEESPESPESPS",
       "planets": 14,
+      "bodies": 56,
       "naquiumDv": 72444,
       "vi": {
        "n": "Capritos",
@@ -1880,6 +1902,7 @@
       "seed": 3934692532,
       "loot": "PPSEESPESPESP",
       "planets": 14,
+      "bodies": 57,
       "naquiumDv": 72202,
       "vi": {
        "n": "Sooten",
@@ -1914,6 +1937,7 @@
       "seed": 3735519228,
       "loot": "PSPSEESEPEPSP",
       "planets": 14,
+      "bodies": 65,
       "naquiumDv": 25199,
       "vi": {
        "n": "Nexus",
@@ -1948,6 +1972,7 @@
       "seed": 1881309150,
       "loot": "PSPESEEPSSPEE",
       "planets": 14,
+      "bodies": 53,
       "naquiumDv": 50537,
       "vi": {
        "n": "Jasbury",
@@ -1982,6 +2007,7 @@
       "seed": 1045665220,
       "loot": "PSPSEEPSPSEEP",
       "planets": 14,
+      "bodies": 53,
       "naquiumDv": 22351,
       "vi": {
        "n": "Morgana",
@@ -2016,6 +2042,7 @@
       "seed": 3258305762,
       "loot": "PSEPSESPEPES",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 38910,
       "vi": {
        "n": "Tigris",
@@ -2050,6 +2077,7 @@
       "seed": 1842553590,
       "loot": "PESPESEPESSP",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 65080,
       "vi": {
        "n": "Paquin",
@@ -2084,6 +2112,7 @@
       "seed": 67746846,
       "loot": "PEEPSSSEPSPE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 21493,
       "vi": {
        "n": "Aurelios",
@@ -2118,6 +2147,7 @@
       "seed": 167089796,
       "loot": "PSESPESEPESP",
       "planets": 13,
+      "bodies": 59,
       "naquiumDv": 60936,
       "vi": {
        "n": "Geras",
@@ -2152,6 +2182,7 @@
       "seed": 3647232002,
       "loot": "PSEEPSPEESPS",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 64388,
       "vi": {
        "n": "Elpis",
@@ -2186,6 +2217,7 @@
       "seed": 2304781820,
       "loot": "PSESPESSPPEE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 71478,
       "vi": {
        "n": "Matyus",
@@ -2220,6 +2252,7 @@
       "seed": 3117349072,
       "loot": "PPEESSEESPPS",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 44832,
       "vi": {
        "n": "Greger",
@@ -2254,6 +2287,7 @@
       "seed": 1155536000,
       "loot": "PSPSEEPESSPE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 36516,
       "vi": {
        "n": "Willownezz",
@@ -2288,6 +2322,7 @@
       "seed": 2202210620,
       "loot": "PESSEPEPESSP",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 29875,
       "vi": {
        "n": "Dafdee",
@@ -2322,6 +2357,7 @@
       "seed": 3459357402,
       "loot": "PSEPESEPSPES",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 21518,
       "vi": {
        "n": "Aion",
@@ -2356,6 +2392,7 @@
       "seed": 1058455358,
       "loot": "PSEESPPESPSE",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 35216,
       "vi": {
        "n": "Mormo",
@@ -2390,6 +2427,7 @@
       "seed": 2174852750,
       "loot": "PSEEPSSEPEPS",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 31084,
       "vi": {
        "n": "Hyrean",
@@ -2424,6 +2462,7 @@
       "seed": 1648333618,
       "loot": "PSEPSEEPPSES",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 21064,
       "vi": {
        "n": "Vekars",
@@ -2458,6 +2497,7 @@
       "seed": 996931028,
       "loot": "PSPSEEEPPSES",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 21963,
       "vi": {
        "n": "Adul",
@@ -2492,6 +2532,7 @@
       "seed": 758111912,
       "loot": "PPSESEESPSPE",
       "planets": 13,
+      "bodies": 55,
       "naquiumDv": 31471,
       "vi": {
        "n": "Snagle",
@@ -2526,6 +2567,7 @@
       "seed": 1207231070,
       "loot": "PSPEESPSEESP",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 30636,
       "vi": {
        "n": "Seehusen",
@@ -2560,6 +2602,7 @@
       "seed": 1098258472,
       "loot": "PSEPESSPPSEE",
       "planets": 13,
+      "bodies": 55,
       "naquiumDv": 36914,
       "vi": {
        "n": "Hyperion",
@@ -2594,6 +2637,7 @@
       "seed": 2147384048,
       "loot": "PSESPEEPSPES",
       "planets": 13,
+      "bodies": 55,
       "naquiumDv": 44147,
       "vi": {
        "n": "Dagon",
@@ -2628,6 +2672,7 @@
       "seed": 4196095524,
       "loot": "PEPESSESEPSP",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 21108,
       "vi": {
        "n": "Athina",
@@ -2662,6 +2707,7 @@
       "seed": 648825116,
       "loot": "PSSPEEEPSSEP",
       "planets": 13,
+      "bodies": 67,
       "naquiumDv": 30281,
       "vi": {
        "n": "Bromwinkle",
@@ -2696,6 +2742,7 @@
       "seed": 2603209304,
       "loot": "PPESSESEPEPS",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 40106,
       "vi": {
        "n": "Limos",
@@ -2730,6 +2777,7 @@
       "seed": 755151164,
       "loot": "PPSESEEEPSPS",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 115170,
       "vi": {
        "n": "Orsa",
@@ -2764,6 +2812,7 @@
       "seed": 3199469722,
       "loot": "PESPSEPEESPS",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 28429,
       "vi": {
        "n": "Seehusen",
@@ -2798,6 +2847,7 @@
       "seed": 2089791182,
       "loot": "PPSEESPSEEPS",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 21245,
       "vi": {
        "n": "Xynariz",
@@ -2832,6 +2882,7 @@
       "seed": 2102497056,
       "loot": "PSPESEESSPEP",
       "planets": 13,
+      "bodies": 55,
       "naquiumDv": 38491,
       "vi": {
        "n": "Adalind",
@@ -2866,6 +2917,7 @@
       "seed": 58571618,
       "loot": "PEESSPSSEPEP",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 77124,
       "vi": {
        "n": "Feist",
@@ -2900,6 +2952,7 @@
       "seed": 2542398188,
       "loot": "PSPEESEPSPES",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 52246,
       "vi": {
        "n": "Midas",
@@ -2934,6 +2987,7 @@
       "seed": 109104736,
       "loot": "PSSEEPEESSPP",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 23345,
       "vi": {
        "n": "Jibber",
@@ -2968,6 +3022,7 @@
       "seed": 3189833290,
       "loot": "PEPSESSEPSEP",
       "planets": 13,
+      "bodies": 55,
       "naquiumDv": 24305,
       "vi": {
        "n": "Hestia",
@@ -3002,6 +3057,7 @@
       "seed": 1260160550,
       "loot": "PPEESSESPESP",
       "planets": 13,
+      "bodies": 56,
       "naquiumDv": 21522,
       "vi": {
        "n": "Exorrion",
@@ -3036,6 +3092,7 @@
       "seed": 489280506,
       "loot": "PSESEPEPSPSE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 35887,
       "vi": {
        "n": "Koma",
@@ -3070,6 +3127,7 @@
       "seed": 1624392018,
       "loot": "PEEPSSPESPES",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 21283,
       "vi": {
        "n": "Sange",
@@ -3104,6 +3162,7 @@
       "seed": 4040222480,
       "loot": "PSSEPEEPSESP",
       "planets": 13,
+      "bodies": 56,
       "naquiumDv": 72514,
       "vi": {
        "n": "Jibber",
@@ -3138,6 +3197,7 @@
       "seed": 520706300,
       "loot": "PSESEPPESSPE",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 21259,
       "vi": {
        "n": "Exorrion",
@@ -3172,6 +3232,7 @@
       "seed": 3054640584,
       "loot": "PPSEESPSSPEE",
       "planets": 13,
+      "bodies": 60,
       "naquiumDv": 103156,
       "vi": {
        "n": "Vekars",
@@ -3206,6 +3267,7 @@
       "seed": 1567118618,
       "loot": "PSESPEEPESPS",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 21311,
       "vi": {
        "n": "Exallander",
@@ -3240,6 +3302,7 @@
       "seed": 2623526846,
       "loot": "PPSESESEPSEP",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 32724,
       "vi": {
        "n": "Kujaku",
@@ -3274,6 +3337,7 @@
       "seed": 1013155076,
       "loot": "PSPESEPEEPSS",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 53445,
       "vi": {
        "n": "Techne",
@@ -3308,6 +3372,7 @@
       "seed": 2709389362,
       "loot": "PSEEPSEESPSP",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 21094,
       "vi": {
        "n": "Thoon",
@@ -3342,6 +3407,7 @@
       "seed": 1492332804,
       "loot": "PSEESPEPSSPE",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 43621,
       "vi": {
        "n": "Boerdig",
@@ -3376,6 +3442,7 @@
       "seed": 4290265400,
       "loot": "PSEEPSPESEPS",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 46454,
       "vi": {
        "n": "Jetenury",
@@ -3410,6 +3477,7 @@
       "seed": 2208570396,
       "loot": "PSEEPSEESPSP",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 21635,
       "vi": {
        "n": "Vestrian",
@@ -3444,6 +3512,7 @@
       "seed": 1632678120,
       "loot": "PPSESESPPEES",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 42735,
       "vi": {
        "n": "Mythulu",
@@ -3478,6 +3547,7 @@
       "seed": 403030430,
       "loot": "PSPESEPSPESE",
       "planets": 13,
+      "bodies": 57,
       "naquiumDv": 21618,
       "vi": {
        "n": "Zakhol",
@@ -3512,6 +3582,7 @@
       "seed": 2054202276,
       "loot": "PSPEESEESPSP",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 31963,
       "vi": {
        "n": "Eleusis",
@@ -3546,6 +3617,7 @@
       "seed": 2093009372,
       "loot": "PSPEESEPEPSS",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 22380,
       "vi": {
        "n": "Rovecutio",
@@ -3580,6 +3652,7 @@
       "seed": 4027732528,
       "loot": "PPESSEEESSPP",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 32129,
       "vi": {
        "n": "Throix",
@@ -3614,6 +3687,7 @@
       "seed": 2023506910,
       "loot": "PESSPESEEPPS",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 33390,
       "vi": {
        "n": "Persephone",
@@ -3648,6 +3722,7 @@
       "seed": 973896958,
       "loot": "PESPESPESPSE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 59203,
       "vi": {
        "n": "Matyus",
@@ -3682,6 +3757,7 @@
       "seed": 1622222268,
       "loot": "PSSEPEESPEPS",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 28560,
       "vi": {
        "n": "Haka",
@@ -3716,6 +3792,7 @@
       "seed": 3741245930,
       "loot": "PESPSEEEPSSP",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 32443,
       "vi": {
        "n": "Benthai",
@@ -3750,6 +3827,7 @@
       "seed": 2680148666,
       "loot": "PEPSESSPEPSE",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 41451,
       "vi": {
        "n": "Rinoto",
@@ -3784,6 +3862,7 @@
       "seed": 3658344820,
       "loot": "PESEPSSSPEPE",
       "planets": 13,
+      "bodies": 57,
       "naquiumDv": 88309,
       "vi": {
        "n": "Feist",
@@ -3818,6 +3897,7 @@
       "seed": 3537270540,
       "loot": "PESSEPPEESSP",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 27239,
       "vi": {
        "n": "Cadmus",
@@ -3852,6 +3932,7 @@
       "seed": 1723104266,
       "loot": "PSSEPESEPSPE",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 67811,
       "vi": {
        "n": "Tycho",
@@ -3886,6 +3967,7 @@
       "seed": 1997185844,
       "loot": "PESSPEPSSPEE",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 62244,
       "vi": {
        "n": "Vekars",
@@ -3920,6 +4002,7 @@
       "seed": 3108897706,
       "loot": "PPESESSSPEPE",
       "planets": 13,
+      "bodies": 57,
       "naquiumDv": 22102,
       "vi": {
        "n": "Benthai",
@@ -3954,6 +4037,7 @@
       "seed": 2922752254,
       "loot": "PSEPSEPSESPE",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 25351,
       "vi": {
        "n": "Legogene",
@@ -3988,6 +4072,7 @@
       "seed": 3276473092,
       "loot": "PPESSEPSSEEP",
       "planets": 13,
+      "bodies": 58,
       "naquiumDv": 21506,
       "vi": {
        "n": "Seehusen",
@@ -4022,6 +4107,7 @@
       "seed": 2464162466,
       "loot": "PPEESSEPPSSE",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 21098,
       "vi": {
        "n": "Angelos",
@@ -4056,6 +4142,7 @@
       "seed": 73914520,
       "loot": "PPESESPPSESE",
       "planets": 13,
+      "bodies": 62,
       "naquiumDv": 27207,
       "vi": {
        "n": "Persephone",
@@ -4090,6 +4177,7 @@
       "seed": 2631605818,
       "loot": "PSSEEPEPEPSS",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 81364,
       "vi": {
        "n": "Hermes",
@@ -4124,6 +4212,7 @@
       "seed": 3677194752,
       "loot": "PPSSEEPPESSE",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 39251,
       "vi": {
        "n": "Bishamonten",
@@ -4158,6 +4247,7 @@
       "seed": 1349103666,
       "loot": "PSPEESESSEPP",
       "planets": 13,
+      "bodies": 53,
       "naquiumDv": 36769,
       "vi": {
        "n": "Dolentea",
@@ -4192,6 +4282,7 @@
       "seed": 3839631572,
       "loot": "PSPEESSESPEP",
       "planets": 13,
+      "bodies": 57,
       "naquiumDv": 98464,
       "vi": {
        "n": "Karas",
@@ -4226,6 +4317,7 @@
       "seed": 1861929820,
       "loot": "PSEPSEESPSPE",
       "planets": 13,
+      "bodies": 54,
       "naquiumDv": 75106,
       "vi": {
        "n": "Jakiro",
@@ -4260,6 +4352,7 @@
       "seed": 3564385426,
       "loot": "PPEESSSPEPSE",
       "planets": 13,
+      "bodies": 57,
       "naquiumDv": 23090,
       "vi": {
        "n": "Cinza",
@@ -4294,6 +4387,7 @@
       "seed": 2956057778,
       "loot": "PESPSEESPSEP",
       "planets": 13,
+      "bodies": 49,
       "naquiumDv": 21324,
       "vi": {
        "n": "Ganymede",
@@ -4328,6 +4422,7 @@
       "seed": 1001688088,
       "loot": "PSESPEESESPP",
       "planets": 13,
+      "bodies": 51,
       "naquiumDv": 27061,
       "vi": {
        "n": "Miranda",
@@ -4362,6 +4457,7 @@
       "seed": 1910424530,
       "loot": "PPEESSESPEPS",
       "planets": 13,
+      "bodies": 58,
       "naquiumDv": 31210,
       "vi": {
        "n": "Osis",
@@ -4396,6 +4492,7 @@
       "seed": 4238606722,
       "loot": "PPSEESESPSEP",
       "planets": 13,
+      "bodies": 63,
       "naquiumDv": 40650,
       "vi": {
        "n": "Melkor",
@@ -4430,6 +4527,7 @@
       "seed": 3140472190,
       "loot": "PSEPESPEESPS",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 21362,
       "vi": {
        "n": "Jiangyin",
@@ -4464,6 +4562,7 @@
       "seed": 3676750684,
       "loot": "PSEPESSEPEPS",
       "planets": 13,
+      "bodies": 52,
       "naquiumDv": 91939,
       "vi": {
        "n": "Seehusen",
@@ -4498,6 +4597,7 @@
       "seed": 882642344,
       "loot": "PPEESSEEPSPS",
       "planets": 13,
+      "bodies": 50,
       "naquiumDv": 28008,
       "vi": {
        "n": "Rutadam",
