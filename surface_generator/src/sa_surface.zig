@@ -101,7 +101,30 @@ pub const ChunkData = struct {
     resource: [AREA]u8,
     /// amount of the resource entity centred on the tile (0 elsewhere)
     amount: [AREA]u32,
+    /// the rocks, trees, plants and enemy buildings that end up on the
+    /// surface, in placement order (only with Options.entities)
+    ents: [MAX_ENTS]Placed,
+    n_ents: usize,
 };
+
+/// One placed non-resource entity: index into planet.placed and its position
+/// in 1/256 tile (the engine's fixed-point map position).
+pub const Placed = struct { ent: u16, x: i32, y: i32 };
+pub const MAX_ENTS = 4096;
+
+/// Map colour of an entity class in the entities layer (null = not drawn).
+pub fn classColor(c: sa_data.Entity.Class) ?[3]u8 {
+    return switch (c) {
+        .tree => .{ 38, 128, 54 },
+        .plant => .{ 140, 190, 70 },
+        .rock => .{ 168, 150, 128 },
+        .spawner => .{ 255, 40, 40 },
+        .worm => .{ 255, 150, 20 },
+        .cliff => .{ 222, 205, 160 },
+        .other => .{ 200, 130, 235 },
+        .resource, .fish => null,
+    };
+}
 
 /// Tiles and resources, generated chunk by chunk the way the game does.
 ///
@@ -138,12 +161,21 @@ pub const World = struct {
     enemy_program: ?prog.Program,
     enemy_ws: prog.Program.Workspace,
     enemy_ents: []const usize,
+    /// Options.entities
+    record: bool,
+    /// the tile competition alone, for single tiles outside the chunk being
+    /// generated (an entity's box can reach into a neighbouring chunk)
+    tiles_program: ?prog.Program,
+    tiles_ws: prog.Program.Workspace,
     xs: []f32,
     ys: []f32,
 
     pub const Options = struct {
         /// do not compile the tile competition; chunkWith() is given the tiles
         external_tiles: bool = false,
+        /// place every autoplaced entity, not only the resources, and keep
+        /// the ones that survive the collision checks in ChunkData.ents
+        entities: bool = false,
     };
 
     pub fn init(a: std.mem.Allocator, data: *const sa_data.Data, planet: *const sa_data.Planet, map_seed: u32, controls: prog.Controls, err_out: ?*[]const u8) !World {
@@ -160,7 +192,7 @@ pub const World = struct {
         // nothing after the last resource group can affect a resource
         var n_placed: usize = 0;
         for (planet.placed, 0..) |e, i| {
-            if (e.kind == .resource) n_placed = i + 1;
+            if (e.kind == .resource or opts.entities) n_placed = i + 1;
         }
         while (n_placed < planet.placed.len and std.mem.eql(u8, planet.placed[n_placed].order, planet.placed[n_placed - 1].order)) n_placed += 1;
         const ent_prob = try a.alloc(usize, n_placed);
@@ -191,6 +223,13 @@ pub const World = struct {
             enemy_ws.no_penalty = true;
             enemy_program = ep;
         }
+        var tiles_program: ?prog.Program = null;
+        var tiles_ws: prog.Program.Workspace = undefined;
+        if (opts.entities and !opts.external_tiles) {
+            const tp = try prog.compile(a, data, planet, map_seed, controls, names.items[0..planet.tiles.len], err_out);
+            tiles_ws = try tp.workspaceN(a, 1);
+            tiles_program = tp;
+        }
         const program = try prog.compile(a, data, planet, map_seed, controls, names.items, err_out);
         var ws = try program.workspaceN(a, AREA);
         ws.column_rng = true;
@@ -205,6 +244,9 @@ pub const World = struct {
             .enemy_program = enemy_program,
             .enemy_ws = enemy_ws,
             .enemy_ents = enemy_ents.items,
+            .record = opts.entities,
+            .tiles_program = tiles_program,
+            .tiles_ws = tiles_ws,
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
         };
@@ -243,6 +285,7 @@ pub const World = struct {
         }
         @memset(&out.resource, NO_RESOURCE);
         @memset(&out.amount, 0);
+        out.n_ents = 0;
         if (self.n_placed == 0) return;
 
         var blocked: [AREA]bool = undefined;
@@ -279,22 +322,112 @@ pub const World = struct {
                 }
                 // a tile nothing in the group can stand on takes no draw
                 const e = win orelse continue;
-                const draw: f32 = @floatCast(prng.float());
-                if (!(draw < win_p)) continue;
-                const r = placed[e].resource orelse {
-                    // sub-tile offset of a non-centred entity
-                    _ = prng.next();
-                    _ = prng.next();
-                    continue;
-                };
-                if (!(win_rich > 0)) continue;
-                const size = self.planet.resources[r].size;
-                if (!self.footprintFree(out, &blocked, i, size)) continue;
-                self.stamp(out, i, r, size);
-                out.amount[i] = @intFromFloat(@min(@max(win_rich, 1), 4.0e9));
+                const ent = &placed[e];
+                var attempt: u32 = 0;
+                while (attempt < ent.density) : (attempt += 1) {
+                    const draw: f32 = @floatCast(prng.float());
+                    if (!(draw < win_p)) continue;
+                    const r = ent.resource orelse {
+                        // EntityMapGenerationTask::generateEntityOnTile: an
+                        // off-grid entity takes two more draws for its
+                        // position within the tile (in sixteenths); any other
+                        // snaps to the grid and takes none.
+                        var px: i32 = (cx * CHUNK + @as(i32, @intCast(i % CHUNK))) * 256;
+                        var py: i32 = (cy * CHUNK + @as(i32, @intCast(i / CHUNK))) * 256;
+                        if (ent.off_grid) {
+                            px += @as(i32, @intFromFloat(prng.float() * 256.0)) & ~@as(i32, 0xf);
+                            py += @as(i32, @intFromFloat(prng.float() * 256.0)) & ~@as(i32, 0xf);
+                        } else {
+                            // an odd-sized building is centred on its tile
+                            if ((@divFloor(ent.box[2] - ent.box[0] + 255, 256) & 1) == 1) px += 128;
+                            if ((@divFloor(ent.box[3] - ent.box[1] + 255, 256) & 1) == 1) py += 128;
+                        }
+                        // tryToAddEntity: dropped when its box touches a
+                        // tile it collides with
+                        if (self.record and out.n_ents < MAX_ENTS and self.boxOnTiles(out, cx, cy, ent, px, py)) {
+                            out.ents[out.n_ents] = .{ .ent = @intCast(e), .x = px, .y = py };
+                            out.n_ents += 1;
+                        }
+                        continue;
+                    };
+                    if (!(win_rich > 0)) continue;
+                    const size = self.planet.resources[r].size;
+                    if (!self.footprintFree(out, &blocked, i, size)) continue;
+                    self.stamp(out, i, r, size);
+                    out.amount[i] = @intFromFloat(@min(@max(win_rich, 1), 4.0e9));
+                }
             }
             g0 = g1;
         }
+        if (self.record) self.applyEntities(out);
+    }
+
+    /// EntityMapGenerationTask::wouldCollide: every tile under the entity's
+    /// box must be one it does not collide with.
+    fn boxOnTiles(self: *World, out: *const ChunkData, cx: i32, cy: i32, ent: *const sa_data.Entity, px: i32, py: i32) bool {
+        const x0 = (ent.box[0] + px) >> 8;
+        const x1 = (ent.box[2] + px) >> 8;
+        const y0 = (ent.box[1] + py) >> 8;
+        const y1 = (ent.box[3] + py) >> 8;
+        var ty = y0;
+        while (ty <= y1) : (ty += 1) {
+            var tx = x0;
+            while (tx <= x1) : (tx += 1) {
+                const ti = self.tileAt(out, cx, cy, tx, ty);
+                if (ent.mask & self.planet.tiles[ti].mask != 0) return false;
+            }
+        }
+        return true;
+    }
+
+    fn tileAt(self: *World, out: *const ChunkData, cx: i32, cy: i32, tx: i32, ty: i32) u16 {
+        const lx = tx - cx * CHUNK;
+        const ly = ty - cy * CHUNK;
+        if (lx >= 0 and ly >= 0 and lx < CHUNK and ly < CHUNK) return out.tile[@intCast(ly * CHUNK + lx)];
+        if (self.tiles_program) |*tp| {
+            tp.eval(&self.tiles_ws, &.{@as(f32, @floatFromInt(tx)) + SAMPLE_OFFSET}, &.{@as(f32, @floatFromInt(ty)) + SAMPLE_OFFSET});
+            var best: f32 = -std.math.inf(f32);
+            var bi: u16 = 0;
+            for (0..self.planet.tiles.len) |t| {
+                const p = tp.out(&self.tiles_ws, t)[0];
+                if (p > best) {
+                    best = p;
+                    bi = @intCast(t);
+                }
+            }
+            return bi;
+        }
+        // supplied tiles stop at the chunk: take the nearest one inside
+        const kx: usize = @intCast(@min(@max(lx, 0), CHUNK - 1));
+        const ky: usize = @intCast(@min(@max(ly, 0), CHUNK - 1));
+        return out.tile[ky * CHUNK + kx];
+    }
+
+    /// EntityMapGenerationTask::applyEntities: the chunk's entities go onto
+    /// the surface in the order they were generated, and one is dropped when
+    /// its box overlaps an entity already there that shares a collision layer
+    /// with it. Only this chunk's own entities are known here.
+    fn applyEntities(self: *World, out: *ChunkData) void {
+        const placed = self.planet.placed;
+        var kept: usize = 0;
+        for (out.ents[0..out.n_ents]) |c| {
+            const ce = &placed[c.ent];
+            var hit = false;
+            for (out.ents[0..kept]) |k| {
+                const ke = &placed[k.ent];
+                if (ce.mask & ke.mask == 0) continue;
+                if (c.x + ce.box[0] < k.x + ke.box[2] and c.x + ce.box[2] > k.x + ke.box[0] and
+                    c.y + ce.box[1] < k.y + ke.box[3] and c.y + ce.box[3] > k.y + ke.box[1])
+                {
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) continue;
+            out.ents[kept] = c;
+            kept += 1;
+        }
+        out.n_ents = kept;
     }
 
     fn footprintFree(_: *const World, out: *const ChunkData, blocked: *const [AREA]bool, i: usize, size: u8) bool {
@@ -345,8 +478,12 @@ pub const World = struct {
     /// the nests: their exact tiles also depend on every tree, rock and
     /// cliff placed before them. Any may be null. `tile_counts` (per
     /// planet.tiles) and `totals` (per planet.resources) are added to.
-    /// Returns the number of enemy-area tiles.
-    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, enemies: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals) u64 {
+    /// A world built with Options.entities draws its entities into `enemies`
+    /// instead: every rock, tree, plant and enemy building that survives
+    /// placement, as its footprint in its class colour (classColor), counted
+    /// per class in `class_counts`.
+    /// Returns the number of enemy-area tiles / entities drawn.
+    pub fn render(self: *World, x0: i32, y0: i32, width: usize, height: usize, terrain: ?[]u8, overlay: ?[]u8, enemies: ?[]u8, tile_counts: ?[]u32, totals: ?[]Totals, class_counts: ?*[9]u32) u64 {
         if (overlay) |o| @memset(o, 0);
         if (enemies) |o| @memset(o, 0);
         var enemy_tiles: u64 = 0;
@@ -358,8 +495,28 @@ pub const World = struct {
             var cx = @divFloor(x0, CHUNK);
             while (cx * CHUNK < x1) : (cx += 1) {
                 self.chunk(cx, cy, &data);
-                const want_enemy = self.enemy_program != null;
-                if (self.enemy_program) |*ep| ep.eval(&self.enemy_ws, self.xs, self.ys);
+                const want_enemy = self.enemy_program != null and !self.record;
+                if (want_enemy) self.enemy_program.?.eval(&self.enemy_ws, self.xs, self.ys);
+                for (data.ents[0..data.n_ents]) |pe| {
+                    const ent = &self.planet.placed[pe.ent];
+                    // counted where its position is, drawn wherever its box reaches
+                    const ex = pe.x >> 8;
+                    const ey = pe.y >> 8;
+                    if (ex < x0 or ex >= x1 or ey < y0 or ey >= y1) continue;
+                    enemy_tiles += 1;
+                    if (class_counts) |cc| cc[@intFromEnum(ent.class)] += 1;
+                    const col = classColor(ent.class) orelse continue;
+                    const o = enemies orelse continue;
+                    var ty = (pe.y + ent.box[1]) >> 8;
+                    while (ty <= (pe.y + ent.box[3]) >> 8) : (ty += 1) {
+                        var tx = (pe.x + ent.box[0]) >> 8;
+                        while (tx <= (pe.x + ent.box[2]) >> 8) : (tx += 1) {
+                            if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                            const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
+                            o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
+                        }
+                    }
+                }
                 for (0..AREA) |i| {
                     const tx = cx * CHUNK + @as(i32, @intCast(i % CHUNK));
                     const ty = cy * CHUNK + @as(i32, @intCast(i / CHUNK));
@@ -410,9 +567,9 @@ pub const World = struct {
 /// Every autoplace group of a chunk draws from ONE random stream, in
 /// autoplace-order: each group sweeps the chunk's tiles last to first and
 /// takes one draw per tile it could stand on (fish: water; everything else:
-/// land); an entity whose roll passes (draw < probability) and that is not
-/// centre-placed - rocks, trees, enemies, fish - takes two more draws for its
-/// sub-tile offset. So the rolls of a late group (crude oil is in "c") start
+/// land); an entity whose roll passes (draw < probability) and that is placed
+/// off the grid - rocks, trees, worms - takes two more draws for its sub-tile
+/// offset. So the rolls of a late group (crude oil is in "c") start
 /// at a position that depends on how many rocks, trees and enemies were
 /// attempted before it. This replays just those rolls - nothing is placed or
 /// rendered - to count them.
@@ -476,11 +633,22 @@ pub const EntityRolls = struct {
                     if (water[i] != on_water) continue;
                     const draw: f32 = @floatCast(prng.float());
                     var p: f32 = 0;
-                    for (g0..g1) |e| p = @max(p, self.program.out(&self.ws, self.roots[e])[i]);
+                    var win: usize = g0;
+                    for (g0..g1) |e| {
+                        const v = self.program.out(&self.ws, self.roots[e])[i];
+                        if (v > p) {
+                            p = v;
+                            win = e;
+                        }
+                    }
                     if (draw < p) {
                         out[slot] += 1;
-                        _ = prng.next();
-                        _ = prng.next();
+                        // only an off-grid entity draws its sub-tile offset
+                        // (biter and spitter spawners snap to the grid)
+                        if (placed[win].off_grid) {
+                            _ = prng.next();
+                            _ = prng.next();
+                        }
                     }
                 }
             }

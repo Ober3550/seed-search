@@ -150,10 +150,23 @@ def main():
                 elif kind == "entity":
                     box = p.get("collision_box") or [[-0.1, -0.1], [0.1, 0.1]]
                     mask = (p.get("collision_mask") or default_masks.get(typ) or {}).get("layers") or {}
+                    def xy(v):
+                        return [v.get("x", v[0] if isinstance(v, list) else 0), v.get("y", v[1] if isinstance(v, list) else 0)] if isinstance(v, dict) else list(v[:2])
+                    lt, rb = xy(box[0] if isinstance(box, list) else box["left_top"]), xy(box[1] if isinstance(box, list) else box["right_bottom"])
+                    box = [lt, rb]
+                    flags = p.get("flags") or []
                     entities[n] = {"type": typ, "control": ap_.get("control"),
                                    "order": ap_.get("order", ""), "color": rgb(p.get("map_color")),
                                    # footprint in tiles (ore 1, fluid patches 3)
-                                   "size": max(1, math.ceil(max(box[1][0] - box[0][0], box[1][1] - box[0][1])))}
+                                   "size": max(1, math.ceil(max(box[1][0] - box[0][0], box[1][1] - box[0][1]))),
+                                   # collision box [left, top, right, bottom] in tiles, for
+                                   # the entity-against-entity and box-against-tile checks
+                                   "box": [lt[0], lt[1], rb[0], rb[1]],
+                                   # off-grid entities get a random sub-tile offset
+                                   # (two draws); the others snap to the grid
+                                   "off_grid": "placeable-off-grid" in flags,
+                                   # placement attempts per winning tile
+                                   "density": ap_.get("placement_density", 1)}
                     # tiles the entity may stand on (absent = any)
                     entities[n]["layers"] = sorted(k for k, v in mask.items() if v)
                     restr = [t for t in (ap_.get("tile_restriction") or []) if isinstance(t, str)]

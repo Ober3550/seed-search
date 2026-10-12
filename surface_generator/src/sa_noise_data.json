@@ -1,12 +1,19 @@
 {
  "entities": {
   "ashland-lichen-tree": {
+   "box": [
+    -0.5,
+    -0.6,
+    0.5,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -16,17 +23,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[tree]-b[normal]",
    "size": 1,
    "type": "tree"
   },
   "ashland-lichen-tree-flaming": {
+   "box": [
+    -0.5,
+    -0.6,
+    0.5,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -36,17 +51,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[tree]-a[flaming]",
    "size": 1,
    "type": "tree"
   },
   "behemoth-worm-turret": {
+   "box": [
+    -1.4,
+    -1.2,
+    1.4,
+    1.2
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -56,17 +79,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
   },
   "big-fulgora-rock": {
+   "box": [
+    -0.75,
+    -0.75,
+    0.75,
+    0.75
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -76,17 +107,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "r[rock]-1",
    "size": 2,
    "type": "simple-entity"
   },
   "big-rock": {
+   "box": [
+    -1,
+    -0.9,
+    1,
+    1
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": "rocks",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -96,17 +135,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[doodad]-a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
   },
   "big-sand-rock": {
+   "box": [
+    -0.75,
+    -0.75,
+    0.75,
+    0.75
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": "rocks",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -116,17 +163,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[doodad]-a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
   },
   "big-volcanic-rock": {
+   "box": [
+    -0.75,
+    -0.75,
+    0.75,
+    0.75
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -136,17 +191,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
   },
   "big-worm-turret": {
+   "box": [
+    -1.4,
+    -1.2,
+    1.4,
+    1.2
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -156,17 +219,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
   },
   "biter-spawner": {
+   "box": [
+    -2.2,
+    -2.2,
+    2.2,
+    2.2
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -176,17 +247,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": false,
    "order": "b[enemy]-a[spawner]",
    "size": 5,
    "type": "unit-spawner"
   },
   "boompuff": {
+   "box": [
+    -0.9,
+    -0.4,
+    0.9,
+    0.8
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -196,59 +275,91 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-d",
    "size": 2,
    "type": "tree"
   },
   "calcite": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     204,
     178,
     178
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "coal": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "copper-ore": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     205,
     99,
     55
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "copper-stromatolite": {
+   "box": [
+    -0.5,
+    -0.5,
+    0.5,
+    0.5
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -256,48 +367,72 @@
     "player",
     "train"
    ],
+   "off_grid": true,
    "order": "",
    "size": 1,
    "type": "simple-entity"
   },
   "crater-cliff": {
+   "box": [
+    -0.99,
+    -0.49000000000000005,
+    0.99,
+    0.49000000000000005
+   ],
    "color": [
     144,
     119,
     87
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-a[cliff]-b[crater]",
    "size": 2,
    "type": "cliff"
   },
   "crude-oil": {
+   "box": [
+    -1.4,
+    -1.4,
+    1.4,
+    1.4
+   ],
    "color": [
     199,
     51,
     196
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "c",
    "size": 3,
    "type": "resource"
   },
   "cuttlepop": {
+   "box": [
+    -0.6,
+    -0.8,
+    0.6,
+    0.8
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -305,17 +440,25 @@
     "player",
     "train"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-k",
    "size": 2,
    "type": "tree"
   },
   "dead-dry-hairy-tree": {
+   "box": [
+    -0.6,
+    -0.6,
+    0.6,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -325,17 +468,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[dead]-c[dead-hairy]",
    "size": 2,
    "type": "tree"
   },
   "dead-grey-trunk": {
+   "box": [
+    -0.6,
+    -0.6,
+    0.6,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -345,17 +496,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[dead]-d[grey]",
    "size": 2,
    "type": "tree"
   },
   "dead-tree-desert": {
+   "box": [
+    -0.6,
+    -0.6,
+    0.6,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -365,17 +524,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[dead]-a[desert]",
    "size": 2,
    "type": "tree"
   },
   "dry-hairy-tree": {
+   "box": [
+    -0.6,
+    -0.6,
+    0.6,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -385,17 +552,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[dead]-c[hairy]",
    "size": 2,
    "type": "tree"
   },
   "dry-tree": {
+   "box": [
+    -0.4,
+    -0.8,
+    0.4,
+    0.2
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -405,45 +580,69 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[dead]-e[dry-tree]",
    "size": 1,
    "type": "tree"
   },
   "fish": {
+   "box": [
+    -0.75,
+    -0.75,
+    0.75,
+    0.75
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "ground_tile"
    ],
+   "off_grid": false,
    "order": "",
    "size": 2,
    "type": "fish"
   },
   "fluorine-vent": {
+   "box": [
+    -1.4,
+    -1.4,
+    1.4,
+    1.4
+   ],
    "color": [
     0,
     204,
     255
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "a[resources]-a[fluorine]",
    "size": 3,
    "type": "resource"
   },
   "fulgoran-ruin-attractor": {
+   "box": [
+    -1.21,
+    -1.21,
+    1.21,
+    1.21
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "elevated_rail",
     "is_lower_object",
@@ -454,17 +653,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": false,
    "order": "a[ruin]-b[attractor]",
    "size": 3,
    "type": "lightning-attractor"
   },
   "fulgoran-ruin-big": {
+   "box": [
+    -1.77,
+    -1.49,
+    1.77,
+    1.49
+   ],
    "color": [
     120,
     120,
     120
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -474,17 +681,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-e[big]",
    "size": 4,
    "type": "simple-entity"
   },
   "fulgoran-ruin-colossal": {
+   "box": [
+    -3.47,
+    -2.66,
+    3.47,
+    2.66
+   ],
    "color": [
     130,
     130,
     130
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -494,17 +709,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-c[colossal]",
    "size": 7,
    "type": "simple-entity"
   },
   "fulgoran-ruin-huge": {
+   "box": [
+    -2.78,
+    -2.33,
+    2.78,
+    2.33
+   ],
    "color": [
     125,
     125,
     125
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -514,17 +737,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-d[huge]",
    "size": 6,
    "type": "simple-entity"
   },
   "fulgoran-ruin-medium": {
+   "box": [
+    -1.21,
+    -0.86,
+    1.21,
+    0.86
+   ],
    "color": [
     115,
     115,
     115
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -534,17 +765,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-g[medium]",
    "size": 3,
    "type": "simple-entity"
   },
   "fulgoran-ruin-small": {
+   "box": [
+    -0.77,
+    -0.68,
+    0.77,
+    0.68
+   ],
    "color": [
     110,
     110,
     110
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -554,17 +793,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-h[small]",
    "size": 2,
    "type": "simple-entity"
   },
   "fulgoran-ruin-stonehenge": {
+   "box": [
+    -1.56,
+    -1.32,
+    1.56,
+    1.32
+   ],
    "color": [
     120,
     120,
     120
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -574,17 +821,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-f[stonehenge]",
    "size": 4,
    "type": "simple-entity"
   },
   "fulgoran-ruin-vault": {
+   "box": [
+    -6.88,
+    -4,
+    6.88,
+    4
+   ],
    "color": [
     255,
     255,
     255
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -594,17 +849,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[ruin]-a[vault]",
    "size": 14,
    "type": "simple-entity"
   },
   "fulgurite": {
+   "box": [
+    -1,
+    -0.9,
+    1,
+    0.9
+   ],
    "color": [
     194,
     41,
     116
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -614,17 +877,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "",
    "size": 2,
    "type": "simple-entity"
   },
   "funneltrunk": {
+   "box": [
+    -0.6,
+    -0.5,
+    0.6,
+    0.5
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -634,17 +905,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-h",
    "size": 2,
    "type": "tree"
   },
   "gleba-spawner": {
+   "box": [
+    -2.35,
+    -2.35,
+    2.35,
+    2.35
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_enemy_base",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -652,17 +931,25 @@
     "object",
     "player"
    ],
+   "off_grid": true,
    "order": "b[enemy]-c[spawner]-a[large]",
    "size": 5,
    "type": "unit-spawner"
   },
   "gleba-spawner-small": {
+   "box": [
+    -1.35,
+    -1.35,
+    1.35,
+    1.35
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_enemy_base",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -670,17 +957,25 @@
     "object",
     "player"
    ],
+   "off_grid": true,
    "order": "b[enemy]-c[spawner]-b[small]",
    "size": 3,
    "type": "unit-spawner"
   },
   "hairyclubnub": {
+   "box": [
+    -0.9,
+    -0.6,
+    0.9,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -688,17 +983,25 @@
     "player",
     "train"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-j",
    "size": 2,
    "type": "tree"
   },
   "huge-rock": {
+   "box": [
+    -1.5,
+    -1.1,
+    1.5,
+    1.1
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": "rocks",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -708,17 +1011,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[doodad]-a[rock]-a[huge]",
    "size": 3,
    "type": "simple-entity"
   },
   "huge-volcanic-rock": {
+   "box": [
+    -1.5,
+    -1.1,
+    1.5,
+    1.1
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -728,31 +1039,47 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[rock]-a[huge]",
    "size": 3,
    "type": "simple-entity"
   },
   "iron-ore": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     106,
     134,
     148
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "iron-stromatolite": {
+   "box": [
+    -0.5,
+    -0.5,
+    0.5,
+    0.5
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -760,17 +1087,25 @@
     "player",
     "train"
    ],
+   "off_grid": true,
    "order": "",
    "size": 1,
    "type": "simple-entity"
   },
   "jellystem": {
+   "box": [
+    -0.8,
+    -0.8,
+    0.8,
+    0.8
+   ],
    "color": [
     255,
     255,
     255
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -780,6 +1115,7 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-b",
    "size": 2,
    "tile_restriction": [
@@ -790,12 +1126,19 @@
    "type": "plant"
   },
   "lickmaw": {
+   "box": [
+    -0.7,
+    -0.6,
+    0.7,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -805,65 +1148,97 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-f",
    "size": 2,
    "type": "tree"
   },
   "lithium-brine": {
+   "box": [
+    -1.4,
+    -1.4,
+    1.4,
+    1.4
+   ],
    "color": [
     178,
     255,
     153
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "a[resources]-b[lithium]",
    "size": 3,
    "type": "resource"
   },
   "lithium-iceberg-big": {
+   "box": [
+    -1,
+    -0.75,
+    1,
+    0.75
+   ],
    "color": [
     168,
     188,
     211
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[rock]-b[big]",
    "size": 2,
    "type": "simple-entity"
   },
   "lithium-iceberg-huge": {
+   "box": [
+    -1.85,
+    -1.25,
+    1.85,
+    1.25
+   ],
    "color": [
     168,
     188,
     211
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[rock]-a[huge]",
    "size": 4,
    "type": "simple-entity"
   },
   "medium-worm-turret": {
+   "box": [
+    -1.1,
+    -1,
+    1.1,
+    1
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -873,31 +1248,47 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[enemy]-b[worm]",
    "size": 3,
    "type": "turret"
   },
   "scrap": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     230,
     230,
     230
    ],
    "control": "scrap",
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "slipstack": {
+   "box": [
+    -0.8,
+    -0.6,
+    0.8,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
@@ -905,17 +1296,25 @@
     "player",
     "train"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-i",
    "size": 2,
    "type": "tree"
   },
   "small-worm-turret": {
+   "box": [
+    -0.9,
+    -0.8,
+    0.9,
+    0.8
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -925,17 +1324,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "b[enemy]-b[worm]",
    "size": 2,
    "type": "turret"
   },
   "spitter-spawner": {
+   "box": [
+    -2.2,
+    -2.2,
+    2.2,
+    2.2
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "enemy-base",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -945,17 +1352,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": false,
    "order": "b[enemy]-a[spawner]",
    "size": 5,
    "type": "unit-spawner"
   },
   "stingfrond": {
+   "box": [
+    -0.6,
+    -0.4,
+    0.6,
+    0.6
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -965,45 +1380,69 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-e",
    "size": 2,
    "type": "tree"
   },
   "stone": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     176,
     156,
     109
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "sulfuric-acid-geyser": {
+   "box": [
+    -1.4,
+    -1.4,
+    1.4,
+    1.4
+   ],
    "color": [
     199,
     199,
     26
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "c",
    "size": 3,
    "type": "resource"
   },
   "sunnycomb": {
+   "box": [
+    -0.7,
+    -0.5,
+    0.7,
+    0.5
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1013,17 +1452,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-c",
    "size": 2,
    "type": "tree"
   },
   "teflilly": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1033,17 +1480,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-g",
    "size": 1,
    "type": "tree"
   },
   "tree-01": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1053,17 +1508,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-a[wet]-c[cold]",
    "size": 1,
    "type": "tree"
   },
   "tree-02": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1073,17 +1536,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-b[moist]-b[cold]",
    "size": 1,
    "type": "tree"
   },
   "tree-02-red": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1093,17 +1564,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-c[medium]-b[cold]",
    "size": 1,
    "type": "tree"
   },
   "tree-03": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1113,17 +1592,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-b[moist]-c[hot]",
    "size": 1,
    "type": "tree"
   },
   "tree-04": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1133,17 +1620,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-a[wet]-b[medium]",
    "size": 1,
    "type": "tree"
   },
   "tree-05": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1153,17 +1648,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-a[wet]-a[hot]",
    "size": 1,
    "type": "tree"
   },
   "tree-06": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1173,17 +1676,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-d[dry]-c[cold]",
    "size": 1,
    "type": "tree"
   },
   "tree-06-brown": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1193,17 +1704,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-e[verydry]-c[cold]",
    "size": 1,
    "type": "tree"
   },
   "tree-07": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1213,17 +1732,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-b[moist]-a[medium]",
    "size": 1,
    "type": "tree"
   },
   "tree-08": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1233,17 +1760,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-c[medium]-a[medium]",
    "size": 1,
    "type": "tree"
   },
   "tree-08-brown": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1253,17 +1788,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-d[dry]-b[medium]",
    "size": 1,
    "type": "tree"
   },
   "tree-08-red": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1273,17 +1816,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-e[verydry]-b[medium]",
    "size": 1,
    "type": "tree"
   },
   "tree-09": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1293,17 +1844,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-c[medium]-c[hot]",
    "size": 1,
    "type": "tree"
   },
   "tree-09-brown": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1313,17 +1872,25 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-d[dry]-a[hot]",
    "size": 1,
    "type": "tree"
   },
   "tree-09-red": {
+   "box": [
+    -0.4,
+    -0.4,
+    0.4,
+    0.4
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "trees",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1333,147 +1900,219 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-e[verydry]-a[hot]",
    "size": 1,
    "type": "tree"
   },
   "tungsten-ore": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     98,
     86,
     149
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "b",
    "size": 1,
    "type": "resource"
   },
   "uranium-ore": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     0,
     178,
     0
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "resource"
    ],
+   "off_grid": false,
    "order": "c",
    "size": 1,
    "type": "resource"
   },
   "vulcanus-chimney": {
+   "box": [
+    -1.2,
+    -1.2,
+    1.2,
+    1.2
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[chimney]-a[full]-a",
    "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-cold": {
+   "box": [
+    -1.2,
+    -1.2,
+    1.2,
+    1.2
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[chimney]-a[full]-c",
    "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-faded": {
+   "box": [
+    -1.2,
+    -1.2,
+    1.2,
+    1.2
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[chimney]-a[full]-b",
    "size": 3,
    "type": "simple-entity"
   },
   "vulcanus-chimney-short": {
+   "box": [
+    -0.9,
+    -0.7,
+    0.9,
+    0.7
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-c[chimney]-b[truncated]-e",
    "size": 2,
    "type": "simple-entity"
   },
   "vulcanus-chimney-truncated": {
+   "box": [
+    -0.9,
+    -0.7,
+    0.9,
+    0.7
+   ],
    "color": [
     129,
     105,
     78
    ],
    "control": null,
+   "density": 1,
    "layers": [
     "item",
     "object",
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[landscape]-b[chimney]-b[truncated]-d",
    "size": 2,
    "type": "simple-entity"
   },
   "water-cane": {
+   "box": [
+    -0.1,
+    -0.1,
+    0.1,
+    0.1
+   ],
    "color": [
     0,
     0,
     0
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "ground_tile",
     "is_lower_object",
     "is_object",
     "train"
    ],
+   "off_grid": true,
    "order": "a[tree]-d[decorative]-a[water-cane]",
    "size": 1,
    "type": "tree"
   },
   "yumako-tree": {
+   "box": [
+    -0.8,
+    -0.8,
+    0.8,
+    0.8
+   ],
    "color": [
     255,
     255,
     255
    ],
    "control": "gleba_plants",
+   "density": 1,
    "layers": [
     "is_lower_object",
     "is_object",
@@ -1483,6 +2122,7 @@
     "player",
     "water_tile"
    ],
+   "off_grid": true,
    "order": "a[tree]-b[forest]-a",
    "size": 2,
    "tile_restriction": [

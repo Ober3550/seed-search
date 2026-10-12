@@ -128,7 +128,7 @@ pub fn main(init: std.process.Init) !void {
         const totals = try a.alloc(surface.World.Totals, planet.resources.len);
         @memset(totals, .{});
         var timer = std.Io.Clock.Timestamp.now(init.io, .awake);
-        _ = w.render(-radius, -radius, n, n, terrain, overlay, null, null, totals);
+        _ = w.render(-radius, -radius, n, n, terrain, overlay, null, null, totals, null);
         const ns = timer.untilNow(init.io).raw.toNanoseconds();
         try writeFile(init, args[5], try png.encodeRgba(a, @intCast(n), @intCast(n), terrain));
         const base = if (std.mem.endsWith(u8, args[5], ".png")) args[5][0 .. args[5].len - 4] else args[5];
@@ -233,7 +233,7 @@ pub fn main(init: std.process.Init) !void {
         if (want_entities) {
             // every resource entity whose centre tile lies in the grid's area
             var msg: []const u8 = "";
-            if (surface.World.init(a, &data, planet, map_seed, .{}, &msg)) |w0| {
+            if (surface.World.initWith(a, &data, planet, map_seed, .{}, .{ .entities = true }, &msg)) |w0| {
                 var w = w0;
                 try out.appendSlice(a, ",\"entities\":[");
                 var chunk: surface.ChunkData = undefined;
@@ -254,6 +254,14 @@ pub fn main(init: std.process.Init) !void {
                                 if (v != std.math.maxInt(u16)) tiles[i] = v;
                             }
                             w.chunkWith(cx, cy, &tiles, &chunk);
+                        }
+                        for (chunk.ents[0..chunk.n_ents]) |pe| {
+                            const fx = @as(f64, @floatFromInt(pe.x)) / 256.0;
+                            const fy = @as(f64, @floatFromInt(pe.y)) / 256.0;
+                            if (fx < @as(f64, @floatFromInt(g[0])) or fx >= @as(f64, @floatFromInt(g[1] + 1)) or fy < @as(f64, @floatFromInt(g[2])) or fy >= @as(f64, @floatFromInt(g[3] + 1))) continue;
+                            if (k > 0) try out.append(a, ',');
+                            k += 1;
+                            try out.print(a, "{{\"n\":\"{s}\",\"x\":{d:.2},\"y\":{d:.2},\"a\":0}}", .{ planet.placed[pe.ent].name, fx, fy });
                         }
                         for (chunk.amount, 0..) |am, i| {
                             if (am == 0) continue;

@@ -118,6 +118,7 @@
     dimVal: document.getElementById("sf-dim-val"),
     enemyWrap: document.getElementById("sf-enemy-wrap"),
     enemy: document.getElementById("sf-enemy"),
+    enemyLabel: document.getElementById("sf-enemy-label"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
     // The result line is written as "<resource chips> <hint>· size · timing…";
@@ -567,18 +568,24 @@
   // ── Enemy base areas ──────────────────────────────────────────────────────
   // A third canvas between the terrain and the ore: translucent red wherever
   // the game can place a nest (spawners and worms), stronger where that is
-  // likelier. It is drawn once; the "Enemy bases" checkbox only shows or
-  // hides the canvas. ?enemies=0 skips generating it.
-  var ENEMIES = !/[?&]enemies=0\b/.test(location.search);
+  // likelier - or, on a Space Age planet, the entities themselves (rocks,
+  // trees, plants, nests). It is drawn once; the checkbox only shows or
+  // hides the canvas. ?entities=0 (or ?enemies=0) skips generating it.
+  var ENEMIES = !/[?&](enemies|entities)=0\b/.test(location.search);
+  var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
   function enemyOverlayClear() {
     if (enemyOverlayEl) { enemyOverlayEl.remove(); enemyOverlayEl = null; }
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
-  function enemyOverlay(px) {
+  function enemyOverlay(px, label, hint) {
     enemyOverlayClear();
     enemyOverlayEl = overlayCanvas(px, 1);
-    if (els.enemyWrap) els.enemyWrap.hidden = false;
+    if (els.enemyWrap) {
+      els.enemyWrap.hidden = false;
+      els.enemyWrap.title = hint || ENEMY_AREAS_HINT;
+      if (els.enemyLabel) els.enemyLabel.textContent = label || "Enemy bases";
+    }
     showEnemies();
     return enemyOverlayEl;
   }
@@ -822,6 +829,16 @@
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(cellCv, 0, 0, w, h, tx / scale, ty / scale, w / scale, h / scale);
       };
+      // like blit, but drawn over what is there: an entity on a cell's edge
+      // reaches into the next cell, whose own (transparent) pixels must not erase it
+      var blitOver = function (ctx, w, h, px, tx, ty) {
+        var cx = cellCanvas(w, h);
+        var cimg = cx.createImageData(w, h);
+        cimg.data.set(px);
+        cx.putImageData(cimg, 0, 0);
+        ctx.imageSmoothingEnabled = scale !== 1;
+        ctx.drawImage(cellCv, 0, 0, w, h, tx / scale, ty / scale, w / scale, h / scale);
+      };
       var run_ = sa;
       var tctx = els.canvas.getContext("2d");
       var octx = oreOverlay(disp).getContext("2d");
@@ -849,10 +866,10 @@
             var n = r.summary.width * r.summary.height * 4;
             blit(tctx, r.summary.width, r.summary.height, r.pixels.subarray(0, n), c.x0 + R, c.y0 + R);
             blit(octx, r.summary.width, r.summary.height, r.pixels.subarray(n, 2 * n), c.x0 + R, c.y0 + R);
-            if (r.summary.enemy_layer && ENEMIES) {
-              // a planet with autoplaced enemies sends its enemy areas as a third layer
-              if (!ectx) ectx = enemyOverlay(disp).getContext("2d");
-              if (r.summary.enemy_tiles) blit(ectx, r.summary.width, r.summary.height, r.pixels.subarray(2 * n, 3 * n), c.x0 + R, c.y0 + R);
+            if (r.summary.entity_layer && ENEMIES) {
+              // third layer: the planet's rocks, trees, plants and nests
+              if (!ectx) ectx = enemyOverlay(disp, "Entities", "Rocks, trees, plants and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.").getContext("2d");
+              blitOver(ectx, r.summary.width, r.summary.height, r.pixels.subarray(2 * n, 3 * n), c.x0 + R, c.y0 + R);
             }
             (r.summary.tiles || []).forEach(function (t) {
               if (!counts[t.name]) counts[t.name] = { color: t.color, count: 0 };

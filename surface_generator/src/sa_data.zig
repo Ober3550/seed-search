@@ -69,6 +69,16 @@ pub const Entity = struct {
     resource: ?u8,
     /// an enemy building (spawner or worm)
     enemy: bool = false,
+    /// what it is, for drawing
+    class: Class = .other,
+    /// collision box around its position, in 1/256 tile: left, top, right, bottom
+    box: [4]i32 = .{ -26, -26, 26, 26 },
+    /// placed with a random sub-tile offset (two draws) instead of snapped
+    off_grid: bool = true,
+    /// placement attempts per winning tile
+    density: u32 = 1,
+
+    pub const Class = enum { resource, tree, plant, rock, spawner, worm, fish, cliff, other };
 
     pub fn canStandOn(self: *const Entity, tile_index: usize, tile: *const Tile) bool {
         if (self.mask & tile.mask != 0) return false;
@@ -187,6 +197,31 @@ const Layers = struct {
         return m;
     }
 };
+
+fn classOf(typ: []const u8) Entity.Class {
+    const eq = std.mem.eql;
+    if (eq(u8, typ, "resource")) return .resource;
+    if (eq(u8, typ, "tree")) return .tree;
+    if (eq(u8, typ, "plant")) return .plant;
+    if (eq(u8, typ, "simple-entity")) return .rock;
+    if (eq(u8, typ, "unit-spawner")) return .spawner;
+    if (eq(u8, typ, "turret")) return .worm;
+    if (eq(u8, typ, "fish")) return .fish;
+    if (eq(u8, typ, "cliff")) return .cliff;
+    return .other;
+}
+
+/// "box": [left, top, right, bottom] in tiles -> 1/256 tile (the engine's
+/// fixed-point map positions)
+fn boxOf(o: json.Object) [4]i32 {
+    var out: [4]i32 = .{ -26, -26, 26, 26 };
+    const v = json.get(o, "box") orelse return out;
+    if (v != .array or v.array.len < 4) return out;
+    for (0..4) |i| {
+        if (v.array[i] == .number) out[i] = @intFromFloat(@round(v.array[i].number * 256.0));
+    }
+    return out;
+}
 
 fn hasLayer(o: json.Object, name: []const u8) bool {
     const v = json.get(o, "layers") orelse return false;
@@ -308,6 +343,10 @@ pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
                 .allowed = allowed,
                 .resource = res_index,
                 .enemy = std.mem.eql(u8, typ, "unit-spawner") or std.mem.eql(u8, typ, "turret"),
+                .class = classOf(typ),
+                .box = boxOf(em),
+                .off_grid = if (json.get(em, "off_grid")) |v| (v == .boolean and v.boolean) else true,
+                .density = @intFromFloat(@max(1, num(em, "density", 1))),
             });
         }
         std.mem.sort(Entity, placed.items, {}, struct {
