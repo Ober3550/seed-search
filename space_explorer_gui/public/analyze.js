@@ -77,16 +77,21 @@
         colors: [color, color]
       }]);
     }
-    NEAREST_PRIMARY.forEach(function (n) { mark(n.res, n.color, home, ""); });
+    // is `res` part of a combination some surface of this seed holds
+    // (other than combination `but`)?
+    function covered(res, but) {
+      return settle.some(function (z) {
+        return combosOf(z).some(function (o) { return o !== but && o.res.indexOf(res) !== -1; });
+      });
+    }
+    // (not for a resource a combination covers: iridium beside vulcanite)
+    NEAREST_PRIMARY.forEach(function (n) { if (!covered(n.res, null)) mark(n.res, n.color, home, ""); });
     COMBOS.forEach(function (c) {
       if (settle.some(function (z) { return combosOf(z).indexOf(c) !== -1; })) return;
       c.standIns.forEach(function (n) {
         // no stand-in for a resource another combination of this seed covers
         // (vulcanite by vulcanite + iridium, cryonite and holmium by their pair)
-        var covered = settle.some(function (z) {
-          return combosOf(z).some(function (o) { return o !== c && o.res.indexOf(n.res) !== -1; });
-        });
-        if (!covered) mark(n.res, n.color, n.settleable ? settle : home, c.res.map(nm).join(" + "));
+        if (!covered(n.res, c)) mark(n.res, n.color, n.settleable ? settle : home, c.res.map(nm).join(" + "));
       });
     });
     return out;
