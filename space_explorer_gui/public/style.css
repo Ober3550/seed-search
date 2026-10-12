@@ -62,7 +62,9 @@ body {
 .zone-card .dim-row { flex-basis: 100%; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; }
 .zone-card .dim-row[hidden] { display: none; }
 .zone-card .dim-row #sf-dim-val { color: var(--text); min-width: 3em; }
-.zone-card .dim-row input { flex: 1; max-width: 16em; }
+/* (no padding or border: the text-box styling of `input` above would leave
+   the track wider than the knob can travel) */
+.zone-card .dim-row input { flex: 1; max-width: 16em; padding: 0; border: 0; background: none; }
 .res-info { display: block; margin-top: 6px; }
 .surf-status:empty { display: none; }
 .surf-status { margin-bottom: 8px; }
