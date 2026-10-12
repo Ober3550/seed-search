@@ -751,3 +751,7 @@ a.btn-sm {
 .enemy-none { color: #3fb950; } .enemy-low { color: #d4a72c; } .enemy-high { color: #f85149; }
 /* every zone column the same width, whatever its heading */
 #featured-head th.slot { width: 14em; min-width: 14em; box-sizing: border-box; }
+/* The table is as tall as its rows and scrolls with the page. Where the
+   window is narrower than its columns it scrolls sideways in its own box
+   (which is also where the heading stops following the page). */
+@media (max-width: 1180px) { .featured-scroll { overflow-x: auto; } }

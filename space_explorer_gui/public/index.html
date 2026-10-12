@@ -11,6 +11,15 @@
     <main id="main">
       <div class="page">
         <h2 class="page-title"><img src="factorio-gear.webp" alt="" width="32" height="32"> Factorio Seed Viewer</h2>
+        <details id="featured" hidden style="margin:0.5em 0 1em">
+          <summary style="cursor:pointer"><strong>Top seeds</strong> <span id="featured-note" class="hint"></span></summary>
+          <div class="featured-scroll" style="margin-top:0.5em">
+          <table class="data-table">
+            <thead id="featured-head" style="position:sticky;top:0;background:var(--bg,#0d1117)"></thead>
+            <tbody id="featured-body"></tbody>
+          </table>
+          </div>
+        </details>
         <div class="filter-bar seed-controls">
           <div><label>Mod config: <select id="mod-select"></select></label></div>
           <div><label>Seed: <input type="number" id="seed-input" min="0" step="1" placeholder="e.g. 32094082" style="width:12em"></label>
@@ -20,15 +29,6 @@
           <div class="se-only"><label class="hint" title="The Calidus home system plus every asteroid field (fields orbit other stars, incl. the naquium-primary one) — the default SE view"><input type="checkbox" id="cal-filter" checked> Calidus + asteroid fields</label></div>
           <div class="se-only"><label class="hint" title="Only the rows with a colour wash: Nauvis, surfaces holding a resource combination, and the nearest naquium-primary asteroid field"><input type="checkbox" id="hl-filter"> Only highlighted</label></div>
         </div>
-        <details id="featured" hidden style="margin:0.5em 0 1em">
-          <summary style="cursor:pointer"><strong>Top seeds</strong> <span id="featured-note" class="hint"></span></summary>
-          <div style="max-height:24em;overflow:auto;margin-top:0.5em">
-          <table class="data-table">
-            <thead id="featured-head" style="position:sticky;top:0;background:var(--bg,#0d1117)"></thead>
-            <tbody id="featured-body"></tbody>
-          </table>
-          </div>
-        </details>
         <div id="planet-cards" class="planet-cards"></div>
         <table class="data-table" id="zone-table">
           <thead id="zt-head"><tr>
