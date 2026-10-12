@@ -138,7 +138,11 @@ nudged by a random generator seeded with the zone's seed. They follow from the
 seed exactly - 23 of 23 at the game's position on five surfaces (Hermes,
 Talos, Muir, Bluna, and Nauvis, which uses its zone seed, not the map seed:
 the universe generator returns it as `hs` / `hr`). The page computes them
-itself (`coreSeams` in surface.js) and draws them as their own group. The game
+itself (`coreSeams` in surface.js) as a list of coordinates and lays an icon
+over the map at each one - a page element, not part of an image, filled with
+the colour of the zone's core resource (its primary) and carrying its
+coordinates as a tooltip. They have a checkbox of their own and show at any
+map size. The game
 also clears the ore and entities under a seam and turns water there into land;
 the marker simply covers that area.
 

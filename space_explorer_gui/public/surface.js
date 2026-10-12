@@ -506,7 +506,7 @@
       });
     });
     return Promise.all(jobs).then(function () {
-      return terrain ? drawSeams(z, R, scale) : null;
+      return terrain ? drawSeams(z, R) : null;
     }).then(function () {
       // wells go over ore, whichever cell landed first
       for (var k = 0; k < wells.length; k += 3) drawWell(wells[k], wells[k + 1], wells[k + 2]);
@@ -629,8 +629,7 @@
     trees: [[50, 92, 44], [62, 104, 52]],
     rocks: [[129, 105, 78], [160, 120, 190]],
     huge: [[176, 148, 112]],
-    cliffs: [[144, 119, 87]],
-    seams: [[110, 215, 255]]
+    cliffs: [[144, 119, 87]]
   };
   var entityMode = false;   // the overlay holds entities (else enemy areas)
   var entityViewEl = null;  // the filtered copy, while a group is hidden
@@ -639,8 +638,7 @@
   function enemyOverlayClear() {
     if (enemyOverlayEl) { enemyOverlayEl.remove(); enemyOverlayEl = null; }
     if (treeEl) { treeEl.remove(); treeEl = null; }
-    var seamsLabel = document.getElementById("sf-seams");
-    if (seamsLabel) seamsLabel.hidden = true;
+    seamsClear();
     if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
@@ -798,30 +796,57 @@
     return out;
   }
   window.__coreSeams = coreSeams; // test hook
-  // Draw the surface's core seams on the entity canvas (a seam is about ten
-  // tiles across; the marker is a little larger so it shows on a big map).
-  function drawSeams(z, R, scale) {
-    if (!entityMode || !enemyOverlayEl || !seSolid(z)) return Promise.resolve();
+  // The surface's core seams as icons laid over the map: one element per
+  // seam, positioned by its coordinates (so they stay crisp at any map size)
+  // and filled with the colour of the zone's core resource - its primary; the
+  // homeworld's mixed fragments keep the game icon's blue. Hovering one gives
+  // its coordinates.
+  var SEAM_SVG = '<svg viewBox="0 0 24 22" aria-hidden="true">' +
+    '<path class="seam-bg" d="M12 1.6 22.4 20.2H1.6Z" stroke="#0d1117" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<path fill="#0d1117" d="M9.4 7h5.2v2.3H9.4zM10.1 9.8h3.8l-.5 2h-2.8zM10.7 12.3h2.6l-.4 1.9h-1.8zM11.2 14.7h1.6L12 18.2zM5.6 18.4h3.6v1H5.6zM14.8 18.4h3.6v1h-3.6z"/></svg>';
+  var seamEl = null;
+  function seamsClear() {
+    if (seamEl) { seamEl.remove(); seamEl = null; }
+    var label = document.getElementById("sf-seams");
+    if (label) label.hidden = true;
+  }
+  function showSeams() {
+    var cb = document.getElementById("sf-seams-cb");
+    if (seamEl) seamEl.hidden = !!cb && !cb.checked;
+  }
+  function drawSeams(z, R) {
+    if (!ENEMIES || !seSolid(z)) return Promise.resolve();
     var owner = enemyOverlayEl;
     var zone = z.nauvis
       ? (universe ? Promise.resolve(universe) : window.generateUniverse(SEED, K2)).then(function (u) { return { s: u.hs, r: u.hr }; })
       : Promise.resolve({ s: z.s, r: z.r });
     return zone.then(function (q) {
       if (!q.s || !q.r || enemyOverlayEl !== owner) return;
-      var label = document.getElementById("sf-seams");
-      if (label) label.hidden = false;
-      var ctx = owner.getContext("2d"), col = ENTITY_GROUPS.seams[0];
-      // at least 1/200 of the map across, so it still shows on a large one
-      var rad = Math.max(7 / scale, owner.width / 200);
-      ctx.fillStyle = "rgb(" + col.join(",") + ")";
+      seamsClear();
+      var box = els.canvas.parentNode;
+      box.style.position = "relative";
+      seamEl = document.createElement("div");
+      seamEl.className = "seam-layer" + (z.p ? " ore-" + nm(z.p) : "");
+      seamEl.style.left = els.canvas.offsetLeft + "px";
+      seamEl.style.top = els.canvas.offsetTop + "px";
+      var what = "Core seam" + (z.p ? " · " + nm(z.p) : "");
+      var list = [];
       coreSeams(q.s, q.r).forEach(function (p) {
         if (p[0] * p[0] + p[1] * p[1] > R * R) return; // outside the disk being drawn
-        var cx = (p[0] + R) / scale, cy = (p[1] + R) / scale;
-        ctx.beginPath();
-        ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
-        ctx.fill();
-        entitiesDrawn(cx - rad - 1, cy - rad - 1, 2 * rad + 2, 2 * rad + 2);
+        list.push(p);
+        var el = document.createElement("div");
+        el.className = "seam-icon";
+        el.style.left = ((p[0] + R) / (2 * R) * 100) + "%";
+        el.style.top = ((p[1] + R) / (2 * R) * 100) + "%";
+        el.title = what + " · x " + Math.floor(p[0]) + ", y " + Math.floor(p[1]);
+        el.innerHTML = SEAM_SVG;
+        seamEl.appendChild(el);
       });
+      window.__SEAMS__ = list; // test hook: [[x, y], ...]
+      box.appendChild(seamEl);
+      var label = document.getElementById("sf-seams");
+      if (label) label.hidden = list.length === 0;
+      showSeams();
     }, function (e) { console.error("core seams failed:", e); });
   }
 
@@ -885,7 +910,7 @@
         if (onProgress) onProgress(done, cells.length);
       }, function (e) { console.error("enemy areas cell failed:", e); });
     })).then(function () {
-      return entities ? drawSeams(z, R, scale) : null;
+      return drawSeams(z, R);
     });
   }
 
@@ -1259,6 +1284,8 @@
     adaptForKind();
     if (els.enemy) els.enemy.addEventListener("change", showEnemies);
     if (els.groups) els.groups.addEventListener("change", showEnemies);
+    var seamsCb = document.getElementById("sf-seams-cb");
+    if (seamsCb) seamsCb.addEventListener("change", showSeams);
     if (els.dim) els.dim.addEventListener("input", function () {
       if (els.dimVal) els.dimVal.textContent = els.dim.value + "%";
       compositeSA();
