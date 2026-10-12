@@ -140,6 +140,9 @@ pub const SpotOp = struct { cfg: SpotCfg, sub: Program };
 pub var multisample_step: f64 = 1;
 
 pub const Controls = struct {
+    /// the map's starting lake (engine-chosen per seed; Nauvis only), for
+    /// distance_from_nearest_point{points = starting_lake_positions}
+    starting_lake: ?[2]f64 = null,
     ctx: *const anyopaque = undefined,
     lookup: *const fn (ctx: *const anyopaque, name: []const u8, field: []const u8) f64 = defaultControl,
 
@@ -670,10 +673,19 @@ pub const Compiler = struct {
         if (std.mem.startsWith(u8, name, "distance_from_nearest_point")) {
             // points = starting_positions; a planet surface starts at (0, 0)
             const pts = ar.node("points", 2) orelse return self.fail(error.BadCall, "{s}: missing points", .{name});
-            if (pts.kind != .name or !eql(u8, pts.kind.name, "starting_positions"))
-                return self.fail(error.Unsupported, "{s}: only starting_positions is supported", .{name});
-            const x = try ar.val(name, "x", 0);
-            const y = try ar.val(name, "y", 1);
+            var origin: [2]f64 = .{ 0, 0 };
+            if (pts.kind == .name and eql(u8, pts.kind.name, "starting_lake_positions")) {
+                origin = self.controls.starting_lake orelse
+                    return self.fail(error.Unsupported, "{s}: the starting lake position was not supplied", .{name});
+            } else if (pts.kind != .name or !eql(u8, pts.kind.name, "starting_positions")) {
+                return self.fail(error.Unsupported, "{s}: only starting_positions / starting_lake_positions are supported", .{name});
+            }
+            var x = try ar.val(name, "x", 0);
+            var y = try ar.val(name, "y", 1);
+            if (origin[0] != 0 or origin[1] != 0) {
+                x = try self.emit2(.sub, x, try self.konst(origin[0]));
+                y = try self.emit2(.sub, y, try self.konst(origin[1]));
+            }
             if (std.mem.endsWith(u8, name, "_x")) return x;
             if (std.mem.endsWith(u8, name, "_y")) return y;
             const d = try self.emit2(.hypot, x, y);

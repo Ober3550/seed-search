@@ -175,7 +175,8 @@
     worker.ore = j.lane === "ore";
     if (worker.ore) oreBusy++;
     pending[j.id] = { resolve: j.resolve, reject: j.reject };
-    worker.postMessage({ id: j.id, type: j.type, req: j.req });
+    if (j.tiles) worker.postMessage({ id: j.id, type: j.type, req: j.req, tiles: j.tiles }, [j.tiles.buffer]);
+    else worker.postMessage({ id: j.id, type: j.type, req: j.req });
   }
 
   function spawnPool() {
@@ -204,10 +205,11 @@
     }
   }
 
-  function sendToPool(req, type, lane) {
+  // `tiles`: optional bytes handed to the worker with the request
+  function sendToPool(req, type, lane, tiles) {
     type = type || "surface";
     return new Promise(function (resolve, reject) {
-      (lane === "ore" ? oreQueue : queue).push({ id: nextId++, type: type, req: req, lane: lane, resolve: resolve, reject: reject });
+      (lane === "ore" ? oreQueue : queue).push({ id: nextId++, type: type, req: req, lane: lane, tiles: tiles, resolve: resolve, reject: reject });
       for (var i = 0; i < pool.length; i++) {
         if (!pool[i].idle) continue;
         var j = nextJob();
@@ -572,6 +574,7 @@
   // trees, plants, nests). It is drawn once; the checkbox only shows or
   // hides the canvas. ?entities=0 (or ?enemies=0) skips generating it.
   var ENEMIES = !/[?&](enemies|entities)=0\b/.test(location.search);
+  var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
   var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
   function enemyOverlayClear() {
@@ -601,8 +604,13 @@
   // enemy canvas of `px` a side: one request per chunk-aligned cell, nearest
   // to spawn first, behind the ore cells in the same worker lane. Never
   // rejects - the layer is an extra, a failure only leaves it incomplete.
-  function streamEnemies(z, R, diskR, palette, px, onProgress) {
-    var ectx = enemyOverlay(px).getContext("2d");
+  // Base-game Nauvis gets the entities themselves (rocks, trees, cliffs,
+  // nests) instead of areas. `terrain(cell)`, when given, returns the cell's
+  // terrain pixels as already drawn, which saves that request working the
+  // tiles out again.
+  function streamEnemies(z, R, diskR, palette, px, onProgress, terrain) {
+    var entities = squareSurface(z);
+    var ectx = (entities ? enemyOverlay(px, "Entities", ENTITIES_HINT) : enemyOverlay(px)).getContext("2d");
     var scale = (2 * R) / px;
     ectx.imageSmoothingEnabled = true;
     var cells = [];
@@ -619,10 +627,11 @@
     cells.sort(function (a, b) { return a.d2 - b.d2; });
     var done = 0;
     return Promise.all(cells.map(function (c) {
+      var tiles = terrain ? terrain(c) : null;
       return sendToPool({
-        seed: SEED, k2: K2, zone: z, layer: 3, radius: diskR, palette: palette,
+        seed: SEED, k2: K2, zone: z, layer: 3, radius: diskR, palette: palette, tiles_in: !!tiles,
         rect: { x0: c.x0, y0: c.y0, x1: c.x1, y1: c.y1 }, square: squareSurface(z)
-      }, "surface", "ore").then(function (r) {
+      }, "surface", "ore", tiles).then(function (r) {
         var w = c.x1 - c.x0, h = c.y1 - c.y0;
         if (r.summary.enemy_tiles) {
           var cx = cellCanvas(w, h);
@@ -729,9 +738,6 @@
         });
         if (oreP) oreP.catch(function () {}); // reported where it is awaited below
         var oreDone = false;
-        var enemyP = oreCv && zoneHasEnemies(z) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
-          if (oreDone && n < total) status("mapping enemy bases " + n + "/" + total + " cells…");
-        }) : Promise.resolve();
         var gpuKind, backend, label;
         // Nauvis: base-game tiles, except under Space Exploration, where the
         // ground is alien-biomes like every other SE surface
@@ -787,6 +793,15 @@
           }, function (e) { console.error("lake patch failed:", e); return cells; });
         }).then(function (cells) {
           var out = { cells: cells, backend: backend, width: disp, height: disp, scale: scaleS, downscaled: downscaled };
+          // The enemy areas / entities start once the terrain is complete, so
+          // base-game Nauvis can take its tiles from the canvas (when it is
+          // drawn at full size) rather than work them out again.
+          var tctx = els.canvas.getContext("2d");
+          var enemyP = oreCv && zoneHasEnemies(z) ? streamEnemies(z, R, diskR, palette, disp, function (n, total) {
+            if (oreDone && n < total) status("mapping " + (squareSurface(z) ? "entities " : "enemy bases ") + n + "/" + total + " cells…");
+          }, squareSurface(z) && scaleS === 1 ? function (c) {
+            return new Uint8Array(tctx.getImageData(c.x0 + R, c.y0 + R, c.x1 - c.x0, c.y1 - c.y0).data.buffer);
+          } : null) : Promise.resolve();
           if (oreP) {
             window.__GPU_STAGE__ = "ore";
             terrainDone = true;
@@ -868,7 +883,7 @@
             blit(octx, r.summary.width, r.summary.height, r.pixels.subarray(n, 2 * n), c.x0 + R, c.y0 + R);
             if (r.summary.entity_layer && ENEMIES) {
               // third layer: the planet's rocks, trees, plants and nests
-              if (!ectx) ectx = enemyOverlay(disp, "Entities", "Rocks, trees, plants and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.").getContext("2d");
+              if (!ectx) ectx = enemyOverlay(disp, "Entities", ENTITIES_HINT).getContext("2d");
               blitOver(ectx, r.summary.width, r.summary.height, r.pixels.subarray(2 * n, 3 * n), c.x0 + R, c.y0 + R);
             }
             (r.summary.tiles || []).forEach(function (t) {

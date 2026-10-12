@@ -245,6 +245,8 @@ pub const World = struct {
     enemy_ents: []const usize,
     /// Options.entities
     record: bool,
+    /// Options.resources
+    with_resources: bool,
     /// the tile competition alone, for single tiles outside the chunk being
     /// generated (an entity's box can reach into a neighbouring chunk)
     tiles_program: ?prog.Program,
@@ -262,6 +264,10 @@ pub const World = struct {
         /// place every autoplaced entity, not only the resources, and keep
         /// the ones that survive the collision checks in ChunkData.ents
         entities: bool = false,
+        /// false: do not evaluate or place the resources, only take their
+        /// draws from the placement stream (one per tile a resource of the
+        /// group could stand on) - for a caller that places resources itself
+        resources: bool = true,
     };
 
     pub fn init(a: std.mem.Allocator, data: *const sa_data.Data, planet: *const sa_data.Planet, map_seed: u32, controls: prog.Controls, err_out: ?*[]const u8) !World {
@@ -285,8 +291,9 @@ pub const World = struct {
         const ent_rich = try a.alloc(?usize, n_placed);
         for (planet.placed[0..n_placed], 0..) |e, i| {
             ent_prob[i] = names.items.len;
-            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e.name}));
             ent_rich[i] = null;
+            if (e.kind == .resource and !opts.resources) continue;
+            try names.append(a, try std.fmt.allocPrint(a, "entity:{s}:probability", .{e.name}));
             if (e.kind != .resource) continue;
             const rich = try std.fmt.allocPrint(a, "entity:{s}:richness", .{e.name});
             if (data.def(rich) != null or planet.prop(rich) != null) {
@@ -340,6 +347,7 @@ pub const World = struct {
             .enemy_ws = enemy_ws,
             .enemy_ents = enemy_ents.items,
             .record = opts.entities,
+            .with_resources = opts.resources,
             .tiles_program = tiles_program,
             .tiles_ws = tiles_ws,
             .cliff = if (opts.entities) planet.cliff else null,
@@ -401,6 +409,20 @@ pub const World = struct {
         while (g0 < placed.len) {
             var g1 = g0 + 1;
             while (g1 < placed.len and std.mem.eql(u8, placed[g1].order, placed[g0].order)) g1 += 1;
+            if (!self.with_resources and placed[g0].kind == .resource) {
+                // only the group's draws: one for every tile it could use
+                for (0..AREA) |k| {
+                    const ti = out.tile[k];
+                    for (g0..g1) |e| {
+                        if (placed[e].canStandOn(ti, &self.planet.tiles[ti])) {
+                            _ = prng.next();
+                            break;
+                        }
+                    }
+                }
+                g0 = g1;
+                continue;
+            }
             var i: usize = AREA;
             while (i > 0) {
                 i -= 1;
@@ -746,6 +768,58 @@ pub const World = struct {
         }
     }
 
+    /// Draw one generated chunk's cliffs and entities into `out` (RGBA8, one
+    /// tile per pixel, covering [x0, x1) x [y0, y1), `width` pixels a row):
+    /// each as the tiles its collision box covers, in its class colour.
+    /// Counts them per class (where their position is) and returns the total.
+    pub fn drawEntities(self: *const World, data: *const ChunkData, x0: i32, y0: i32, x1: i32, y1: i32, width: usize, out: ?[]u8, class_counts: ?*[9]u32) u64 {
+        var n: u64 = 0;
+        if (self.cliff) |cl| {
+            const col = classColor(.cliff).?;
+            for (data.cliffs[0..data.n_cliffs]) |pc| {
+                if (pc.x >> 8 < x0 or pc.x >> 8 >= x1 or pc.y >> 8 < y0 or pc.y >> 8 >= y1) continue;
+                n += 1;
+                if (class_counts) |cc| cc[@intFromEnum(sa_data.Entity.Class.cliff)] += 1;
+                const o = out orelse continue;
+                // the tiles whose centre lies in the piece's box
+                const box = cl.boxes[pc.orient];
+                var ty = (pc.y + box[1]) >> 8;
+                while (ty <= (pc.y + box[3]) >> 8) : (ty += 1) {
+                    var tx = (pc.x + box[0]) >> 8;
+                    while (tx <= (pc.x + box[2]) >> 8) : (tx += 1) {
+                        if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                        const fx: f32 = @floatFromInt(tx);
+                        const fy: f32 = @floatFromInt(ty);
+                        if (!cliffTouches(cl, pc.orient, pc.x, pc.y, fx + 0.45, fy + 0.45, fx + 0.55, fy + 0.55)) continue;
+                        const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
+                        o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
+                    }
+                }
+            }
+        }
+        for (data.ents[0..data.n_ents]) |pe| {
+            const ent = &self.planet.placed[pe.ent];
+            // counted where its position is, drawn wherever its box reaches
+            const ex = pe.x >> 8;
+            const ey = pe.y >> 8;
+            if (ex < x0 or ex >= x1 or ey < y0 or ey >= y1) continue;
+            n += 1;
+            if (class_counts) |cc| cc[@intFromEnum(ent.class)] += 1;
+            const col = classColor(ent.class) orelse continue;
+            const o = out orelse continue;
+            var ty = (pe.y + ent.box[1]) >> 8;
+            while (ty <= (pe.y + ent.box[3]) >> 8) : (ty += 1) {
+                var tx = (pe.x + ent.box[0]) >> 8;
+                while (tx <= (pe.x + ent.box[2]) >> 8) : (tx += 1) {
+                    if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
+                    const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
+                    o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
+                }
+            }
+        }
+        return n;
+    }
+
     /// Per-resource totals, accumulated by render().
     pub const Totals = struct { count: u64 = 0, amount: u64 = 0 };
 
@@ -778,49 +852,7 @@ pub const World = struct {
                 self.chunk(cx, cy, &data);
                 const want_enemy = self.enemy_program != null and !self.record;
                 if (want_enemy) self.enemy_program.?.eval(&self.enemy_ws, self.xs, self.ys);
-                if (self.cliff) |cl| {
-                    const col = classColor(.cliff).?;
-                    for (data.cliffs[0..data.n_cliffs]) |pc| {
-                        if (pc.x >> 8 < x0 or pc.x >> 8 >= x1 or pc.y >> 8 < y0 or pc.y >> 8 >= y1) continue;
-                        enemy_tiles += 1;
-                        if (class_counts) |cc| cc[@intFromEnum(sa_data.Entity.Class.cliff)] += 1;
-                        const o = enemies orelse continue;
-                        // the tiles whose centre lies in the piece's box
-                        const box = cl.boxes[pc.orient];
-                        var ty = (pc.y + box[1]) >> 8;
-                        while (ty <= (pc.y + box[3]) >> 8) : (ty += 1) {
-                            var tx = (pc.x + box[0]) >> 8;
-                            while (tx <= (pc.x + box[2]) >> 8) : (tx += 1) {
-                                if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
-                                const fx: f32 = @floatFromInt(tx);
-                                const fy: f32 = @floatFromInt(ty);
-                                if (!cliffTouches(cl, pc.orient, pc.x, pc.y, fx + 0.45, fy + 0.45, fx + 0.55, fy + 0.55)) continue;
-                                const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
-                                o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
-                            }
-                        }
-                    }
-                }
-                for (data.ents[0..data.n_ents]) |pe| {
-                    const ent = &self.planet.placed[pe.ent];
-                    // counted where its position is, drawn wherever its box reaches
-                    const ex = pe.x >> 8;
-                    const ey = pe.y >> 8;
-                    if (ex < x0 or ex >= x1 or ey < y0 or ey >= y1) continue;
-                    enemy_tiles += 1;
-                    if (class_counts) |cc| cc[@intFromEnum(ent.class)] += 1;
-                    const col = classColor(ent.class) orelse continue;
-                    const o = enemies orelse continue;
-                    var ty = (pe.y + ent.box[1]) >> 8;
-                    while (ty <= (pe.y + ent.box[3]) >> 8) : (ty += 1) {
-                        var tx = (pe.x + ent.box[0]) >> 8;
-                        while (tx <= (pe.x + ent.box[2]) >> 8) : (tx += 1) {
-                            if (tx < x0 or tx >= x1 or ty < y0 or ty >= y1) continue;
-                            const q = (@as(usize, @intCast(ty - y0)) * width + @as(usize, @intCast(tx - x0))) * 4;
-                            o[q..][0..4].* = .{ col[0], col[1], col[2], 255 };
-                        }
-                    }
-                }
+                enemy_tiles += self.drawEntities(&data, x0, y0, x1, y1, width, enemies, class_counts);
                 for (0..AREA) |i| {
                     const tx = cx * CHUNK + @as(i32, @intCast(i % CHUNK));
                     const ty = cy * CHUNK + @as(i32, @intCast(i / CHUNK));

@@ -20,7 +20,8 @@
 //     "radius": <render half-extent in tiles, optional>,
 //     "square": <bool, optional: do not clip terrain to the zone disk>,
 //     "layer": <0=terrain+ore (default), 1=terrain only, 2=ore only,
-//               3=enemy base areas only (see enemyAreas)> }
+//               3=the entities (base-game Nauvis) or the enemy base areas
+//                 (Space Exploration surfaces) only> }
 //
 // Response: resultPtr()/resultLen() = UTF-8 JSON
 //   { "ok": true, "zone", "zone_seed", "type", "radius", "width", "height",
@@ -69,6 +70,18 @@ fn nauvisExtras(ctx: *anyopaque, cx: i32, cy: i32, water: *const [32 * 32]bool) 
 // enemy-base probability program, kept between calls (one per surface)
 var g_enemy_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_enemy: ?struct { seed: u32, ctl: EnemyControls, program: sa_program.Program, ws: sa_program.Program.Workspace } = null;
+
+// base-game Nauvis: every autoplaced entity and the cliffs, placed on our
+// own Nauvis tiles by the data-driven engine (kept between calls)
+var g_nv_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+var g_nv: ?struct {
+    seed: u32,
+    world: sa_surface.World,
+    tile_of: [biome.nauvis_base_palette.len]u16,
+    /// moisture / aux for a whole chunk at a time
+    props: sa_program.Program,
+    props_ws: sa_program.Program.Workspace,
+} = null;
 
 /// The map-gen settings the base game's enemy autoplace reads.
 const EnemyControls = struct {
@@ -122,6 +135,22 @@ export fn growInput(cap: usize) bool {
     input_buf = nb;
     return true;
 }
+/// Optional second input: the rect's terrain as the page already drew it
+/// (RGBA8, row-major), so a layer-3 request for base-game Nauvis can take its
+/// tiles from there instead of classifying every tile again on the CPU. Used
+/// when the request says "tiles_in": true.
+var tiles_in: []u8 = &.{};
+export fn tilesInPtr() [*]u8 {
+    return tiles_in.ptr;
+}
+export fn growTilesIn(cap: usize) bool {
+    if (cap <= tiles_in.len) return true;
+    const nb = std.heap.page_allocator.realloc(tiles_in, cap) catch return false;
+    tiles_in = nb;
+    return true;
+}
+var g_tiles_given = false;
+
 export fn resultPtr() [*]const u8 {
     return g_result.ptr;
 }
@@ -313,6 +342,7 @@ fn run(a: std.mem.Allocator, req: []const u8) ![]u8 {
     // worker does the whole-rect ore pass — ore placement is rect-dependent
     // (starting-area enrichment), so ores can't be split across band calls.
     const terrainless = if (obj.get("terrainless")) |v| (v == .bool and v.bool) else false;
+    g_tiles_given = if (obj.get("tiles_in")) |v| (v == .bool and v.bool) else false;
     // square: fill the whole rect instead of clipping terrain to the zone's
     // disk. SE surfaces are finite disks; a base-game Nauvis is unbounded.
     const square = if (obj.get("square")) |v| (v == .bool and v.bool) else false;
@@ -615,7 +645,88 @@ fn generateZone(
     // themselves, whose exact tiles also depend on every tree, rock and cliff
     // placed before them. Asteroid fields have no enemies.
     var enemy_tiles: u64 = 0;
-    if (layer == 3 and !is_field) {
+    var entity_layer = false;
+    if (layer == 3 and is_nauvis and vanilla_ground) {
+        // Base-game Nauvis: the entities themselves - rocks, trees, cliffs
+        // and nests - from sa_surface.World (the game's own placement pass,
+        // see docs/space-age.md), run on the tiles this generator produces.
+        entity_layer = true;
+        if (g_nv == null or g_nv.?.seed != zone_seed) {
+            g_nv = null;
+            _ = g_nv_arena.reset(.retain_capacity);
+            const na = g_nv_arena.allocator();
+            const d = try nauvisData();
+            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+            var tile_of: [biome.nauvis_base_palette.len]u16 = undefined;
+            for (biome.nauvis_base_palette, 0..) |pt, pi| {
+                tile_of[pi] = for (nauvis.tiles, 0..) |t, ti| {
+                    if (std.mem.eql(u8, t.name, pt.name)) break @intCast(ti);
+                } else return error.NoNauvisData;
+            }
+            const w = try sa_surface.World.initWith(na, d, nauvis, zone_seed, .{ .starting_lake = terrain.startingLakeCenter(zone_seed) }, .{ .external_tiles = true, .entities = true, .resources = false }, null);
+            const pp = try sa_program.compile(na, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
+            g_nv = .{ .seed = zone_seed, .world = w, .tile_of = tile_of, .props = pp, .props_ws = try pp.workspaceN(na, sa_surface.CHUNK * sa_surface.CHUNK) };
+        }
+        const nv = &g_nv.?;
+        const chunk = try a.create(sa_surface.ChunkData);
+        const C = sa_surface.CHUNK;
+        var tiles: [C * C]u16 = undefined;
+        var pxs: [C * C]f32 = undefined;
+        var pys: [C * C]f32 = undefined;
+        var counts: [9]u32 = @splat(0);
+        const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
+        var cy = @divFloor(ya, C);
+        while (cy * C < yb) : (cy += 1) {
+            var cx = @divFloor(xa, C);
+            while (cx * C < xb) : (cx += 1) {
+                // Tiles: from the terrain the page sent (matched by colour)
+                // where it covers the tile, classified here otherwise.
+                const NONE: u16 = std.math.maxInt(u16);
+                var missing = false;
+                for (0..C * C) |i| {
+                    const tx = cx * C + @as(i32, @intCast(i % C));
+                    const ty = cy * C + @as(i32, @intCast(i / C));
+                    pxs[i] = @floatFromInt(tx);
+                    pys[i] = @floatFromInt(ty);
+                    tiles[i] = NONE;
+                    if (have_tiles and tx >= xa and tx < xb and ty >= ya and ty < yb) {
+                        const q = (@as(usize, @intCast(ty - ya)) * cw + @as(usize, @intCast(tx - xa))) * 4;
+                        if (tiles_in[q + 3] == 255) {
+                            for (biome.nauvis_base_palette, 0..) |pt, pi| {
+                                if (pt.color[0] == tiles_in[q] and pt.color[1] == tiles_in[q + 1] and pt.color[2] == tiles_in[q + 2]) {
+                                    tiles[i] = nv.tile_of[pi];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (tiles[i] == NONE) missing = true;
+                }
+                if (missing) {
+                    nv.props.eval(&nv.props_ws, &pxs, &pys);
+                    const mo = nv.props.out(&nv.props_ws, 0);
+                    const au = nv.props.out(&nv.props_ws, 1);
+                    for (0..C * C) |i| {
+                        if (tiles[i] != NONE) continue;
+                        const fx: f64 = pxs[i];
+                        const fy: f64 = pys[i];
+                        tiles[i] = nv.tile_of[base_nauvis.?.classify(fx, fy, el_s.at(fx, fy), mo[i], au[i])];
+                    }
+                }
+                nv.world.chunkWith(cx, cy, &tiles, chunk);
+                enemy_tiles += nv.world.drawEntities(chunk, xa, ya, xb, yb, cw, pixels, &counts);
+            }
+        }
+        if (!square) {
+            for (0..ch) |py| {
+                for (0..cw) |px| {
+                    const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
+                    const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
+                    if (fx * fx + fy * fy > radius * radius) pixels[(py * cw + px) * 4 + 3] = 0;
+                }
+            }
+        }
+    } else if (layer == 3 and !is_field) {
         const ctl = enemyControls(is_nauvis, tags.enemy);
         if (ctl.size > 0) {
             if (g_enemy == null or g_enemy.?.seed != zone_seed or !std.meta.eql(g_enemy.?.ctl, ctl)) {
@@ -743,7 +854,7 @@ fn generateZone(
     try appendFmt(a, &summary, ",\"palette\":\"{s}\"", .{if (vanilla_ground) "nauvis-base" else "se-alien-biomes"});
     if (rect != null)
         try appendFmt(a, &summary, ",\"x0\":{d},\"y0\":{d}", .{ xa, ya });
-    if (layer == 3) try appendFmt(a, &summary, ",\"enemy_tiles\":{d}", .{enemy_tiles});
+    if (layer == 3) try appendFmt(a, &summary, ",\"enemy_tiles\":{d},\"entity_layer\":{}", .{ enemy_tiles, entity_layer });
     try summary.appendSlice(a, ",\"resources\":{");
     {
         var first = true;

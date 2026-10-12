@@ -76,11 +76,13 @@ tiles (`sa_main probe --entities --tiles-from=game.json`) fixes those Fulgora
 chunks (89.9%) but makes Aquilo worse, so the game evidently places entities
 on tiles from before its border-correction pass.
 
-### Entities (rocks, trees, plants, nests)
+### Entities (rocks, trees, plants, cliffs, nests)
 
 `sa_surface.World` with `Options.entities` places every autoplaced entity of a
-planet, following the decompiled `EntityMapGenerationTask`
-(`ghidra/export/entity_placement.c`, `entity_cliffs.c`):
+planet and its cliffs, following the decompiled `EntityMapGenerationTask` and
+`CliffGenerator` (`ghidra/export/entity_placement.c`, `entity_cliffs.c`).
+
+Entities:
 
 - a tile's winner takes one draw; when it passes, an entity flagged
   `placeable-off-grid` takes two more for its position within the tile (in
@@ -88,30 +90,48 @@ planet, following the decompiled `EntityMapGenerationTask`
 - compute phase (`wouldCollide`): it is dropped when its collision box touches
   a tile it collides with;
 - apply phase (`applyEntities` -> `Surface::mapGeneratorWouldCollide`): the
-  chunk's entities go onto the surface in generation order, and one is dropped
-  when its box overlaps an entity already there that shares a collision layer.
-  Only the chunk's own entities are known to us.
+  chunk's cliffs go onto the surface first, then its entities in generation
+  order, and one is dropped when its box overlaps something already there
+  that shares a collision layer. Only the chunk's own entities are known to
+  us.
 
-Same position as the game (to a sixteenth of a tile), map seed 341, r500-640:
+Cliffs sit on a grid of 4x4-tile cells. `cliff_elevation` and `cliffiness` are
+sampled at the cell corners and smoothed (by `cliff_smoothing`) towards the
+bilinear interpolation of every 4th corner; a cell edge is crossed where the
+elevation passes a cliff level (`cliff_elevation_0 + k * interval`) between its
+corners and their mean cliffiness is above one half; a cell with more than two
+crossed edges, or a pattern no piece fits, loses crossings one at a time
+(left, top, right, bottom, never one on the chunk border); the pattern left
+picks one of the 20 orientations. Three things only the comparison with the
+game showed: `cliff_smoothing` is 1 when a planet leaves it out (Vulcanus);
+`multisample()` offsets count steps of the grid being evaluated, so 4 tiles on
+the cliff grid; and the orientation enum's order (kept in the data file).
 
-| Planet   | Entities game / ours | Same position |
-| -------- | -------------------- | ------------- |
-| Vulcanus | 20056 / 20869        | 96.5%         |
-| Fulgora  | 6335 / 6413          | 87.2%         |
-| Aquilo   | 535 / 595            | 36.8%         |
-| Gleba    | 48106 / 49908        | 27.0%         |
+At the game's position (to a sixteenth of a tile), map seed 341, r500:
 
-On the game's own tiles Gleba is 98.4%, so the rules are right and what is
-left is (a) our tiles - one tile that differs changes how many draws a group
-takes and shifts the rest of that chunk - and (b) cliffs, which block entities
-and are not generated yet (`CliffGenerator::crossingsForChunk` and friends are
-decompiled in `entity_cliffs.c`, not ported). Counts are within a few percent
+| Planet   | Cliffs game / ours | Cliffs same position | Other entities game / ours | Same position |
+| -------- | ------------------ | -------------------- | -------------------------- | ------------- |
+| Vulcanus | 7899 / 8061        | 99.1%                | 19797 / 19922              | 97.6%         |
+| Fulgora  | 2700 / 2755        | 99.1%                | 6335 / 6252                | 87.1%         |
+| Gleba    | 2581 / 2549        | 97.6%                | 29399 / 30071              | 24.7%         |
+| Aquilo   | none               |                      | 535 / 593                  | 36.8%         |
+
+On the game's own tiles Gleba's entities are 98.4%: the rules are right, and
+what is left is our tiles - one tile that differs changes how many draws a
+group takes and shifts the rest of that chunk. Counts are within a few percent
 everywhere. Units (pentapods, demolishers) are not autoplaced entities.
 
-The Space Age surface page draws these as its "Entities" layer. Nauvis and
-Space Exploration zones still show enemy base areas instead (below): Nauvis's
-tiles do not come from this engine, and the SE mod set is not in the data
-file.
+Base-game Nauvis goes through the same code from `se_wasm.zig` (`layer: 3`),
+on the tiles the Nauvis generator produces (or, on the page, on the terrain
+already drawn by the GPU kernel, sent along with the request - working them
+out again on the CPU costs about 20 us a tile). The Nauvis resources are not
+evaluated there, only their draws. Against the game (seed 341, r480): trees
+98.2% and rocks 97.8% on the game's tile, every cliff and 97% of spawners
+within 2 tiles, worms 67% within 2.
+
+The surface page draws all this as its "Entities" layer for the Space Age
+planets and base-game Nauvis. Space Exploration surfaces show enemy base areas
+instead (below): the SE mod set is not in the data file.
 
 ### Enemy base areas
 
