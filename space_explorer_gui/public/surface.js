@@ -558,6 +558,7 @@
   function adaptForKind() {
     setBadge(kind === "zone" ? "…" : "planet");
     if (els.dimWrap) els.dimWrap.hidden = false;
+    showLayerChecks();
     var lim = radiusLimits();
     els.radius.min = lim.min; els.radius.max = lim.max; els.radius.step = lim.step; els.radius.value = lim.value;
     // ?r=N drives the radius on this page directly (disk radius; the seed page
@@ -638,11 +639,27 @@
     if (treeEl) { treeEl.remove(); treeEl = null; }
     seamsClear();
     if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
-    if (els.enemyWrap) els.enemyWrap.hidden = true;
+  }
+  // The layer checkboxes are on the page from the start (showLayerChecks),
+  // so they can be set before the layers they control have been drawn.
+  function showLayerChecks() {
+    if (!els.enemyWrap || !ENEMIES) return;
+    var se = MOD === "se" || MOD === "k2se";
+    els.enemyWrap.hidden = false;
+    if (els.areas) els.areas.hidden = true;
+    if (els.groups) {
+      els.groups.hidden = false;
+      // alien-biomes rocks are flagged "not-on-map": the game's own map does
+      // not draw them, so on an SE surface they start unticked
+      els.groups.querySelectorAll("input[data-group]").forEach(function (cb) {
+        cb.checked = !se || SE_HIDDEN_GROUPS.indexOf(cb.dataset.group) === -1;
+      });
+    }
+    var seams = document.getElementById("sf-seams");
+    if (seams) seams.hidden = !se || kind === "sa";
   }
   // label = "Entities": the per-group checkboxes; otherwise the one checkbox
-  // `off`: the groups whose checkbox starts unticked on this surface
-  function enemyOverlay(px, label, off) {
+  function enemyOverlay(px, label) {
     enemyOverlayClear();
     entityMode = label === "Entities";
     // enemy areas lie under the ore; entities other than trees over it
@@ -651,9 +668,6 @@
       treeEl = overlayCanvas(px, 1);
       // (read back whenever a group is hidden)
       enemyOverlayEl.getContext("2d", { willReadFrequently: true });
-      if (els.groups) els.groups.querySelectorAll("input[data-group]").forEach(function (cb) {
-        cb.checked = !off || off.indexOf(cb.dataset.group) === -1;
-      });
     }
     if (els.enemyWrap) {
       els.enemyWrap.hidden = false;
@@ -871,8 +885,6 @@
   var seamEl = null;
   function seamsClear() {
     if (seamEl) { seamEl.remove(); seamEl = null; }
-    var label = document.getElementById("sf-seams");
-    if (label) label.hidden = true;
   }
   function showSeams() {
     var cb = document.getElementById("sf-seams-cb");
@@ -908,8 +920,6 @@
       });
       window.__SEAMS__ = list; // test hook: [[x, y], ...]
       box.appendChild(seamEl);
-      var label = document.getElementById("sf-seams");
-      if (label) label.hidden = list.length === 0;
       var count = document.getElementById("sf-seams-n");
       if (count) count.textContent = "(" + list.length + ")";
       showSeams();
@@ -938,9 +948,7 @@
   function streamEnemies(z, R, diskR, palette, px, onProgress, terrain) {
     // (an SE surface's entities need the terrain's tiles)
     var entities = entitySurface(z, !!terrain);
-    // alien-biomes rocks are flagged "not-on-map": the game's own map does not
-    // draw them, so on an SE surface they start hidden
-    var ectx = (entities ? enemyOverlay(px, "Entities", squareSurface(z) ? null : SE_HIDDEN_GROUPS) : enemyOverlay(px)).getContext("2d");
+    var ectx = (entities ? enemyOverlay(px, "Entities") : enemyOverlay(px)).getContext("2d");
     var scale = (2 * R) / px;
     ectx.imageSmoothingEnabled = true;
     var cells = [];
@@ -1378,6 +1386,8 @@
       fetchZone().then(function (z) {
         zone = z;
         setBadge(z.t);
+        // (an asteroid field has none of these layers)
+        if (z.t === "asteroid-field" && els.enemyWrap) els.enemyWrap.hidden = true;
         els.meta.innerHTML = zoneMeta(z);
       }).catch(function (e) {
         status(e.message);
