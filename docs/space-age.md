@@ -48,7 +48,7 @@ r500 square at map seed 341 (position = same tile, amount = total):
 | Aquilo   | fluorine-vent        | 26 / 26     | 100%      | x1.000 |
 | Aquilo   | lithium-brine        | 33 / 34     | 100%      | x1.035 |
 | Aquilo   | crude-oil            | 45 / 49     | 36%       | x1.151 |
-| Fulgora  | scrap                | 3307 / 3298 | 81.5%     | x0.987 |
+| Fulgora  | scrap                | 3307 / 3290 | 91.6%     | x0.987 |
 
 Placement (`sa_surface.World`) follows the game's chunk pass
 (`EntityMapGenerationTask::generateEntities`): a 32x32 chunk is one
@@ -75,6 +75,43 @@ islands make that proportionally worse. Replaying on the game's own final
 tiles (`sa_main probe --entities --tiles-from=game.json`) fixes those Fulgora
 chunks (89.9%) but makes Aquilo worse, so the game evidently places entities
 on tiles from before its border-correction pass.
+
+### Entities (rocks, trees, plants, nests)
+
+`sa_surface.World` with `Options.entities` places every autoplaced entity of a
+planet, following the decompiled `EntityMapGenerationTask`
+(`ghidra/export/entity_placement.c`, `entity_cliffs.c`):
+
+- a tile's winner takes one draw; when it passes, an entity flagged
+  `placeable-off-grid` takes two more for its position within the tile (in
+  sixteenths) and any other snaps to the grid without drawing;
+- compute phase (`wouldCollide`): it is dropped when its collision box touches
+  a tile it collides with;
+- apply phase (`applyEntities` -> `Surface::mapGeneratorWouldCollide`): the
+  chunk's entities go onto the surface in generation order, and one is dropped
+  when its box overlaps an entity already there that shares a collision layer.
+  Only the chunk's own entities are known to us.
+
+Same position as the game (to a sixteenth of a tile), map seed 341, r500-640:
+
+| Planet   | Entities game / ours | Same position |
+| -------- | -------------------- | ------------- |
+| Vulcanus | 20056 / 20869        | 96.5%         |
+| Fulgora  | 6335 / 6413          | 87.2%         |
+| Aquilo   | 535 / 595            | 36.8%         |
+| Gleba    | 48106 / 49908        | 27.0%         |
+
+On the game's own tiles Gleba is 98.4%, so the rules are right and what is
+left is (a) our tiles - one tile that differs changes how many draws a group
+takes and shifts the rest of that chunk - and (b) cliffs, which block entities
+and are not generated yet (`CliffGenerator::crossingsForChunk` and friends are
+decompiled in `entity_cliffs.c`, not ported). Counts are within a few percent
+everywhere. Units (pentapods, demolishers) are not autoplaced entities.
+
+The Space Age surface page draws these as its "Entities" layer. Nauvis and
+Space Exploration zones still show enemy base areas instead (below): Nauvis's
+tiles do not come from this engine, and the SE mod set is not in the data
+file.
 
 ### Enemy base areas
 
