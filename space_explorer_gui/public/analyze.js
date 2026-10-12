@@ -323,7 +323,7 @@
         zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: 5000, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
         zones.forEach(function (z) { z.kind = "se"; });
         state.zones = zones;
-        status.textContent = uni.z.length + " zones · generated client-side";
+        status.textContent = "";
         renderTable();
       })
       .catch(function (e) { if (status) status.textContent = "error: " + e.message; console.error(e); });
