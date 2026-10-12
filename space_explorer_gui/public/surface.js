@@ -527,7 +527,7 @@
   function nauvisZone() {
     // (under Space Exploration Nauvis is a planet of SE's default radius)
     var se = MOD === "se" || MOD === "k2se";
-    return { n: "Nauvis", t: "planet", s: SEED, r: se ? window.Shell.seNauvisRadius : 5000, water: "none", enemy: "none", c: 1, nauvis: true };
+    return { n: "Nauvis", t: "planet", s: SEED, r: se ? window.Shell.seNauvisRadius : 5000, water: "med", enemy: "high", c: 1, nauvis: true };
   }
 
   // The zone's line of the card, as the seed page's table shows it: radius,

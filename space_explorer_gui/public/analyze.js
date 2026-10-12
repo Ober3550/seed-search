@@ -439,7 +439,10 @@
         // Synthetic Nauvis (the universe generator never emits it): default-FSR
         // planet, r5000. Estimated client-side (base ores + K2 rare-metal);
         // surface generation uses the game's default map-gen settings (nauvis).
-        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: window.Shell.seNauvisRadius, water: "none", enemy: "none", c: 1, dv: 0, nauvis: true, kind: "se" });
+        // Its water and enemies are the map's own settings; with the defaults
+        // (every control 1 / 1 / 1) those are what SE's tags call water "med"
+        // and enemy "high".
+        zones.unshift({ n: "Nauvis", t: "planet", s: seedVal, r: window.Shell.seNauvisRadius, water: "med", enemy: "high", c: 1, dv: 0, nauvis: true, kind: "se" });
         zones.forEach(function (z) { z.kind = "se"; });
         // Without Krastorio 2 its resources do not exist: the generator still
         // rolls a share for them (the roll keeps the others' in step), which
