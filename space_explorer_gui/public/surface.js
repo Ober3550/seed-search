@@ -118,7 +118,8 @@
     dimVal: document.getElementById("sf-dim-val"),
     enemyWrap: document.getElementById("sf-enemy-wrap"),
     enemy: document.getElementById("sf-enemy"),
-    enemyLabel: document.getElementById("sf-enemy-label"),
+    areas: document.getElementById("sf-areas"),
+    groups: document.getElementById("sf-groups"),
     status: document.getElementById("sf-status"),
     canvas: document.getElementById("sf-canvas"),
     // The result line is written as "<resource chips> <hint>· size · timing…";
@@ -577,23 +578,90 @@
   var ENTITIES_HINT = "Rocks, trees, cliffs and enemy nests, placed the way the game places them. Counts and clusters match the game; exact positions only where every tile of the chunk matches too.";
   var ENEMY_AREAS_HINT = "Red marks where the game can place enemy nests (spawners and worms), stronger where a nest is likelier. These are the areas, not the individual nests.";
   var enemyOverlayEl = null;
+  // Entities come in one canvas, each class in its own colour (classColor in
+  // sa_surface.zig). The per-group checkboxes hide groups by showing a copy
+  // of that canvas with the unticked groups' pixels left out - made only
+  // while something is unticked, so the usual case costs no extra canvas.
+  var ENTITY_GROUPS = {
+    enemies: [[255, 40, 40], [255, 64, 40]],
+    trees: [[50, 92, 44], [62, 104, 52]],
+    rocks: [[129, 105, 78], [160, 120, 190]],
+    cliffs: [[144, 119, 87]]
+  };
+  var entityMode = false;   // the overlay holds entities (else enemy areas)
+  var entityViewEl = null;  // the filtered copy, while a group is hidden
   function enemyOverlayClear() {
     if (enemyOverlayEl) { enemyOverlayEl.remove(); enemyOverlayEl = null; }
+    if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
     if (els.enemyWrap) els.enemyWrap.hidden = true;
   }
+  // label = "Entities": the per-group checkboxes; otherwise the one checkbox
   function enemyOverlay(px, label, hint) {
     enemyOverlayClear();
     enemyOverlayEl = overlayCanvas(px, 1);
+    entityMode = label === "Entities";
     if (els.enemyWrap) {
       els.enemyWrap.hidden = false;
       els.enemyWrap.title = hint || ENEMY_AREAS_HINT;
-      if (els.enemyLabel) els.enemyLabel.textContent = label || "Enemy bases";
+      if (els.areas) els.areas.hidden = entityMode;
+      if (els.groups) els.groups.hidden = !entityMode;
     }
     showEnemies();
     return enemyOverlayEl;
   }
+  function hiddenGroups() {
+    var off = [];
+    if (els.groups) els.groups.querySelectorAll("input[data-group]").forEach(function (cb) { if (!cb.checked) off.push(cb.dataset.group); });
+    return off;
+  }
+  // Copy a rect of the entity canvas to the filtered view without the
+  // hidden groups (a pixel belongs to the group whose colour it is nearest,
+  // which also sorts the blended pixels of a downscaled canvas).
+  function filterEntities(x, y, w, h, off) {
+    var src = enemyOverlayEl.getContext("2d"), dst = entityViewEl.getContext("2d");
+    var drop = [];
+    Object.keys(ENTITY_GROUPS).forEach(function (g) { ENTITY_GROUPS[g].forEach(function (c) { drop.push([c[0], c[1], c[2], off.indexOf(g) !== -1]); }); });
+    var STEP = 1024;
+    for (var ty = y; ty < y + h; ty += STEP) {
+      for (var tx = x; tx < x + w; tx += STEP) {
+        var bw = Math.min(STEP, x + w - tx), bh = Math.min(STEP, y + h - ty);
+        var img = src.getImageData(tx, ty, bw, bh), d = img.data;
+        for (var i = 0; i < d.length; i += 4) {
+          if (!d[i + 3]) continue;
+          var best = 0, bd = Infinity;
+          for (var k = 0; k < drop.length; k++) {
+            var dr = d[i] - drop[k][0], dg = d[i + 1] - drop[k][1], db = d[i + 2] - drop[k][2];
+            var dist = dr * dr + dg * dg + db * db;
+            if (dist < bd) { bd = dist; best = k; }
+          }
+          if (drop[best][3]) d[i + 3] = 0;
+        }
+        dst.putImageData(img, tx, ty);
+      }
+    }
+  }
   function showEnemies() {
-    if (enemyOverlayEl) enemyOverlayEl.style.display = !els.enemy || els.enemy.checked ? "" : "none";
+    if (!enemyOverlayEl) return;
+    if (!entityMode) {
+      enemyOverlayEl.style.display = !els.enemy || els.enemy.checked ? "" : "none";
+      return;
+    }
+    var off = hiddenGroups();
+    if (!off.length) {
+      if (entityViewEl) { entityViewEl.remove(); entityViewEl = null; }
+      enemyOverlayEl.style.display = "";
+      return;
+    }
+    if (!entityViewEl) entityViewEl = overlayCanvas(enemyOverlayEl.width, 1);
+    enemyOverlayEl.style.display = "none";
+    filterEntities(0, 0, enemyOverlayEl.width, enemyOverlayEl.height, off);
+  }
+  // after new entities were drawn into a rect: bring the filtered view up to date
+  function entitiesDrawn(x, y, w, h) {
+    if (!entityViewEl) return;
+    x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+    w = Math.min(enemyOverlayEl.width - x, Math.ceil(w) + 1); h = Math.min(enemyOverlayEl.height - y, Math.ceil(h) + 1);
+    if (w > 0 && h > 0) filterEntities(x, y, w, h, hiddenGroups());
   }
   // Does this SE surface have enemies to map? (Nauvis always; a zone by its
   // enemy tag; never an asteroid field.)
@@ -639,6 +707,7 @@
           img.data.set(r.pixels);
           cx.putImageData(img, 0, 0);
           ectx.drawImage(cellCv, 0, 0, w, h, (c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
+          entitiesDrawn((c.x0 + R) / scale, (c.y0 + R) / scale, w / scale, h / scale);
         }
         done++;
         if (onProgress) onProgress(done, cells.length);
@@ -885,6 +954,7 @@
               // third layer: the planet's rocks, trees, plants and nests
               if (!ectx) ectx = enemyOverlay(disp, "Entities", ENTITIES_HINT).getContext("2d");
               blitOver(ectx, r.summary.width, r.summary.height, r.pixels.subarray(2 * n, 3 * n), c.x0 + R, c.y0 + R);
+              entitiesDrawn((c.x0 + R) / scale, (c.y0 + R) / scale, r.summary.width / scale, r.summary.height / scale);
             }
             (r.summary.tiles || []).forEach(function (t) {
               if (!counts[t.name]) counts[t.name] = { color: t.color, count: 0 };
@@ -1010,6 +1080,7 @@
     } catch (e2) {}
     adaptForKind();
     if (els.enemy) els.enemy.addEventListener("change", showEnemies);
+    if (els.groups) els.groups.addEventListener("change", showEnemies);
     if (els.dim) els.dim.addEventListener("input", function () {
       if (els.dimVal) els.dimVal.textContent = els.dim.value + "%";
       compositeSA();

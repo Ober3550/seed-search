@@ -195,15 +195,18 @@ pub const Placed = struct { ent: u16, x: i32, y: i32 };
 pub const MAX_ENTS = 4096;
 
 /// Map colour of an entity class in the entities layer (null = not drawn).
+/// Close to the game's own map: its tree green and the cliff / rock
+/// prototypes' map colours, enemies in its enemy red. Every class has its own
+/// colour - the page tells them apart by it (ENTITY_GROUPS in surface.js).
 pub fn classColor(c: sa_data.Entity.Class) ?[3]u8 {
     return switch (c) {
-        .tree => .{ 38, 128, 54 },
-        .plant => .{ 140, 190, 70 },
-        .rock => .{ 168, 150, 128 },
+        .tree => .{ 50, 92, 44 },
+        .plant => .{ 62, 104, 52 },
+        .rock => .{ 129, 105, 78 },
         .spawner => .{ 255, 40, 40 },
-        .worm => .{ 255, 150, 20 },
-        .cliff => .{ 222, 205, 160 },
-        .other => .{ 200, 130, 235 },
+        .worm => .{ 255, 64, 40 },
+        .cliff => .{ 144, 119, 87 },
+        .other => .{ 160, 120, 190 },
         .resource, .fish => null,
     };
 }
