@@ -782,61 +782,203 @@
     return squareSurface(z) || (seSolid(z) && !!fullSize);
   }
   // ── Download ──────────────────────────────────────────────────────────────
-  // The map as it is shown, flattened into one canvas: the terrain at the
-  // slider's brightness, then every overlay that is visible, in stacking
-  // order (trees or enemy areas, ore, the other entities), then the core
-  // seam icons. One pixel a tile (or whatever the page's canvases hold).
-  function flattenMap() {
-    var W = els.canvas.width, H = els.canvas.height;
-    var out = document.createElement("canvas");
-    out.width = W; out.height = H;
-    var ctx = out.getContext("2d");
-    ctx.drawImage(els.canvas, 0, 0);
+  // The map as it is shown: the terrain at the slider's brightness, then every
+  // overlay that is visible, in stacking order (trees or enemy areas, ore, the
+  // other entities), then the core seam icons. One pixel a tile (or whatever
+  // the page's canvases hold).
+  //
+  // drawMapRows(ctx, y0, h, icon) draws rows y0 .. y0+h of that onto `ctx`
+  // (whose row 0 is map row y0), so a large map can be done a strip at a time.
+  function mapLayers() {
+    var box = els.canvas.parentNode;
+    return Array.prototype.slice.call(box.querySelectorAll("canvas")).filter(function (c) {
+      return c !== els.canvas && c.style.display !== "none";
+    }).sort(function (a, b) {
+      return (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0);
+    });
+  }
+  function drawMapRows(ctx, y0, h, icon, layers) {
+    var W = els.canvas.width;
+    ctx.clearRect(0, 0, W, h);
+    ctx.drawImage(els.canvas, 0, y0, W, h, 0, 0, W, h);
     // brightness(d) scales the colours by d: the same as black over them at
     // 1 - d, kept to where the terrain is
     var dim = els.dim ? parseInt(els.dim.value, 10) / 100 : 1;
     if (oreOverlayEl && dim < 1) {
       ctx.globalCompositeOperation = "source-atop";
       ctx.fillStyle = "rgba(0,0,0," + (1 - dim) + ")";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, W, h);
       ctx.globalCompositeOperation = "source-over";
     }
-    var box = els.canvas.parentNode;
-    Array.prototype.slice.call(box.querySelectorAll("canvas")).filter(function (c) {
-      return c !== els.canvas && c.style.display !== "none";
-    }).sort(function (a, b) {
-      return (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0);
-    }).forEach(function (c) { ctx.drawImage(c, 0, 0, W, H); });
-
+    layers.forEach(function (c) {
+      // (an overlay canvas has the terrain canvas's size)
+      var sy = y0 * c.height / els.canvas.height, sh = h * c.height / els.canvas.height;
+      ctx.drawImage(c, 0, sy, c.width, sh, 0, 0, W, h);
+    });
+    if (!icon) return;
+    ctx.imageSmoothingEnabled = false;
+    icon.places.forEach(function (p) {
+      if (p[1] + icon.h < y0 || p[1] > y0 + h) return;
+      ctx.drawImage(icon.img, p[0], p[1] - y0, icon.w, icon.h);
+    });
+  }
+  // The seam icons as one image and where they go (null: none shown). They
+  // are page elements: drawn from the same SVG, at the size they have on
+  // screen relative to the map, with crisp edges (no blended colours).
+  function seamIcon() {
     var icons = seamEl && !seamEl.hidden ? Array.prototype.slice.call(seamEl.querySelectorAll(".seam-icon")) : [];
-    if (!icons.length) return Promise.resolve(out);
-    // the icons are page elements: drawn from the same SVG, at the size they
-    // have on screen relative to the map
+    if (!icons.length) return Promise.resolve(null);
+    var W = els.canvas.width, H = els.canvas.height;
     var fill = getComputedStyle(icons[0].querySelector(".seam-bg")).fill || "#6ed7ff";
-    var svg = SEAM_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace('class="seam-bg"', 'fill="' + fill + '"');
     var shown = els.canvas.getBoundingClientRect().width || W;
-    var w = Math.max(12, 18 * W / shown), h = w * 17 / 18;
+    var w = Math.round(Math.max(12, 18 * W / shown)), h = Math.round(w * 17 / 18);
+    // rasterised at the size it is drawn, without anti-aliasing
+    var svg = SEAM_SVG.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" width="' + w + '" height="' + h + '" preserveAspectRatio="none" ')
+      .replace('class="seam-bg"', 'fill="' + fill + '"');
     return new Promise(function (resolve) {
       var img = new Image();
       img.onload = function () {
-        icons.forEach(function (el) {
-          var x = parseFloat(el.style.left) / 100 * W, y = parseFloat(el.style.top) / 100 * H;
-          ctx.drawImage(img, x - w / 2, y - h * 0.55, w, h);
-        });
-        resolve(out);
+        // The browser anti-aliases the SVG whatever it is told, and every
+        // blended edge pixel is a colour of its own (hundreds of them on a
+        // big map, too many for a palette): snap each pixel of the raster to
+        // the icon's fill, its outline or nothing.
+        var cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        var cx = cv.getContext("2d");
+        cx.drawImage(img, 0, 0, w, h);
+        var id = cx.getImageData(0, 0, w, h), d = id.data;
+        var probe = document.createElement("canvas").getContext("2d");
+        probe.fillStyle = fill; probe.fillRect(0, 0, 1, 1);
+        var fc = probe.getImageData(0, 0, 1, 1).data, oc = [13, 17, 23];
+        for (var i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 128) { d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0; continue; }
+          var df = Math.abs(d[i] - fc[0]) + Math.abs(d[i + 1] - fc[1]) + Math.abs(d[i + 2] - fc[2]);
+          var dk = Math.abs(d[i] - oc[0]) + Math.abs(d[i + 1] - oc[1]) + Math.abs(d[i + 2] - oc[2]);
+          var c = df <= dk ? fc : oc;
+          d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+        }
+        cx.putImageData(id, 0, 0);
+        // top-left corners on whole pixels, so an icon cut by a strip edge
+        // is drawn the same in both strips
+        resolve({ img: cv, w: w, h: h, places: icons.map(function (el) {
+          return [Math.round(parseFloat(el.style.left) / 100 * W - w / 2), Math.round(parseFloat(el.style.top) / 100 * H - h * 0.55)];
+        }) });
       };
-      img.onerror = function () { resolve(out); };
+      img.onerror = function () { resolve(null); };
       img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
     });
   }
+  // The whole map on one canvas (the test hook; the download goes by strips).
+  function flattenMap() {
+    var out = document.createElement("canvas");
+    out.width = els.canvas.width; out.height = els.canvas.height;
+    return seamIcon().then(function (icon) {
+      drawMapRows(out.getContext("2d"), 0, out.height, icon, mapLayers());
+      return out;
+    });
+  }
   window.__flattenMap = flattenMap; // test hook
+
+  // PNG with a palette. A map has a few hundred colours at most, so it is
+  // stored a byte a pixel (with the transparency in the palette) - about a
+  // third of the 32-bit image the browser would write, and the same pixels.
+  // It is built a strip of rows at a time - never the whole map as RGBA - and
+  // compressed as it goes (CompressionStream). Resolves to the Blob, or null
+  // when the map has more than 256 colours.
+  var CRC_TABLE = null;
+  function crc32(bytes, crc) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = new Uint32Array(256);
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        CRC_TABLE[n] = c >>> 0;
+      }
+    }
+    crc = crc === undefined ? 0xffffffff : crc;
+    for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    return crc;
+  }
+  function pngChunk(type, data) {
+    var out = new Uint8Array(12 + data.length), dv = new DataView(out.buffer);
+    dv.setUint32(0, data.length);
+    for (var i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
+    out.set(data, 8);
+    dv.setUint32(8 + data.length, (crc32(out.subarray(4, 8 + data.length)) ^ 0xffffffff) >>> 0);
+    return out;
+  }
+  function palettePng(onProgress) {
+    if (typeof CompressionStream === "undefined") return Promise.resolve(null);
+    var W = els.canvas.width, H = els.canvas.height, STRIP = 256;
+    var strip = document.createElement("canvas");
+    strip.width = W; strip.height = Math.min(STRIP, H);
+    var sctx = strip.getContext("2d", { willReadFrequently: true });
+    var layers = mapLayers();
+    var colours = new Map(), palette = []; // packed RGBA -> index, in first-seen order
+    var cs = new CompressionStream("deflate"); // zlib, as PNG's IDAT wants
+    var writer = cs.writable.getWriter(), parts = [];
+    var reading = (function read(reader) {
+      return reader.read().then(function (r) { if (r.done) return; parts.push(r.value); return read(reader); });
+    })(cs.readable.getReader());
+    return seamIcon().then(function (icon) {
+      var y0 = 0;
+      function next() {
+        if (y0 >= H) return writer.close().then(function () { return reading; }).then(function () { return true; });
+        var h = Math.min(STRIP, H - y0);
+        drawMapRows(sctx, y0, h, icon, layers);
+        var px = new Uint32Array(sctx.getImageData(0, 0, W, h).data.buffer);
+        var rows = new Uint8Array(h * (W + 1)); // filter byte 0, then an index a pixel
+        var last = -1, lastIdx = 0;
+        for (var y = 0; y < h; y++) {
+          var o = y * (W + 1) + 1, p = y * W;
+          for (var x = 0; x < W; x++) {
+            var v = px[p + x];
+            if (v !== last) {
+              var idx = colours.get(v);
+              if (idx === undefined) {
+                if (palette.length === 256) return writer.abort().then(function () { return false; }, function () { return false; });
+                idx = palette.length; colours.set(v, idx); palette.push(v);
+              }
+              last = v; lastIdx = idx;
+            }
+            rows[o + x] = lastIdx;
+          }
+        }
+        y0 += h;
+        if (onProgress) onProgress(y0 / H);
+        return writer.write(rows).then(next);
+      }
+      return next();
+    }).then(function (ok) {
+      if (!ok) return null;
+      var ihdr = new Uint8Array(13), dv = new DataView(ihdr.buffer);
+      dv.setUint32(0, W); dv.setUint32(4, H);
+      ihdr[8] = 8; ihdr[9] = 3; // 8-bit palette indices
+      var plte = new Uint8Array(palette.length * 3), trns = new Uint8Array(palette.length);
+      // (the packed value is the pixel's bytes read as one little-endian word)
+      palette.forEach(function (v, i) {
+        plte[i * 3] = v & 0xff; plte[i * 3 + 1] = (v >>> 8) & 0xff; plte[i * 3 + 2] = (v >>> 16) & 0xff;
+        trns[i] = v >>> 24;
+      });
+      var out = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk("IHDR", ihdr), pngChunk("PLTE", plte), pngChunk("tRNS", trns)];
+      parts.forEach(function (d) { out.push(pngChunk("IDAT", d)); });
+      out.push(pngChunk("IEND", new Uint8Array(0)));
+      return new Blob(out, { type: "image/png" });
+    });
+  }
+  window.__palettePng = palettePng; // test hook
+
   function downloadMap() {
     if (!els.download) return;
     els.download.disabled = true;
-    flattenMap().then(function (cv) {
-      return new Promise(function (resolve) { cv.toBlob(resolve, "image/png"); });
+    var label = els.download.textContent;
+    palettePng(function (f) { els.download.textContent = "Saving… " + Math.round(f * 100) + "%"; }).then(function (blob) {
+      if (blob) return blob;
+      // more than 256 colours (or no CompressionStream): the browser's own PNG
+      return flattenMap().then(function (cv) { return new Promise(function (resolve) { cv.toBlob(resolve, "image/png"); }); });
     }).then(function (blob) {
       els.download.disabled = false;
+      els.download.textContent = label;
       if (!blob) { status("This map is too large for the browser to save as one image."); return; }
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -845,7 +987,12 @@
       a.click();
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
-    }, function (e) { els.download.disabled = false; console.error("download failed:", e); status("download failed: " + e.message); });
+    }, function (e) {
+      els.download.disabled = false;
+      els.download.textContent = label;
+      console.error("download failed:", e);
+      status("download failed: " + e.message);
+    });
   }
 
   // ── Core seams ────────────────────────────────────────────────────────────
