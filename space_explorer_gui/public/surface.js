@@ -105,10 +105,13 @@
   var els = {
     badge: document.getElementById("sf-badge"),
     meta: document.getElementById("sf-meta"),
-    // The surface is drawn once, at the radius in the address (?r=, which the
-    // seed page sets to the zone's radius): there is no radius box and no
-    // Generate button, so these two only hold state.
+    // The radius drawn (state) and its box: fixed on a Space Exploration
+    // surface, which has a radius of its own; editable with a Generate button
+    // on base-game Nauvis and the Space Age planets, which have no edge.
     radius: { value: "2000" },
+    radiusRow: document.getElementById("sf-radius-row"),
+    radiusIn: document.getElementById("sf-radius"),
+    goBtn: document.getElementById("sf-go"),
     // The page always draws terrain + ore (0). There is no selector for it;
     // ?layer=1 (terrain only) / ?layer=2 (ore only) remain for testing.
     layer: { value: "0" },
@@ -1147,6 +1150,9 @@
     if (busy) return;
     busy = true;
     els.go.disabled = true;
+    if (els.goBtn) els.goBtn.disabled = true;
+    if (els.download) els.download.hidden = true;
+    if (els.radiusIn) els.radiusIn.value = els.radius.value;
     setProgress(0);
     var t0 = Date.now();
     var radius = parseInt(els.radius.value, 10);
@@ -1164,6 +1170,7 @@
     // after this still reports how many there were)
     function doneUI() {
       busy = false; els.go.disabled = false; setProgress(1); status(""); setTimeout(releasePool, 0);
+      if (els.goBtn) els.goBtn.disabled = false;
       if (els.download) els.download.hidden = false;
     }
     // There is no Generate button to press again, so a failure offers a
@@ -1171,6 +1178,7 @@
     // usual cause is a file that could not be loaded).
     function fail(e, tag) {
       busy = false; els.go.disabled = false; status(tag + ": " + e.message + " "); console.error(e);
+      if (els.goBtn) els.goBtn.disabled = false;
       var retry = document.createElement("button");
       retry.type = "button"; retry.className = "btn-sm"; retry.textContent = "Reload and retry";
       retry.addEventListener("click", function () { location.reload(); });
@@ -1540,6 +1548,36 @@
         status(e.message);
         console.error(e);
       });
+    }
+    // the radius box: read-only where the surface has a radius of its own
+    var fixed = kind === "zone" || (kind === "nauvis" && (MOD === "se" || MOD === "k2se"));
+    if (els.radiusRow) {
+      els.radiusRow.hidden = false;
+      els.radiusIn.readOnly = fixed;
+      els.radiusIn.title = fixed ? "This surface's radius" : "Half the width of the square drawn, in tiles (16 to 10000)";
+      els.goBtn.hidden = fixed;
+      var go = function () {
+        var v = parseInt(els.radiusIn.value, 10);
+        if (!Number.isFinite(v)) { els.radiusIn.value = els.radius.value; return; }
+        v = Math.max(16, Math.min(10000, v));
+        els.radiusIn.value = v;
+        els.radius.value = String(v);
+        // kept in the address, so a reload or a shared link draws the same
+        var q = new URLSearchParams(location.search);
+        q.set("r", v);
+        history.replaceState(null, "", location.pathname + "?" + q.toString());
+        run();
+      };
+      els.goBtn.addEventListener("click", go);
+      els.radiusIn.addEventListener("keydown", function (e) { if (e.key === "Enter" && !fixed) go(); });
+    }
+    // An SE zone opened without a radius in the address is drawn whole.
+    if (kind === "zone" && RADIUS_INIT == null) {
+      fetchZone().then(function (z) {
+        els.radius.value = String(Math.round(z.r || (z.t === "asteroid-field" ? 5000 : 2000)));
+        run();
+      }, function () { run(); });
+      return;
     }
     run();
   }
