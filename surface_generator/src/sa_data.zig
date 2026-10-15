@@ -336,6 +336,12 @@ pub fn loadSe(arena: std.mem.Allocator) LoadError!Data {
     return loadFrom(arena, @embedFile("se_noise_data.json"));
 }
 
+/// The Space Exploration data file with Krastorio 2 (its resources: imersite,
+/// rare metals, mineral water), built the same way from a dump of both.
+pub fn loadSeK2(arena: std.mem.Allocator) LoadError!Data {
+    return loadFrom(arena, @embedFile("se_k2_noise_data.json"));
+}
+
 /// Parse a data file produced by scripts/sa-build-data.py (any mod set).
 pub fn loadFrom(arena: std.mem.Allocator, text: []const u8) LoadError!Data {
     const root = try json.parse(arena, text);

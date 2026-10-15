@@ -80,6 +80,7 @@ var g_nv_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_nv: ?struct {
     seed: u32,
     world: sa_surface.World,
+    planet: *const sa_data.Planet,
     tile_of: [biome.nauvis_base_palette.len]u16,
     /// moisture / aux for a whole chunk at a time
     props: sa_program.Program,
@@ -90,6 +91,10 @@ var g_nv: ?struct {
 // for (kept between calls - a render is many cell requests)
 var g_se_data_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_se_data: ?sa_data.Data = null;
+var g_se_k2_data: ?sa_data.Data = null;
+// which data file the kept zones were built from (Krastorio 2 or not)
+var g_zone_k2 = false;
+var g_ore_zone_k2 = false;
 var g_zone_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 var g_zone: ?*se_zone.Zone = null;
 // the same surface for its ore alone (layer 4 without "entities")
@@ -99,7 +104,11 @@ var g_list: []const u8 = &.{};
 var g_want_entities = false;
 var g_entity_list = false;
 
-fn seData() !*sa_data.Data {
+fn seData(k2: bool) !*sa_data.Data {
+    if (k2) {
+        if (g_se_k2_data == null) g_se_k2_data = try sa_data.loadSeK2(g_se_data_arena.allocator());
+        return &g_se_k2_data.?;
+    }
     if (g_se_data == null) g_se_data = try sa_data.loadSe(g_se_data_arena.allocator());
     return &g_se_data.?;
 }
@@ -684,28 +693,83 @@ fn generateZone(
     // placed before them. Asteroid fields have no enemies.
     var enemy_tiles: u64 = 0;
     var entity_layer = false;
-    if (layer == 3 and is_nauvis and vanilla_ground) {
-        // Base-game Nauvis: the entities themselves - rocks, trees, cliffs
-        // and nests - from sa_surface.World (the game's own placement pass,
-        // see docs/space-age.md), run on the tiles this generator produces.
-        entity_layer = true;
-        if (g_nv == null or g_nv.?.seed != zone_seed) {
-            g_nv = null;
-            _ = g_nv_arena.reset(.retain_capacity);
-            const na = g_nv_arena.allocator();
-            const d = try nauvisData();
-            const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
-            var tile_of: [biome.nauvis_base_palette.len]u16 = undefined;
-            for (biome.nauvis_base_palette, 0..) |pt, pi| {
-                tile_of[pi] = for (nauvis.tiles, 0..) |t, ti| {
-                    if (std.mem.eql(u8, t.name, pt.name)) break @intCast(ti);
-                } else return error.NoNauvisData;
+    if ((layer == 3 or layer == 4) and !is_field and ((is_nauvis and vanilla_ground) or g_want_entities or layer == 4)) {
+        // The game's own placement pass (sa_surface.World, see
+        // docs/space-age.md) over this generator's tiles: the entities
+        // themselves - rocks, trees, cliffs, nests - and, with layer 4, the
+        // ore in the same pass. One pass for every surface; what differs is
+        // the data and settings (the base game's Nauvis, or a Space
+        // Exploration surface with the settings SE gives it, se_zone.zig),
+        // how a terrain colour from the page maps to a tile, and the edge (a
+        // SE surface is a disk; base-game Nauvis an unbounded square).
+        const vanilla = is_nauvis and vanilla_ground;
+        entity_layer = vanilla or g_want_entities;
+        var world: *sa_surface.World = undefined;
+        var planet: *const sa_data.Planet = undefined;
+        var nv_ptr: ?*@TypeOf(g_nv.?) = null;
+        var zn_ptr: ?*se_zone.Zone = null;
+        if (vanilla) {
+            if (g_nv == null or g_nv.?.seed != zone_seed) {
+                g_nv = null;
+                _ = g_nv_arena.reset(.retain_capacity);
+                const na = g_nv_arena.allocator();
+                const d = try nauvisData();
+                const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
+                var tile_of: [biome.nauvis_base_palette.len]u16 = undefined;
+                for (biome.nauvis_base_palette, 0..) |pt, pi| {
+                    tile_of[pi] = for (nauvis.tiles, 0..) |t, ti| {
+                        if (std.mem.eql(u8, t.name, pt.name)) break @intCast(ti);
+                    } else return error.NoNauvisData;
+                }
+                const w = try sa_surface.World.initWith(na, d, nauvis, zone_seed, .{ .starting_lake = terrain.startingLakeCenter(zone_seed) }, .{ .external_tiles = true, .entities = true, .resources = true }, null);
+                const pp = try sa_program.compile(na, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
+                g_nv = .{ .seed = zone_seed, .world = w, .planet = nauvis, .tile_of = tile_of, .props = pp, .props_ws = try pp.workspaceN(na, sa_surface.CHUNK * sa_surface.CHUNK) };
             }
-            const w = try sa_surface.World.initWith(na, d, nauvis, zone_seed, .{ .starting_lake = terrain.startingLakeCenter(zone_seed) }, .{ .external_tiles = true, .entities = true, .resources = false }, null);
-            const pp = try sa_program.compile(na, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
-            g_nv = .{ .seed = zone_seed, .world = w, .tile_of = tile_of, .props = pp, .props_ws = try pp.workspaceN(na, sa_surface.CHUNK * sa_surface.CHUNK) };
+            nv_ptr = &g_nv.?;
+            world = &g_nv.?.world;
+            planet = g_nv.?.planet;
+        } else {
+            var rolls = se_zone.Rolls{};
+            if (z.get("rolls")) |rv| {
+                // the surface's own random controls, when known (a live game)
+                if (rv == .object) {
+                    const num = struct {
+                        fn f(o: std.json.ObjectMap, k: []const u8, d: f64) f64 {
+                            const v = o.get(k) orelse return d;
+                            return switch (v) {
+                                .integer => |iv| @floatFromInt(iv),
+                                .float => |fl| fl,
+                                else => d,
+                            };
+                        }
+                    }.f;
+                    rolls.rocks_frequency = num(rv.object, "rocks_frequency", rolls.rocks_frequency);
+                    rolls.cliff_frequency = num(rv.object, "cliff_frequency", rolls.cliff_frequency);
+                    rolls.cliff_size = num(rv.object, "cliff_size", rolls.cliff_size);
+                }
+            }
+            const settings = if (is_nauvis) se_zone.homeSettings(zone_seed) else se_zone.zoneSettings(zone_seed, ztype, primary, tags, radius, rolls);
+            const slot = if (g_want_entities) &g_zone else &g_ore_zone;
+            const slot_k2 = if (g_want_entities) &g_zone_k2 else &g_ore_zone_k2;
+            if (slot.* == null or slot_k2.* != has_k2 or !slot.*.?.settings.eql(&settings)) {
+                slot.* = null;
+                const za = if (g_want_entities) &g_zone_arena else &g_ore_zone_arena;
+                _ = za.reset(.retain_capacity);
+                slot.* = try se_zone.Zone.init(za.allocator(), try seData(has_k2), settings, g_want_entities);
+                slot_k2.* = has_k2;
+            }
+            zn_ptr = slot.*.?;
+            world = &slot.*.?.world;
+            planet = slot.*.?.planet;
         }
-        const nv = &g_nv.?;
+        const ent_pixels = if (layer == 4) all_pixels[layer_bytes..] else pixels;
+        if (layer == 4) {
+            // the summary lists the resources this pass can place
+            summary_names.clearRetainingCapacity();
+            for (planet.placed) |e| {
+                if (e.resource) |ri| try summary_names.append(a, planet.resources[ri].name);
+            }
+        }
         const chunk = try a.create(sa_surface.ChunkData);
         const C = sa_surface.CHUNK;
         var tiles: [C * C]u16 = undefined;
@@ -713,153 +777,89 @@ fn generateZone(
         var pys: [C * C]f32 = undefined;
         var counts: [sa_data.Entity.class_count]u32 = @splat(0);
         const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
+        var list: std.ArrayList(u8) = .empty;
+        // the disk being drawn: the surface's own, or a smaller preview of it
+        // (none: base-game Nauvis drawn as a square)
+        const clip: ?f64 = if (vanilla and square) null else if (vanilla) radius else @min(radius, @as(f64, @floatFromInt(r)));
         var cy = @divFloor(ya, C);
         while (cy * C < yb) : (cy += 1) {
             var cx = @divFloor(xa, C);
             while (cx * C < xb) : (cx += 1) {
-                // Tiles: from the terrain the page sent (matched by colour)
-                // where it covers the tile, classified here otherwise.
+                if (clip) |cl| {
+                    // nothing to draw for a chunk wholly outside that disk
+                    const nx: f64 = @floatFromInt(@max(cx * C, @min(0, cx * C + C - 1)));
+                    const ny: f64 = @floatFromInt(@max(cy * C, @min(0, cy * C + C - 1)));
+                    if (nx * nx + ny * ny > cl * cl) continue;
+                }
+                // Tiles: from the terrain the page sent (matched by map
+                // colour) where it covers the tile, worked out here otherwise.
                 const NONE: u16 = std.math.maxInt(u16);
                 var missing = false;
-                for (0..C * C) |i| {
-                    const tx = cx * C + @as(i32, @intCast(i % C));
-                    const ty = cy * C + @as(i32, @intCast(i / C));
-                    pxs[i] = @floatFromInt(tx);
-                    pys[i] = @floatFromInt(ty);
-                    tiles[i] = NONE;
+                for (0..C * C) |k| {
+                    const tx = cx * C + @as(i32, @intCast(k % C));
+                    const ty = cy * C + @as(i32, @intCast(k / C));
+                    pxs[k] = @floatFromInt(tx);
+                    pys[k] = @floatFromInt(ty);
+                    tiles[k] = NONE;
+                    if (zn_ptr) |zn| {
+                        const fx: f64 = @floatFromInt(tx);
+                        const fy: f64 = @floatFromInt(ty);
+                        if (fx * fx + fy * fy > radius * radius) {
+                            tiles[k] = zn.out_of_map;
+                            continue;
+                        }
+                    }
                     if (have_tiles and tx >= xa and tx < xb and ty >= ya and ty < yb) {
                         const q = (@as(usize, @intCast(ty - ya)) * cw + @as(usize, @intCast(tx - xa))) * 4;
                         if (tiles_in[q + 3] == 255) {
-                            for (biome.nauvis_base_palette, 0..) |pt, pi| {
-                                if (pt.color[0] == tiles_in[q] and pt.color[1] == tiles_in[q + 1] and pt.color[2] == tiles_in[q + 2]) {
-                                    tiles[i] = nv.tile_of[pi];
+                            const col = [3]u8{ tiles_in[q], tiles_in[q + 1], tiles_in[q + 2] };
+                            if (zn_ptr) |zn| {
+                                if (zn.tileOf(col)) |t| tiles[k] = t;
+                            } else for (biome.nauvis_base_palette, 0..) |pt, pi| {
+                                if (pt.color[0] == col[0] and pt.color[1] == col[1] and pt.color[2] == col[2]) {
+                                    tiles[k] = nv_ptr.?.tile_of[pi];
                                     break;
                                 }
                             }
                         }
                     }
-                    if (tiles[i] == NONE) missing = true;
+                    if (tiles[k] == NONE) missing = true;
                 }
                 if (missing) {
-                    nv.props.eval(&nv.props_ws, &pxs, &pys);
-                    const mo = nv.props.out(&nv.props_ws, 0);
-                    const au = nv.props.out(&nv.props_ws, 1);
-                    for (0..C * C) |i| {
-                        if (tiles[i] != NONE) continue;
-                        const fx: f64 = pxs[i];
-                        const fy: f64 = pys[i];
-                        tiles[i] = nv.tile_of[base_nauvis.?.classify(fx, fy, el_s.at(fx, fy), mo[i], au[i])];
+                    if (nv_ptr) |nv| {
+                        nv.props.eval(&nv.props_ws, &pxs, &pys);
+                        const mo = nv.props.out(&nv.props_ws, 0);
+                        const au = nv.props.out(&nv.props_ws, 1);
+                        for (0..C * C) |k| {
+                            if (tiles[k] != NONE) continue;
+                            const fx: f64 = pxs[k];
+                            const fy: f64 = pys[k];
+                            tiles[k] = nv.tile_of[base_nauvis.?.classify(fx, fy, el_s.at(fx, fy), mo[k], au[k])];
+                        }
+                    } else if (zn_ptr) |zn| {
+                        for (0..C * C) |k| {
+                            if (tiles[k] != NONE) continue;
+                            const fx: f64 = pxs[k];
+                            const fy: f64 = pys[k];
+                            const e = el_s.at(fx, fy);
+                            const color: [3]u8 = if (has_water and e < 0.0)
+                                (if (e < -5.0) biome.deepwater else biome.water)
+                            else
+                                classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
+                            tiles[k] = zn.tileOf(color) orelse zn.out_of_map;
+                        }
                     }
                 }
-                nv.world.chunkWith(cx, cy, &tiles, chunk);
-                enemy_tiles += nv.world.drawEntities(chunk, xa, ya, xb, yb, cw, pixels, &counts);
-            }
-        }
-        if (!square) {
-            for (0..ch) |py| {
-                for (0..cw) |px| {
-                    const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
-                    const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
-                    if (fx * fx + fy * fy > radius * radius) pixels[(py * cw + px) * 4 + 3] = 0;
-                }
-            }
-        }
-    } else if ((layer == 3 or layer == 4) and !is_field and (g_want_entities or layer == 4)) {
-        // A Space Exploration planet, moon or Nauvis: the entities, placed by
-        // the same pass with the SE data file and the settings SE gives the
-        // surface (se_zone.zig), on the tiles of this generator.
-        entity_layer = g_want_entities;
-        var rolls = se_zone.Rolls{};
-        if (z.get("rolls")) |rv| {
-            // the surface's own random controls, when known (a live game)
-            if (rv == .object) {
-                const num = struct {
-                    fn f(o: std.json.ObjectMap, k: []const u8, d: f64) f64 {
-                        const v = o.get(k) orelse return d;
-                        return switch (v) {
-                            .integer => |i| @floatFromInt(i),
-                            .float => |fl| fl,
-                            else => d,
-                        };
-                    }
-                }.f;
-                rolls.rocks_frequency = num(rv.object, "rocks_frequency", rolls.rocks_frequency);
-                rolls.cliff_frequency = num(rv.object, "cliff_frequency", rolls.cliff_frequency);
-                rolls.cliff_size = num(rv.object, "cliff_size", rolls.cliff_size);
-            }
-        }
-        const settings = if (is_nauvis) se_zone.homeSettings(zone_seed) else se_zone.zoneSettings(zone_seed, ztype, primary, tags, radius, rolls);
-        const slot = if (g_want_entities) &g_zone else &g_ore_zone;
-        if (slot.* == null or !slot.*.?.settings.eql(&settings)) {
-            slot.* = null;
-            const za = if (g_want_entities) &g_zone_arena else &g_ore_zone_arena;
-            _ = za.reset(.retain_capacity);
-            slot.* = try se_zone.Zone.init(za.allocator(), try seData(), settings, g_want_entities);
-        }
-        const zn = slot.*.?;
-        const ent_pixels = if (layer == 4) all_pixels[layer_bytes..] else pixels;
-        if (layer == 4) {
-            // the summary lists the resources this pass can place
-            summary_names.clearRetainingCapacity();
-            for (zn.planet.placed) |e| {
-                if (e.resource) |ri| try summary_names.append(a, zn.planet.resources[ri].name);
-            }
-        }
-        const chunk = try a.create(sa_surface.ChunkData);
-        const C = sa_surface.CHUNK;
-        var tiles: [C * C]u16 = undefined;
-        var counts: [sa_data.Entity.class_count]u32 = @splat(0);
-        const have_tiles = g_tiles_given and tiles_in.len >= @as(usize, cw) * ch * 4;
-        var list: std.ArrayList(u8) = .empty;
-        // the disk being drawn: the surface's own, or a smaller preview of it
-        const clip: f64 = @min(radius, @as(f64, @floatFromInt(r)));
-        var cy = @divFloor(ya, C);
-        while (cy * C < yb) : (cy += 1) {
-            var cx = @divFloor(xa, C);
-            while (cx * C < xb) : (cx += 1) {
-                {
-                    // nothing to draw for a chunk wholly outside that disk
-                    const nx: f64 = @floatFromInt(@max(cx * C, @min(0, cx * C + C - 1)));
-                    const ny: f64 = @floatFromInt(@max(cy * C, @min(0, cy * C + C - 1)));
-                    if (nx * nx + ny * ny > clip * clip) continue;
-                }
-                // Tiles: from the terrain the page sent (matched by map
-                // colour) where it covers the tile, worked out here otherwise
-                // (a chunk on the edge of a preview disk: the surface goes on
-                // past it).
-                for (0..C * C) |i| {
-                    const tx = cx * C + @as(i32, @intCast(i % C));
-                    const ty = cy * C + @as(i32, @intCast(i / C));
-                    const fx: f64 = @floatFromInt(tx);
-                    const fy: f64 = @floatFromInt(ty);
-                    if (fx * fx + fy * fy > radius * radius) {
-                        tiles[i] = zn.out_of_map;
-                        continue;
-                    }
-                    var found: ?u16 = null;
-                    if (have_tiles and tx >= xa and tx < xb and ty >= ya and ty < yb) {
-                        const q = (@as(usize, @intCast(ty - ya)) * cw + @as(usize, @intCast(tx - xa))) * 4;
-                        if (tiles_in[q + 3] == 255) found = zn.tileOf(.{ tiles_in[q], tiles_in[q + 1], tiles_in[q + 2] });
-                    }
-                    tiles[i] = found orelse blk: {
-                        const e = el_s.at(fx, fy);
-                        const color: [3]u8 = if (has_water and e < 0.0)
-                            (if (e < -5.0) biome.deepwater else biome.water)
-                        else
-                            classifier.classifyColor(fx, fy, zt.temperature(fx, fy), zt.moisture(fx, fy), zt.aux(fx, fy), e);
-                        break :blk zn.tileOf(color) orelse zn.out_of_map;
-                    };
-                }
-                zn.world.chunkWith(cx, cy, &tiles, chunk);
-                enemy_tiles += zn.world.drawEntities(chunk, xa, ya, xb, yb, cw, ent_pixels, &counts);
+                world.chunkWith(cx, cy, &tiles, chunk);
+                enemy_tiles += world.drawEntities(chunk, xa, ya, xb, yb, cw, ent_pixels, &counts);
                 if (layer == 4) {
                     // the ore this pass placed (one entity per tile centre)
-                    for (chunk.amount, 0..) |am, i| {
+                    for (chunk.amount, 0..) |am, k| {
                         if (am == 0) continue;
-                        const tx = cx * C + @as(i32, @intCast(i % C));
-                        const ty = cy * C + @as(i32, @intCast(i / C));
+                        const tx = cx * C + @as(i32, @intCast(k % C));
+                        const ty = cy * C + @as(i32, @intCast(k / C));
                         if (tx < xa or tx >= xb or ty < ya or ty >= yb) continue;
-                        try ores.append(a, .{ .x = tx, .y = ty, .resource_name = zn.planet.resources[chunk.resource[i]].name, .amount = am });
+                        try ores.append(a, .{ .x = tx, .y = ty, .resource_name = planet.resources[chunk.resource[k]].name, .amount = am });
                     }
                 }
                 if (g_entity_list) {
@@ -868,30 +868,32 @@ fn generateZone(
                             return px >> 8 >= x0 and px >> 8 < x1 and py >> 8 >= y0 and py >> 8 < y1;
                         }
                     }.f;
-                    if (zn.world.cliff) |cl| for (chunk.cliffs[0..chunk.n_cliffs]) |pc| {
+                    if (world.cliff) |cl| for (chunk.cliffs[0..chunk.n_cliffs]) |pc| {
                         if (!inside(pc.x, pc.y, xa, ya, xb, yb)) continue;
                         try appendFmt(a, &list, "{s}[\"{s}@{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", cl.name, cl.orientations[pc.orient], pc.x, pc.y });
                     };
                     for (chunk.ents[0..chunk.n_ents]) |pe| {
                         if (!inside(pe.x, pe.y, xa, ya, xb, yb)) continue;
-                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", zn.planet.placed[pe.ent].name, pe.x, pe.y });
+                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", planet.placed[pe.ent].name, pe.x, pe.y });
                     }
-                    for (chunk.amount, 0..) |am, i| {
+                    for (chunk.amount, 0..) |am, k| {
                         if (am == 0) continue;
-                        const px = (cx * C + @as(i32, @intCast(i % C))) * 256 + 128;
-                        const py = (cy * C + @as(i32, @intCast(i / C))) * 256 + 128;
+                        const px = (cx * C + @as(i32, @intCast(k % C))) * 256 + 128;
+                        const py = (cy * C + @as(i32, @intCast(k / C))) * 256 + 128;
                         if (!inside(px, py, xa, ya, xb, yb)) continue;
-                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", zn.planet.resources[chunk.resource[i]].name, px, py });
+                        try appendFmt(a, &list, "{s}[\"{s}\",{d},{d}]", .{ if (list.items.len > 0) "," else "", planet.resources[chunk.resource[k]].name, px, py });
                     }
                 }
             }
         }
         // a box may reach past the disk's edge: nothing is drawn there
-        for (0..ch) |py| {
-            for (0..cw) |px| {
-                const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
-                const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
-                if (fx * fx + fy * fy > clip * clip) ent_pixels[(py * cw + px) * 4 + 3] = 0;
+        if (clip) |cl| {
+            for (0..ch) |py| {
+                for (0..cw) |px| {
+                    const fx: f64 = @floatFromInt(xa + @as(i32, @intCast(px)));
+                    const fy: f64 = @floatFromInt(ya + @as(i32, @intCast(py)));
+                    if (fx * fx + fy * fy > cl * cl) ent_pixels[(py * cw + px) * 4 + 3] = 0;
+                }
             }
         }
         g_list = list.items;

@@ -78,7 +78,7 @@ pub const Tag = enum(u8) {
     spot,
 
     /// number of register inputs (a, b, c, d)
-    fn arity(self: Tag) u3 {
+    pub fn arity(self: Tag) u3 {
         return switch (self) {
             .konst, .in_x, .in_y => 0,
             .neg, .not_, .abs, .sin, .cos, .sqrt, .floor, .ceil, .exp, .log2 => 1,
@@ -947,7 +947,12 @@ pub const Program = struct {
         /// random_penalty returns its source unchanged: the value before the
         /// random draw, i.e. the most the expression can be at a position
         no_penalty: bool = false,
+        /// candidate points of a region, shared by the spot_noises that draw
+        /// the same ones (the resources of one patch set: same seed, region,
+        /// count and spacing, each taking every n-th point)
+        points: std.AutoHashMapUnmanaged(PointKey, []const [2]f32) = .empty,
     };
+    const PointKey = struct { seed0: u32, seed1: u32, rsize: i32, n: u32, spacing: u32, rx: i32, ry: i32 };
 
     pub fn workspace(self: *const Program, a: std.mem.Allocator) error{OutOfMemory}!Workspace {
         return self.workspaceN(a, BATCH);
@@ -1241,6 +1246,62 @@ pub const Program = struct {
         return spots;
     }
 
+    /// A region's candidate points: integer positions in it, kept apart by a
+    /// spacing that relaxes (x 0.9375) each time a draw lands too close to
+    /// one already taken. Whether a draw is too close does not depend on
+    /// which earlier point is, so only the points in the neighbouring cells
+    /// of a grid (cells at least the starting spacing wide, which the spacing
+    /// only shrinks from) are looked at: the same points as testing them all.
+    fn candidatePoints(a: std.mem.Allocator, seed0: u32, seed1: u32, rx: i32, ry: i32, base_x: i32, base_y: i32, rsize_u: u32, n_points: usize, spacing: f32) ![]const [2]f32 {
+        const pts = try a.alloc([2]f32, n_points);
+        var prng = rng.Rng.init(noise.regionSeed(seed0, seed1, rx, ry));
+        var spacing2: f32 = spacing * spacing;
+        // grid over the region; a cell holds its points as a linked list
+        const cell: i32 = @max(1, @as(i32, @intFromFloat(@ceil(spacing))));
+        const gw: i32 = @divTrunc(@as(i32, @intCast(rsize_u)) + cell - 1, cell);
+        const head = try a.alloc(i32, @intCast(gw * gw));
+        defer a.free(head);
+        @memset(head, -1);
+        const next = try a.alloc(i32, n_points);
+        defer a.free(next);
+        for (0..n_points) |i| {
+            while (true) {
+                const ox: i32 = @bitCast(prng.next() % rsize_u);
+                const oy: i32 = @bitCast(prng.next() % rsize_u);
+                const fx: f32 = @floatFromInt(base_x +% ox);
+                const fy: f32 = @floatFromInt(base_y +% oy);
+                const gx = @divTrunc(ox, cell);
+                const gy = @divTrunc(oy, cell);
+                var ok = true;
+                var yy = @max(0, gy - 1);
+                search: while (yy <= @min(gw - 1, gy + 1)) : (yy += 1) {
+                    var xx = @max(0, gx - 1);
+                    while (xx <= @min(gw - 1, gx + 1)) : (xx += 1) {
+                        var j = head[@intCast(yy * gw + xx)];
+                        while (j >= 0) : (j = next[@intCast(j)]) {
+                            const q = pts[@intCast(j)];
+                            const ex = fx - q[0];
+                            const ey = fy - q[1];
+                            if (ex * ex + ey * ey < spacing2) {
+                                ok = false;
+                                break :search;
+                            }
+                        }
+                    }
+                }
+                if (ok) {
+                    pts[i] = .{ fx, fy };
+                    const c: usize = @intCast(gy * gw + gx);
+                    next[i] = head[c];
+                    head[c] = @intCast(i);
+                    break;
+                }
+                spacing2 *= 0.9375;
+            }
+        }
+        return pts;
+    }
+
     fn computeRegion(self: *const Program, ws: *Workspace, idx: u32, rx: i32, ry: i32) ![]Spot {
         const a = ws.a;
         const op = &self.spots[idx];
@@ -1252,36 +1313,13 @@ pub const Program = struct {
         const base_x: i32 = rx *% rsize -% @divTrunc(rsize, 2);
         const base_y: i32 = ry *% rsize -% @divTrunc(rsize, 2);
 
-        // candidate points: integer positions in the region, kept apart by a
-        // spacing that relaxes each time a draw lands too close
-        const px = try a.alloc(f32, n_points);
-        defer a.free(px);
-        const py = try a.alloc(f32, n_points);
-        defer a.free(py);
-        var prng = rng.Rng.init(noise.regionSeed(cfg.seed0, cfg.seed1, rx, ry));
         const spacing: f32 = @floatCast(cfg.spacing);
-        var spacing2: f32 = spacing * spacing;
-        for (0..n_points) |i| {
-            while (true) {
-                const fx: f32 = @floatFromInt(base_x +% @as(i32, @bitCast(prng.next() % rsize_u)));
-                const fy: f32 = @floatFromInt(base_y +% @as(i32, @bitCast(prng.next() % rsize_u)));
-                var ok = true;
-                for (0..i) |j| {
-                    const ex = fx - px[j];
-                    const ey = fy - py[j];
-                    if (ex * ex + ey * ey < spacing2) {
-                        spacing2 *= 0.9375;
-                        ok = false;
-                        break;
-                    }
-                }
-                if (ok) {
-                    px[i] = fx;
-                    py[i] = fy;
-                    break;
-                }
-            }
-        }
+        const pkey = PointKey{ .seed0 = cfg.seed0, .seed1 = cfg.seed1, .rsize = rsize, .n = @intCast(n_points), .spacing = @bitCast(spacing), .rx = rx, .ry = ry };
+        const pts = ws.points.get(pkey) orelse blk: {
+            const p = try candidatePoints(a, cfg.seed0, cfg.seed1, rx, ry, base_x, base_y, rsize_u, n_points, spacing);
+            try ws.points.put(a, pkey, p);
+            break :blk p;
+        };
 
         // this spot_noise's share of the candidates
         const nc = (n_points - 1 - cfg.skip_offset) / cfg.skip_span + 1;
@@ -1290,8 +1328,8 @@ pub const Program = struct {
         const cy = try a.alloc(f32, nc);
         defer a.free(cy);
         for (0..nc) |k| {
-            cx[k] = px[cfg.skip_offset + k * cfg.skip_span];
-            cy[k] = py[cfg.skip_offset + k * cfg.skip_span];
+            cx[k] = pts[cfg.skip_offset + k * cfg.skip_span][0];
+            cy[k] = pts[cfg.skip_offset + k * cfg.skip_span][1];
         }
         const st = &ws.spots[idx];
         if (st.ws == null) {

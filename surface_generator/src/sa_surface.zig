@@ -217,6 +217,253 @@ pub fn sameGroup(a: *const sa_data.Entity, b: *const sa_data.Entity) bool {
     return std.mem.eql(u8, a.order, b.order);
 }
 
+/// Ruling entities out chunk by chunk (the alien-biomes trees: of the ~50
+/// species that may stand somewhere in a chunk, ~10 can grow there).
+///
+/// An entity's "private" instructions are those only a few entities read,
+/// all of them cullable: for a tree, its climate fit, its own noise and the
+/// arithmetic up to its probability. Everything else (the shared climate, the
+/// other entities) is evaluated first, exactly. Then each cullable entity's
+/// private instructions are worked through ONCE per chunk as intervals: an
+/// input from outside is its lowest and highest value over the chunk, a noise
+/// is the most it can be either way. An entity whose random_penalty source
+/// cannot be above 0 anywhere in the chunk takes no draw from its stream and
+/// cannot be placed; as every member of its group takes the same one try,
+/// it cannot change which tiles get something either. Its private
+/// instructions are then never evaluated; the rest are, exactly, so the
+/// result is the same as evaluating everything. (Interval ends are worked
+/// out with the same f32 operations as the values, which are monotone, so
+/// rounding keeps them bounds.)
+const Cull = struct {
+    private: []const bool,
+    /// |value| bound of a private noise instruction (inf: none known)
+    bound: []const f32,
+    /// per placed entity: may be ruled out (its group: one try each, no
+    /// resource; its probability: a random_penalty)
+    cullable: []const bool,
+    alive: []bool,
+    live_a: []bool,
+    live_b: []bool,
+    lo: []f32,
+    hi: []f32,
+    /// chunk number an input's range was taken in (its lo/hi hold it)
+    seen: []u32,
+    chunk: u32 = 0,
+
+    /// an instruction read by more entities than this is shared (the climate)
+    const MAX_USERS = 24;
+    /// most a basis value can be (gradients of length 4.2 times 0.42188,
+    /// the most the four corners' |d| (1 - d^2)^3 add up to), with a margin
+    const BASIS_MAX: f32 = 1.78;
+
+    fn init(a: std.mem.Allocator, program: *const prog.Program, planet: *const sa_data.Planet, n_placed: usize, ent_prob: []const usize, deps: []const []const bool) !?Cull {
+        const insts = program.insts;
+        // entities in groups whose members take one try each and hold no
+        // resource, with a random_penalty probability
+        const cullable = try a.alloc(bool, n_placed);
+        var any = false;
+        var g0: usize = 0;
+        while (g0 < n_placed) {
+            var g1 = g0 + 1;
+            while (g1 < n_placed and sameGroup(&planet.placed[g1], &planet.placed[g0])) g1 += 1;
+            var ok = true;
+            for (planet.placed[g0..g1]) |e| {
+                if (e.kind == .resource or e.density != planet.placed[g0].density) ok = false;
+            }
+            for (g0..g1) |e| {
+                cullable[e] = ok and insts[program.roots[ent_prob[e]]].tag == .random_penalty;
+                any = any or cullable[e];
+            }
+            g0 = g1;
+        }
+        if (!any) return null;
+        const private = try a.alloc(bool, insts.len);
+        const bound = try a.alloc(f32, insts.len);
+        for (insts, 0..) |inst, i| {
+            var users: usize = 0;
+            var ok = true;
+            for (deps, 0..) |dm, e| {
+                if (!dm[i]) continue;
+                users += 1;
+                if (!cullable[e]) ok = false;
+            }
+            private[i] = users > 0 and users <= MAX_USERS and ok and inst.tag != .in_x and inst.tag != .in_y;
+            bound[i] = std.math.inf(f32);
+            if (!private[i]) continue;
+            switch (inst.tag) {
+                .basis => bound[i] = BASIS_MAX * @abs(program.payloads[inst.aux].basis.os),
+                .multioctave => {
+                    const m = program.payloads[inst.aux].multi.m;
+                    var sum: f32 = 0;
+                    var os = m.os;
+                    for (0..m.n) |_| {
+                        sum += @abs(os);
+                        os = m.inv * os;
+                    }
+                    bound[i] = BASIS_MAX * sum * 1.0001;
+                },
+                .quick_multioctave => {
+                    const q = program.payloads[inst.aux].quick;
+                    var sum: f32 = 0;
+                    var os = q.os;
+                    for (0..q.octaves) |_| {
+                        sum += @abs(os);
+                        os = os * q.oosm;
+                    }
+                    bound[i] = BASIS_MAX * sum * 1.0001;
+                },
+                else => {},
+            }
+        }
+        const seen = try a.alloc(u32, insts.len);
+        @memset(seen, 0);
+        return .{
+            .private = private,
+            .bound = bound,
+            .cullable = cullable,
+            .alive = try a.alloc(bool, n_placed),
+            .live_a = try a.alloc(bool, insts.len),
+            .live_b = try a.alloc(bool, insts.len),
+            .lo = try a.alloc(f32, insts.len),
+            .hi = try a.alloc(f32, insts.len),
+            .seen = seen,
+        };
+    }
+
+    /// The range of instruction v over the chunk: its interval if private,
+    /// else the lowest and highest of its values (taken once a chunk).
+    fn range(self: *Cull, w: *const World, v: u32) [2]f32 {
+        if (self.private[v] or self.seen[v] == self.chunk) return .{ self.lo[v], self.hi[v] };
+        const vals = w.ws.regs[v * w.ws.batch ..][0..AREA];
+        var l = vals[0];
+        var h = vals[0];
+        var nan = false;
+        for (vals) |x| {
+            if (x != x) nan = true;
+            l = @min(l, x);
+            h = @max(h, x);
+        }
+        if (nan) {
+            l = -std.math.inf(f32);
+            h = std.math.inf(f32);
+        }
+        self.lo[v] = l;
+        self.hi[v] = h;
+        self.seen[v] = self.chunk;
+        return .{ l, h };
+    }
+
+    /// Evaluate the chunk (the world's xs/ys/live set up): the shared part,
+    /// the private parts as intervals, then the private parts of the entities
+    /// that can still be placed.
+    fn eval(self: *Cull, w: *World) void {
+        const p = &w.program;
+        const inf = std.math.inf(f32);
+        self.chunk +%= 1;
+        if (self.chunk == 0) {
+            @memset(self.seen, 0);
+            self.chunk = 1;
+        }
+        for (self.live_a, w.live, self.private) |*la, l, pv| la.* = l and !pv;
+        p.evalLive(&w.ws, w.xs, w.ys, self.live_a);
+
+        for (p.insts, 0..) |inst, i| {
+            if (!w.live[i] or !self.private[i]) continue;
+            var l: [4]f32 = undefined;
+            var h: [4]f32 = undefined;
+            const ins = [4]u32{ inst.a, inst.b, inst.c, inst.d };
+            for (ins[0..inst.tag.arity()], 0..) |v, k| {
+                const r = self.range(w, v);
+                l[k] = r[0];
+                h[k] = r[1];
+            }
+            var rl: f32 = -inf;
+            var rh: f32 = inf;
+            switch (inst.tag) {
+                .konst => {
+                    rl = w.ws.regs[i * w.ws.batch];
+                    rh = rl;
+                },
+                .basis, .multioctave, .quick_multioctave => {
+                    rl = -self.bound[i];
+                    rh = self.bound[i];
+                },
+                .add => {
+                    rl = l[0] + l[1];
+                    rh = h[0] + h[1];
+                },
+                .sub => {
+                    rl = l[0] - h[1];
+                    rh = h[0] - l[1];
+                },
+                .mul => corners(.{ l[0] * l[1], l[0] * h[1], h[0] * l[1], h[0] * h[1] }, &rl, &rh),
+                .div => if (l[1] > 0 or h[1] < 0) corners(.{ l[0] / l[1], l[0] / h[1], h[0] / l[1], h[0] / h[1] }, &rl, &rh),
+                .min => {
+                    rl = prog.fmin(f32, l[0], l[1]);
+                    rh = prog.fmin(f32, h[0], h[1]);
+                },
+                .max => {
+                    rl = prog.fmax(f32, l[0], l[1]);
+                    rh = prog.fmax(f32, h[0], h[1]);
+                },
+                .clamp => {
+                    rl = prog.fmin(f32, prog.fmax(f32, l[0], l[1]), l[2]);
+                    rh = prog.fmin(f32, prog.fmax(f32, h[0], h[1]), h[2]);
+                },
+                .neg => {
+                    rl = -h[0];
+                    rh = -l[0];
+                },
+                .abs => if (l[0] >= 0) {
+                    rl = l[0];
+                    rh = h[0];
+                } else if (h[0] <= 0) {
+                    rl = -h[0];
+                    rh = -l[0];
+                } else {
+                    rl = 0;
+                    rh = prog.fmax(f32, -l[0], h[0]);
+                },
+                // source - draw * amplitude (draw in [0, 1)) where the source
+                // is above 0, the source itself elsewhere
+                .random_penalty => {
+                    rl = prog.fmin(f32, l[2] - prog.fmax(f32, 0, h[3]), l[2]);
+                    rh = prog.fmax(f32, h[2] - prog.fmin(f32, 0, l[3]), h[2]);
+                },
+                else => {},
+            }
+            self.lo[i] = if (rl == rl) rl else -inf;
+            self.hi[i] = if (rh == rh) rh else inf;
+        }
+
+        @memset(self.live_b, false);
+        for (0..w.n_placed) |e| {
+            const root = p.roots[w.ent_prob[e]];
+            self.alive[e] = true;
+            if (!w.live[root]) continue;
+            if (self.cullable[e]) {
+                const src = self.range(w, p.insts[root].c);
+                self.alive[e] = !(src[1] <= 0);
+            }
+            if (self.alive[e]) {
+                for (w.deps[e], self.live_b) |d, *lb| lb.* = lb.* or d;
+            }
+        }
+        for (self.live_b, w.live, self.private) |*lb, l, pv| lb.* = lb.* and l and pv;
+        p.evalLive(&w.ws, w.xs, w.ys, self.live_b);
+    }
+
+    /// bounds of a product or quotient from its four corners (a NaN corner,
+    /// inf * 0: none)
+    fn corners(c: [4]f32, rl: *f32, rh: *f32) void {
+        for (c) |v| {
+            if (v != v) return;
+        }
+        rl.* = prog.fmin(f32, prog.fmin(f32, c[0], c[1]), prog.fmin(f32, c[2], c[3]));
+        rh.* = prog.fmax(f32, prog.fmax(f32, c[0], c[1]), prog.fmax(f32, c[2], c[3]));
+    }
+};
+
 /// Tiles and resources, generated chunk by chunk the way the game does.
 ///
 /// Entity placement (EntityMapGenerationTask::generateEntities): the chunk is
@@ -274,6 +521,9 @@ pub const World = struct {
     deps: []const []const bool,
     live: []bool,
     tile_seen: []bool,
+    /// ruling out, chunk by chunk, the entities that cannot reach a
+    /// probability above 0 anywhere in it (see Cull; null: none can be)
+    cull: ?Cull = null,
 
     pub const Options = struct {
         /// do not compile the tile competition; chunkWith() is given the tiles
@@ -366,6 +616,7 @@ pub const World = struct {
             }
             deps = d;
         }
+        const cull = if (opts.external_tiles) try Cull.init(a, &program, planet, n_placed, ent_prob, deps) else null;
         return .{
             .planet = planet,
             .program = program,
@@ -394,6 +645,7 @@ pub const World = struct {
             .xs = try a.alloc(f32, AREA),
             .ys = try a.alloc(f32, AREA),
             .deps = deps,
+            .cull = cull,
             .live = try a.alloc(bool, program.insts.len),
             .tile_seen = try a.alloc(bool, planet.tiles.len),
         };
@@ -425,7 +677,11 @@ pub const World = struct {
                 if (!can) continue;
                 for (self.deps[ei], self.live) |d, *l| l.* = l.* or d;
             }
-            self.program.evalLive(&self.ws, self.xs, self.ys, self.live);
+            if (self.cull) |*c| {
+                c.eval(self);
+            } else {
+                self.program.evalLive(&self.ws, self.xs, self.ys, self.live);
+            }
         } else {
             self.program.eval(&self.ws, self.xs, self.ys);
         }
@@ -463,6 +719,7 @@ pub const World = struct {
         var prng = rng.Rng.init(seed);
 
         const placed = self.planet.placed[0..self.n_placed];
+        const culled = tiles != null and self.deps.len > 0 and self.cull != null;
         var g0: usize = 0;
         while (g0 < placed.len) {
             var g1 = g0 + 1;
@@ -490,6 +747,17 @@ pub const World = struct {
                 var win_p: f32 = -std.math.inf(f32);
                 var win_rich: f32 = 0;
                 for (g0..g1) |e| {
+                    // (ruled out for the chunk: below 0 everywhere in it; it
+                    // matters only as something that can stand here, which
+                    // makes the tile take its draws)
+                    if (culled and !self.cull.?.alive[e]) {
+                        if (win == null and placed[e].canStandOn(ti, tile)) {
+                            win = e;
+                            win_p = -std.math.inf(f32);
+                            win_rich = 1;
+                        }
+                        continue;
+                    }
                     if (!placed[e].canStandOn(ti, tile)) continue;
                     var p = self.program.out(&self.ws, self.ent_prob[e])[i];
                     if (!(p == p)) p = -std.math.inf(f32);

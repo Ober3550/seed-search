@@ -122,6 +122,9 @@ def se_zone_lists(lua_path):
         out[kind].append(name)
     m = re.search(r"local resource_names = \{(.*?)\}", body, flags=re.S)
     out["entity"] += re.findall(r'"([^"]+)"', m.group(1))
+    # resources other mods add (Krastorio 2's, when it is active); a name
+    # not in the dump is left out later, so a plain SE build loses nothing
+    out["entity"] += re.findall(r'table\.insert\(resource_names,\s*"([^"]+)"\)', body)
     return out
 
 
