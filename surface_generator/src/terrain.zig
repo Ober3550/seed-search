@@ -212,6 +212,14 @@ pub const Elevation = struct {
     // quick_multioctave defaults octave_seed0_shift=1, so each octave uses a
     // FRESH generator seeded (map_seed, 14), (map_seed, 15), ... one per octave.
     slake_gens: [4]noise.BasisNoiseGen,
+    // the hills/bridges/macro octaves and the cliff level, built once: building
+    // a generator (three 256-entry shuffles) costs more than evaluating it
+    gen700: noise.BasisNoiseGen,
+    gen900: noise.BasisNoiseGen,
+    gen1000: noise.BasisNoiseGen,
+    gen1100: noise.BasisNoiseGen,
+    gen1800: noise.BasisNoiseGen,
+    gen99584: noise.BasisNoiseGen,
     // Engine-chosen starting_lake_positions (per seed; EMPTY for SE moons, which
     // is why moons have no starting lake). distance_from_nearest_point caps at 1024.
     slake_buf: [8][2]f64 = undefined,
@@ -232,6 +240,12 @@ pub const Elevation = struct {
                 noise.BasisNoiseGen.init(map_seed +% 2, 14),
                 noise.BasisNoiseGen.init(map_seed +% 3, 14),
             },
+            .gen700 = noise.BasisNoiseGen.init(map_seed, 700),
+            .gen900 = noise.BasisNoiseGen.init(map_seed, 900),
+            .gen1000 = noise.BasisNoiseGen.init(map_seed, 1000),
+            .gen1100 = noise.BasisNoiseGen.init(map_seed, 1100),
+            .gen1800 = noise.BasisNoiseGen.init(map_seed, 1800),
+            .gen99584 = noise.BasisNoiseGen.init(map_seed, 99584),
         };
     }
 
@@ -277,7 +291,20 @@ pub const Elevation = struct {
     }
 
     fn mo(self: *const Elevation, x: f64, y: f64, seed1: u32, octaves: u32, persistence: f64, input_scale: f64) f64 {
-        return noise.multioctaveNoise(x, y, self.map_seed, seed1, octaves, persistence, input_scale, 1.0);
+        const gen = switch (seed1) {
+            700 => &self.gen700,
+            900 => &self.gen900,
+            1000 => &self.gen1000,
+            1100 => &self.gen1100,
+            1800 => &self.gen1800,
+            else => return noise.multioctaveNoise(x, y, self.map_seed, seed1, octaves, persistence, input_scale, 1.0),
+        };
+        return noise.multioctaveNoisePrebuilt(gen, x, y, octaves, persistence, input_scale, 1.0);
+    }
+
+    /// nauvis_hills_cliff_level's basis noise (seed1 99584)
+    fn cliffLevel(self: *const Elevation, x: f64, y: f64) f64 {
+        return std.math.clamp(0.65 + self.gen99584.eval(x, y, self.nsm / 500.0, 0.6), 0.15, 1.15);
     }
 
     /// nauvis_persistance = clamp(amplitude_corrected_multioctave_noise{seed1=500,
@@ -328,7 +355,7 @@ pub const Elevation = struct {
     pub fn nauvisPlateaus(self: *const Elevation, x: f64, y: f64) f64 {
         const nsm = self.nsm;
         const hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));
-        const cliff_level = std.math.clamp(0.65 + noise.basisNoise(x, y, self.map_seed, 99584, nsm / 500.0, 0.6), 0.15, 1.15);
+        const cliff_level = self.cliffLevel(x, y);
         return 0.5 + std.math.clamp((hills - cliff_level) * 10.0, -0.5, 0.5);
     }
     pub fn nauvisPersistancePub(self: *const Elevation, x: f64, y: f64) f64 {
@@ -344,7 +371,7 @@ pub const Elevation = struct {
         const nsm = self.nsm;
         // nauvis_hills / plateaus
         const nauvis_hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));
-        const cliff_level = std.math.clamp(0.65 + noise.basisNoise(x, y, self.map_seed, 99584, nsm / 500.0, 0.6), 0.15, 1.15);
+        const cliff_level = self.cliffLevel(x, y);
         const plateaus = 0.5 + std.math.clamp((nauvis_hills - cliff_level) * 10.0, -0.5, 0.5);
         const hills_plateaus = 0.1 * nauvis_hills + 0.8 * plateaus;
         // nauvis_bridges
@@ -375,7 +402,7 @@ pub const Elevation = struct {
         const y = y0 + 0.5;
         const nsm = self.nsm;
         const hills = @abs(self.mo(x, y, 900, 4, 0.5, nsm / 90.0));
-        const cliff_level = std.math.clamp(0.65 + noise.basisNoise(x, y, self.map_seed, 99584, nsm / 500.0, 0.6), 0.15, 1.15);
+        const cliff_level = self.cliffLevel(x, y);
         const plateaus = 0.5 + std.math.clamp((hills - cliff_level) * 10.0, -0.5, 0.5);
         const hp = 0.1 * hills + 0.8 * plateaus;
         const bb = @abs(self.mo(x, y, 700, 4, 0.5, nsm / 150.0));

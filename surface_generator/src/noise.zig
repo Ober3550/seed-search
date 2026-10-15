@@ -168,6 +168,29 @@ pub fn basisNoise(x: f64, y: f64, seed0: u32, seed1: u32, input_scale: f64, outp
     return gen.eval(x, y, input_scale, output_scale);
 }
 
+/// @max / @min with the results of C's fmax / fmin, which is what they
+/// compile to on wasm - as a call to compiler_rt per value, a third of the
+/// time of an entity pass. Inline: a NaN gives the other operand, and equal
+/// operands (+0 and -0) combine their bits, so max(-0, +0) = +0 and
+/// min(-0, +0) = -0 exactly as fmax / fmin.
+pub inline fn fmax(comptime T: type, a: T, b: T) T {
+    if (a < b) return b;
+    if (b < a) return a;
+    if (a != a) return b;
+    if (b != b) return a;
+    const U = std.meta.Int(.unsigned, @bitSizeOf(T));
+    return @bitCast(@as(U, @bitCast(a)) & @as(U, @bitCast(b)));
+}
+
+pub inline fn fmin(comptime T: type, a: T, b: T) T {
+    if (a < b) return a;
+    if (b < a) return b;
+    if (a != a) return b;
+    if (b != b) return a;
+    const U = std.meta.Int(.unsigned, @bitSizeOf(T));
+    return @bitCast(@as(U, @bitCast(a)) | @as(U, @bitCast(b)));
+}
+
 // ============================================================
 // multioctave_noise — Fractal octave sum
 // ============================================================
@@ -391,11 +414,17 @@ pub fn SpotNoiseField(comptime F: type) type {
         maximum_spot_basement_radius: f64,
         min_candidate_spacing: f64,
         cache: std.AutoHashMapUnmanaged(RegionKey, []Spot) = .empty,
+        /// the spots of the 3x3 regions around `win_key`, the window evalAt
+        /// read last (neighbouring tiles share it, which saves nine hash
+        /// lookups per tile)
+        win_key: ?RegionKey = null,
+        win: std.ArrayList(Spot) = .empty,
 
         pub fn deinit(self: *Self) void {
             var it = self.cache.valueIterator();
             while (it.next()) |slice| self.alloc.free(slice.*);
             self.cache.deinit(self.alloc);
+            self.win.deinit(self.alloc);
         }
 
         pub fn spotsForRegion(self: *Self, rx: i32, ry: i32) ![]Spot {
@@ -597,22 +626,29 @@ pub fn SpotNoiseField(comptime F: type) type {
 
         pub fn evalAt(self: *Self, x: f64, y: f64) !f64 {
             var value = self.basement_value;
-            const cxr: i32 = @intFromFloat(@round(x / self.region_size));
-            const cyr: i32 = @intFromFloat(@round(y / self.region_size));
-            var dx: i32 = -1;
-            while (dx <= 1) : (dx += 1) {
-                var dy: i32 = -1;
-                while (dy <= 1) : (dy += 1) {
-                    const spots = try self.spotsForRegion(cxr + dx, cyr + dy);
-                    for (spots) |s| {
-                        const ddx = x - s.x;
-                        const ddy = y - s.y;
-                        const dist = @sqrt(ddx * ddx + ddy * ddy);
-                        if (dist <= self.maximum_spot_basement_radius) {
-                            const v = s.peak - dist * s.slope;
-                            if (v > value) value = v;
-                        }
+            const key = RegionKey{
+                .x = @intFromFloat(@round(x / self.region_size)),
+                .y = @intFromFloat(@round(y / self.region_size)),
+            };
+            if (self.win_key == null or self.win_key.?.x != key.x or self.win_key.?.y != key.y) {
+                self.win_key = null;
+                self.win.clearRetainingCapacity();
+                var dx: i32 = -1;
+                while (dx <= 1) : (dx += 1) {
+                    var dy: i32 = -1;
+                    while (dy <= 1) : (dy += 1) {
+                        try self.win.appendSlice(self.alloc, try self.spotsForRegion(key.x + dx, key.y + dy));
                     }
+                }
+                self.win_key = key;
+            }
+            for (self.win.items) |s| {
+                const ddx = x - s.x;
+                const ddy = y - s.y;
+                const dist = @sqrt(ddx * ddx + ddy * ddy);
+                if (dist <= self.maximum_spot_basement_radius) {
+                    const v = s.peak - dist * s.slope;
+                    if (v > value) value = v;
                 }
             }
             return value;
@@ -997,14 +1033,73 @@ pub const exact = struct {
         const g10 = gen.grad[r0 ^ c1];
         const g01 = gen.grad[r1 ^ c0];
         const g11 = gen.grad[r1 ^ c1];
-        const w00: f32 = @max(wa - fx * fx, 0.0);
-        const w10: f32 = @max(wa - fx1 * fx1, 0.0);
-        const w01: f32 = @max(wb - fx * fx, 0.0);
-        const w11: f32 = @max(wb - fx1 * fx1, 0.0);
+        const w00: f32 = fmax(f32, wa - fx * fx, 0.0);
+        const w10: f32 = fmax(f32, wa - fx1 * fx1, 0.0);
+        const w01: f32 = fmax(f32, wb - fx * fx, 0.0);
+        const w11: f32 = fmax(f32, wb - fx1 * fx1, 0.0);
         return (fx * g00[0] + g00[1] * fy) * w00 * w00 * w00 +
             (fx * g01[0] + g01[1] * fy1) * w01 * w01 * w01 +
             (fx1 * g10[0] + g10[1] * fy) * w10 * w10 * w10 +
             (fx1 * g11[0] + g11[1] * fy1) * w11 * w11 * w11;
+    }
+
+    pub const V4 = @Vector(4, f32);
+
+    /// basis() at four positions: the same float operations in the same
+    /// order in each lane (bit-identical), the table lookups one lane at a
+    /// time.
+    pub fn basis4(gen: *const BasisNoiseGen, X: V4, Y: V4) V4 {
+        const fxi = @floor(X);
+        const fyi = @floor(Y);
+        const ix: @Vector(4, i32) = @intFromFloat(fxi);
+        const iy: @Vector(4, i32) = @intFromFloat(fyi);
+        const fx: V4 = X - fxi;
+        const fy: V4 = Y - fyi;
+        const fx1: V4 = fx + @as(V4, @splat(-1.0));
+        const fy1: V4 = fy + @as(V4, @splat(-1.0));
+        const one: V4 = @splat(1.0);
+        const wa: V4 = one - fy * fy;
+        const wb: V4 = one - fy1 * fy1;
+        var g00x: V4 = undefined;
+        var g00y: V4 = undefined;
+        var g10x: V4 = undefined;
+        var g10y: V4 = undefined;
+        var g01x: V4 = undefined;
+        var g01y: V4 = undefined;
+        var g11x: V4 = undefined;
+        var g11y: V4 = undefined;
+        inline for (0..4) |l| {
+            const r0: u8 = gen.perm1[@as(u8, @truncate(@as(u32, @bitCast(iy[l]))))] ^ gen.seed_byte;
+            const r1: u8 = gen.perm1[@as(u8, @truncate(@as(u32, @bitCast(iy[l] +% 1))))] ^ gen.seed_byte;
+            const c0: u8 = gen.perm2[@as(u8, @truncate(@as(u32, @bitCast(ix[l]))))];
+            const c1: u8 = gen.perm2[@as(u8, @truncate(@as(u32, @bitCast(ix[l] +% 1))))];
+            const g00 = gen.grad[r0 ^ c0];
+            const g10 = gen.grad[r0 ^ c1];
+            const g01 = gen.grad[r1 ^ c0];
+            const g11 = gen.grad[r1 ^ c1];
+            g00x[l] = g00[0];
+            g00y[l] = g00[1];
+            g10x[l] = g10[0];
+            g10y[l] = g10[1];
+            g01x[l] = g01[0];
+            g01y[l] = g01[1];
+            g11x[l] = g11[0];
+            g11y[l] = g11[1];
+        }
+        // fmax(v, 0): v when above 0, else +0 (NaN and -0 included)
+        const zero: V4 = @splat(0.0);
+        const a00 = wa - fx * fx;
+        const a10 = wa - fx1 * fx1;
+        const a01 = wb - fx * fx;
+        const a11 = wb - fx1 * fx1;
+        const w00 = @select(f32, a00 > zero, a00, zero);
+        const w10 = @select(f32, a10 > zero, a10, zero);
+        const w01 = @select(f32, a01 > zero, a01, zero);
+        const w11 = @select(f32, a11 > zero, a11, zero);
+        return (fx * g00x + g00y * fy) * w00 * w00 * w00 +
+            (fx * g01x + g01y * fy1) * w01 * w01 * w01 +
+            (fx1 * g10x + g10y * fy) * w10 * w10 * w10 +
+            (fx1 * g11x + g11y * fy1) * w11 * w11 * w11;
     }
 
     /// basis_noise op: ((x + offset) * input_scale) sampled, times output_scale.
@@ -1071,6 +1166,35 @@ pub const exact = struct {
             }
             return out;
         }
+
+        /// eval() at four positions (bit-identical lane by lane)
+        pub fn eval4(self: *const Multioctave, gen: *const BasisNoiseGen, x: V4, y: V4) V4 {
+            const V4d = @Vector(4, f64);
+            var out: V4 = @splat(0.0);
+            var scale = self.scale;
+            var os = self.os;
+            var k: f64 = 0.0;
+            const ox: V4 = @splat(self.ox);
+            const oy: V4 = @splat(self.oy);
+            var i: u32 = 0;
+            while (i < self.n) : (i += 1) {
+                const sc: V4 = @splat(scale);
+                const kk: V4d = @splat(k * 17.17);
+                if (tile_space_offset) {
+                    const X: V4 = @floatCast(kk + @as(V4d, @floatCast(sc * (x + ox))));
+                    const Y: V4 = sc * (y + oy);
+                    out = out + basis4(gen, X, Y) * @as(V4, @splat(os));
+                } else {
+                    const X: V4 = @floatCast(kk + @as(V4d, @floatCast(sc * x)));
+                    const Y: V4 = sc * y;
+                    out = out + basis4(gen, X + ox, Y + oy) * @as(V4, @splat(os));
+                }
+                scale = scale * 0.5;
+                os = self.inv * os;
+                k += 1.0;
+            }
+            return out;
+        }
     };
 
     /// quick_multioctave_noise: one generator per octave, scales stepped in f32.
@@ -1080,6 +1204,22 @@ pub const exact = struct {
         var os = os0;
         for (idx) |g| {
             out = out + basisScaled(&gens[g], x, y, is, os, ox, oy);
+            is = is * oism;
+            os = os * oosm;
+        }
+        return out;
+    }
+
+    /// quickMultioctave() at four positions (bit-identical lane by lane)
+    pub fn quickMultioctave4(gens: []const BasisNoiseGen, idx: []const u32, x: V4, y: V4, is0: f32, os0: f32, oism: f32, oosm: f32, ox: f32, oy: f32) V4 {
+        var out: V4 = @splat(0.0);
+        var is = is0;
+        var os = os0;
+        const oxv: V4 = @splat(ox);
+        const oyv: V4 = @splat(oy);
+        for (idx) |g| {
+            const isv: V4 = @splat(is);
+            out = out + basis4(&gens[g], (x + oxv) * isv, (y + oyv) * isv) * @as(V4, @splat(os));
             is = is * oism;
             os = os * oosm;
         }
