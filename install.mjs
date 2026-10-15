@@ -312,28 +312,40 @@ function buildSurfaceWasm() {
   // has deep worker/noise frames, so the wasm stack is raised to 8 MiB (virtual
   // memory — pages are only committed on use). Emitted into the GUI's static
   // dir; freestanding + no libc, -fno-entry (no main), -rdynamic for exports.
+  // Built twice: plain, and with wasm SIMD (surface-simd.wasm, same output,
+  // ~16% faster entities), which gen-worker.js loads where the browser has it.
   const dir = path.join(ROOT, "surface_generator", "src");
-  const out = path.join(ROOT, "space_explorer_gui", "public", "surface.wasm");
-  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
-    "--dep", "universe_gen", "-Mroot=se_wasm.zig",
-    "-Muniverse_gen=../../universe_generator/zig/gen.zig",
-    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
-  run("zig", args, dir);
-  ok("surface.wasm → space_explorer_gui/public/surface.wasm");
+  for (const v of WASM_VARIANTS) {
+    const name = "surface" + v.suffix + ".wasm";
+    const out = path.join(ROOT, "space_explorer_gui", "public", name);
+    const args = ["build-exe", "-target", "wasm32-freestanding", ...v.cpu, "-O", "ReleaseFast",
+      "--dep", "universe_gen", "-Mroot=se_wasm.zig",
+      "-Muniverse_gen=../../universe_generator/zig/gen.zig",
+      "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+    run("zig", args, dir);
+    ok(name + " → space_explorer_gui/public/" + name);
+  }
 }
+
+// the surface generators' two builds: plain, and with wasm SIMD
+const WASM_VARIANTS = [{ suffix: "", cpu: [] }, { suffix: "-simd", cpu: ["-mcpu", "generic+simd128"] }];
 
 function buildSAWasm() {
   // The data-driven planet surface generator (sa_program/sa_surface) compiled
   // to WASM for the browser — same exported-buffer protocol as surface.wasm.
   // It embeds src/sa_noise_data.json (regenerate with scripts/sa-build-data.py
   // after a game update) and renders any planet in that file.
+  // (plain and SIMD builds, like surface.wasm)
   const dir = path.join(ROOT, "surface_generator", "src");
-  const out = path.join(ROOT, "space_explorer_gui", "public", "sa.wasm");
-  const args = ["build-exe", "-target", "wasm32-freestanding", "-O", "ReleaseFast",
-    "-Mroot=sa_wasm.zig",
-    "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
-  run("zig", args, dir);
-  ok("sa.wasm → space_explorer_gui/public/sa.wasm");
+  for (const v of WASM_VARIANTS) {
+    const name = "sa" + v.suffix + ".wasm";
+    const out = path.join(ROOT, "space_explorer_gui", "public", name);
+    const args = ["build-exe", "-target", "wasm32-freestanding", ...v.cpu, "-O", "ReleaseFast",
+      "-Mroot=sa_wasm.zig",
+      "-fno-entry", "-rdynamic", "--stack", "8388608", `-femit-bin=${out}`];
+    run("zig", args, dir);
+    ok(name + " → space_explorer_gui/public/" + name);
+  }
 }
 
 function buildSegen() {

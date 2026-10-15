@@ -5,7 +5,8 @@
 //   billows = multioctave_noise(x/5, y/5, 4, persist 0.7, seed1=1, is 1/6).
 //   out_of_map (0,0,0) beyond the field disk: 10000*(dist-planet_radius)
 //   > (1/freq - 100)*1000 (= 900000 for freq=1/1000).
-// Modes: 0 tile index (0 space, 1 asteroid, 2 out_of_map), 1 packed colour.
+// Modes: 0 tile index (0 space, 1 asteroid, 2 out_of_map), 1 packed colour,
+// 2 canvas pixels (outIdx = RGBA bytes, transparent off the disk).
 
 struct FParams {
     origin_x : f32,
@@ -14,6 +15,7 @@ struct FParams {
     width : u32,
     height : u32,
     mode : u32,
+    disk_r : i32,
 };
 
 @group(0) @binding(0) var<uniform>             P     : FParams;
@@ -22,6 +24,18 @@ struct FParams {
 @group(0) @binding(3) var<storage, read>       grad  : array<f32>;
 @group(0) @binding(4) var<storage, read>       sbytes: array<u32>;
 @group(0) @binding(5) var<storage, read_write> outIdx: array<u32>;
+
+// A packed 0xRRGGBB colour as the bytes R, G, B, A of a canvas pixel (u32,
+// little-endian), with alpha `a`.
+fn rgbaOf(c : u32, a : u32) -> u32 {
+    return ((c >> 16u) & 255u) | (((c >> 8u) & 255u) << 8u) | ((c & 255u) << 16u) | (a << 24u);
+}
+// Is the tile at map (x, y) on the surface's disk (radius P.disk_r)?
+fn onDisk(x : f32, y : f32) -> bool {
+    let xi = i32(x);
+    let yi = i32(y);
+    return xi * xi + yi * yi <= P.disk_r * P.disk_r;
+}
 
 fn basisG(x : f32, y : f32, scale : f32) -> f32 {
     let X = x * scale;
@@ -84,9 +98,12 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     let x = P.origin_x + f32(gid.x);
     let y = P.origin_y + f32(gid.y);
     let i = gid.y * P.width + gid.x;
+    if (P.mode == 2u && !onDisk(x, y)) { outIdx[i] = 0u; return; }
     let t = tileAt(x, y);
     if (P.mode == 0u) { outIdx[i] = t; return; }
-    if (t == 1u) { outIdx[i] = 0x00505050u; return; }  // se-asteroid
-    if (t == 2u) { outIdx[i] = 0x00000000u; return; }  // out_of_map
-    outIdx[i] = 0x000B0D0Fu;                            // se-space
+    var c : u32 = 0x000B0D0Fu;            // se-space
+    if (t == 1u) { c = 0x00505050u; }     // se-asteroid
+    if (t == 2u) { c = 0x00000000u; }     // out_of_map
+    if (P.mode == 2u) { outIdx[i] = rgbaOf(c, 255u); return; }
+    outIdx[i] = c;
 }

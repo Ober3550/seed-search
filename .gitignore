@@ -53,6 +53,7 @@ space_explorer_gui/output/
 space_explorer_gui/public/htmx.min.js
 space_explorer_gui/public/universe.wasm
 space_explorer_gui/public/surface.wasm
+space_explorer_gui/public/surface-simd.wasm
 calibration/vanilla-sweep/mods-empty/mod-list.json
 
 # gpu_compute: large wgpu-native prebuilts (re-fetch via gpu_compute/fetch-wgpu.sh)
@@ -63,6 +64,7 @@ gpu_compute/render-out.*
 zig-pkg/
 
 space_explorer_gui/public/sa.wasm
+space_explorer_gui/public/sa-simd.wasm
 
 # Ghidra headless logs
 ghidra/headless-*.log
