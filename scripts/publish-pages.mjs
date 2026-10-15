@@ -4,7 +4,7 @@
 //
 //   node scripts/publish-pages.mjs [--site ../Ober3550.github.io] [--dir seed-search] [--no-build]
 //
-// Builds the three wasm modules, assembles the site (scripts/build-pages.mjs)
+// Builds the wasm modules, assembles the site (scripts/build-pages.mjs)
 // and replaces <site>/<dir>/ with it. Nothing is committed or pushed: review
 // the result in the site repo and push it yourself - that push is what makes
 // it live at https://ober3550.github.io/<dir>/.

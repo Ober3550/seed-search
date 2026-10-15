@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Assemble the static site (the seed page + the surface page) into dist/.
 //
-//   node install.mjs --wasm-only      # build the three wasm modules first
+//   node install.mjs --wasm-only      # build the wasm modules first
 //   node scripts/build-pages.mjs [--out dist] [--version <id>]
 //
 // Layout:
@@ -45,7 +45,7 @@ const FILES = [
   "estimate-core.js", "analyze.js", "surface.js",
   "gpu-surface.js", "gpu-worker.js", "ab-table.js",
   "ore-model.json", "featured-seeds.json", "factorio-gear.webp",
-  "universe.wasm", "surface.wasm", "sa.wasm",
+  "universe.wasm", "surface.wasm", "sa.wasm", "surface-simd.wasm", "sa-simd.wasm",
   "shaders/elevation.wgsl", "shaders/nauvis.wgsl", "shaders/se_field.wgsl", "shaders/se_zone.wgsl",
 ];
 
