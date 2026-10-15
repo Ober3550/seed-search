@@ -957,7 +957,7 @@ pub const World = struct {
                         var v: f32 = 0;
                         for (self.enemy_ents, 0..) |e, k| {
                             if (!self.planet.placed[e].canStandOn(ti, &self.planet.tiles[ti])) continue;
-                            v = @max(v, self.enemy_program.?.out(&self.enemy_ws, k)[i]);
+                            v = prog.fmax(f32, v, self.enemy_program.?.out(&self.enemy_ws, k)[i]);
                         }
                         if (v > 0) {
                             enemy_tiles += 1;

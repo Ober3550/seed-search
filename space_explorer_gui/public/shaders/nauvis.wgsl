@@ -62,6 +62,13 @@ const GI_T0    : u32 = 20u;  // 19 land-tile noise gens (seeds 36,37,38,13,6..12
 
 const NLAND : u32 = 19u;
 
+// The most a land tile's noise_layer term, multioctave (4 octaves,
+// persistence 0.7) * 2/3, can add or take away: 2/3 * (sum of octave
+// amplitudes / their RMS = 1.8634) * (largest basis value: gradients of
+// length 4.2 times max over a noise cell of the four corners' sum of
+// |d| (1 - d^2)^3 = 0.42188) = 2.201, with a margin.
+const LAYER_BOUND : f32 = 2.25;
+
 // rule layout per land tile: 12 floats
 //  0..3  loa lom hia him      4..7 alt loa lom hia him
 //  8 alt-active(0/1)          9 shore-active(0/1)     10 gen index (unused) 11 pad
@@ -144,8 +151,7 @@ fn hillsCliff(x : f32, y : f32) -> vec2<f32> {
     return vec2(hills, cliff_level);
 }
 
-fn elevationAt(x : f32, y : f32, lakeDist : f32, lakeNoise : f32) -> f32 {
-    let hc = hillsCliff(x, y);
+fn elevationAt(x : f32, y : f32, hc : vec2<f32>, lakeDist : f32, lakeNoise : f32) -> f32 {
     let plateaus = 0.5 + clamp((hc.x - hc.y) * 10.0, -0.5, 0.5);
     let hp = 0.1 * hc.x + 0.8 * plateaus;
     let bb = abs(multioctaveG(GI_BRIDGE, x, y, 4u, 2.0, P.is_bridge));
@@ -172,19 +178,18 @@ fn treesCutout(x : f32, y : f32) -> f32 {
     let fp = abs(multioctaveG(GI_FP, x, y, 4u, 2.0, nsm / 100.0));
     return min((bridge - 0.07) * 5.0, min((hills - 0.1) * 3.0, (fp - 0.07) * 3.0));
 }
-fn plateausAt(x : f32, y : f32) -> f32 {
-    let hc = hillsCliff(x, y);
+fn plateausAt(hc : vec2<f32>) -> f32 {
     return 0.5 + clamp((hc.x - hc.y) * 10.0, -0.5, 0.5);
 }
-fn moistureAt(x : f32, y : f32) -> f32 {
-    let pl = plateausAt(x, y);
+fn moistureAt(x : f32, y : f32, hc : vec2<f32>) -> f32 {
+    let pl = plateausAt(hc);
     let mq = quickMO(GI_MQ, x, y, 4u, 1.0 / 256.0, 0.125, 1.0 / 3.0, 1.5, 30000.0);
     let main = clamp(0.4 + mq - 0.08 * (pl - 0.6), 0.0, 1.0);
     let cut = treesCutout(x, y);
     return max(min(main, 0.45), main - 0.2 * max(0.0, 1.0 - cut * 1.5));
 }
-fn auxAt(x : f32, y : f32) -> f32 {
-    let pl = plateausAt(x, y);
+fn auxAt(x : f32, y : f32, hc : vec2<f32>) -> f32 {
+    let pl = plateausAt(hc);
     let aq = quickMO(GI_AQ, x, y, 4u, 1.0 / 2048.0, 0.25, 3.0, 0.5, 20000.0);
     return clamp(0.5 + 0.06 * (pl - 0.4) + aq, 0.0, 1.0);
 }
@@ -238,20 +243,32 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
         ins = ins * 2.0;
         outs = outs * 0.68;
     }
-    let e = elevationAt(x, y, d, ln);
+    // (hills and cliff level feed elevation, moisture and aux: computed once)
+    let hc = hillsCliff(x, y);
+    let e = elevationAt(x, y, hc, d, ln);
     if (P.mode == 0u) { outF[i] = e; return; }
-    let m = moistureAt(x, y);
-    let a = auxAt(x, y);
+    let m = moistureAt(x, y, hc);
+    let a = auxAt(x, y, hc);
     if (P.mode == 1u) { outF[i] = a; outF2[i] = m; return; }
     // tiles: water_base + 19-land argmax
     var best : f32 = -100000.0;
     var bestIdx : u32 = 0u;
     if (e < 0.0) { best = 100.0 * min(-e, 1.0); }
     if (e < -2.0) { let d2 = 200.0 * min(-2.0 - e, 1.0); if (d2 > best) { best = d2; bestIdx = 1u; } }
+    // Each land tile's probability before its noise_layer term, and the
+    // floor some tile (water included) reaches whatever the noise: a tile
+    // that cannot reach it cannot win, so its noise is never computed - the
+    // same winner as evaluating every tile.
+    var pre : array<f32, 19>;
+    var floor_best = best;
     for (var t : u32 = 0u; t < NLAND; t = t + 1u) {
-        var p = tileProb(t, a, m, e);
+        pre[t] = tileProb(t, a, m, e);
+        floor_best = max(floor_best, pre[t] - LAYER_BOUND);
+    }
+    for (var t : u32 = 0u; t < NLAND; t = t + 1u) {
+        if (pre[t] + LAYER_BOUND < floor_best) { continue; }
         // per-tile noise_layer (4 oct, 0.7 persist, is 1/6, os 2/3)
-        p = p + multioctaveG(GI_T0 + t, x, y, 4u, 1.0 / 0.7, 1.0 / 6.0) * (2.0 / 3.0);
+        let p = pre[t] + multioctaveG(GI_T0 + t, x, y, 4u, 1.0 / 0.7, 1.0 / 6.0) * (2.0 / 3.0);
         if (p > best) { best = p; bestIdx = 2u + t; }
     }
     outIdx[i] = bestIdx;

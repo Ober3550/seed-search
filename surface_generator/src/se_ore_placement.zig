@@ -814,6 +814,53 @@ const Worker = struct {
 /// single-threaded — a handful of regions) and then split the tile grid into
 /// row bands across all CPU cores. After the precompute the spot caches are
 /// read-only, so the bands share the ResourceStates with no locking.
+// Spot fields kept between calls (WebAssembly only: one thread, many cell
+// requests per surface). An entry is reused only by a resource whose spot
+// field has exactly the same parameters, so the regions are the ones it
+// would compute itself.
+const persist_spots = builtin.os.tag == .freestanding;
+var g_spot_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const CachedSpots = struct { spot: SESpotField, start: ?StartingSpotField, used: bool = false };
+var g_spot_cache: std.ArrayList(CachedSpots) = .empty;
+var g_spot_seed: ?u32 = null;
+
+fn newCall(map_seed: u32) void {
+    if (g_spot_seed == null or g_spot_seed.? != map_seed or g_spot_cache.items.len > 256) {
+        g_spot_cache = .empty;
+        _ = g_spot_arena.reset(.retain_capacity);
+        g_spot_seed = map_seed;
+    }
+    for (g_spot_cache.items) |*e| e.used = false;
+}
+
+fn sameSpotParams(comptime T: type, a: *const T, b: *const T) bool {
+    return std.meta.eql(a.field, b.field) and a.seed0 == b.seed0 and a.seed1 == b.seed1 and
+        a.region_size == b.region_size and a.candidate_spot_count == b.candidate_spot_count and
+        a.skip_span == b.skip_span and a.skip_offset == b.skip_offset and
+        a.hard_region_target_quantity == b.hard_region_target_quantity and a.basement_value == b.basement_value and
+        a.maximum_spot_basement_radius == b.maximum_spot_basement_radius and a.min_candidate_spacing == b.min_candidate_spacing;
+}
+
+/// Swap the state's (empty) spot fields for the kept ones with the same
+/// parameters, or start keeping these. Returns the entry's index.
+fn adoptCached(map_seed: u32, st: *ResourceState) !usize {
+    _ = map_seed;
+    for (g_spot_cache.items, 0..) |*e, i| {
+        if (e.used or !sameSpotParams(SESpotField, &e.spot, &st.spot)) continue;
+        if ((e.start == null) != (st.starting_spot == null)) continue;
+        if (e.start) |*es| if (!sameSpotParams(StartingSpotField, es, &st.starting_spot.?)) continue;
+        e.used = true;
+        st.spot = e.spot;
+        st.starting_spot = e.start;
+        return i;
+    }
+    const pa = g_spot_arena.allocator();
+    st.spot.alloc = pa;
+    if (st.starting_spot) |*ss| ss.alloc = pa;
+    try g_spot_cache.append(pa, .{ .spot = st.spot, .start = st.starting_spot, .used = true });
+    return g_spot_cache.items.len - 1;
+}
+
 pub fn computeSEOresInRect(
     alloc: std.mem.Allocator,
     map_seed: u32,
@@ -839,7 +886,21 @@ pub fn computeSEOresInRect(
         ns += 1;
     }
     const states = states_buf[0..ns];
-    defer for (states) |*st| {
+    // the browser asks for a surface a cell at a time: its spot regions are
+    // kept from one call to the next (building them is most of a small call)
+    var cached: [64]?usize = @splat(null);
+    if (persist_spots) {
+        newCall(map_seed);
+        for (states, 0..) |*st, i| {
+            if (i < cached.len) cached[i] = adoptCached(map_seed, st) catch null;
+        }
+    }
+    defer for (states, 0..) |*st, i| {
+        if (i < cached.len) if (cached[i]) |ci| {
+            g_spot_cache.items[ci].spot = st.spot;
+            g_spot_cache.items[ci].start = st.starting_spot;
+            continue;
+        };
         st.spot.deinit();
         if (st.starting_spot) |*ss| ss.deinit();
     };

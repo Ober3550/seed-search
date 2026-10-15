@@ -20,12 +20,22 @@ pub const biomes = table.biomes;
 pub const WATER_SEED: u32 = 4214428890; // crc32("water")
 pub const CRATER_SEED: u32 = 3394482400; // crc32("crater")
 
+/// The most a biome row's terrain-variation term, 0.5 * multioctave noise
+/// (6 octaves, persistence 0.75, output scale 0.666), can add or take away:
+/// 0.5 * 0.666 * (sum of octave amplitudes / their RMS = 2.2104) * (largest
+/// basis value: gradients of length 4.2 times max over a noise cell of the
+/// four corners' sum of |d| (1 - d^2)^3 = 0.42188, found at (0, 0.5)) = 1.304,
+/// with a margin. A row whose fitness before the term is more than twice this
+/// below another's cannot win, so classifyBest skips its noise.
+/// (shaders/se_zone.wgsl prunes with the same bound.)
+pub const TV_BOUND: f32 = 1.35;
+
 fn plateauPeak(v: f32, lohi: [2]f64) f32 {
     const lo: f32 = @floatCast(lohi[0]);
     const hi: f32 = @floatCast(lohi[1]);
     const center = (lo + hi) / 2.0;
     const range = @abs(lo - hi) / 2.0;
-    return @min((range - @abs(v - center)) * 20.0, 1.0);
+    return noise.fmin(f32, (range - @abs(v - center)) * 20.0, 1.0);
 }
 
 /// Precomputes one basis generator per tile (terrain-variation) plus the shared
@@ -56,18 +66,28 @@ pub const Classifier = struct {
         const crater_noise: f32 = @floatCast(noise.multioctaveNoisePrebuilt(&self.crater_gen, x, y, 5, 0.75, 1.0 / 6.0 / 1.0, 0.666));
         const beach: f32 = @min(@as(f32, 0.0), ef / 5.0 - 1.0);
 
-        var best_i: usize = 0;
-        var best_f: f32 = -std.math.inf(f32);
+        // Each row's fitness before its terrain-variation noise, and the
+        // highest of them less TV_BOUND: some row reaches at least that.
+        var pre: [biomes.len]f32 = undefined;
+        var floor_f: f32 = -std.math.inf(f32);
         for (biomes, 0..) |b, i| {
             var f: f32 = std.math.inf(f32);
-            if (b.t) |r| f = @min(f, plateauPeak(tf, r));
-            if (b.m) |r| f = @min(f, plateauPeak(mf, r));
-            if (b.a) |r| f = @min(f, plateauPeak(af, r));
-            if (b.e) |r| f = @min(f, plateauPeak(ef, r));
+            if (b.t) |r| f = noise.fmin(f32, f, plateauPeak(tf, r));
+            if (b.m) |r| f = noise.fmin(f32, f, plateauPeak(mf, r));
+            if (b.a) |r| f = noise.fmin(f32, f, plateauPeak(af, r));
+            if (b.e) |r| f = noise.fmin(f32, f, plateauPeak(ef, r));
             if (b.beach_weight < 0.0) f += beach;
             if (b.water_coef != 0.0) f += @as(f32, @floatCast(b.water_coef)) * water_noise;
             if (b.crater) f += -0.6 - 0.7 * crater_noise;
-            f += 0.5 * @as(f32, @floatCast(noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0)));
+            pre[i] = f;
+            floor_f = noise.fmax(f32, floor_f, f - TV_BOUND);
+        }
+        // a row that cannot reach the floor cannot win: its noise is skipped
+        var best_i: usize = 0;
+        var best_f: f32 = -std.math.inf(f32);
+        for (0..biomes.len) |i| {
+            if (pre[i] + TV_BOUND < floor_f) continue;
+            const f = pre[i] + 0.5 * @as(f32, @floatCast(noise.multioctaveNoiseOffset(&self.tv_gens[i], x, y, 6, 0.75, 1.0 / 6.0 / 4.0, 0.666, 1000.0, 0.0)));
             if (f > best_f) {
                 best_f = f;
                 best_i = i;

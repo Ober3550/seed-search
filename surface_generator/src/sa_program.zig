@@ -197,16 +197,19 @@ fn op2(comptime T: type, tag: Tag, a: T, b: T) T {
         .and_ => if (a != 0 and b != 0) 1 else 0,
         .or_ => if (a != 0 or b != 0) 1 else 0,
         .bitand => @floatFromInt(@as(i64, @intFromFloat(a)) & @as(i64, @intFromFloat(b))),
-        .min => @min(a, b),
-        .max => @max(a, b),
+        .min => fmin(T, a, b),
+        .max => fmax(T, a, b),
         .hypot => @floatCast(@sqrt(@as(f64, a) * @as(f64, a) + @as(f64, b) * @as(f64, b))),
         else => unreachable,
     };
 }
 
+pub const fmax = noise.fmax;
+pub const fmin = noise.fmin;
+
 fn op3(comptime T: type, tag: Tag, a: T, b: T, c: T) T {
     return switch (tag) {
-        .clamp => @min(@max(a, b), c),
+        .clamp => fmin(T, fmax(T, a, b), c),
         .select => if (a != 0) b else c,
         // folded back across the limits until it lies between them
         .ridge => blk: {
@@ -1022,10 +1025,10 @@ pub const Program = struct {
                     o.* = a / b;
                 },
                 .min => for (r, A, B) |*o, a, b| {
-                    o.* = @min(a, b);
+                    o.* = fmin(f32, a, b);
                 },
                 .max => for (r, A, B) |*o, a, b| {
-                    o.* = @max(a, b);
+                    o.* = fmax(f32, a, b);
                 },
                 .mod, .pow, .eq, .ne, .lt, .gt, .le, .ge, .and_, .or_, .bitand, .hypot => |t| for (r, A, B) |*o, a, b| {
                     o.* = op2(f32, t, a, b);
@@ -1044,12 +1047,20 @@ pub const Program = struct {
                 .multioctave => {
                     const p = &self.payloads[inst.aux].multi;
                     const g = &self.gens[p.gen];
-                    for (r, A, B) |*o, x, y| o.* = p.m.eval(g, x, y);
+                    var j: usize = 0;
+                    while (j + 4 <= n) : (j += 4) {
+                        r[j..][0..4].* = p.m.eval4(g, A[j..][0..4].*, B[j..][0..4].*);
+                    }
+                    while (j < n) : (j += 1) r[j] = p.m.eval(g, A[j], B[j]);
                 },
                 .quick_multioctave => {
                     const p = self.payloads[inst.aux].quick;
                     const gi = self.quick_gens[p.gens..][0..p.octaves];
-                    for (r, A, B) |*o, x, y| o.* = noise.exact.quickMultioctave(self.gens, gi, x, y, p.is, p.os, p.oism, p.oosm, p.ox, p.oy);
+                    var j: usize = 0;
+                    while (j + 4 <= n) : (j += 4) {
+                        r[j..][0..4].* = noise.exact.quickMultioctave4(self.gens, gi, A[j..][0..4].*, B[j..][0..4].*, p.is, p.os, p.oism, p.oosm, p.ox, p.oy);
+                    }
+                    while (j < n) : (j += 1) r[j] = noise.exact.quickMultioctave(self.gens, gi, A[j], B[j], p.is, p.os, p.oism, p.oosm, p.ox, p.oy);
                 },
                 .var_persistence => {
                     const p = &self.payloads[inst.aux].varp;
