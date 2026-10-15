@@ -140,6 +140,19 @@ pub const Field = struct {
     config: ResourceAutoplaceConfig,
     controls: AutoplaceControls,
     map_seed: u32,
+    /// regular_spot_height_typical_at(regular_blob_amplitude_maximum_distance)
+    /// and starting_blob_amplitude, worked out once by withConsts() (NaN: not
+    /// yet - the functions below then compute them as they go). Both are
+    /// cube roots, which a tile would otherwise pay for every time.
+    height_at_max: f64 = std.math.nan(f64),
+    start_amp: f64 = std.math.nan(f64),
+
+    pub fn withConsts(self: Field) Field {
+        var f = self;
+        f.height_at_max = self.regularSpotHeightTypicalAt(self.regularBlobAmplitudeMaximumDistance());
+        f.start_amp = self.startingBlobAmplitude();
+        return f;
+    }
 
     fn freq(self: Field) f64 {
         return self.controls.frequency;
@@ -190,9 +203,17 @@ pub const Field = struct {
             DOUBLE_DENSITY_DISTANCE + REGULAR_PATCH_FADE_IN_DISTANCE;
     }
     fn regularBlobAmplitudeAt(self: Field, d: f64) f64 {
-        return self.regularBlobAmpMult() *
-            @min(self.regularSpotHeightTypicalAt(self.regularBlobAmplitudeMaximumDistance()),
-                self.regularSpotHeightTypicalAt(d));
+        const max_d = self.regularBlobAmplitudeMaximumDistance();
+        const at_max = if (self.height_at_max == self.height_at_max) self.height_at_max else self.regularSpotHeightTypicalAt(max_d);
+        // From max_d out both clamps in regularDensityAt are at 1, so the
+        // height there is at_max itself (and min(at_max, at_max) = at_max).
+        if (d >= max_d) return self.regularBlobAmpMult() * at_max;
+        return self.regularBlobAmpMult() * noise.fmin(f64, at_max, self.regularSpotHeightTypicalAt(d));
+    }
+    /// The largest regularBlobAmplitudeAt can be (it is min(at_max, ...)).
+    fn regularBlobAmplitudeMax(self: Field) f64 {
+        const at_max = if (self.height_at_max == self.height_at_max) self.height_at_max else self.regularSpotHeightTypicalAt(self.regularBlobAmplitudeMaximumDistance());
+        return self.regularBlobAmpMult() * at_max;
     }
 
     // ---- starting-patch local_expressions (used by basement_value even when
@@ -204,6 +225,7 @@ pub const Field = struct {
         return self.startingAmount() / STARTING_PATCHES_SPLIT / self.freq();
     }
     pub fn startingBlobAmplitude(self: Field) f64 {
+        if (self.start_amp == self.start_amp) return self.start_amp;
         const rq = self.startingRqFactor();
         return self.startingBlobAmpMult() / (pi / 3.0 * rq * rq) *
             cbrt(self.startingAreaSpotQuantity());
@@ -415,10 +437,24 @@ pub fn probeAllPatches(alloc: std.mem.Allocator, map_seed: u32, config: Resource
 /// The probability_expression value at a tile: clamp(all_patches, 0, 1) *
 /// (random_probability<1 ? random_penalty : 1). No placement roll — that is the
 /// per-chunk RNG in computeOresInRect. Returns 0 if not part of any patch.
+/// The most the blob terms can add. regular: blobs0 + basis{1/64, 1.5} - 1/3,
+/// starting: blobs0 - 1/4, where blobs0 = basis{1/8, 1} + basis{1/24, 1} and
+/// a basis value is at most 1.7719 (gradients of length 4.2 times the most
+/// the four corners' |d| (1 - d^2)^3 add up to, 0.42188): 3.5 * 1.7719 - 1/3
+/// = 5.869 and 2 * 1.7719 - 1/4 = 3.294, with a margin.
+const REGULAR_BLOB_MAX: f64 = 5.9;
+const STARTING_BLOB_MAX: f64 = 3.3;
+
 fn probabilityAt(field: Field, spot: *RegularSpotField, sspot: ?*StartingSpotField, basis: *const noise.BasisNoiseGen, x: f64, y: f64) !f64 {
     if (field.controls.size <= 0.0) return 0.0;
     const spot_value = try spot.evalAt(x, y);
     const ssv: ?f64 = if (sspot) |ss| try ss.evalAt(x, y) else null;
+    // Far from every spot the value cannot reach 0 whatever the blob noise
+    // does, and the probability is clamp01 of it: 0, without the noise.
+    if (spot_value + REGULAR_BLOB_MAX * field.regularBlobAmplitudeMax() < 0.0) {
+        const starting = field.has() == 1 and ssv != null;
+        if (!starting or ssv.? + STARTING_BLOB_MAX * field.startingBlobAmplitude() < 0.0) return 0.0;
+    }
     const value = allPatchesValue(field, basis, x, y, spot_value, ssv);
     return clamp01(value);
     // NOTE: the fluid random_penalty (random_probability < 1) is applied by the
@@ -503,7 +539,7 @@ pub fn computeOresInRect(
     defer alloc.free(rstates);
     for (resources, resource_names, 0..) |config, name, i| {
         const ctrl = if (per_controls) |pc| (if (i < pc.len) pc[i] else controls) else controls;
-        const field = Field{ .config = config, .controls = ctrl, .map_seed = map_seed };
+        const field = (Field{ .config = config, .controls = ctrl, .map_seed = map_seed }).withConsts();
         const sspot: ?StartingSpotField = if (field.has() == 1) makeStartingSpotField(alloc, field, ctx.lakes) else null;
         rstates[i] = .{ .field = field, .spot = makeRegularSpotField(alloc, field), .sspot = sspot, .basis = noise.BasisNoiseGen.init(map_seed, config.seed1), .name = name };
     }
