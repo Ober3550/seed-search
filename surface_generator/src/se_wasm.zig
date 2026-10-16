@@ -77,7 +77,8 @@ var g_enemy: ?struct { seed: u32, ctl: EnemyControls, program: sa_program.Progra
 // base-game Nauvis: every autoplaced entity and the cliffs, placed on our
 // own Nauvis tiles by the data-driven engine (kept between calls)
 var g_nv_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-var g_nv: ?struct {
+var g_nv_ore_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const NvState = struct {
     seed: u32,
     world: sa_surface.World,
     planet: *const sa_data.Planet,
@@ -85,7 +86,10 @@ var g_nv: ?struct {
     /// moisture / aux for a whole chunk at a time
     props: sa_program.Program,
     props_ws: sa_program.Program.Workspace,
-} = null;
+};
+var g_nv: ?NvState = null;
+// the same for its ore alone (no entities: a page that leaves them out)
+var g_nv_ore: ?NvState = null;
 
 // Space Exploration surfaces: the SE data file and the surface last asked
 // for (kept between calls - a render is many cell requests)
@@ -693,7 +697,7 @@ fn generateZone(
     // placed before them. Asteroid fields have no enemies.
     var enemy_tiles: u64 = 0;
     var entity_layer = false;
-    if ((layer == 3 or layer == 4) and !is_field and ((is_nauvis and vanilla_ground) or g_want_entities or layer == 4)) {
+    if ((layer == 3 or layer == 4) and !is_field and (g_want_entities or layer == 4)) {
         // The game's own placement pass (sa_surface.World, see
         // docs/space-age.md) over this generator's tiles: the entities
         // themselves - rocks, trees, cliffs, nests - and, with layer 4, the
@@ -703,16 +707,19 @@ fn generateZone(
         // how a terrain colour from the page maps to a tile, and the edge (a
         // SE surface is a disk; base-game Nauvis an unbounded square).
         const vanilla = is_nauvis and vanilla_ground;
-        entity_layer = vanilla or g_want_entities;
+        entity_layer = g_want_entities;
         var world: *sa_surface.World = undefined;
         var planet: *const sa_data.Planet = undefined;
-        var nv_ptr: ?*@TypeOf(g_nv.?) = null;
+        var nv_ptr: ?*NvState = null;
         var zn_ptr: ?*se_zone.Zone = null;
         if (vanilla) {
-            if (g_nv == null or g_nv.?.seed != zone_seed) {
-                g_nv = null;
-                _ = g_nv_arena.reset(.retain_capacity);
-                const na = g_nv_arena.allocator();
+            // (with the entities, or the ore alone)
+            const nv_slot = if (g_want_entities) &g_nv else &g_nv_ore;
+            const nv_arena = if (g_want_entities) &g_nv_arena else &g_nv_ore_arena;
+            if (nv_slot.* == null or nv_slot.*.?.seed != zone_seed) {
+                nv_slot.* = null;
+                _ = nv_arena.reset(.retain_capacity);
+                const na = nv_arena.allocator();
                 const d = try nauvisData();
                 const nauvis = d.planet("nauvis") orelse return error.NoNauvisData;
                 var tile_of: [biome.nauvis_base_palette.len]u16 = undefined;
@@ -721,13 +728,13 @@ fn generateZone(
                         if (std.mem.eql(u8, t.name, pt.name)) break @intCast(ti);
                     } else return error.NoNauvisData;
                 }
-                const w = try sa_surface.World.initWith(na, d, nauvis, zone_seed, .{ .starting_lake = terrain.startingLakeCenter(zone_seed) }, .{ .external_tiles = true, .entities = true, .resources = true }, null);
+                const w = try sa_surface.World.initWith(na, d, nauvis, zone_seed, .{ .starting_lake = terrain.startingLakeCenter(zone_seed) }, .{ .external_tiles = true, .entities = g_want_entities, .resources = true }, null);
                 const pp = try sa_program.compile(na, d, nauvis, zone_seed, .{}, &.{ "moisture", "aux" }, null);
-                g_nv = .{ .seed = zone_seed, .world = w, .planet = nauvis, .tile_of = tile_of, .props = pp, .props_ws = try pp.workspaceN(na, sa_surface.CHUNK * sa_surface.CHUNK) };
+                nv_slot.* = .{ .seed = zone_seed, .world = w, .planet = nauvis, .tile_of = tile_of, .props = pp, .props_ws = try pp.workspaceN(na, sa_surface.CHUNK * sa_surface.CHUNK) };
             }
-            nv_ptr = &g_nv.?;
-            world = &g_nv.?.world;
-            planet = g_nv.?.planet;
+            nv_ptr = &nv_slot.*.?;
+            world = &nv_slot.*.?.world;
+            planet = nv_slot.*.?.planet;
         } else {
             var rolls = se_zone.Rolls{};
             if (z.get("rolls")) |rv| {
